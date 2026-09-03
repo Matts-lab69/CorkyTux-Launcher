@@ -117,14 +117,12 @@
     -fx-background-color:#1e1e1e;
     -fx-text-fill:#fcfcfc;
     -fx-border-radius:0px;
-    -fx-background-radius:0;
 }
 
 .def-button{
     -fx-background-color:#333333;
     -fx-text-fill:#fcfcfc;
     -fx-border-radius:0px;
-    -fx-background-radius:0;
 }
 
 .menu-button:hover{
@@ -140,10 +138,10 @@
 }
 
 .confirm-button{
+    -fx-background-radius:15px;
     -fx-background-color:#55de1b;
     -fx-text-fill:#1a1a1a;
     -fx-border-radius:0px;
-    -fx-background-radius:0;
     -fx-font-weight:bold;
 }
 
@@ -159,16 +157,16 @@
     -fx-background-color:#FF0040;
     -fx-text-fill:#ffffff;
     -fx-border-radius:0px;
-    -fx-background-radius:0;
+    -fx-background-radius:15px;
     -fx-font-weight:bold;
 }
 
 .danger-button:hover{
-    -fx-background-color:#FF3366;
+    -fx-background-color:#FF3366 !important;
 }
 
 .danger-button:pressed{
-    -fx-background-color:#CC0033;
+    -fx-background-color:#CC0033 !important;
 }
 
 .toggle-button{
@@ -258,7 +256,6 @@
     -fx-background-color:#333333;
     -fx-text-fill:#ffffff;
     -fx-border-size:0px;
-    -fx-background-radius:0;
     -fx-highlight-fill:linear-gradient(to right bottom,#55de1b,#338510);
 }
 

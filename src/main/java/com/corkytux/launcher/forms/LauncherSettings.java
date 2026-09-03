@@ -68,7 +68,7 @@ import java.util.ResourceBundle;
  * Java 25 / JavaFX 21 port of {@code launcherSettings.php} (578 lines).
  *
  * <p>Settings form with 5 navigation tabs ({@code paths}, {@code protons},
- * {@code launcher}, {@code graphics}, {@code about}) and a paged content area.
+ * {@code launcher}, {@code about}) and a paged content area.
  * All PHP {@code @event} handlers are mirrored as {@code @FXML} methods or
  * programmatic listeners in {@link #initialize}. The critical paged protons
  * list cell factory with download/remove logic, default-proton combo, and path
@@ -90,7 +90,7 @@ public class LauncherSettings implements Initializable {
     @FXML private Pane paths;
     @FXML private Pane protons;
     @FXML private Pane launcher;
-    @FXML private Pane graphics;
+    @FXML private Pane plugins;
     @FXML private Pane about;
     @FXML private Pane visuals;
 
@@ -144,8 +144,8 @@ public class LauncherSettings implements Initializable {
     @FXML private ToggleButton pathsButton;
     @FXML private ToggleButton protonsButton;
     @FXML private ToggleButton launcherButton;
+    @FXML private ToggleButton pluginsButton;
     @FXML private ToggleButton aboutButton;
-    @FXML private ToggleButton graphicsButton;
     @FXML private ToggleButton visualsButton;
 
     @FXML private Label label;       // installs
@@ -189,7 +189,8 @@ public class LauncherSettings implements Initializable {
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         // Active page tracking – mirrors doConstruct: SettingsModule.activePage = paths
-        if (paths != null) settingsModule.setActivePage(paths);
+        if (paths != null) settingsModule.setActivePage(visuals);
+        if (visuals != null) switchPage(visuals);
 
         applyLocalizations();
         buildToggleButtons();
@@ -219,7 +220,6 @@ public class LauncherSettings implements Initializable {
         if (launcherButton != null) launcherButton.setText(loc.get("LAUNCHERSETTINGS.TABS.LAUNCHER"));
         if (aboutButton != null) aboutButton.setText(loc.get("LAUNCHERSETTINGS.TABS.ABOUT"));
         if (visualsButton != null) visualsButton.setText(loc.get("LAUNCHERSETTINGS.TABS.VISUALS"));
-        if (graphicsButton != null) graphicsButton.setText(loc.get("SETTINGSMODULE.GRAPHICS"));
         if (label5 != null) label5.setText(loc.get("LAUNCHERSETTINGS.PATHS.HEADER"));
         if (label4 != null) label4.setText(loc.get("LAUNCHERSETTINGS.PATHS.DOWNLOADS"));
         if (label != null) label.setText(loc.get("LAUNCHERSETTINGS.PATHS.INSTALLS"));
@@ -311,8 +311,8 @@ public class LauncherSettings implements Initializable {
         if (pathsButton != null) pathsButton.setOnAction(this::handlePathsButtonAction);
         if (protonsButton != null) protonsButton.setOnAction(this::handleProtonsButtonAction);
         if (launcherButton != null) launcherButton.setOnAction(this::handleLauncherButtonAction);
+        if (pluginsButton != null) pluginsButton.setOnAction(this::handlePluginsButtonAction);
         if (aboutButton != null) aboutButton.setOnAction(this::handleAboutButtonAction);
-        if (graphicsButton != null) graphicsButton.setOnAction(this::handleGraphicsButtonAction);
         if (visualsButton != null) visualsButton.setOnAction(this::handleVisualsButtonAction);
 
         // Combos / toggles
@@ -878,10 +878,9 @@ public class LauncherSettings implements Initializable {
     private void handleLauncherButtonAction(javafx.event.ActionEvent e) { switchPage(launcher); }
 
     @FXML
-    private void handleAboutButtonAction(javafx.event.ActionEvent e) { switchPage(about); }
-
+    private void handlePluginsButtonAction(javafx.event.ActionEvent e) { switchPage(plugins); }
     @FXML
-    private void handleGraphicsButtonAction(javafx.event.ActionEvent e) { switchPage(graphics); }
+    private void handleAboutButtonAction(javafx.event.ActionEvent e) { switchPage(about); }
 
     @FXML
     private void handleVisualsButtonAction(javafx.event.ActionEvent e) { switchPage(visuals); }
@@ -923,7 +922,7 @@ public class LauncherSettings implements Initializable {
         if (newPage == null) return;
         
         // Hide all pages immediately, show only the target
-        for (Node p : new Node[]{paths, protons, launcher, graphics, visuals, about}) {
+        for (Node p : new Node[]{paths, protons, launcher, plugins, visuals, about}) {
             if (p == null) continue;
             if (p == newPage) {
                 p.setVisible(true);

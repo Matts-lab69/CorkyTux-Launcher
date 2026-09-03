@@ -75,6 +75,7 @@ public class AccentColorManager {
         StringBuilder sb = new StringBuilder();
         sb.append("/* Accent color override – auto-generated */\n\n");
 
+
         // .jfx-button (main action buttons)
         sb.append(".jfx-button { -fx-background-color: ").append(p).append("; }\n");
         sb.append(".jfx-button:hover { -fx-background-color: ").append(h).append("; }\n");
@@ -86,10 +87,13 @@ public class AccentColorManager {
         sb.append("#playButton:hover { -fx-background-color: ").append(h).append("; }\n");
         sb.append("#playButton:pressed { -fx-background-color: ").append(pr).append("; }\n\n");
 
-        // .confirm-button (GameRemover yes)
-        sb.append(".confirm-button { -fx-background-color: ").append(p).append("; }\n");
-        sb.append(".confirm-button:hover { -fx-background-color: ").append(h).append("; }\n");
-        sb.append(".confirm-button:pressed { -fx-background-color: ").append(pr).append("; }\n\n");
+        // .confirm-button and .danger-button are fixed colors (not accent)
+        sb.append(".confirm-button { -fx-background-color: #55de1b; }\n");
+        sb.append(".confirm-button:hover { -fx-background-color: #6ef52d; }\n");
+        sb.append(".confirm-button:pressed { -fx-background-color: #3da512; }\n");
+        sb.append(".danger-button { -fx-background-color: #FF0040; }\n");
+        sb.append(".danger-button:hover { -fx-background-color: #FF3366; }\n");
+        sb.append(".danger-button:pressed { -fx-background-color: #CC0033; }\n\n");
 
         // scroll-bar thumb
         sb.append(".scroll-bar .thumb { -fx-background-color: ").append(p).append("; }\n");

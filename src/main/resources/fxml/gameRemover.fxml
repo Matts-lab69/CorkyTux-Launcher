@@ -13,13 +13,13 @@
       </font>
     </CheckBox>
     <Data id="data-removeFiles"/>
-    <Button AnchorPane.bottomAnchor="16" AnchorPane.rightAnchor="16" alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="button" id="button" layoutX="208" layoutY="96" prefHeight="32" prefWidth="144" style="-fx-text-fill:#1a1a1a;-fx-font-weight:bold;-fx-background-radius:0px;" styleClass="button confirm-button" text="Yes" textAlignment="CENTER" underline="false" wrapText="false">
+    <Button AnchorPane.bottomAnchor="16" AnchorPane.rightAnchor="16" alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="button" id="button" layoutX="208" layoutY="96" prefHeight="32" prefWidth="144" style="-fx-background-color:#55de1b; -fx-background-radius:15px; -fx-text-fill:#ffffff; -fx-font-weight:bold;" text="Yes" textAlignment="CENTER" underline="false" wrapText="false">
       <font>
         <Font name="System Bold" size="12"/>
       </font>
     </Button>
     <Data id="data-button"/>
-    <Button AnchorPane.bottomAnchor="16" AnchorPane.rightAnchor="176" alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="buttonAlt" id="buttonAlt" layoutX="48" layoutY="96" prefHeight="32" prefWidth="144" styleClass="danger-button" text="No" textAlignment="CENTER" underline="false" wrapText="false">
+    <Button AnchorPane.bottomAnchor="16" AnchorPane.rightAnchor="176" alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="buttonAlt" id="buttonAlt" layoutX="48" layoutY="96" prefHeight="32" prefWidth="144" style="-fx-background-color:#FF0040; -fx-background-radius:15px; -fx-text-fill:#ffffff; -fx-font-weight:bold;" text="No" textAlignment="CENTER" underline="false" wrapText="false">
       <font>
         <Font name="System Regular" size="12"/>
       </font>

@@ -1,12 +1,18 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <?import javafx.scene.*?><?import javafx.collections.*?><?import javafx.scene.layout.*?><?import com.corkytux.launcher.util.Data?><?import javafx.scene.control.*?><?import javafx.scene.text.*?><?import javafx.scene.image.*?><?import javafx.scene.shape.*?><?import javafx.scene.paint.*?><?import javafx.scene.web.*?><?import javafx.geometry.*?><?import java.lang.*?><AnchorPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.LauncherSettings" AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" id="" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="480" prefWidth="710" style="-fx-background-color:#222226;" styleClass="">
   <children>
+    <VBox AnchorPane.bottomAnchor="56" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="plugins" id="plugins" visible="false" managed="false" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="360" prefWidth="656" spacing="5" styleClass="">
+      <padding>
+        <Insets bottom="10" left="25" right="25" top="10"/>
+      </padding>
+      <children/>
+    </VBox>
     <VBox AnchorPane.bottomAnchor="56" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="about" id="about" visible="false" managed="false" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="360" prefWidth="656" spacing="5" styleClass="">
       <padding>
         <Insets bottom="10" left="25" right="25" top="10"/>
       </padding>
       <children>
-        <ImageView focusTraversable="false" fitHeight="88" fx:id="image" id="image" styleClass="" fitWidth="88"/>
+        <ImageView focusTraversable="false" fitHeight="150" fx:id="image" id="image" styleClass="" fitWidth="150" smooth="true" cache="true"/>
         <Data id="data-image" image=".data/img/corkytux-about.png"/>
         <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label7" id="label7" prefHeight="16" prefWidth="248" styleClass="label " text="CorkyTux" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
           <font>
@@ -249,12 +255,31 @@
         <Data id="data-label9"/>
       </children>
     </VBox>
-    <VBox AnchorPane.bottomAnchor="56" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="graphics" id="graphics" visible="false" managed="false" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="360" prefWidth="656" spacing="1" styleClass="">
+    <VBox AnchorPane.bottomAnchor="56" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="launcher" id="launcher" visible="false" managed="false" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="360" prefWidth="656" spacing="1" styleClass="">
       <padding>
-        <Insets bottom="0" left="190" right="190" top="0"/>
+        <Insets bottom="0" left="172" right="172" top="0"/>
       </padding>
       <children>
-        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label10" id="label10" prefHeight="40" prefWidth="376" styleClass="label " text="Default graphics settings for new games" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelLauncher" id="labelLauncher" prefHeight="40" prefWidth="312" styleClass="label " text="General" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+          <font>
+            <Font name="System Bold" size="13"/>
+          </font>
+        </Label>
+        <Data id="data-labelLauncher"/>
+        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="fullscreenLauncher" id="fullscreenLauncher" prefHeight="58" prefWidth="272" style="-fx-background-color: #333337;-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+          <font>
+            <Font name="System Regular" size="13"/>
+          </font>
+        </Button>
+        <Data id="data-fullscreenLauncher"/>
+        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="requestSteam" id="requestSteam" prefHeight="58" prefWidth="272" style="-fx-background-color: #333337;-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+          <font>
+            <Font name="System Regular" size="13"/>
+          </font>
+        </Button>
+        <Data id="data-requestSteam"/>
+        <Separator focusTraversable="false" prefHeight="12" styleClass="separator "/>
+        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label10" id="label10" prefHeight="40" prefWidth="312" styleClass="label " text="Default graphics settings for new games" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
           <font>
             <Font name="System Bold" size="13"/>
           </font>
@@ -274,71 +299,52 @@
         <Data id="data-useWayland"/>
       </children>
     </VBox>
-    <VBox AnchorPane.bottomAnchor="56" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="launcher" id="launcher" visible="false" managed="false" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="360" prefWidth="656" spacing="1" styleClass="">
-      <padding>
-        <Insets bottom="0" left="172" right="172" top="0"/>
-      </padding>
-      <children>
-        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="fullscreenLauncher" id="fullscreenLauncher" prefHeight="58" prefWidth="312" style="-fx-background-color: #333337;-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
-          <font>
-            <Font name="System Regular" size="13"/>
-          </font>
-        </Button>
-        <Data id="data-fullscreenLauncher"/>
-        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="requestSteam" id="requestSteam" prefHeight="58" prefWidth="312" style="-fx-background-color: #333337;-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
-          <font>
-            <Font name="System Regular" size="13"/>
-          </font>
-        </Button>
-        <Data id="data-requestSteam"/>
-      </children>
-    </VBox>
     <HBox AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="hbox" id="hbox" layoutX="0" layoutY="360" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="56" prefWidth="656" spacing="0" style="-fx-background-color:#333337;" styleClass="">
       <children>
-        <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="pathsButton" id="pathsButton" prefHeight="56" prefWidth="72" selected="true" styleClass="toggle-button " text="Paths" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
+        <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="visualsButton" id="visualsButton" prefHeight="56" prefWidth="95" selected="true" styleClass="toggle-button " text="Visuals" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
           <font>
-            <Font name="System Bold" size="11"/>
-          </font>
-        </ToggleButton>
-        <Data id="data-pathsButton" graphic=".data/img/fileview.png"/>
-        <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="protonsButton" id="protonsButton" prefHeight="56" prefWidth="72" styleClass="toggle-button " text="Protons" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
-          <font>
-            <Font name="System Bold" size="11"/>
-          </font>
-        </ToggleButton>
-        <Data id="data-protonsButton" graphic=".data/img/proton17.png"/>
-        <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="graphicsButton" id="graphicsButton" prefHeight="56" prefWidth="72" styleClass="toggle-button " text="Graphics" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
-          <font>
-            <Font name="System Bold" size="11"/>
-          </font>
-        </ToggleButton>
-        <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="launcherButton" id="launcherButton" prefHeight="56" prefWidth="72" styleClass="toggle-button " text="Miscellaneous" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
-          <font>
-            <Font name="System Bold" size="11"/>
-          </font>
-        </ToggleButton>
-        <Data id="data-launcherButton" graphic=".data/img/settings.png"/>
-        <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="visualsButton" id="visualsButton" prefHeight="56" prefWidth="72" styleClass="toggle-button " text="Visuals" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
-          <font>
-            <Font name="System Bold" size="11"/>
+            <Font name="System Bold" size="12"/>
           </font>
         </ToggleButton>
         <Data id="data-visualsButton" graphic=".data/img/palette.png"/>
+        <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="pathsButton" id="pathsButton" prefHeight="56" prefWidth="95" styleClass="toggle-button " text="Paths" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
+          <font>
+            <Font name="System Bold" size="12"/>
+          </font>
+        </ToggleButton>
+        <Data id="data-pathsButton" graphic=".data/img/fileview.png"/>
+        <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="protonsButton" id="protonsButton" prefHeight="56" prefWidth="95" styleClass="toggle-button " text="Protons" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
+          <font>
+            <Font name="System Bold" size="12"/>
+          </font>
+        </ToggleButton>
+        <Data id="data-protonsButton" graphic=".data/img/proton17.png"/>
+        <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="launcherButton" id="launcherButton" prefHeight="56" prefWidth="110" styleClass="toggle-button " text="Miscellaneous" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
+          <font>
+            <Font name="System Bold" size="12"/>
+          </font>
+        </ToggleButton>
+        <Data id="data-launcherButton" graphic=".data/img/settings.png"/>
+        <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="pluginsButton" id="pluginsButton" prefHeight="56" prefWidth="72" styleClass="toggle-button " text="Plugins" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
+          <font>
+            <Font name="System Bold" size="12"/>
+          </font>
+        </ToggleButton>
+        <Data id="data-pluginsButton" graphic=".data/img/plugins.png"/>
         <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="aboutButton" id="aboutButton" prefHeight="56" prefWidth="72" styleClass="toggle-button " text="About" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
           <font>
-            <Font name="System Bold" size="11"/>
+            <Font name="System Bold" size="12"/>
           </font>
         </ToggleButton>
         <Data id="data-aboutButton" graphic=".data/img/about.png"/>
-        <Data id="data-graphicsButton" graphic=".data/img/graphics.png"/>
       </children>
     </HBox>
     <Data id="data-hbox"/>
     <Data id="data-paths"/>
     <Data id="data-protons"/>
     <Data id="data-launcher"/>
+    <Data id="data-plugins"/>
     <Data id="data-about"/>
-    <Data id="data-graphics"/>
     <Data id="data-visuals"/>
   </children>
 </AnchorPane>
