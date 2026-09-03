@@ -177,15 +177,15 @@ public class Launcher extends Application {
     // -----------------------------------------------------------------------
 
     private static void attachStylesheet(Scene scene) {
-        URL css = Launcher.class.getResource("/style.fx.css");
+        URL css = Launcher.class.getResource("/style-v2.css");
         if (css != null) {
             String url = css.toExternalForm();
             if (!scene.getStylesheets().contains(url)) {
                 scene.getStylesheets().add(url);
-                LOG.debug("Attached style.fx.css to scene {}", scene);
+                LOG.debug("Attached style-v2.css to scene {}", scene);
             }
         } else {
-            LOG.warn("style.fx.css not found on classpath – theme will be missing");
+            LOG.warn("style-v2.css not found on classpath – theme will be missing");
         }
         // Attach accent color override if user has changed from default
         attachAccentOverride(scene);
@@ -193,15 +193,17 @@ public class Launcher extends Application {
 
     private static void attachAccentOverride(Scene scene) {
         try {
+            // Always (re)generate CSS from saved preference so theme persists across launches
+            var acm = com.corkytux.launcher.modules.AccentColorManager.getInstance();
             var cssFile = java.nio.file.Path.of(
                     com.corkytux.launcher.modules.FilesWorker.getExpectedHome(), ".config", "CorkyTux", "accent-override.css");
-            if (java.nio.file.Files.exists(cssFile)) {
-                String url = cssFile.toUri().toString();
-                var sheets = scene.getStylesheets();
-                sheets.removeIf(s -> s.contains("accent-override"));
-                sheets.add(url);
-                LOG.debug("Attached accent override CSS");
-            }
+            java.nio.file.Files.createDirectories(cssFile.getParent());
+            java.nio.file.Files.writeString(cssFile, acm.generateCss());
+            String url = cssFile.toUri().toString();
+            var sheets = scene.getStylesheets();
+            sheets.removeIf(s -> s.contains("accent-override"));
+            sheets.add(url);
+            LOG.debug("Attached accent override CSS ({})", acm.getCurrentId());
         } catch (Exception e) {
             LOG.debug("No accent override CSS", e);
         }
@@ -690,6 +692,15 @@ public class Launcher extends Application {
 
     public static void main(String[] args) {
         System.setProperty("prism.forceGPU", "true");
+        
+        // Test UI mode
+        for (String arg : args) {
+            if ("--test-ui".equals(arg)) {
+                com.corkytux.launcher.forms.TestUILauncher.main(args);
+                return;
+            }
+        }
+        
         launch(args);
     }
 }

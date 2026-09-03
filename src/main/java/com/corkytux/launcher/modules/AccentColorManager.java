@@ -8,28 +8,25 @@ import java.util.Map;
 
 /**
  * AccentColorManager – manages the launcher accent color.
- * Generates a CSS override stylesheet that replaces hardcoded #55de1b
- * with the user-selected accent color.
- * The base style.fx.css stays untouched; this adds a second CSS on top.
+ * Generates a CSS override stylesheet for the new Spotify-style UI.
  */
 public class AccentColorManager {
 
     private static final Logger LOG = LoggerFactory.getLogger(AccentColorManager.class);
     private static AccentColorManager instance;
 
-    // id -> {displayName, primary, hover, pressed}
     private static final Map<String, String[]> ACCENTS = new LinkedHashMap<>();
     static {
-        ACCENTS.put("green",  new String[]{"Green",  "#55de1b", "#66e131", "#44b115"});
-        ACCENTS.put("blue",   new String[]{"Blue",   "#2196F3", "#42A5F5", "#1976D2"});
+        ACCENTS.put("green",  new String[]{"Green",  "#1db954", "#1ed760", "#1aa34a"});
+        ACCENTS.put("blue",   new String[]{"Blue",   "#1E88E5", "#42A5F5", "#1565C0"});
         ACCENTS.put("cyan",   new String[]{"Cyan",   "#00BCD4", "#26C6DA", "#0097A7"});
-        ACCENTS.put("purple", new String[]{"Purple", "#9C27B0", "#AB47BC", "#7B1FA2"});
-        ACCENTS.put("pink",   new String[]{"Pink",   "#E91E63", "#EC407A", "#C2185B"});
-        ACCENTS.put("red",    new String[]{"Red",    "#F44336", "#EF5350", "#D32F2F"});
-        ACCENTS.put("orange", new String[]{"Orange", "#FF9800", "#FFB74D", "#F57C00"});
-        ACCENTS.put("yellow", new String[]{"Yellow", "#FFC107", "#FFD54F", "#FFA000"});
-        ACCENTS.put("teal",   new String[]{"Teal",   "#009688", "#26A69A", "#00796B"});
-        ACCENTS.put("indigo", new String[]{"Indigo", "#3F51B5", "#5C6BC0", "#303F9F"});
+        ACCENTS.put("purple", new String[]{"Purple", "#AB47BC", "#CE93D8", "#8E24AA"});
+        ACCENTS.put("pink",   new String[]{"Pink",   "#EC407A", "#F48FB1", "#D81B60"});
+        ACCENTS.put("red",    new String[]{"Red",    "#EF5350", "#EF9A9A", "#E53935"});
+        ACCENTS.put("orange", new String[]{"Orange", "#FFA726", "#FFCC80", "#FB8C00"});
+        ACCENTS.put("yellow", new String[]{"Yellow", "#FFEE58", "#FFF176", "#FDD835"});
+        ACCENTS.put("teal",   new String[]{"Teal",   "#26A69A", "#80CBC4", "#00897B"});
+        ACCENTS.put("indigo", new String[]{"Indigo", "#5C6BC0", "#9FA8DA", "#3949AB"});
     }
 
     private String currentId = "green";
@@ -40,8 +37,6 @@ public class AccentColorManager {
         if (instance == null) instance = new AccentColorManager();
         return instance;
     }
-
-    // ── Public API ────────────────────────────────────────────────────────
 
     public String getCurrentId() { return currentId; }
     public String getPrimary()   { return val("primary"); }
@@ -60,99 +55,133 @@ public class AccentColorManager {
         String[] v = ACCENTS.get(id); return v != null ? v[0] : id;
     }
     public static String getPrimaryFor(String id) {
-        String[] v = ACCENTS.get(id); return v != null ? v[1] : "#55de1b";
+        String[] v = ACCENTS.get(id); return v != null ? v[1] : "#1db954";
     }
-
-    // ── CSS generation ────────────────────────────────────────────────────
 
     public String generateCss() {
         String p  = val("primary");
         String h  = val("hover");
         String pr = val("pressed");
         String grad = "linear-gradient(to right," + p + "," + pr + ")";
-        String selBg = darken(p, 0.55);
+        String selBg = darken(p, 0.6);
 
         StringBuilder sb = new StringBuilder();
-        sb.append("/* Accent color override – auto-generated */\n\n");
+        sb.append("/* Accent color override – auto-generated for v2 UI */\n\n");
 
+        // Primary action buttons (.btn-primary)
+        sb.append(".btn-primary { -fx-background-color: ").append(p).append("; }\n");
+        sb.append(".btn-primary:hover { -fx-background-color: ").append(h).append("; }\n");
+        sb.append(".btn-primary:pressed { -fx-background-color: ").append(pr).append("; }\n\n");
 
-        // .jfx-button (main action buttons)
-        sb.append(".jfx-button { -fx-background-color: ").append(p).append("; }\n");
-        sb.append(".jfx-button:hover { -fx-background-color: ").append(h).append("; }\n");
-        sb.append(".jfx-button:pressed, .jfx-button:armed { -fx-background-color: ").append(pr).append("; }\n");
-        sb.append(".jfx-button:focused { -fx-background-color: ").append(p).append("; }\n\n");
-
-        // #playButton
+        // Play button (#playButton)
         sb.append("#playButton { -fx-background-color: ").append(p).append("; }\n");
         sb.append("#playButton:hover { -fx-background-color: ").append(h).append("; }\n");
-        sb.append("#playButton:pressed { -fx-background-color: ").append(pr).append("; }\n\n");
+        sb.append("#playButton:pressed { -fx-background-color: ").append(pr).append("; }\n");
+        sb.append(".split-btn-main { -fx-background-color: ").append(p).append("; }\n");
+        sb.append(".split-btn-main:hover { -fx-background-color: ").append(h).append("; }\n");
+        sb.append(".split-btn-arrow { -fx-background-color: ").append(pr).append("; }\n");
+        sb.append(".split-btn-arrow:hover { -fx-background-color: ").append(h).append("; }\n\n");
 
-        // .confirm-button and .danger-button are fixed colors (not accent)
-        sb.append(".confirm-button { -fx-background-color: #55de1b; }\n");
-        sb.append(".confirm-button:hover { -fx-background-color: #6ef52d; }\n");
-        sb.append(".confirm-button:pressed { -fx-background-color: #3da512; }\n");
-        sb.append(".danger-button { -fx-background-color: #FF0040; }\n");
-        sb.append(".danger-button:hover { -fx-background-color: #FF3366; }\n");
-        sb.append(".danger-button:pressed { -fx-background-color: #CC0033; }\n\n");
+        // Game card play button
+        sb.append(".game-card-play { -fx-background-color: ").append(p).append("; }\n");
+        sb.append(".game-card-play:hover { -fx-background-color: ").append(h).append("; }\n\n");
 
-        // scroll-bar thumb
+        // Split button container
+        sb.append(".split-container { -fx-background-color: ").append(p).append("; }\n");
+        sb.append(".split-btn { -fx-background-color: ").append(p).append("; }\n");
+        sb.append(".split-btn:hover { -fx-background-color: ").append(h).append("; }\n");
+        sb.append(".split-dropdown { -fx-background-color: ").append(p).append("; }\n");
+        sb.append(".split-dropdown:hover { -fx-background-color: ").append(h).append("; }\n\n");
+
+        // Sidebar tab selected
+        sb.append(".sidebar-tab:selected { -fx-background-color: ").append(p).append("; -fx-text-fill:#000000; }\n");
+        sb.append(".sidebar-tab.filter-selected { -fx-text-fill: ").append(p).append("; -fx-border-color: ").append(p).append("; }\n\n");
+
+        // Settings tab selected (bottom border)
+        sb.append(".toggle-button:selected { -fx-border-color: transparent transparent ").append(p).append(" transparent; }\n\n");
+
+        // Settings button border
+        sb.append(".btn-outline { -fx-border-color: ").append(p).append("; }\n");
+        sb.append(".btn-outline:hover { -fx-border-color: ").append(h).append("; -fx-background-color:rgba(255,255,255,0.07); }\n\n");
+
+        // Accent badge (version label)
+        sb.append(".accent-badge { -fx-background-color: ").append(p).append("; }\n\n");
+
+        // Scrollbar thumb
         sb.append(".scroll-bar .thumb { -fx-background-color: ").append(p).append("; }\n");
-        sb.append(".scroll-bar .thumb:hover { -fx-background-color: ").append(h).append("; }\n");
-        sb.append(".scroll-bar .thumb:pressed { -fx-background-color: ").append(pr).append("; }\n\n");
+        sb.append(".scroll-bar .thumb:hover { -fx-background-color: ").append(h).append("; }\n\n");
 
-        // check-box mark
+        // Progress bar
+        sb.append(".progress-bar .bar { -fx-background-color: ").append(p).append("; }\n\n");
+
+        // Check-box selected
         sb.append(".check-box:selected .box .mark { -fx-background-color: ").append(p).append("; }\n\n");
 
-        // text highlight
-        sb.append(".text-input, .text-area .content, .text-area, .text-area .scroll-pane {\n");
-        sb.append("  -fx-highlight-fill: ").append(grad).append(";\n}\n\n");
+        // Text highlight and focus
+        sb.append(".text-input:focused { -fx-border-color: ").append(p).append("; }\n");
+        sb.append(".text-field:focused { -fx-border-color: ").append(p).append("; }\n\n");
 
-        // list-cell / table selection
-        sb.append(".list-cell:filled:selected, .list-cell:filled:selected:hover,\n");
-        sb.append(".table-row-cell:selected, .table-row-cell:selected .table-cell {\n");
-        sb.append("  -fx-background-color: ").append(selBg).append(";\n");
-        sb.append("  -fx-text-fill: ").append(p).append(";\n}\n\n");
+        // List cell selected
+        sb.append(".list-cell:filled:selected { -fx-background-color: ").append(selBg).append("; -fx-text-fill: ").append(p).append("; }\n\n");
 
-        // toggle-switch selected
-        sb.append(".toggle-switch:selected {\n");
-        sb.append("  -fx-background-color: white, ").append(grad).append(";\n");
-        sb.append("  -fx-background-insets: 3 3 3 22, 0;\n");
-        sb.append("  -fx-background-radius: 9px, 12px;\n}\n");
-        sb.append(".toggle-switch:selected .thumb-area { -fx-background-color: ").append(grad).append("; }\n\n");
+        // Combo box focused
+        sb.append(".combo-box:focused { -fx-border-color: ").append(p).append("; }\n\n");
 
-        // toggle-switch rippler
-        sb.append(".toggle-switch .jfx-rippler { -fx-background-color: ").append(p).append("; }\n\n");
+        // Action buttons (game detail panel)
+        sb.append(".action-btn:hover { -fx-background-color: ").append(selBg).append("; }\n\n");
 
-        // progress bar
-        sb.append(".progress-bar .bar { -fx-background-color: ").append(p).append("; }\n");
-        sb.append(".jfx-progress-bar .bar { -fx-background-color: ").append(p).append("; }\n\n");
+        // Game list item hover
+        sb.append(".game-list-item:hover { -fx-background-color: ").append(selBg).append("; }\n\n");
 
-        // tooltip
+        // Download / proton icons tint (via -fx-background-color on icon containers)
+        sb.append(".download-icon { -fx-background-color: ").append(p).append("; }\n\n");
+
+        // Proton list selected
+        sb.append(".list-view .list-cell:filled:selected { -fx-background-color: ").append(selBg).append("; -fx-text-fill: ").append(p).append("; }\n\n");
+
+        // Sidebar section border accent
+        sb.append(".sidebar-section { -fx-border-color: ").append(p).append(" transparent transparent transparent; -fx-border-width: 2 0 0 0; }\n\n");
+
+        // Proton download button (when not installed)
+        sb.append(".jfx-button { -fx-background-color: ").append(p).append("; }\n");
+        sb.append(".jfx-button:hover { -fx-background-color: ").append(h).append("; }\n");
+        sb.append(".jfx-button:pressed { -fx-background-color: ").append(pr).append("; }\n\n");
+
+        // Settings selected option text (toggle buttons, combo boxes)
+        sb.append(".toggle-button:selected { -fx-text-fill: ").append(p).append("; }\n");
+        sb.append(".combo-box:focused .arrow-button .arrow { -fx-background-color: ").append(p).append("; }\n\n");
+
+        // Accent text color (navigation arrows, add game icon, modal X)
+        sb.append(".accent-text { -fx-text-fill: ").append(p).append("; }\n");
+        sb.append(".accent-text:hover { -fx-text-fill: ").append(h).append("; }\n");
+        sb.append(".label.accent-text { -fx-text-fill: ").append(p).append("; }\n");
+        sb.append(".btn-icon .accent-text, .btn-icon-round .accent-text { -fx-text-fill: ").append(p).append("; }\n");
+        sb.append(".btn-icon:hover .accent-text { -fx-text-fill: ").append(h).append("; }\n");
+        sb.append(".btn-icon.accent-text .label { -fx-text-fill: ").append(p).append("; }\n");
+        sb.append(".btn-icon.accent-text:hover .label { -fx-text-fill: ").append(h).append("; }\n");
+        sb.append(".btn-icon-round.accent-text .label { -fx-text-fill: ").append(p).append("; }\n");
+        sb.append(".btn-icon-round.accent-text:hover .label { -fx-text-fill: ").append(h).append("; }\n\n");
+
+        // Navigation round buttons
+        sb.append(".btn-round { -fx-background-color: rgba(255,255,255,0.1); }\n");
+        sb.append(".btn-round:hover { -fx-background-color: ").append(selBg).append("; }\n");
+        sb.append(".btn-round .accent-text { -fx-text-fill: ").append(p).append("; }\n");
+
+        // Tooltip
         sb.append(".tooltip { -fx-text-fill: ").append(p).append("; -fx-border-color: ").append(p).append("; }\n\n");
 
-        // table column header border
-        sb.append(".table-view .column-header {\n");
-        sb.append("  -fx-border-color: transparent transparent ").append(pr).append(" transparent;\n}\n\n");
+        // Confirm button (fixed green, not accent)
+        sb.append(".confirm-button { -fx-background-color: #1db954; }\n");
+        sb.append(".confirm-button:hover { -fx-background-color: #1ed760; }\n");
+        sb.append(".confirm-button:pressed { -fx-background-color: #1aa34a; }\n\n");
 
-        // #addGame
-        sb.append("#addGame { -fx-background-color: ").append(p).append("; }\n");
-        sb.append("#addGame:hover { -fx-background-color: ").append(h).append("; }\n");
-        sb.append("#addGame:pressed { -fx-background-color: ").append(pr).append("; }\n");
-        sb.append("#addGame:focused { -fx-background-color: ").append(p).append("; }\n\n");
-
-        // #selectFileButton
-        sb.append("#selectFileButton { -fx-background-color: ").append(p).append("; }\n");
-        sb.append("#selectFileButton:hover { -fx-background-color: ").append(h).append("; }\n");
-        sb.append("#selectFileButton:pressed { -fx-background-color: ").append(pr).append("; }\n");
-        sb.append("#selectFileButton:focused { -fx-background-color: ").append(p).append("; }\n\n");
-
-        // .accent-badge (version badge, etc.)
-        sb.append(".accent-badge { -fx-background-color: ").append(p).append("; }\n");
+        // Danger button (fixed red)
+        sb.append(".danger-button { -fx-background-color: #FF0040; }\n");
+        sb.append(".danger-button:hover { -fx-background-color: #FF3366; }\n");
+        sb.append(".danger-button:pressed { -fx-background-color: #CC0033; }\n");
 
         return sb.toString();
     }
-
-    // ── Persistence ───────────────────────────────────────────────────────
 
     private void save() {
         try {
@@ -170,8 +199,6 @@ public class AccentColorManager {
             LOG.warn("Failed to load accent color", e);
         }
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────
 
     private String val(String key) {
         String[] v = ACCENTS.get(currentId);

@@ -1,32 +1,20 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<?import javafx.scene.*?><?import javafx.collections.*?><?import javafx.scene.layout.*?><?import com.corkytux.launcher.util.Data?><?import javafx.scene.control.*?><?import javafx.scene.text.*?><?import javafx.scene.image.*?><?import javafx.scene.shape.*?><?import javafx.scene.paint.*?><?import javafx.scene.web.*?><?import javafx.geometry.*?><?import java.lang.*?><AnchorPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.NewGameConfigurator" AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" id="" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="480" prefWidth="416" style="-fx-background-color:#222226;" styleClass="">
+<?import javafx.scene.*?><?import javafx.collections.*?><?import javafx.scene.layout.*?><?import com.corkytux.launcher.util.Data?><?import javafx.scene.control.*?><?import javafx.scene.text.*?><?import javafx.scene.image.*?><?import javafx.scene.shape.*?><?import javafx.scene.paint.*?><?import javafx.scene.web.*?><?import javafx.geometry.*?><?import java.lang.*?><AnchorPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.NewGameConfigurator" AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" id="" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="420" prefWidth="380" style="-fx-background-color:#121212; -fx-background-radius:12;" styleClass="">
   <children>
-    <VBox AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="mainSelectBox" id="mainSelectBox" visible="true" managed="true" layoutX="0" layoutY="0" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="480" prefWidth="416" spacing="10" styleClass="">
+    <VBox AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" alignment="TOP_CENTER" focusTraversable="false" fx:id="mainSelectBox" id="mainSelectBox" visible="true" managed="true" layoutX="0" layoutY="0" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="420" prefWidth="380" spacing="12" styleClass="">
       <padding>
-        <Insets bottom="0" left="58" right="58" top="0"/>
+        <Insets bottom="20" left="24" right="24" top="20"/>
       </padding>
       <children>
-        <VBox alignment="TOP_LEFT" focusTraversable="false" fx:id="vbox7" id="vbox7" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="232" prefWidth="300" spacing="8" styleClass="modern-input-box ">
-          <padding>
-            <Insets bottom="8" left="18" right="18" top="8"/>
-          </padding>
-          <children>
-            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="mainSelectLabel" id="mainSelectLabel" prefHeight="17" prefWidth="280" styleClass="label " text="Select the main game file" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
-              <font>
-                <Font name="System Regular" size="12"/>
-              </font>
-            </Label>
-            <Data id="data-mainSelectLabel"/>
-            <ListView editable="false" fixedCellSize="50" focusTraversable="true" fx:id="listView" id="listView" prefHeight="184" prefWidth="264" styleClass="list-view ">
-              <items xmlns:fx="http://javafx.com/fxml">
-                <FXCollections fx:factory="observableArrayList"/>
-              </items>
-            </ListView>
-            <Data id="data-listView"/>
-          </children>
-        </VBox>
-        <Data id="data-vbox7"/>
-        <Button alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="selectFileButton" id="selectFileButton" prefHeight="40" prefWidth="144" style="-fx-background-radius:50px;" styleClass="button jfx-button " text="Next" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="mainSelectLabel" id="mainSelectLabel" prefHeight="20" prefWidth="332" style="-fx-text-fill:#ffffff; -fx-font-size:14; -fx-font-weight:bold;" text="Select the main game file" textAlignment="CENTER" underline="false" wrapText="false"/>
+        <Data id="data-mainSelectLabel"/>
+        <ListView editable="false" fixedCellSize="36" focusTraversable="true" fx:id="listView" id="listView" prefHeight="260" prefWidth="332" style="-fx-background-color:#181818; -fx-background-radius:8;" styleClass="list-view">
+          <items xmlns:fx="http://javafx.com/fxml">
+            <FXCollections fx:factory="observableArrayList"/>
+          </items>
+        </ListView>
+        <Data id="data-listView"/>
+        <Button alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="selectFileButton" id="selectFileButton" prefHeight="36" prefWidth="140" styleClass="btn-primary" text="Next" textAlignment="CENTER" textFill="#000000" underline="false" wrapText="false">
           <font>
             <Font name="System Bold" size="12"/>
           </font>
@@ -34,32 +22,16 @@
         <Data id="data-selectFileButton"/>
       </children>
     </VBox>
-    <VBox AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="gameParamsBox" id="gameParamsBox" visible="false" managed="false" layoutX="0" layoutY="0" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="480" prefWidth="416" spacing="10" styleClass="">
+    <VBox AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" alignment="TOP_CENTER" focusTraversable="false" fx:id="gameParamsBox" id="gameParamsBox" visible="false" managed="false" layoutX="0" layoutY="0" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="420" prefWidth="380" spacing="10" styleClass="">
       <padding>
-        <Insets bottom="0" left="58" right="58" top="0"/>
+        <Insets bottom="20" left="24" right="24" top="20"/>
       </padding>
       <children>
-        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label" id="label" prefHeight="21" prefWidth="312" styleClass="label " text="Adding a new game" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
-          <font>
-            <Font name="System Bold" size="15"/>
-          </font>
-        </Label>
-        <VBox alignment="TOP_LEFT" focusTraversable="false" fx:id="vbox6" id="vbox6" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="58" prefWidth="300" spacing="0" styleClass="modern-input-box ">
-          <padding>
-            <Insets bottom="8" left="18" right="18" top="8"/>
-          </padding>
+        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label" id="label" prefHeight="22" prefWidth="332" style="-fx-text-fill:#ffffff; -fx-font-size:15; -fx-font-weight:bold;" text="Adding a new game" textAlignment="CENTER" underline="false" wrapText="false"/>
+        <VBox alignment="TOP_LEFT" focusTraversable="false" fx:id="vbox6" id="vbox6" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="56" prefWidth="332" spacing="2" style="-fx-background-color:#181818; -fx-background-radius:8; -fx-padding:8 14;">
           <children>
-            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label3" id="label3" prefHeight="17" prefWidth="264" styleClass="label " text="Game name in launcher" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
-              <font>
-                <Font name="System Regular" size="12"/>
-              </font>
-            </Label>
-            <TextField alignment="CENTER_LEFT" editable="true" focusTraversable="false" fx:id="gameName" id="gameName" prefColumnCount="12" prefHeight="16" prefWidth="280" promptText="" text="">
-              <styleClass xmlns:fx="http://javafx.com/fxml">
-                <String fx:value="text-input"/>
-                <String fx:value="text-field"/>
-                <String fx:value="modern-text-input"/>
-              </styleClass>
+            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label3" id="label3" prefHeight="16" prefWidth="304" style="-fx-text-fill:#b3b3b3; -fx-font-size:11;" text="Game name in launcher" textAlignment="LEFT" underline="false" wrapText="false"/>
+            <TextField alignment="CENTER_LEFT" editable="true" focusTraversable="false" fx:id="gameName" id="gameName" prefColumnCount="12" prefHeight="24" prefWidth="304" promptText="" text="" style="-fx-background-color:transparent; -fx-text-fill:#ffffff; -fx-font-size:12; -fx-border-color:transparent;">
               <font>
                 <Font name="System Regular" size="12"/>
               </font>
@@ -68,101 +40,55 @@
             <Data id="data-gameName"/>
           </children>
         </VBox>
-        <Separator focusTraversable="false" fx:id="separator" id="separator" orientation="HORIZONTAL" prefHeight="8" prefWidth="144" styleClass="separator "/>
-        <VBox alignment="CENTER" focusTraversable="false" fx:id="vbox3" id="vbox3" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="176" prefWidth="300" spacing="1" styleClass="">
+        <VBox alignment="TOP_LEFT" focusTraversable="false" fx:id="gamePathBox" id="gamePathBox" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="56" prefWidth="332" spacing="2" style="-fx-background-color:#181818; -fx-background-radius:8 8 0 0; -fx-padding:8 14;">
           <children>
-            <VBox alignment="TOP_LEFT" focusTraversable="false" fx:id="gamePathBox" id="gamePathBox" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="58" prefWidth="300" spacing="0" style="-fx-background-radius:15 15 0 0;" styleClass="modern-input-box ">
-              <padding>
-                <Insets bottom="8" left="18" right="18" top="8"/>
-              </padding>
-              <children>
-                <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label4" id="label4" prefHeight="16" prefWidth="192" styleClass="label " text="Game install path" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
-                  <font>
-                    <Font name="System Regular" size="12"/>
-                  </font>
-                </Label>
-                <TextField alignment="CENTER_LEFT" editable="true" focusTraversable="false" fx:id="gamePath" id="gamePath" prefColumnCount="12" prefHeight="16" prefWidth="280" promptText="" text="">
-                  <styleClass xmlns:fx="http://javafx.com/fxml">
-                    <String fx:value="text-input"/>
-                    <String fx:value="text-field"/>
-                    <String fx:value="modern-text-input"/>
-                  </styleClass>
-                  <font>
-                    <Font name="System Regular" size="12"/>
-                  </font>
-                </TextField>
-                <Data id="data-label4"/>
-                <Data id="data-gamePath"/>
-              </children>
-            </VBox>
-            <Data id="data-gamePathBox"/>
-            <VBox alignment="TOP_LEFT" focusTraversable="false" fx:id="ftpInstallerBox" id="ftpInstallerBox" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="58" prefWidth="300" spacing="0" style="-fx-background-radius:0;" styleClass="modern-input-box ">
-              <padding>
-                <Insets bottom="8" left="18" right="18" top="8"/>
-              </padding>
-              <children>
-                <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelAlt" id="labelAlt" prefHeight="17" prefWidth="272" styleClass="label " text="FreeTP multiplayer fix installer" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
-                  <font>
-                    <Font name="System Regular" size="12"/>
-                  </font>
-                </Label>
-                <TextField alignment="CENTER_LEFT" editable="true" focusTraversable="false" fx:id="ftpInstallerPath" id="ftpInstallerPath" prefColumnCount="12" prefHeight="16" prefWidth="280" promptText="" text="">
-                  <styleClass xmlns:fx="http://javafx.com/fxml">
-                    <String fx:value="text-input"/>
-                    <String fx:value="text-field"/>
-                    <String fx:value="modern-text-input"/>
-                  </styleClass>
-                  <font>
-                    <Font name="System Regular" size="12"/>
-                  </font>
-                </TextField>
-                <Data id="data-labelAlt"/>
-                <Data id="data-ftpInstallerPath"/>
-              </children>
-            </VBox>
-            <VBox alignment="TOP_LEFT" focusTraversable="false" fx:id="vbox4" id="vbox4" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="58" prefWidth="300" spacing="0" style="-fx-background-radius:0 0 15 15;" styleClass="modern-input-box ">
-              <padding>
-                <Insets bottom="8" left="18" right="18" top="8"/>
-              </padding>
-              <children>
-                <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label7" id="label7" prefHeight="17" prefWidth="240" styleClass="label " text="Prefix path" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
-                  <font>
-                    <Font name="System Regular" size="12"/>
-                  </font>
-                </Label>
-                <Data id="data-label7"/>
-                <TextField alignment="CENTER_LEFT" editable="false" focusTraversable="false" fx:id="prefixPath" id="prefixPath" prefColumnCount="12" prefHeight="24" prefWidth="236" promptText="" text="">
-                  <styleClass xmlns:fx="http://javafx.com/fxml">
-                    <String fx:value="text-input"/>
-                    <String fx:value="text-field"/>
-                    <String fx:value="modern-text-input"/>
-                  </styleClass>
-                  <font>
-                    <Font name="System Regular" size="12"/>
-                  </font>
-                </TextField>
-                <Data id="data-prefixPath"/>
-              </children>
-            </VBox>
-            <Data id="data-vbox4"/>
-            <Data id="data-ftpInstallerBox"/>
+            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label4" id="label4" prefHeight="16" prefWidth="304" style="-fx-text-fill:#b3b3b3; -fx-font-size:11;" text="Game install path" textAlignment="LEFT" underline="false" wrapText="false"/>
+            <TextField alignment="CENTER_LEFT" editable="true" focusTraversable="false" fx:id="gamePath" id="gamePath" prefColumnCount="12" prefHeight="24" prefWidth="304" promptText="" text="" style="-fx-background-color:transparent; -fx-text-fill:#ffffff; -fx-font-size:12; -fx-border-color:transparent;">
+              <font>
+                <Font name="System Regular" size="12"/>
+              </font>
+            </TextField>
+            <Data id="data-label4"/>
+            <Data id="data-gamePath"/>
           </children>
         </VBox>
-        <Data id="data-vbox3"/>
-        <Data id="data-separator"/>
-        <Data id="data-label"/>
-        <Data id="data-vbox6"/>
-        <Separator focusTraversable="false" fx:id="separatorAlt" id="separatorAlt" orientation="HORIZONTAL" prefHeight="8" prefWidth="144" styleClass="separator "/>
-        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="cleanAfterAdd" id="cleanAfterAdd" prefHeight="34" prefWidth="304" maxWidth="304" style="-fx-background-color: #333337;-jfx-button-type: FLAT;-fx-background-radius:15px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false"/>
-        <HBox alignment="CENTER" focusTraversable="false" fx:id="hbox" id="hbox" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="48" prefWidth="300" spacing="10" styleClass="">
+        <Data id="data-gamePathBox"/>
+        <VBox alignment="TOP_LEFT" focusTraversable="false" fx:id="ftpInstallerBox" id="ftpInstallerBox" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="56" prefWidth="332" spacing="2" style="-fx-background-color:#181818; -fx-padding:8 14;">
           <children>
-            <Button alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="addGame" id="addGame" prefHeight="40" prefWidth="104" style="-fx-background-radius:50px;" styleClass="button jfx-button " text="Add" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelAlt" id="labelAlt" prefHeight="16" prefWidth="304" style="-fx-text-fill:#b3b3b3; -fx-font-size:11;" text="FreeTP multiplayer fix installer" textAlignment="LEFT" underline="false" wrapText="false"/>
+            <TextField alignment="CENTER_LEFT" editable="true" focusTraversable="false" fx:id="ftpInstallerPath" id="ftpInstallerPath" prefColumnCount="12" prefHeight="24" prefWidth="304" promptText="" text="" style="-fx-background-color:transparent; -fx-text-fill:#ffffff; -fx-font-size:12; -fx-border-color:transparent;">
+              <font>
+                <Font name="System Regular" size="12"/>
+              </font>
+            </TextField>
+            <Data id="data-labelAlt"/>
+            <Data id="data-ftpInstallerPath"/>
+          </children>
+        </VBox>
+        <VBox alignment="TOP_LEFT" focusTraversable="false" fx:id="vbox4" id="vbox4" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="56" prefWidth="332" spacing="2" style="-fx-background-color:#181818; -fx-background-radius:0 0 8 8; -fx-padding:8 14;">
+          <children>
+            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label7" id="label7" prefHeight="16" prefWidth="304" style="-fx-text-fill:#b3b3b3; -fx-font-size:11;" text="Prefix path" textAlignment="LEFT" underline="false" wrapText="false"/>
+            <TextField alignment="CENTER_LEFT" editable="false" focusTraversable="false" fx:id="prefixPath" id="prefixPath" prefColumnCount="12" prefHeight="24" prefWidth="304" promptText="" text="" style="-fx-background-color:transparent; -fx-text-fill:#ffffff; -fx-font-size:12; -fx-border-color:transparent;">
+              <font>
+                <Font name="System Regular" size="12"/>
+              </font>
+            </TextField>
+            <Data id="data-label7"/>
+            <Data id="data-prefixPath"/>
+          </children>
+        </VBox>
+        <Data id="data-vbox4"/>
+        <Data id="data-ftpInstallerBox"/>
+        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="cleanAfterAdd" id="cleanAfterAdd" prefHeight="32" prefWidth="332" maxWidth="332" style="-fx-background-color:#181818; -fx-background-radius:8;" styleClass="button" text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false"/>
+        <HBox alignment="CENTER" focusTraversable="false" fx:id="hbox" id="hbox" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="40" prefWidth="332" spacing="10" styleClass="">
+          <children>
+            <Button alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="addGame" id="addGame" prefHeight="36" prefWidth="120" styleClass="btn-primary" text="Add" textAlignment="CENTER" textFill="#000000" underline="false" wrapText="false">
               <font>
                 <Font name="System Bold" size="12"/>
               </font>
             </Button>
             <Data id="data-addGame"/>
-            <Button alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="cancelButton" id="cancelButton" prefHeight="40" prefWidth="104" style="-fx-background-color: #333337;-fx-background-radius:50px;" styleClass="button jfx-button " text="Cancel" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+            <Button alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="cancelButton" id="cancelButton" prefHeight="36" prefWidth="120" styleClass="btn-outline" text="Cancel" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
               <font>
                 <Font name="System Bold" size="12"/>
               </font>
@@ -171,7 +97,6 @@
           </children>
         </HBox>
         <Data id="data-hbox"/>
-        <Data id="data-separatorAlt"/>
         <Data id="data-cleanAfterAdd"/>
       </children>
     </VBox>

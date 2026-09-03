@@ -1,0 +1,229 @@
+.root {
+    -fx-base: #000000;
+    -fx-background: #000000;
+    -fx-font-family: "Segoe UI", "Arial";
+}
+
+/* Top bar */
+.top-bar {
+    -fx-background-color: #000000;
+    -fx-padding: 0 24 0 24;
+}
+
+.search-bar {
+    -fx-background-color: #2a2a2a;
+    -fx-background-radius: 500;
+    -fx-padding: 10 16;
+}
+
+.search-bar .text-field {
+    -fx-background-color: transparent;
+    -fx-text-fill: #ffffff;
+    -fx-prompt-text-fill: #b3b3b3;
+    -fx-border-color: transparent;
+}
+
+.btn-outline {
+    -fx-background-color: transparent;
+    -fx-border-color: #282828;
+    -fx-border-radius: 500;
+    -fx-background-radius: 500;
+    -fx-text-fill: #ffffff;
+    -fx-font-weight: bold;
+    -fx-font-size: 13;
+    -fx-padding: 8 16;
+}
+
+.btn-outline:hover {
+    -fx-border-color: #ffffff;
+}
+
+.icon-btn {
+    -fx-background-color: transparent;
+    -fx-text-fill: #b3b3b3;
+    -fx-padding: 8;
+    -fx-background-radius: 50;
+}
+
+.icon-btn:hover {
+    -fx-background-color: #1f1f1f;
+    -fx-text-fill: #ffffff;
+}
+
+/* Left sidebar */
+.sidebar-left {
+    -fx-background-color: #121212;
+    -fx-background-radius: 8;
+    -fx-padding: 16;
+}
+
+.section-header h3 {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 16;
+    -fx-font-weight: bold;
+}
+
+.sidebar-tab {
+    -fx-background-color: #2a2a2a;
+    -fx-background-radius: 20;
+    -fx-text-fill: #ffffff;
+    -fx-padding: 8 12;
+    -fx-font-size: 13;
+}
+
+.sidebar-tab:selected {
+    -fx-background-color: #3e3e3e;
+}
+
+.search-filter {
+    -fx-background-color: #2a2a2a;
+    -fx-background-radius: 20;
+    -fx-padding: 8 12;
+}
+
+.search-filter .text-field {
+    -fx-background-color: transparent;
+    -fx-text-fill: #ffffff;
+    -fx-border-color: transparent;
+}
+
+.list-item {
+    -fx-background-color: transparent;
+    -fx-background-radius: 6;
+    -fx-padding: 8;
+    -fx-cursor: hand;
+}
+
+.list-item:hover {
+    -fx-background-color: #1f1f1f;
+}
+
+.list-item .label {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 14;
+}
+
+.album-art {
+    -fx-background-color: #333333;
+    -fx-background-radius: 4;
+    -fx-min-width: 48;
+    -fx-min-height: 48;
+    -fx-max-width: 48;
+    -fx-max-height: 48;
+}
+
+/* Main content */
+.main-content {
+    -fx-background-color: #121212;
+    -fx-background-radius: 8;
+    -fx-padding: 24;
+}
+
+.content-header .label {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 22;
+    -fx-font-weight: bold;
+}
+
+/* Right sidebar */
+.sidebar-right {
+    -fx-background-color: #121212;
+    -fx-background-radius: 8;
+    -fx-padding: 16;
+}
+
+.sidebar-right .label {
+    -fx-text-fill: #ffffff;
+}
+
+.sidebar-right h3 {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 16;
+    -fx-font-weight: bold;
+}
+
+/* Play button */
+.btn-play {
+    -fx-background-color: #1db954;
+    -fx-background-radius: 500;
+    -fx-text-fill: #000000;
+    -fx-font-weight: bold;
+    -fx-font-size: 13;
+    -fx-padding: 8 16;
+    -fx-cursor: hand;
+}
+
+.btn-play:hover {
+    -fx-background-color: #1ed760;
+}
+
+/* Split button */
+.split-container {
+    -fx-background-color: #1db954;
+    -fx-background-radius: 500;
+    -fx-cursor: hand;
+}
+
+.split-btn {
+    -fx-background-color: #1db954;
+    -fx-background-radius: 500 0 0 500;
+    -fx-text-fill: #000000;
+    -fx-font-weight: bold;
+    -fx-font-size: 13;
+    -fx-padding: 8 16;
+}
+
+.split-dropdown {
+    -fx-background-color: #1db954;
+    -fx-background-radius: 0 500 500 0;
+    -fx-padding: 8 12;
+}
+
+/* Game card */
+.game-card {
+    -fx-background-color: #181818;
+    -fx-background-radius: 8;
+    -fx-padding: 16;
+    -fx-cursor: hand;
+}
+
+.game-card:hover {
+    -fx-background-color: #282828;
+}
+
+.game-card .label {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 14;
+}
+
+.game-card-image {
+    -fx-background-color: #333333;
+    -fx-background-radius: 6;
+    -fx-min-width: 150;
+    -fx-min-height: 200;
+}
+
+/* Info items */
+.info-item {
+    -fx-background-color: #181818;
+    -fx-background-radius: 6;
+    -fx-padding: 12;
+    -fx-border-color: #282828;
+    -fx-border-radius: 6;
+}
+
+.info-label {
+    -fx-text-fill: #b3b3b3;
+    -fx-font-size: 11;
+    -fx-font-weight: bold;
+}
+
+.info-value {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 13;
+}
+
+/* Separator */
+.separator .line {
+    -fx-border-color: #282828;
+}

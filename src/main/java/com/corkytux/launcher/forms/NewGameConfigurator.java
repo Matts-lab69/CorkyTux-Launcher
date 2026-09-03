@@ -576,6 +576,21 @@ public class NewGameConfigurator implements Initializable {
                 // else: banner download failed – don't store error string as banner
                 appModule.setGame("steamID", realAppId, gameName.getText());
             }
+            // Unified artwork fallback: Steam CDN + Lutris local + SteamGridDB
+            // (fills banner/icon when FixParser found nothing)
+            try {
+                var im = com.corkytux.launcher.modules.IntegrationsManager.getInstance();
+                var art = im.resolveArtwork(gameName.getText(), realAppId);
+                if (bannerPath == null && art.containsKey("banner")) {
+                    bannerPath = art.get("banner");
+                    appModule.setGame("banner", bannerPath, gameName.getText());
+                }
+                if (art.containsKey("icon")) {
+                    appModule.setGame("icon", art.get("icon"), gameName.getText());
+                }
+            } catch (Exception e) {
+                LOG.debug("unified artwork failed", e);
+            }
 
             if (finalStub != null) Platform.runLater(() -> finalStub.statusLabel().setText(loc.get("NEWGAMECONFIG.ICOEXTRACT")));
 
@@ -600,6 +615,7 @@ public class NewGameConfigurator implements Initializable {
 
             // Persist full game entry – mirrors games->put([...], name)
             var gameData = new LinkedHashMap<String, String>();
+            LOG.info("Persisting game '{}'", gameName.getText());
             gameData.put("overrides", overrides);
             gameData.put("executable", gameParams.mainFile);
             gameData.put("mainPath", resolvedPath);
@@ -864,6 +880,29 @@ public class NewGameConfigurator implements Initializable {
 
     private void hideStage() {
         Platform.runLater(() -> {
+            // Modal context: close MainForm modal instead of hiding the main stage
+            try {
+                var launcherCls = Class.forName("com.corkytux.launcher.Launcher");
+                var getCtrl = launcherCls.getMethod("getFormController", String.class);
+                Object mf = getCtrl.invoke(null, "MainForm");
+                if (mf != null) {
+                    boolean modalVisible = false;
+                    try {
+                        var overlayField = mf.getClass().getDeclaredField("modalOverlay");
+                        overlayField.setAccessible(true);
+                        Object overlay = overlayField.get(mf);
+                        if (overlay instanceof Node ov) modalVisible = ov.isVisible();
+                    } catch (Exception ignored) {}
+                    if (modalVisible) {
+                        var hideModal = mf.getClass().getDeclaredMethod("hideModal");
+                        hideModal.setAccessible(true);
+                        hideModal.invoke(mf);
+                        return;
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("hideModal fallback failed", e);
+            }
             Stage s = stageOf(mainSelectBox != null ? mainSelectBox : gameParamsBox);
             if (s != null) s.hide();
             else LOG.debug("hideStage: no window to hide");

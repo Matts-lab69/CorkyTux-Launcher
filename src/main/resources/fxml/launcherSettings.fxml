@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<?import javafx.scene.*?><?import javafx.collections.*?><?import javafx.scene.layout.*?><?import com.corkytux.launcher.util.Data?><?import javafx.scene.control.*?><?import javafx.scene.text.*?><?import javafx.scene.image.*?><?import javafx.scene.shape.*?><?import javafx.scene.paint.*?><?import javafx.scene.web.*?><?import javafx.geometry.*?><?import java.lang.*?><AnchorPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.LauncherSettings" AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" id="" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="480" prefWidth="710" style="-fx-background-color:#222226;" styleClass="">
+<?import javafx.scene.*?><?import javafx.collections.*?><?import javafx.scene.layout.*?><?import com.corkytux.launcher.util.Data?><?import javafx.scene.control.*?><?import javafx.scene.text.*?><?import javafx.scene.image.*?><?import javafx.scene.shape.*?><?import javafx.scene.paint.*?><?import javafx.scene.web.*?><?import javafx.geometry.*?><?import java.lang.*?><AnchorPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.LauncherSettings" AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" id="" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="560" prefWidth="860" style="-fx-background-color:transparent;" styleClass="">
   <children>
     <VBox AnchorPane.bottomAnchor="56" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="plugins" id="plugins" visible="false" managed="false" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="360" prefWidth="656" spacing="5" styleClass="">
       <padding>
@@ -27,9 +27,13 @@
         <Data id="data-version"/>
         <Data id="data-label7" graphic=""/>
         <Data id="data-label8"/>
-        <HBox alignment="CENTER" focusTraversable="false" fx:id="hbox3" id="hbox3" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="24" prefWidth="656" spacing="5" styleClass="">
+        <HBox alignment="CENTER" focusTraversable="false" fx:id="hbox3" id="hbox3" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="32" prefWidth="656" spacing="5" styleClass="">
           <children>
-            <ImageView focusTraversable="false" fitHeight="24" fx:id="github" id="github" styleClass="" fitWidth="24"/>
+            <ImageView focusTraversable="false" fitHeight="28" fx:id="github" id="github" style="-fx-cursor:hand;" fitWidth="28">
+              <image>
+                <Image url="@../.data/img/github.png"/>
+              </image>
+            </ImageView>
             <Data id="data-github" image=".data/img/github.png"/>
           </children>
         </HBox>
@@ -47,6 +51,15 @@
       </padding>
       <children/>
     </VBox>
+    <ScrollPane AnchorPane.bottomAnchor="56" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" fitToWidth="true" focusTraversable="false" fx:id="integrationsScroll" id="integrationsScroll" visible="false" managed="false" prefHeight="360" prefWidth="656" style="-fx-background-color:transparent; -fx-background:transparent;" pannable="true">
+      <content>
+        <VBox alignment="TOP_CENTER" focusTraversable="false" fx:id="integrations" id="integrations" spacing="8" style="-fx-background-color:transparent;">
+          <padding>
+            <Insets bottom="10" left="80" right="80" top="10"/>
+          </padding>
+        </VBox>
+      </content>
+    </ScrollPane>
     <VBox AnchorPane.bottomAnchor="56" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="paths" id="paths" visible="true" managed="true" layoutX="0" layoutY="0" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="360" prefWidth="656" spacing="1" styleClass="">
       <padding>
         <Insets bottom="0" left="160" right="160" top="0"/>
@@ -230,16 +243,16 @@
           <children>
             <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" text="Filter:" textFill="#ffffff" styleClass="label ">
             </Label>
-            <ComboBox fx:id="protonFilter" prefWidth="200" prefHeight="28" style="-fx-background-color:#333337;-fx-background-radius:15px;-fx-text-fill:#ffffff;" styleClass="combo-box-base">
+            <ComboBox fx:id="protonFilter" prefWidth="200" prefHeight="28" style="-fx-background-color:#181818;-fx-background-radius:15px;-fx-text-fill:#ffffff;" styleClass="combo-box-base">
             </ComboBox>
             <Region prefWidth="20" prefHeight="1"/>
             <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" text="Paths:" textFill="#ffffff" styleClass="label ">
             </Label>
-            <ComboBox fx:id="protonPathsCombo" prefWidth="280" prefHeight="28" style="-fx-background-color:#333337;-fx-background-radius:15px;-fx-text-fill:#ffffff;" styleClass="combo-box-base">
+            <ComboBox fx:id="protonPathsCombo" prefWidth="280" prefHeight="28" style="-fx-background-color:#181818;-fx-background-radius:15px;-fx-text-fill:#ffffff;" styleClass="combo-box-base">
             </ComboBox>
           </children>
         </HBox>
-        <ListView editable="false" fixedCellSize="40" focusTraversable="true" fx:id="protonsList" id="protonsList" prefHeight="260" prefWidth="606" maxWidth="606" style="-fx-background-color:#333337;-fx-background-radius:15px;" styleClass="list-view ">
+        <ListView editable="false" fixedCellSize="40" focusTraversable="true" fx:id="protonsList" id="protonsList" prefHeight="260" prefWidth="606" maxWidth="606" style="-fx-background-color:#181818;-fx-background-radius:15px;" styleClass="list-view ">
           <items xmlns:fx="http://javafx.com/fxml">
             <FXCollections fx:factory="observableArrayList"/>
           </items>
@@ -266,13 +279,13 @@
           </font>
         </Label>
         <Data id="data-labelLauncher"/>
-        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="fullscreenLauncher" id="fullscreenLauncher" prefHeight="58" prefWidth="272" style="-fx-background-color: #333337;-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="fullscreenLauncher" id="fullscreenLauncher" prefHeight="58" prefWidth="272" style="-fx-background-color: #181818;-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
           <font>
             <Font name="System Regular" size="13"/>
           </font>
         </Button>
         <Data id="data-fullscreenLauncher"/>
-        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="requestSteam" id="requestSteam" prefHeight="58" prefWidth="272" style="-fx-background-color: #333337;-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="requestSteam" id="requestSteam" prefHeight="58" prefWidth="272" style="-fx-background-color: #181818;-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
           <font>
             <Font name="System Regular" size="13"/>
           </font>
@@ -285,13 +298,13 @@
           </font>
         </Label>
         <Data id="data-label10"/>
-        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="wined3d" id="wined3d" prefHeight="58" prefWidth="272" style="-fx-background-color: #333337;-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="wined3d" id="wined3d" prefHeight="58" prefWidth="272" style="-fx-background-color: #181818;-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
           <font>
             <Font name="System Regular" size="13"/>
           </font>
         </Button>
         <Data id="data-wined3d"/>
-        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="useWayland" id="useWayland" prefHeight="58" prefWidth="272" style="-fx-background-color: #333337;-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="useWayland" id="useWayland" prefHeight="58" prefWidth="272" style="-fx-background-color: #181818;-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
           <font>
             <Font name="System Regular" size="13"/>
           </font>
@@ -299,7 +312,7 @@
         <Data id="data-useWayland"/>
       </children>
     </VBox>
-    <HBox AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="hbox" id="hbox" layoutX="0" layoutY="360" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="56" prefWidth="656" spacing="0" style="-fx-background-color:#333337;" styleClass="">
+    <HBox AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="hbox" id="hbox" layoutX="0" layoutY="360" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="48" prefWidth="860" spacing="0" style="-fx-background-color:#181818;" styleClass="">
       <children>
         <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="visualsButton" id="visualsButton" prefHeight="56" prefWidth="95" selected="true" styleClass="toggle-button " text="Visuals" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
           <font>
@@ -331,6 +344,12 @@
           </font>
         </ToggleButton>
         <Data id="data-pluginsButton" graphic=".data/img/plugins.png"/>
+        <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="integrationsButton" id="integrationsButton" prefHeight="56" prefWidth="110" styleClass="toggle-button " text="Integrations" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
+          <font>
+            <Font name="System Bold" size="11"/>
+          </font>
+        </ToggleButton>
+        <Data id="data-integrationsButton" graphic=".data/img/openIn.png"/>
         <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="aboutButton" id="aboutButton" prefHeight="56" prefWidth="72" styleClass="toggle-button " text="About" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
           <font>
             <Font name="System Bold" size="12"/>

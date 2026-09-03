@@ -40,6 +40,8 @@ import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
@@ -83,33 +85,58 @@ public class MainForm implements Initializable {
     // -----------------------------------------------------------------------
 
     @FXML private ScrollPane container;
-    @FXML private AnchorPane containerContent; // inner AnchorPane inside ScrollPane content
-    @FXML private FlowPane flowContent; // created programmatically if FXML lacks FlowPane
-    @FXML private Label noGamesHeader;
-    @FXML private HBox buttonsBox;
-    @FXML private Button about;
-    @FXML private Button addGame;
-    @FXML private AnchorPane gamePanel;
-    @FXML private VBox panel3;
+    @FXML private VBox containerContent;
+    @FXML private FlowPane flowContent;
+    @FXML private VBox noGamesHeader;
+    @FXML private Button aboutButton;
+    @FXML private Button addGameButton;
+    @FXML private Button btnAddGameTop;
+    @FXML private Button addGameButtonCenter;
+    @FXML private VBox gamePanel;
     @FXML private ImageView gameHeader;
-    private com.corkytux.launcher.ui.SwitchComponent desktopIcon;
-    private com.corkytux.launcher.ui.SwitchComponent menuIcon;
+    @FXML private Label gameTitle;
     @FXML private Button playButton;
-    @FXML private Label timeHeader;
     @FXML private Label timeLabel;
     @FXML private Button gameDebugButton;
     @FXML private Button gameSettingsButton;
     @FXML private Button gameDeleteButton;
+    @FXML private Button gameMenuButton;
+    @FXML private Label favoriteStarLabel;
     @FXML private Button utilitiesButton;
     @FXML private Button runInPrefixButton;
     @FXML private Button gameFolderButton;
     @FXML private Button protonDBButton;
     @FXML private Button steamButton;
     @FXML private Button steamDBButton;
-    @FXML private FlowPane flowPane; // bottom quick-actions flow inside gamePanel
-
-    // Alternative generic root lookup
-    @FXML private AnchorPane rootPane;
+    @FXML private Label gameSize;
+    @FXML private Label gameInstallPath;
+    @FXML private Label gamePrefixPath;
+    @FXML private VBox gameList;
+    @FXML private Button filterAll;
+    @FXML private Button filterFavorites;
+    @FXML private Button filterAZ;
+    @FXML private Button filterMostPlayed;
+    @FXML private Button filterRecent;
+    private String activeFilter = "all";
+    // Master list of all games in insertion order (never filtered, only appended)
+    private final java.util.List<String> masterGameList = new java.util.ArrayList<>();
+    private final java.util.Map<String, String> masterGameImage = new java.util.HashMap<>();
+    private final java.util.Map<String, String> masterGameIcon = new java.util.HashMap<>();
+    @FXML private VBox recentlyPlayedSection;
+    @FXML private FlowPane recentlyPlayedFlow;
+    @FXML private VBox allGamesSection;
+    @FXML private TextField searchField; // removed from FXML, kept for compatibility
+    @FXML private TextField librarySearch;
+    
+    // Modal overlay fields
+    @FXML private BorderPane mainBorderPane;
+    @FXML private VBox modalOverlay;
+    @FXML private VBox modalContent;
+    @FXML private HBox modalHeader;
+    @FXML private Label modalTitle;
+    @FXML private Button modalCloseButton;
+    @FXML private StackPane modalBody;
+    private Object currentModalController;
 
     // -----------------------------------------------------------------------
     // State
@@ -190,7 +217,7 @@ public class MainForm implements Initializable {
 
         // request focus
         Platform.runLater(() -> {
-            if (rootPane != null) rootPane.requestFocus();
+            if (container != null) container.requestFocus();
             else if (container != null) container.requestFocus();
         });
     }
@@ -230,7 +257,7 @@ public class MainForm implements Initializable {
         } else if (container.getContent() instanceof FlowPane existing) {
             fp = existing;
             flowContent = fp;
-        } else if (container.getContent() instanceof AnchorPane ap) {
+        } else if (container.getContent() instanceof VBox ap) {
             containerContent = ap;
             // Search inside ap for FlowPane with id flowContent
             var inner = ap.lookup("#flowContent");
@@ -258,7 +285,7 @@ public class MainForm implements Initializable {
         boolean fullscreen = "true".equalsIgnoreCase(val) || "1".equals(val);
         if (fullscreen) {
             Platform.runLater(() -> {
-                Stage stage = stageOf(container != null ? container : rootPane);
+                Stage stage = stageOf(container != null ? container : container);
                 if (stage != null) stage.setFullScreen(true);
             });
         }
@@ -324,23 +351,27 @@ public class MainForm implements Initializable {
      * $e->sender->text = _('MAINFORM.ADDGAME');
      * </pre>
      */
-    private void initAddGameButtonGraphics() {
-        if (addGame == null) return;
-        addImage = loadImage("/img/add.png", 20, 20);
-        loadingIndicator = new ProgressIndicator();
-        loadingIndicator.setPrefSize(20, 20);
-        loadingIndicator.setMaxSize(20, 20);
-        var addView = addImage != null ? createSizedImageView(addImage, 20) : null;
-        addGame.setGraphic(addView);
-        // data('add') must be same instance as graphic for equality check in doAddGameClick
-        addGame.getProperties().put("add", addView);
-        addGame.getProperties().put("loading", loadingIndicator);
-        // keep userData Map for parity
-        addGame.setUserData(Map.of("add", addView != null ? addView : new ImageView(), "loading", loadingIndicator));
-    }
+     private void initAddGameButtonGraphics() {
+         if (addGameButton == null) return;
+         addImage = loadImage("/img/add.png", 20, 20);
+         loadingIndicator = new ProgressIndicator();
+         loadingIndicator.setPrefSize(20, 20);
+         loadingIndicator.setMaxSize(20, 20);
+         // Use a text-based "+" label so the accent color CSS can tint it
+         var addLabel = new Label("+");
+         addLabel.getStyleClass().add("accent-text");
+         addLabel.setStyle("-fx-font-size:16; -fx-font-weight:bold;");
+         var addView = addLabel;
+         addGameButton.setGraphic(addView);
+         // data('add') must be same instance as graphic for equality check in doAddGameClick
+         addGameButton.getProperties().put("add", addView);
+         addGameButton.getProperties().put("loading", loadingIndicator);
+         // keep userData Map for parity
+         addGameButton.setUserData(Map.of("add", addView != null ? addView : new ImageView(), "loading", loadingIndicator));
+     }
 
     private void initStaticButtonGraphics() {
-        setButtonGraphic(about, "/img/settings-hires.png", 20);
+        setButtonGraphic(aboutButton, "/img/settings-hires.png", 20);
         setButtonGraphic(gameDebugButton, "/img/debug.png", 15);
         setButtonGraphic(gameSettingsButton, "/img/settings.png", 15);
         setButtonGraphic(gameDeleteButton, "/img/remove.png", 15);
@@ -397,12 +428,8 @@ public class MainForm implements Initializable {
     }
 
     private void applyLocalizations() {
-        if (noGamesHeader != null) noGamesHeader.setText(loc.get("MAINFORM.HEADER"));
         if (playButton != null) playButton.setText(loc.get("MAINFORM.PLAY"));
-        if (desktopIcon != null) desktopIcon.setLabel(loc.get("MAINFORM.MENU.CREATEDESKTOP"));
-        if (menuIcon != null) menuIcon.setLabel(loc.get("MAINFORM.MENU.CREATEAPPMENU"));
-        if (about != null) about.setText(loc.get("MAINFORM.SETTINGS"));
-        if (timeHeader != null) timeHeader.setText(loc.get("MAINFORM.MENU.TIMESTEMP.HEADER"));
+        if (aboutButton != null) aboutButton.setText(loc.get("MAINFORM.SETTINGS"));
         if (gameDebugButton != null) {
             gameDebugButton.setText(loc.get("MAINFORM.MENU.RUNDEBUG"));
             gameDebugButton.setTooltip(new Tooltip(loc.get("MAINFORM.MENU.RUNDEBUG.TOOLTIP")));
@@ -415,24 +442,36 @@ public class MainForm implements Initializable {
             runInPrefixButton.setText(loc.get("MAINFORM.MENU.RUN"));
             runInPrefixButton.setTooltip(new Tooltip(loc.get("MAINFORM.MENU.RUN.TOOLTIP")));
         }
-        if (addGame != null) addGame.setText(loc.get("MAINFORM.ADDGAME"));
     }
 
     private void wireActions() {
-        if (addGame != null) addGame.setOnMouseClicked(this::handleAddGameClick);
-        if (playButton != null) playButton.setOnAction(this::handlePlayButtonAction);
-
-        // Create SwitchComponents and add to panel3
-        desktopIcon = new com.corkytux.launcher.ui.SwitchComponent("Desktop shortcut");
-        menuIcon = new com.corkytux.launcher.ui.SwitchComponent("App menu shortcut");
-        desktopIcon.setOnToggle(this::handleDesktopIconClick);
-        menuIcon.setOnToggle(this::handleMenuIconClick);
-        if (panel3 != null) {
-            panel3.setPadding(new javafx.geometry.Insets(6, 12, 6, 12));
-            panel3.getChildren().addAll(desktopIcon, menuIcon);
+        if (addGameButton != null) addGameButton.setOnMouseClicked(this::handleAddGameClick);
+        if (btnAddGameTop != null) {
+            btnAddGameTop.setText(loc.get("MAINFORM.ADDGAME"));
+            btnAddGameTop.setOnMouseClicked(this::handleAddGameClick);
         }
-        if (about != null) about.setOnAction(this::handleAboutAction);
+        // Category filters – single selection
+        if (filterAll != null) filterAll.setOnAction(e -> setActiveFilter("all"));
+        if (filterFavorites != null) filterFavorites.setOnAction(e -> setActiveFilter("favorites"));
+        if (filterAZ != null) filterAZ.setOnAction(e -> setActiveFilter("az"));
+        if (filterMostPlayed != null) filterMostPlayed.setOnAction(e -> setActiveFilter("mostplayed"));
+        if (filterRecent != null) filterRecent.setOnAction(e -> setActiveFilter("recent"));
+        updateFilterStyles();
+        // Library search – live filter by name
+        if (librarySearch != null) {
+            librarySearch.textProperty().addListener((obs, oldV, newV) -> applySearchFilter(newV));
+        }
+        if (addGameButtonCenter != null) addGameButtonCenter.setOnAction(this::handleAboutAction);
+        if (playButton != null) playButton.setOnAction(this::handlePlayButtonAction);
+        if (aboutButton != null) aboutButton.setOnAction(this::handleAboutAction);
+        if (modalCloseButton != null) modalCloseButton.setOnAction(e -> hideModal());
+        if (modalOverlay != null) {
+            modalOverlay.setOnMouseClicked(e -> {
+                if (e.getTarget() == modalOverlay) hideModal();
+            });
+        }
         if (gameDebugButton != null) gameDebugButton.setOnAction(this::handleGameDebugAction);
+        if (gameMenuButton != null) gameMenuButton.setOnAction(e -> toggleFavorite());
         if (gameSettingsButton != null) gameSettingsButton.setOnAction(this::handleGameSettingsAction);
         if (gameDeleteButton != null) gameDeleteButton.setOnAction(this::handleGameDeleteAction);
         if (utilitiesButton != null) {
@@ -454,7 +493,7 @@ public class MainForm implements Initializable {
 
         // Close handler – mirrors doClose (delete /tmp/ofllpid)
         Platform.runLater(() -> {
-            Stage stage = stageOf(container != null ? container : rootPane);
+            Stage stage = stageOf(container != null ? container : container);
             if (stage != null) {
                 stage.setOnCloseRequest(e -> {
                     try { Files.deleteIfExists(Path.of("/tmp/ofllpid")); }
@@ -552,21 +591,17 @@ public class MainForm implements Initializable {
             currentBannerImage = null;
             // Ensure container and buttons are fully visible and enabled at startup (list view, not detail)
             var flow = flowContent != null ? flowContent : findFlowPane();
-            Node containerNode = flow != null ? flow : (container != null ? container : rootPane);
+            Node containerNode = flow != null ? flow : (container != null ? container : container);
             if (containerNode != null) {
                 containerNode.setVisible(true);
                 containerNode.setOpacity(1.0);
                 containerNode.setDisable(false);
             }
-            if (buttonsBox != null) {
-                buttonsBox.setVisible(true);
-                buttonsBox.setOpacity(1.0);
-                buttonsBox.setDisable(false);
-            }
-            if (addGame != null) {
-                addGame.setVisible(true);
-                addGame.setOpacity(1.0);
-                addGame.setDisable(false);
+
+            if (addGameButton != null) {
+                addGameButton.setVisible(true);
+                addGameButton.setOpacity(1.0);
+                addGameButton.setDisable(false);
             }
         };
         if (javafx.application.Platform.isFxApplicationThread()) hidePanelTask.run();
@@ -574,7 +609,7 @@ public class MainForm implements Initializable {
 
         // requestFocus mirrors PHP $this->requestFocus();
         Platform.runLater(() -> {
-            if (rootPane != null) rootPane.requestFocus();
+            if (container != null) container.requestFocus();
             else if (container != null) container.requestFocus();
         });
     }
@@ -603,7 +638,7 @@ public class MainForm implements Initializable {
     }
 
     private void installGlobalKeyHandlers() {
-        Node target = rootPane != null ? rootPane : container;
+        Node target = container != null ? container : container;
         if (target == null) return;
         target.addEventFilter(KeyEvent.KEY_RELEASED, e -> {
             if (e.getCode() == KeyCode.ESCAPE) handleEscKey();
@@ -625,14 +660,12 @@ public class MainForm implements Initializable {
         String desktop = execReadFully("xdg-user-dir DESKTOP");
         if (desktop == null || desktop.isBlank()) desktop = System.getProperty("user.home") + "/Desktop";
         boolean selected = createDesktopFile(desktop.trim());
-        if (desktopIcon != null) desktopIcon.setSelected(selected);
     }
 
     @FXML
     private void handleMenuIconClick() {
         String appMenu = com.corkytux.launcher.modules.FilesWorker.getExpectedHome() + "/.local/share/applications";
         boolean selected = createDesktopFile(appMenu);
-        if (menuIcon != null) menuIcon.setSelected(selected);
     }
 
     /**
@@ -729,7 +762,7 @@ public class MainForm implements Initializable {
 
     @FXML
     private void handleAboutAction(javafx.event.ActionEvent e) {
-        showForm("launcherSettings");
+        showModal("launcherSettings");
     }
 
     @FXML
@@ -781,21 +814,17 @@ public class MainForm implements Initializable {
 
     @FXML
     private void handleGameSettingsAction(javafx.event.ActionEvent e) {
-        // Load gameSettings form and inject data
-        var form = loadFormController("gameSettings");
-        if (form instanceof GameSettings gs) {
+        // Open as modal overlay (same as launcherSettings)
+        showModal("gameSettings");
+        if (currentModalController instanceof GameSettings gs) {
             gs.setGameName(currentGameName);
             if (currentBannerImage != null) gs.setBannerImage(currentBannerImage);
-            // Icon: extract from opener's graphic – mirror children[3]->children[0]->graphic
             if (currentOpenerNode instanceof Pane p) {
-                // try to find graphic recursively
                 var iconImg = findIconImageInNode(p);
                 if (iconImg != null) gs.setGameIconImage(iconImg);
             }
-            showFormStage(gs, currentGameName);
         } else {
-            LOG.warn("gameSettings form not available");
-            showForm("gameSettings");
+            LOG.warn("gameSettings modal controller not available");
         }
     }
 
@@ -815,7 +844,10 @@ public class MainForm implements Initializable {
 
     @FXML
     private void handleGameDeleteAction(javafx.event.ActionEvent e) {
-        showForm("gameRemover");
+        showModal("gameRemover");
+        if (currentModalController instanceof com.corkytux.launcher.forms.GameRemover gr) {
+            try { gr.handleShow(); } catch (Exception ex) { LOG.debug("GameRemover handleShow failed", ex); }
+        }
     }
 
     @FXML
@@ -911,14 +943,12 @@ public class MainForm implements Initializable {
      */
     @FXML
     private void handleAddGameClick(MouseEvent e) {
-        // PHP checks graphic == data('loading') reference equality
-        Object loadingData = addGame != null ? addGame.getProperties().get("loading") : null;
-        if (addGame != null && addGame.getGraphic() != null && addGame.getGraphic() == loadingData) return;
+        Object loadingData = addGameButton != null ? addGameButton.getProperties().get("loading") : null;
+        if (addGameButton != null && addGameButton.getGraphic() != null && addGameButton.getGraphic() == loadingData) return;
         DirectoryChooser dc = new DirectoryChooser();
         dc.setTitle(loc.get("ADDGAME.FILECHOOSER"));
-        Stage owner = stageOf(addGame);
+        Stage owner = stageOf(addGameButton);
         if (owner == null) owner = stageOf(container);
-        if (owner == null) owner = stageOf(rootPane);
         var path = dc.showDialog(owner);
         if (path == null) return;
 
@@ -929,15 +959,10 @@ public class MainForm implements Initializable {
             LOG.info("scanDir {} returned {} files", path, files.size());
             Platform.runLater(() -> {
                 try { switchGameButton("add"); } catch (Exception ex) { LOG.debug("switch add failed", ex); }
-                // Mirror PHP: showFormAndFocus('newGameConfigurator', true) = always fresh instance
-                Launcher.showNewForm("newGameConfigurator");
-                var ctrl = Launcher.getFormController("newGameConfigurator");
-                if (ctrl instanceof NewGameConfigurator ngc) {
+                showModal("newGameConfigurator");
+                if (currentModalController instanceof NewGameConfigurator ngc) {
                     ngc.prepareForGame(files, path.toPath().toString());
-                    LOG.info("newGameConfigurator shown with {} candidates path={}", files.size(), path);
-                } else {
-                    LOG.warn("newGameConfigurator controller not available – scan returned {} files", files.size());
-                    toast("Found " + files.size() + " candidates in " + path);
+                    LOG.info("newGameConfigurator shown in modal with {} files", files.size());
                 }
             });
         });
@@ -960,18 +985,18 @@ public class MainForm implements Initializable {
      * Theme: uses same graphic instances stored via getProperties("add"/"loading") for reference equality.
      */
     public void switchGameButton(String status) {
-        if (addGame == null) return;
+        if (addGameButton == null) return;
         Runnable r = () -> {
             if ("add".equals(status)) {
-                Object add = addGame.getProperties().get("add");
-                if (add instanceof Node n) addGame.setGraphic(n);
-                else if (addImage != null) addGame.setGraphic(createSizedImageView(addImage, 20));
-                addGame.setText(loc.get("MAINFORM.ADDGAME"));
+                Object add = addGameButton.getProperties().get("add");
+                if (add instanceof Node n) addGameButton.setGraphic(n);
+                else if (addImage != null) addGameButton.setGraphic(createSizedImageView(addImage, 20));
+                addGameButton.setText(loc.get("MAINFORM.ADDGAME"));
             } else {
-                Object loading = addGame.getProperties().get("loading");
-                if (loading instanceof Node n) addGame.setGraphic(n);
-                else addGame.setGraphic(loadingIndicator);
-                addGame.setText(loc.get("MAINFORM.LOADINGGAME"));
+                Object loading = addGameButton.getProperties().get("loading");
+                if (loading instanceof Node n) addGameButton.setGraphic(n);
+                else addGameButton.setGraphic(loadingIndicator);
+                addGameButton.setText(loc.get("MAINFORM.LOADINGGAME"));
             }
         };
         if (Platform.isFxApplicationThread()) r.run();
@@ -1036,11 +1061,248 @@ public class MainForm implements Initializable {
             } else {
                 LOG.warn("No FlowPane to add game {}", gameName);
             }
+            // Also add to sidebar game list (one per row below search)
+            // Register in master list first (for filter rebuilds)
+            if (!masterGameList.contains(gameName)) {
+                masterGameList.add(gameName);
+                if (image != null) masterGameImage.put(gameName, image);
+                if (icon != null) masterGameIcon.put(gameName, icon);
+            }
+            addGameToSidebarList(gameName, image, icon);
             // noGamesHeader vs container logic 1:1 – if header visible, hide it
             if (noGamesHeader != null && noGamesHeader.isVisible()) noGamesHeader.setVisible(false);
         };
         if (Platform.isFxApplicationThread()) r.run();
         else Platform.runLater(r);
+    }
+
+    /**
+     * Removes a game from master list + sidebar + center grid (after GameRemover deletion).
+     */
+    public void removeGameFromUI(String gameName) {
+        if (gameName == null) return;
+        Runnable r = () -> {
+            masterGameList.remove(gameName);
+            masterGameImage.remove(gameName);
+            masterGameIcon.remove(gameName);
+            if (gameList != null) {
+                gameList.getChildren().removeIf(n ->
+                    gameName.equals(n.getProperties().get("gameName")));
+            }
+            try {
+                var flow = flowContent != null ? flowContent : findFlowPane();
+                if (flow != null) {
+                    flow.getChildren().removeIf(n ->
+                        gameName.equals(n.getProperties().get("gameName")));
+                }
+            } catch (Exception e) {
+                LOG.debug("removeGameFromUI center failed", e);
+            }
+        };
+        if (Platform.isFxApplicationThread()) r.run();
+        else Platform.runLater(r);
+    }
+    private void addGameToSidebarList(String gameName, String imagePath, String iconPath) {
+        if (gameList == null) return;
+        // Rebuild via applyFilter so new game respects current sort/filter
+        applyFilter();
+    }
+
+    /**
+     * Sets the active library filter (single selection) and refreshes styles + list.
+     */
+    private void setActiveFilter(String filter) {
+        this.activeFilter = filter;
+        updateFilterStyles();
+        applyFilter();
+    }
+
+    /**
+     * Highlights the active filter button with accent-color text.
+     */
+    private void updateFilterStyles() {
+        styleFilterButton(filterAll, "all".equals(activeFilter));
+        styleFilterButton(filterFavorites, "favorites".equals(activeFilter));
+        styleFilterButton(filterAZ, "az".equals(activeFilter));
+        styleFilterButton(filterMostPlayed, "mostplayed".equals(activeFilter));
+        styleFilterButton(filterRecent, "recent".equals(activeFilter));
+    }
+
+    private void styleFilterButton(Button btn, boolean selected) {
+        if (btn == null) return;
+        btn.getStyleClass().remove("filter-selected");
+        if (selected && !btn.getStyleClass().contains("filter-selected")) {
+            btn.getStyleClass().add("filter-selected");
+        }
+    }
+
+    /**
+     * Applies the active filter/sort to sidebar gameList and center grid.
+     * Rebuilds sidebar from masterGameList (non-destructive).
+     * - all: insertion order, no sort
+     * - favorites: only games with favorite=1/true
+     * - az: sort A-Z by name
+     * - mostplayed: sort by timeSpent desc
+     * - recent: reverse insertion order (newest first)
+     */
+    private void applyFilter() {
+        if (gameList == null) return;
+        java.util.List<String> ordered = new java.util.ArrayList<>(masterGameList);
+        switch (activeFilter) {
+            case "favorites" -> ordered.removeIf(n -> {
+                String f = appModule.getGame("favorite", n);
+                return f == null || (!f.equals("1") && !f.equalsIgnoreCase("true"));
+            });
+            case "az" -> ordered.sort(String.CASE_INSENSITIVE_ORDER);
+            case "mostplayed" -> ordered.sort((a, b) ->
+                Long.compare(getTimeSpentSeconds(b), getTimeSpentSeconds(a)));
+            case "recent" -> java.util.Collections.reverse(ordered);
+            default -> { /* all: keep insertion order */ }
+        }
+        // Rebuild sidebar rows from scratch (non-destructive)
+        gameList.getChildren().clear();
+        for (String n : ordered) {
+            var row = buildSidebarRow(n, masterGameImage.get(n), masterGameIcon.get(n));
+            if (row != null) gameList.getChildren().add(row);
+        }
+        // Reorder center grid tiles to match (same order), restore visibility
+        try {
+            var flow = flowContent != null ? flowContent : findFlowPane();
+            if (flow != null) {
+                var tilesByName = new java.util.HashMap<String, Node>();
+                for (var child : flow.getChildren()) {
+                    child.setVisible(true);
+                    child.setManaged(true);
+                    Object gn = child.getProperties().get("gameName");
+                    if (gn instanceof String s) tilesByName.put(s, child);
+                }
+                var reordered = new java.util.ArrayList<Node>();
+                for (String n : ordered) {
+                    Node t = tilesByName.remove(n);
+                    if (t != null) reordered.add(t);
+                }
+                reordered.addAll(tilesByName.values());
+                flow.getChildren().setAll(reordered);
+            }
+        } catch (Exception e) {
+            LOG.debug("applyFilter center reorder failed", e);
+        }
+    }
+
+    /**
+     * Builds a sidebar row node for the given game (icon + name).
+     */
+    private HBox buildSidebarRow(String gameName, String imagePath, String iconPath) {
+        var row = new HBox(8);
+        row.getStyleClass().add("game-list-item");
+        row.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        row.setPadding(new javafx.geometry.Insets(4, 8, 4, 8));
+
+        var iconView = new ImageView();
+        iconView.setFitWidth(24);
+        iconView.setFitHeight(24);
+        iconView.setPreserveRatio(true);
+        iconView.setSmooth(true);
+        Image iconImg = resolveImage(iconPath, "/img/noImage.png");
+        if (iconImg == null || iconImg.isError()) {
+            try (var is = getClass().getResourceAsStream("/.data/img/noImage.png")) {
+                if (is != null) iconImg = new Image(is);
+            } catch (Exception ignored) {}
+        }
+        if (iconImg != null) iconView.setImage(iconImg);
+
+        var nameLabel = new Label(gameName);
+        nameLabel.setStyle("-fx-text-fill:#ffffff; -fx-font-size:12;");
+        nameLabel.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(nameLabel, javafx.scene.layout.Priority.ALWAYS);
+
+        row.getChildren().addAll(iconView, nameLabel);
+        row.setOnMouseClicked(ev -> showGameMenu(gameName, null, row));
+        row.getProperties().put("gameName", gameName);
+        return row;
+    }
+
+    private long getTimeSpentSeconds(String gameName) {
+        try {
+            String raw = appModule.getGame("timeSpent", gameName);
+            if (raw != null) return Long.parseLong(raw.trim());
+        } catch (Exception ignored) {}
+        return 0;
+    }
+
+    /**
+     * Live search: shows only games whose name contains the query (case-insensitive).
+     * Applies on top of the active category filter, both sidebar and center grid.
+     */
+    private void applySearchFilter(String query) {
+        String q = query != null ? query.trim().toLowerCase() : "";
+        if (q.isEmpty()) {
+            applyFilter(); // restore category filter view
+            return;
+        }
+        if (gameList == null) return;
+        // Sidebar: rebuild from master list matching query
+        gameList.getChildren().clear();
+        var matched = new java.util.ArrayList<String>();
+        for (String n : masterGameList) {
+            if (n.toLowerCase().contains(q)) matched.add(n);
+        }
+        for (String n : matched) {
+            var row = buildSidebarRow(n, masterGameImage.get(n), masterGameIcon.get(n));
+            if (row != null) gameList.getChildren().add(row);
+        }
+        // Center grid: show only matching tiles
+        try {
+            var flow = flowContent != null ? flowContent : findFlowPane();
+            if (flow != null) {
+                for (var child : flow.getChildren()) {
+                    Object gn = child.getProperties().get("gameName");
+                    boolean show = gn instanceof String s && s.toLowerCase().contains(q);
+                    child.setVisible(show);
+                    child.setManaged(show);
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("applySearchFilter center failed", e);
+        }
+    }
+
+    /**
+     * Toggles favorite status for the currently shown game.
+     * Star button (former gameMenuButton) in game details header.
+     */
+    private void toggleFavorite() {
+        if (currentGameName == null || currentGameName.isBlank()) return;
+        try {
+            String f = appModule.getGame("favorite", currentGameName);
+            boolean isFav = f != null && (f.equals("1") || f.equalsIgnoreCase("true"));
+            appModule.setGame("favorite", isFav ? "0" : "1", currentGameName);
+            updateFavoriteStar(currentGameName);
+            // If favorites filter active, refresh list
+            if ("favorites".equals(activeFilter)) applyFilter();
+        } catch (Exception e) {
+            LOG.warn("toggleFavorite failed for {}", currentGameName, e);
+        }
+    }
+
+    /**
+     * Updates star icon: ★ filled gold if favorite, ☆ outline gray if not.
+     */
+    private void updateFavoriteStar(String gameName) {
+        if (favoriteStarLabel == null) return;
+        try {
+            String f = appModule.getGame("favorite", gameName);
+            boolean isFav = f != null && (f.equals("1") || f.equalsIgnoreCase("true"));
+            if (isFav) {
+                favoriteStarLabel.setText("★");
+                favoriteStarLabel.setStyle("-fx-font-size:24; -fx-text-fill:#FFD700;");
+            } else {
+                favoriteStarLabel.setText("☆");
+                favoriteStarLabel.setStyle("-fx-font-size:24; -fx-text-fill:#a7a7a7;");
+            }
+        } catch (Exception ignored) {
+            favoriteStarLabel.setText("☆");
+        }
     }
 
     /**
@@ -1079,6 +1341,40 @@ public class MainForm implements Initializable {
      * In PHP stub gameStubBox is VBox with label4 (gameName) and label5 (status).
      * We mirror via Prototypes.createStubPanel.
      */
+    /**
+     * Imports an external game (Steam/Lutris scan) into the launcher.
+     * Skips if a game with the same name already exists.
+     * @return true if imported, false if already existed
+     */
+    public boolean importExternalGame(String name, Map<String, String> data) {
+        if (name == null || name.isBlank()) return false;
+        try {
+            var existing = appModule.getGamesToArray();
+            if (existing.containsKey(name)) return false;
+            String defaultProton = appModule.getLauncher("defaultProton", "User Settings");
+            if (defaultProton == null) defaultProton = "GE-Proton Latest";
+            appModule.setGame("proton", defaultProton, name);
+            if (data != null) {
+                for (var e : data.entrySet()) {
+                    if (e.getValue() != null && !e.getValue().isBlank()) {
+                        appModule.setGame(e.getKey(), e.getValue(), name);
+                    }
+                }
+            }
+            // Show in UI
+            String exec = data != null ? data.get("executable") : null;
+            String overrides = data != null ? data.get("overrides") : null;
+            String banner = data != null ? data.get("banner") : null;
+            String icon = data != null ? data.get("icon") : null;
+            addGame(name, exec, overrides, banner, icon);
+            LOG.info("Imported external game: {}", name);
+            return true;
+        } catch (Exception e) {
+            LOG.warn("importExternalGame failed for {}", name, e);
+            return false;
+        }
+    }
+
     public StubGame addStubGame() {
         // noGamesHeader logic 1:1
         Runnable hideHeader = () -> { if (noGamesHeader != null && noGamesHeader.isVisible()) noGamesHeader.setVisible(false); };
@@ -1165,8 +1461,8 @@ public class MainForm implements Initializable {
      * Mirrors PHP {@code showGameMenu($name,$header,$sender)}:
      * <pre>
      * gamePanel->show();
-     * desktopIcon->selected = isFile(xdg-user-dir DESKTOP+"/name.desktop");
-     * menuIcon->selected = isFile(home/.local/share/applications/name.desktop);
+     * null->selected = isFile(xdg-user-dir DESKTOP+"/name.desktop");
+     * null->selected = isFile(home/.local/share/applications/name.desktop);
      * on('mouseDown', fn(e){ if(e.x<gamePanel.x) doKeyUpEsc();});
      * addGame->hide();
      * gameHeader->image=header;
@@ -1175,32 +1471,53 @@ public class MainForm implements Initializable {
      * updateTimeSpent(name); switchPlayButton('stop');
      * new Thread(fn()=>waitForWineServerTerminate(name))->start();
      * if(prism.forceGPU){ background->image=sender.children[1]->image; quUI::animateWithoutConflict('FadeIn',background,1.4);}
-     * Animation::fadeTo(buttonsBox,450,0.5,fn()=>buttonsBox.enabled=false);
+     * Animation::fadeTo(null,450,0.5,fn()=>null.enabled=false);
      * Animation::fadeTo(container,450,0.5,fn()=>container.enabled=false);
      * quUI::animateWithoutConflict('FadeInRight',gamePanel,1.4);
      * </pre>
      */
     public void showGameMenu(String name, Image header, Node opener) {
+        // Set title immediately (before runLater) so it never shows stale "Game Title"
+        // even if the async block is delayed on first open.
+        try {
+            if (gameTitle != null && name != null) {
+                if (Platform.isFxApplicationThread()) gameTitle.setText(name);
+                else Platform.runLater(() -> gameTitle.setText(name));
+            }
+        } catch (Exception ignored) {}
+        currentGameName = name;
         Platform.runLater(() -> {
-            if (gamePanel == null) return;
+            if (gamePanel == null) {
+                LOG.warn("showGameMenu: gamePanel is null!");
+                return;
+            }
+            LOG.info("showGameMenu: showing panel for game={} opener={}", name, opener != null ? opener.getClass().getSimpleName() : "null");
             gamePanel.setVisible(true);
+            gamePanel.setManaged(true);
             gamePanel.toFront();
             gamePanel.setOpacity(1);
+            gamePanel.setTranslateX(0);
+            // gamePanel is now a StackPane overlay (not BorderPane.right) – just request layout
+            gamePanel.requestLayout();
             currentGameName = name;
             currentOpenerNode = opener;
             currentBannerImage = header;
 
-            // Toggle desktop/menu shortcuts
-            String desktop = execReadFully("xdg-user-dir DESKTOP");
-        if (desktop == null || desktop.isBlank()) desktop = com.corkytux.launcher.modules.FilesWorker.getExpectedHome() + "/Desktop";
-            else desktop = desktop.trim();
-            boolean hasDesktop = Files.isRegularFile(Path.of(desktop, name + ".desktop"));
-            if (desktopIcon != null) desktopIcon.setSelectedSilent(hasDesktop);
-            boolean hasMenu = Files.isRegularFile(Path.of(com.corkytux.launcher.modules.FilesWorker.getExpectedHome(), ".local/share/applications", name + ".desktop"));
-            if (menuIcon != null) menuIcon.setSelectedSilent(hasMenu);
+            // Toggle desktop/menu shortcuts (wrapped – must not block title/info update)
+            boolean hasDesktop = false;
+            boolean hasMenu = false;
+            try {
+                String desktop = execReadFully("xdg-user-dir DESKTOP");
+                if (desktop == null || desktop.isBlank()) desktop = com.corkytux.launcher.modules.FilesWorker.getExpectedHome() + "/Desktop";
+                else desktop = desktop.trim();
+                hasDesktop = Files.isRegularFile(Path.of(desktop, name + ".desktop"));
+                hasMenu = Files.isRegularFile(Path.of(com.corkytux.launcher.modules.FilesWorker.getExpectedHome(), ".local/share/applications", name + ".desktop"));
+            } catch (Exception e) {
+                LOG.debug("Desktop/menu shortcut check failed for {}", name, e);
+            }
 
             // Store mouseDown handler for hide on outside click
-            Node root = rootPane != null ? rootPane : container;
+            Node root = container != null ? container : container;
             if (root != null) {
                 Object prev = root.getProperties().get("mouseDownHandler");
                 if (prev instanceof javafx.event.EventHandler<?> h) root.removeEventFilter(MouseEvent.MOUSE_PRESSED, (javafx.event.EventHandler<MouseEvent>) h);
@@ -1212,8 +1529,33 @@ public class MainForm implements Initializable {
                 gamePanel.getProperties().put("mouseDownHandler", handler);
             }
 
-            if (addGame != null) addGame.setVisible(false);
-            if (gameHeader != null && header != null) gameHeader.setImage(header);
+            if (addGameButton != null) addGameButton.setVisible(false);
+            if (gameTitle != null) gameTitle.setText(name);
+            updateFavoriteStar(name);
+            Image bannerImg = header;
+            if (bannerImg == null) {
+                // 1) Stored banner key from Games.ini (covers Store API / SGDB downloads)
+                try {
+                    String stored = appModule.getGame("banner", name);
+                    if (stored != null && !stored.isBlank()
+                            && java.nio.file.Files.isRegularFile(java.nio.file.Path.of(stored.trim()))) {
+                        bannerImg = new Image(java.nio.file.Path.of(stored.trim()).toUri().toString());
+                    }
+                } catch (Exception ignored) {}
+                // 2) banners/{name}.jpg fallback (for sidebar clicks)
+                if (bannerImg == null) {
+                    bannerImg = resolveImage(null, "/img/noBanner.png");
+                    String home = com.corkytux.launcher.modules.FilesWorker.getExpectedHome();
+                    for (String ext : new String[]{".jpg", ".png"}) {
+                        var p = java.nio.file.Path.of(home, ".config", "CorkyTux", "banners", name + ext);
+                        if (java.nio.file.Files.isRegularFile(p)) {
+                            try { bannerImg = new Image(p.toUri().toString()); break; }
+                            catch (Exception ignored) {}
+                        }
+                    }
+                }
+            }
+            if (gameHeader != null && bannerImg != null) gameHeader.setImage(bannerImg);
             gamePanel.getProperties().put("gameName", name);
             gamePanel.getProperties().put("opener", opener);
             gamePanel.setUserData(Map.of("gameName", name, "opener", opener));
@@ -1232,19 +1574,15 @@ public class MainForm implements Initializable {
             if (gameSettingsButton != null) { gameSettingsButton.setDisable(false); gameSettingsButton.setOpacity(1.0); }
             if (gameDeleteButton != null) { gameDeleteButton.setDisable(false); gameDeleteButton.setOpacity(1.0); }
 
-            // Fade buttonsBox and container to 50% opacity
-            if (buttonsBox != null) {
-                var ft = new FadeTransition(Duration.millis(450), buttonsBox);
-                ft.setFromValue(buttonsBox.getOpacity()); ft.setToValue(0.5); ft.setOnFinished(e -> buttonsBox.setDisable(true)); ft.play();
-            }
+            // Fade container to 50% opacity
             var flow = flowContent != null ? flowContent : findFlowPane();
             Node containerNode = flow != null ? flow : (container != null ? container : root);
             if (containerNode != null) {
-                var ft2 = new FadeTransition(Duration.millis(450), containerNode);
+                var ft2 = new FadeTransition(Duration.millis(200), containerNode);
                 ft2.setFromValue(containerNode.getOpacity()); ft2.setToValue(0.5); ft2.setOnFinished(e -> containerNode.setDisable(true)); ft2.play();
             }
-            try { com.corkytux.launcher.util.QuUI.animateWithoutConflict("FadeInRight", gamePanel, 1.4, null); }
-            catch (Exception ex) { fadeInRight(gamePanel, 1400); }
+            try { com.corkytux.launcher.util.QuUI.animateWithoutConflict("FadeInRight", gamePanel, 1.6, null); }
+            catch (Exception ex) { fadeInRight(gamePanel, 250); }
 
             Thread.ofVirtual().start(() -> waitForWineServerTerminate(name));
         });
@@ -1257,7 +1595,7 @@ public class MainForm implements Initializable {
      * off('mouseDown');
      * addGame->show();
      * container->enabled=true;
-     * Animation::fadeIn(buttonsBox,450,fn()=>buttonsBox.enabled=true);
+     * Animation::fadeIn(null,450,fn()=>null.enabled=true);
      * Animation::fadeIn(container,450,fn()=>container.enabled=true);
      * quUI::animateWithoutConflict('FadeOutRight',gamePanel,1.4,fn()=>gamePanel.hide());
      * if(prism.forceGPU) quUI::animateWithoutConflict('FadeOut',background,1.4);
@@ -1271,29 +1609,32 @@ public class MainForm implements Initializable {
             // Also fallback image check
             if (playButton != null && playButton.getGraphic() instanceof ImageView iv && iv.getImage() == waitImage && waitGraphic == null) return;
             if (gamePanel == null) return;
-            Node root = rootPane != null ? rootPane : container;
+            Node root = container != null ? container : container;
             if (root != null) {
                 Object h = root.getProperties().remove("mouseDownHandler");
                 if (h instanceof javafx.event.EventHandler<?> eh) root.removeEventFilter(MouseEvent.MOUSE_PRESSED, (javafx.event.EventHandler<MouseEvent>) eh);
             }
             gamePanel.getProperties().remove("mouseDownHandler");
-            if (addGame != null) addGame.setVisible(true); // show()
+            if (addGameButton != null) addGameButton.setVisible(true); // show()
 
             var flow = flowContent != null ? flowContent : findFlowPane();
             Node containerNode = flow != null ? flow : container;
             if (containerNode != null) {
                 containerNode.setDisable(false);
                 // Animation::fadeIn container 450 -> enabled true (we already enabled, now fade)
-                var ft = new FadeTransition(Duration.millis(450), containerNode);
+                var ft = new FadeTransition(Duration.millis(200), containerNode);
                 ft.setFromValue(containerNode.getOpacity()); ft.setToValue(1.0); ft.setOnFinished(e -> containerNode.setDisable(false)); ft.play();
             }
-            if (buttonsBox != null) {
-                buttonsBox.setDisable(false);
-                var ft = new FadeTransition(Duration.millis(450), buttonsBox);
-                ft.setFromValue(buttonsBox.getOpacity()); ft.setToValue(1.0); ft.setOnFinished(e -> buttonsBox.setDisable(false)); ft.play();
-            }
-            try { com.corkytux.launcher.util.QuUI.animateWithoutConflict("FadeOutRight", gamePanel, 1.4, () -> gamePanel.setVisible(false)); }
-            catch (Exception ex) { fadeOutRight(gamePanel, 1400, () -> gamePanel.setVisible(false)); }
+            // Hide panel instantly (no fade-out over heavy ScrollPane subtree – avoids lag);
+            // container still fades back in smoothly below.
+            try {
+                Object prev = gamePanel.getProperties().get("quUIAnimation");
+                if (prev instanceof javafx.animation.Transition t) t.stop();
+            } catch (Exception ignored) {}
+            gamePanel.setOpacity(1);
+            gamePanel.setTranslateX(0);
+            gamePanel.setVisible(false);
+            gamePanel.setManaged(false);
         });
     }
 
@@ -1319,12 +1660,12 @@ public class MainForm implements Initializable {
     }
 
     private void fadeInRight(Node node, int millis) {
-        node.setTranslateX(80);
+        node.setTranslateX(40);
         node.setOpacity(0);
         var ft = new FadeTransition(Duration.millis(millis), node);
         ft.setFromValue(0); ft.setToValue(1); ft.play();
         var tt = new javafx.animation.TranslateTransition(Duration.millis(millis), node);
-        tt.setFromX(80); tt.setToX(0); tt.play();
+        tt.setFromX(40); tt.setToX(0); tt.play();
     }
 
     private void fadeOutRight(Node node, int millis, Runnable onFinished) {
@@ -1589,6 +1930,71 @@ public class MainForm implements Initializable {
             text = String.format(loc.get("MAINFORM.TIMESPENT.HOURS"), hours);
         }
         Platform.runLater(() -> timeLabel.setText(text));
+        // Also refresh install info synchronously (fixes empty info on first open)
+        updateGameInfo(gameName);
+    }
+
+    /**
+     * Populates game detail info: size, install path, prefix path.
+     * Called from showGameMenu so info appears on first open.
+     */
+    private void updateGameInfo(String gameName) {
+        try {
+            String exec = appModule.getGame("executable", gameName);
+            if (exec == null || exec.isBlank()) exec = appModule.getGame("mainPath", gameName);
+            String prefix = null;
+            String installPath = null;
+            if (exec != null && !exec.isBlank()) {
+                var execPath = java.nio.file.Path.of(exec.trim());
+                if (java.nio.file.Files.isDirectory(execPath)) {
+                    installPath = execPath.toString(); // Steam/Lutris dir import
+                } else if (execPath.getParent() != null) {
+                    installPath = execPath.getParent().toString();
+                }
+                // Calculate folder size async (can be slow)
+                if (installPath != null) {
+                    final String ip = installPath;
+                    Thread.ofVirtual().start(() -> {
+                        try {
+                            long bytes = java.nio.file.Files.walk(java.nio.file.Path.of(ip))
+                                .filter(p -> p.toFile().isFile())
+                                .mapToLong(p -> p.toFile().length()).sum();
+                            String sizeText = bytes > 1073741824
+                                ? String.format("%.1f GB", bytes / 1073741824.0)
+                                : String.format("%.0f MB", bytes / 1048576.0);
+                            Platform.runLater(() -> { if (gameSize != null) gameSize.setText(sizeText); });
+                        } catch (Exception ignored) {
+                            Platform.runLater(() -> { if (gameSize != null) gameSize.setText("--"); });
+                        }
+                    });
+                }
+            }
+            // Skip proton prefix for emulator/system-binary games (no wine prefix exists)
+            boolean isEmulator = false;
+            try {
+                String runner = appModule.getGame("lutrisRunner", gameName);
+                if (runner != null && runner.matches("(?i)melonds|dolphin|retroarch|rpcs3|yuzu|ryujinx|cemu|ppsspp|duckstation|pcsx2|xemu")) {
+                    isEmulator = true;
+                }
+                if (!isEmulator && exec != null && (exec.startsWith("/usr/bin/") || exec.startsWith("/usr/local/bin/"))) {
+                    isEmulator = true;
+                }
+            } catch (Exception ignored) {}
+            if (!isEmulator) {
+                try { prefix = com.corkytux.launcher.modules.FilesWorker.getProtonPrefixPath(gameName, "wine"); }
+                catch (Exception ignored) {}
+            } else {
+                prefix = "N/A (emulator)";
+            }
+            final String fInstall = installPath != null ? installPath : "--";
+            final String fPrefix = prefix != null ? prefix : "--";
+            Platform.runLater(() -> {
+                if (gameInstallPath != null) gameInstallPath.setText(fInstall);
+                if (gamePrefixPath != null) gamePrefixPath.setText(fPrefix);
+            });
+        } catch (Exception e) {
+            LOG.debug("updateGameInfo failed for {}", gameName, e);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1848,7 +2254,7 @@ public class MainForm implements Initializable {
     private void toast(String message) {
         LOG.info("TOAST: {}", message);
         Platform.runLater(() -> {
-            var stage = stageOf(container != null ? container : rootPane);
+            var stage = stageOf(container != null ? container : container);
             if (stage == null) return;
             // Minimal toast: Alert with auto-close, or status label fallback
             Alert alert = new Alert(Alert.AlertType.INFORMATION, message, ButtonType.OK);
@@ -1960,9 +2366,9 @@ public class MainForm implements Initializable {
     }
 
     // Explicit wiring helpers for the three required secondaries – used by FXML actions and tests
-    private void showGameSettingsStage() { Launcher.showForm("gameSettings"); }
-    private void showLauncherSettingsStage() { Launcher.showForm("launcherSettings"); }
-    private void showProtonManagerStage() { Launcher.showForm("protonDownloader"); } // protonManager = protonDownloader
+    private void showGameSettingsStage() { showModal("gameSettings"); }
+    private void showLauncherSettingsStage() { showModal("launcherSettings"); }
+    private void showProtonManagerStage() { showModal("protonDownloader"); } // protonManager = protonDownloader
 
     // -----------------------------------------------------------------------
     // Accessors for tests / inter-form communication
@@ -1971,4 +2377,82 @@ public class MainForm implements Initializable {
     public String getCurrentGameName() { return currentGameName; }
     public Pane getGamePanelNode() { return gamePanel; }
     public Label getTimeLabel() { return timeLabel; }
+
+    // -----------------------------------------------------------------------
+    // Modal overlay system
+    // -----------------------------------------------------------------------
+
+    private void showModal(String formName) {
+        try {
+            String fxmlPath = "/fxml/" + formName + ".fxml";
+            java.net.URL fxml = Launcher.class.getResource(fxmlPath);
+            if (fxml == null) {
+                LOG.warn("FXML not found for modal: {}", fxmlPath);
+                return;
+            }
+            FXMLLoader loader = new FXMLLoader(fxml);
+            Parent root = loader.load();
+            Object controller = loader.getController();
+            currentModalController = controller;
+
+            // Set modal title based on form name
+            String title = switch (formName) {
+                case "launcherSettings" -> "Settings";
+                case "gameSettings" -> "Game Settings";
+                case "newGameConfigurator" -> "Add Game";
+                case "gameRemover" -> "Remove Game";
+                default -> formName;
+            };
+            if (modalTitle != null) modalTitle.setText(title);
+
+            // Compact modal for small dialogs, full size otherwise
+            if (modalContent != null) {
+                if ("gameRemover".equals(formName)) {
+                    modalContent.setPrefSize(420, 260);
+                    modalContent.setMaxSize(420, 260);
+                } else if ("newGameConfigurator".equals(formName)) {
+                    modalContent.setPrefSize(440, 500);
+                    modalContent.setMaxSize(440, 500);
+                } else {
+                    modalContent.setPrefSize(900, 600);
+                    modalContent.setMaxSize(900, 600);
+                }
+            }
+
+            // Clear previous content and add new
+            if (modalBody != null) {
+                modalBody.getChildren().clear();
+                modalBody.getChildren().add(root);
+                // Make the loaded content fill the modal body
+                if (root instanceof Region r) {
+                    r.setMinWidth(0);
+                    r.setMinHeight(0);
+                    StackPane.setAlignment(r, javafx.geometry.Pos.CENTER);
+                    StackPane.setMargin(r, new javafx.geometry.Insets(0));
+                }
+            }
+
+            // Show overlay
+            if (modalOverlay != null) {
+                modalOverlay.setVisible(true);
+                modalOverlay.setManaged(true);
+                modalOverlay.toFront();
+            }
+
+            LOG.info("Modal shown: {}", formName);
+        } catch (Exception ex) {
+            LOG.error("Failed to show modal: {}", formName, ex);
+        }
+    }
+
+    private void hideModal() {
+        if (modalOverlay != null) {
+            modalOverlay.setVisible(false);
+            modalOverlay.setManaged(false);
+        }
+        if (modalBody != null) {
+            modalBody.getChildren().clear();
+        }
+        LOG.info("Modal hidden");
+    }
 }

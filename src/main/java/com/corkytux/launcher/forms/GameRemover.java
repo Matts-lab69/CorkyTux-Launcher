@@ -272,6 +272,14 @@ public class GameRemover implements Initializable {
             var getMainForm = launcherCls.getMethod("getMainForm");
             Object mf = getMainForm.invoke(null);
             if (mf != null) {
+                // Sync MainForm UI lists (master + sidebar + grid) with deletion
+                final String deletedName = gameName;
+                try {
+                    var removeUI = mf.getClass().getMethod("removeGameFromUI", String.class);
+                    removeUI.invoke(mf, deletedName);
+                } catch (Exception ex) {
+                    LOG.debug("removeGameFromUI failed", ex);
+                }
                 // Try to invoke removeGameTile or free opener
                 try {
                     var openerField = mf.getClass().getDeclaredField("currentOpenerNode");
@@ -289,8 +297,7 @@ public class GameRemover implements Initializable {
                 // Check if container is empty -> show noGamesHeader
                 Platform.runLater(() -> {
                     try {
-                        var containerField = mf.getClass().getDeclaredField("flowContent");
-                        containerField.setAccessible(true);
+                        var containerField = mf.getClass().getDeclaredField("flowContent");                        containerField.setAccessible(true);
                         Object flow = containerField.get(mf);
                         boolean isEmpty = false;
                         if (flow instanceof javafx.scene.layout.FlowPane fp) isEmpty = fp.getChildren().isEmpty();
@@ -385,6 +392,30 @@ public class GameRemover implements Initializable {
 
     private void hideStage() {
         Platform.runLater(() -> {
+            // Modal context (inside MainForm overlay): close modal, NOT the stage.
+            // Only when the modal overlay is actually visible; else legacy stage hide.
+            try {
+                var launcherCls = Class.forName("com.corkytux.launcher.Launcher");
+                var getCtrl = launcherCls.getMethod("getFormController", String.class);
+                Object mf = getCtrl.invoke(null, "MainForm");
+                if (mf != null) {
+                    boolean modalVisible = false;
+                    try {
+                        var overlayField = mf.getClass().getDeclaredField("modalOverlay");
+                        overlayField.setAccessible(true);
+                        Object overlay = overlayField.get(mf);
+                        if (overlay instanceof Node ov) modalVisible = ov.isVisible();
+                    } catch (Exception ignored) {}
+                    if (modalVisible) {
+                        var hideModal = mf.getClass().getDeclaredMethod("hideModal");
+                        hideModal.setAccessible(true);
+                        hideModal.invoke(mf);
+                        return;
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("hideModal fallback failed, hiding stage", e);
+            }
             Node n = root != null ? root : button;
             if (n == null || n.getScene() == null) return;
             var w = n.getScene().getWindow();

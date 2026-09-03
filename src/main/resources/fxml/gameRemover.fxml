@@ -1,35 +1,39 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<?import javafx.scene.*?><?import javafx.collections.*?><?import javafx.scene.layout.*?><?import com.corkytux.launcher.util.Data?><?import javafx.scene.control.*?><?import javafx.scene.text.*?><?import javafx.scene.image.*?><?import javafx.scene.shape.*?><?import javafx.scene.paint.*?><?import javafx.scene.web.*?><?import javafx.geometry.*?><?import java.lang.*?><AnchorPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.GameRemover" AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" id="" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="144" prefWidth="368" style="-fx-background-color:#222226;" styleClass="">
+<?import javafx.scene.*?><?import javafx.collections.*?><?import javafx.scene.layout.*?><?import com.corkytux.launcher.util.Data?><?import javafx.scene.control.*?><?import javafx.scene.text.*?><?import javafx.scene.image.*?><?import javafx.scene.shape.*?><?import javafx.scene.paint.*?><?import javafx.scene.web.*?><?import javafx.geometry.*?><?import java.lang.*?><AnchorPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.GameRemover" AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" id="" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="200" prefWidth="380" style="-fx-background-color:transparent;" styleClass="">
   <children>
-    <Label alignment="TOP_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label" id="label" layoutX="16" layoutY="16" prefHeight="24" prefWidth="336" styleClass="label " text="Remove %s from launcher?" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="true">
-      <font>
-        <Font name="System Bold" size="13"/>
-      </font>
-    </Label>
-    <Data id="data-label"/>
-    <CheckBox AnchorPane.bottomAnchor="56" AnchorPane.leftAnchor="16" alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="removeFiles" id="removeFiles" layoutX="16" layoutY="64" prefHeight="24" prefWidth="232" styleClass="check-box jfx-check-box " text="Remove game from disk" textAlignment="LEFT" textFill="#f2f2f2" underline="false" wrapText="false">
-      <font>
-        <Font name="System Regular" size="12"/>
-      </font>
-    </CheckBox>
-    <Data id="data-removeFiles"/>
-    <Button AnchorPane.bottomAnchor="16" AnchorPane.rightAnchor="16" alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="button" id="button" layoutX="208" layoutY="96" prefHeight="32" prefWidth="144" style="-fx-background-color:#55de1b; -fx-background-radius:15px; -fx-text-fill:#ffffff; -fx-font-weight:bold;" text="Yes" textAlignment="CENTER" underline="false" wrapText="false">
-      <font>
-        <Font name="System Bold" size="12"/>
-      </font>
-    </Button>
-    <Data id="data-button"/>
-    <Button AnchorPane.bottomAnchor="16" AnchorPane.rightAnchor="176" alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="buttonAlt" id="buttonAlt" layoutX="48" layoutY="96" prefHeight="32" prefWidth="144" style="-fx-background-color:#FF0040; -fx-background-radius:15px; -fx-text-fill:#ffffff; -fx-font-weight:bold;" text="No" textAlignment="CENTER" underline="false" wrapText="false">
-      <font>
-        <Font name="System Regular" size="12"/>
-      </font>
-    </Button>
-    <Data id="data-buttonAlt"/>
-    <CheckBox AnchorPane.bottomAnchor="80" AnchorPane.leftAnchor="16" alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="removePrefix" id="removePrefix" layoutX="16" layoutY="40" prefHeight="24" prefWidth="232" styleClass="check-box jfx-check-box " text="Remove game prefix" textAlignment="LEFT" textFill="#f2f2f2" underline="false" wrapText="false">
-      <font>
-        <Font name="System Regular" size="12"/>
-      </font>
-    </CheckBox>
-    <Data id="data-removePrefix"/>
+    <VBox alignment="TOP_LEFT" spacing="12" AnchorPane.topAnchor="16" AnchorPane.leftAnchor="20" AnchorPane.rightAnchor="20" AnchorPane.bottomAnchor="16" style="-fx-background-color:transparent;">
+      <children>
+        <Label alignment="TOP_LEFT" focusTraversable="false" fx:id="label" id="label" prefWidth="340" style="-fx-text-fill:#ffffff; -fx-font-size:13; -fx-font-weight:bold;" text="Remove game from launcher?" wrapText="true"/>
+        <Data id="data-label"/>
+        <CheckBox alignment="CENTER_LEFT" focusTraversable="false" fx:id="removePrefix" id="removePrefix" prefWidth="340" styleClass="check-box" text="Remove game prefix" textFill="#f2f2f2">
+          <font>
+            <Font name="System Regular" size="12"/>
+          </font>
+        </CheckBox>
+        <Data id="data-removePrefix"/>
+        <CheckBox alignment="CENTER_LEFT" focusTraversable="false" fx:id="removeFiles" id="removeFiles" prefWidth="340" styleClass="check-box" text="Remove game from disk" textFill="#f2f2f2">
+          <font>
+            <Font name="System Regular" size="12"/>
+          </font>
+        </CheckBox>
+        <Data id="data-removeFiles"/>
+        <HBox alignment="CENTER_RIGHT" spacing="10" prefWidth="340">
+          <children>
+            <Button alignment="CENTER" focusTraversable="false" fx:id="buttonAlt" id="buttonAlt" prefHeight="34" prefWidth="100" styleClass="danger-button" style="-fx-background-radius:20; -fx-text-fill:#ffffff; -fx-font-weight:bold;" text="No">
+              <font>
+                <Font name="System Bold" size="12"/>
+              </font>
+            </Button>
+            <Data id="data-buttonAlt"/>
+            <Button alignment="CENTER" focusTraversable="false" fx:id="button" id="button" prefHeight="34" prefWidth="100" styleClass="confirm-button" style="-fx-background-radius:20; -fx-text-fill:#ffffff; -fx-font-weight:bold;" text="Yes">
+              <font>
+                <Font name="System Bold" size="12"/>
+              </font>
+            </Button>
+            <Data id="data-button"/>
+          </children>
+        </HBox>
+      </children>
+    </VBox>
   </children>
 </AnchorPane>

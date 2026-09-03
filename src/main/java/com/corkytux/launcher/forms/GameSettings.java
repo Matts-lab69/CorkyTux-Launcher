@@ -988,6 +988,29 @@ public class GameSettings implements Initializable {
 
     private void hideStage() {
         Platform.runLater(() -> {
+            // Modal context: close MainForm modal instead of hiding the main stage
+            try {
+                var launcherCls = Class.forName("com.corkytux.launcher.Launcher");
+                var getCtrl = launcherCls.getMethod("getFormController", String.class);
+                Object mf = getCtrl.invoke(null, "MainForm");
+                if (mf != null) {
+                    boolean modalVisible = false;
+                    try {
+                        var overlayField = mf.getClass().getDeclaredField("modalOverlay");
+                        overlayField.setAccessible(true);
+                        Object overlay = overlayField.get(mf);
+                        if (overlay instanceof javafx.scene.Node ov) modalVisible = ov.isVisible();
+                    } catch (Exception ignored) {}
+                    if (modalVisible) {
+                        var hideModal = mf.getClass().getDeclaredMethod("hideModal");
+                        hideModal.setAccessible(true);
+                        hideModal.invoke(mf);
+                        return;
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("hideModal fallback failed", e);
+            }
             Stage s = stageOf(root != null ? root : view);
             if (s != null) s.hide();
         });

@@ -93,6 +93,8 @@ public class LauncherSettings implements Initializable {
     @FXML private Pane plugins;
     @FXML private Pane about;
     @FXML private Pane visuals;
+    @FXML private VBox integrations;
+    @FXML private javafx.scene.control.ScrollPane integrationsScroll;
 
     @FXML private TextField downloadsPath;
     @FXML private TextField installsPath;
@@ -147,6 +149,7 @@ public class LauncherSettings implements Initializable {
     @FXML private ToggleButton pluginsButton;
     @FXML private ToggleButton aboutButton;
     @FXML private ToggleButton visualsButton;
+    @FXML private ToggleButton integrationsButton;
 
     @FXML private Label label;       // installs
     @FXML private Label label4;      // downloads
@@ -157,6 +160,7 @@ public class LauncherSettings implements Initializable {
     @FXML private Label label9;      // proton hint
     @FXML private Label labelAlt2;   // alias workaround if FXML duplicates
     @FXML private Label label10;     // graphics header
+    @FXML private ImageView image;   // About section image
 
     // Github clickable node – may be Label or ImageView or Pane
     @FXML private Node github;
@@ -194,6 +198,7 @@ public class LauncherSettings implements Initializable {
 
         applyLocalizations();
         buildToggleButtons();
+        initTabIcons();
         wireActions();
 
         // Initialize displayed texts – mirrors doDownloadsPathConstruct etc.
@@ -202,6 +207,7 @@ public class LauncherSettings implements Initializable {
         initDefaultProton();
         initVersionLabel();
         initVisualsPane();
+        initIntegrationsPane();
 
         // protonsList initial items already via initProtonsList
 
@@ -314,6 +320,7 @@ public class LauncherSettings implements Initializable {
         if (pluginsButton != null) pluginsButton.setOnAction(this::handlePluginsButtonAction);
         if (aboutButton != null) aboutButton.setOnAction(this::handleAboutButtonAction);
         if (visualsButton != null) visualsButton.setOnAction(this::handleVisualsButtonAction);
+        if (integrationsButton != null) integrationsButton.setOnAction(this::handleIntegrationsButtonAction);
 
         // Combos / toggles
         if (defaultProton != null) defaultProton.setOnAction(this::handleDefaultProtonAction);
@@ -454,6 +461,481 @@ public class LauncherSettings implements Initializable {
             }
             i++;
         }
+    }
+
+    // ── Integrations pane ───────────────────────────────────────────────
+
+    private void initIntegrationsPane() {
+        if (integrations == null) return;
+        var im = com.corkytux.launcher.modules.IntegrationsManager.getInstance();
+        var children = integrations.getChildren();
+        children.clear();
+
+        var header = new Label("🌐 Integrations");
+        header.setStyle("-fx-font-size:15px; -fx-font-weight:bold; -fx-text-fill:#ffffff;");
+        children.add(header);
+
+        var desc = new Label("Connect external platforms. Local scans need no API key.");
+        desc.setStyle("-fx-text-fill:#b3b3b3; -fx-font-size:11px;");
+        desc.setWrapText(true);
+        children.add(desc);
+
+        // Steam native
+        children.add(buildIntegrationRow("Steam",
+                "Native library support – scan installed Steam games",
+                "steam", false, null,
+                "Scan & Import", () -> Thread.ofVirtual().start(() -> {
+                    var games = im.scanSteamLibrary();
+                    int imported = importSteamGames(games);
+                    int total = games.size();
+                    javafx.application.Platform.runLater(() ->
+                        showInfoAlert("Steam scan", "Found " + total + " game(s), imported " + imported + " new."));
+                })));
+        // Lutris
+        children.add(buildIntegrationRow("Lutris",
+                "Largest Linux gaming platform – scan installed Lutris games",
+                "lutris", false, null,
+                "Scan & Import", () -> Thread.ofVirtual().start(() -> {
+                    var games = im.scanLutrisLibrary();
+                    int imported = importLutrisGames(games);
+                    javafx.application.Platform.runLater(() ->
+                        showInfoAlert("Lutris scan", games.isEmpty()
+                            ? "No Lutris games found (is Lutris installed?)"
+                            : "Found " + games.size() + " game(s), imported " + imported + " new."));
+                })));
+        // ProtonDB
+        children.add(buildIntegrationRow("ProtonDB",
+                "Compatibility ratings & community reviews (public API, no key)",
+                "protondb", true, null, null, null));
+        // Note: SteamGridDB works automatically via bundled key (no UI needed)
+        // IGDB
+        children.add(buildIntegrationRow("IGDB",
+                "Game info & ratings – needs Twitch ClientID:ClientSecret",
+                "igdb", true, "ClientID:Secret", null, null));
+    }
+
+    private javafx.scene.layout.VBox buildIntegrationRow(String title, String subtitle,
+            String key, boolean withToggle, String keyHint,
+            String actionLabel, Runnable action) {
+        var im = com.corkytux.launcher.modules.IntegrationsManager.getInstance();
+        var box = new javafx.scene.layout.VBox(4);
+        box.setStyle("-fx-background-color:#181818; -fx-background-radius:8; -fx-padding:10 14;");
+
+        var topRow = new javafx.scene.layout.HBox(8);
+        topRow.setAlignment(Pos.CENTER_LEFT);
+        var titleLabel = new Label(title);
+        titleLabel.setStyle("-fx-text-fill:#ffffff; -fx-font-weight:bold; -fx-font-size:13;");
+        titleLabel.setMaxWidth(Double.MAX_VALUE);
+        javafx.scene.layout.HBox.setHgrow(titleLabel, javafx.scene.layout.Priority.ALWAYS);
+        topRow.getChildren().add(titleLabel);
+
+        if (withToggle) {
+            var sw = new com.corkytux.launcher.ui.SwitchComponent("");
+            sw.setSelectedSilent(im.isEnabled(key));
+            sw.setOnToggle(() -> im.setEnabled(key, sw.isSelected()));
+            topRow.getChildren().add(sw);
+        }
+        if (actionLabel != null && action != null) {
+            var btn = new Button(actionLabel);
+            btn.getStyleClass().add("btn-primary");
+            btn.setStyle("-fx-font-size:11px; -fx-padding:4 12;");
+            btn.setOnAction(e -> action.run());
+            topRow.getChildren().add(btn);
+        }
+        box.getChildren().add(topRow);
+
+        var sub = new Label(subtitle);
+        sub.setStyle("-fx-text-fill:#b3b3b3; -fx-font-size:11px;");
+        sub.setWrapText(true);
+        box.getChildren().add(sub);
+
+        if (keyHint != null) {
+            var field = new javafx.scene.control.TextField();
+            field.setPromptText(keyHint);
+            String saved = im.getKey(key);
+            if (saved != null) field.setText(saved);
+            field.setStyle("-fx-background-color:#222226; -fx-text-fill:#ffffff; -fx-font-size:11px; -fx-background-radius:6;");
+            field.focusedProperty().addListener((o, was, isNow) -> {
+                if (!isNow) im.setKey(key, field.getText().trim());
+            });
+            field.setOnAction(e -> im.setKey(key, field.getText().trim()));
+            box.getChildren().add(field);
+        }
+        return box;
+    }
+
+    private void showInfoAlert(String title, String msg) {
+        try {
+            var a = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.INFORMATION);
+            a.setTitle(title);
+            a.setHeaderText(null);
+            a.setContentText(msg);
+            a.showAndWait();
+        } catch (Exception e) {
+            LOG.debug("alert failed", e);
+        }
+    }
+
+    private Object getMainForm() {
+        try {
+            return com.corkytux.launcher.Launcher.getFormController("MainForm");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Finds Lutris artwork (coverart/banners) across all known Lutris data dirs. */
+    private static java.nio.file.Path findLutrisArtwork(String artDir, String slug) {
+        for (var dir : com.corkytux.launcher.modules.IntegrationsManager.lutrisDataDirs()) {
+            var candidate = dir.resolve(artDir + "/" + slug + ".jpg");
+            if (java.nio.file.Files.isRegularFile(candidate)) return candidate;
+        }
+        // Fallback: unresolved path in default dir (caller checks isRegularFile)
+        return com.corkytux.launcher.modules.IntegrationsManager.lutrisDataDir().resolve(artDir + "/" + slug + ".jpg");
+    }
+
+    /** Converts "Five Nights At Freddy's" → "five-nights-at-freddy-s" style slug. */    private static String toSlug(String name) {
+        if (name == null) return "";
+        return name.toLowerCase(java.util.Locale.ROOT)
+                .replace("'", "-")
+                .replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("^-|-$", "");
+    }
+
+    /**
+     * Validates an extracted icon: exists, PNG magic, dimensions >= 16px.
+     * Rejects raw .ico files. 16px real icons beat coverart for icon slot.
+     */
+    private static boolean isLoadablePng(String path) {
+        try {
+            var p = java.nio.file.Path.of(path);
+            if (!java.nio.file.Files.isRegularFile(p)) return false;
+            byte[] header = new byte[26];
+            try (var in = java.nio.file.Files.newInputStream(p)) {
+                if (in.read(header) < 26) return false;
+            }
+            // PNG: 89 50 4E 47 0D 0A 1A 0A
+            if (!(header[0] == (byte) 0x89 && header[1] == 0x50
+                    && header[2] == 0x4E && header[3] == 0x47)) return false;
+            // IHDR width (bytes 16-19) x height (20-23), big-endian
+            int w = ((header[16] & 0xFF) << 24) | ((header[17] & 0xFF) << 16)
+                    | ((header[18] & 0xFF) << 8) | (header[19] & 0xFF);
+            int h = ((header[20] & 0xFF) << 24) | ((header[21] & 0xFF) << 16)
+                    | ((header[22] & 0xFF) << 8) | (header[23] & 0xFF);
+            return w >= 16 && h >= 16;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * Ensures stored icon path has .png extension (copy if needed).
+     * Eliminates extensionless-file loading quirks. Returns png path or original.
+     */
+    private static String ensurePngExtension(String path) {
+        try {
+            if (path == null || path.endsWith(".png")) return path;
+            var src = java.nio.file.Path.of(path);
+            if (!java.nio.file.Files.isRegularFile(src)) return path;
+            var dest = java.nio.file.Path.of(path + ".png");
+            if (!java.nio.file.Files.isRegularFile(dest)) {
+                java.nio.file.Files.copy(src, dest,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            return dest.toString();
+        } catch (Exception ignored) {
+            return path;
+        }
+    }
+
+        /** Finds main .exe in dir: name-matching first, else largest .exe, else null. */
+
+    /** Returns true if image at path is portrait (h > w*1.2) – i.e. a cover, not an icon. */
+    private static boolean isPortraitImage(String path) {
+        try {
+            var p = java.nio.file.Path.of(path);
+            if (!java.nio.file.Files.isRegularFile(p)) return false;
+            byte[] header = new byte[26];
+            try (var in = java.nio.file.Files.newInputStream(p)) {
+                if (in.read(header) < 26) return false;
+            }
+            boolean isPng = header[0] == (byte) 0x89 && header[1] == 0x50
+                    && header[2] == 0x4E && header[3] == 0x47;
+            boolean isJpg = header[0] == (byte) 0xFF && header[1] == (byte) 0xD8;
+            if (!isPng && !isJpg) return false;
+            if (isPng) {
+                int w = ((header[16] & 0xFF) << 24) | ((header[17] & 0xFF) << 16)
+                        | ((header[18] & 0xFF) << 8) | (header[19] & 0xFF);
+                int h = ((header[20] & 0xFF) << 24) | ((header[21] & 0xFF) << 16)
+                        | ((header[22] & 0xFF) << 8) | (header[23] & 0xFF);
+                return h > w * 1.2;
+            }
+            // JPEG: scan for SOF0/SOF2 marker to get dimensions
+            try (var in = java.nio.file.Files.newInputStream(p)) {
+                var data = in.readAllBytes();
+                for (int i = 2; i < data.length - 9; i++) {
+                    if ((data[i] & 0xFF) == 0xFF && ((data[i + 1] & 0xFF) == 0xC0 || (data[i + 1] & 0xFF) == 0xC2)) {
+                        int h = ((data[i + 5] & 0xFF) << 8) | (data[i + 6] & 0xFF);
+                        int w = ((data[i + 7] & 0xFF) << 8) | (data[i + 8] & 0xFF);
+                        return h > w * 1.2;
+                    }
+                }
+            }
+            return false;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }    private static String findMainExe(String dir, String gameName) {
+        try {
+            var dirPath = java.nio.file.Path.of(dir);
+            if (!java.nio.file.Files.isDirectory(dirPath)) return null;
+            try (var stream = java.nio.file.Files.list(dirPath)) {
+                var exes = stream.filter(p -> p.toString().toLowerCase().endsWith(".exe"))
+                        .toList();
+                if (exes.isEmpty()) return null;
+                // Prefer exe matching game name (slug-ish compare)
+                String slug = toSlug(gameName).replace("-", "");
+                for (var e : exes) {
+                    String fn = e.getFileName().toString().toLowerCase().replaceAll("[^a-z0-9]", "");
+                    if (!slug.isEmpty() && (fn.contains(slug) || slug.contains(fn.replace(".exe", "")))) {
+                        return e.toString();
+                    }
+                }
+                // Else largest .exe
+                return exes.stream()
+                        .max(java.util.Comparator.comparingLong(p -> {
+                            try { return java.nio.file.Files.size(p); } catch (Exception ignored) { return 0; }
+                        }))
+                        .map(Object::toString).orElse(null);
+            }
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private int importSteamGames(java.util.List<com.corkytux.launcher.modules.IntegrationsManager.SteamGame> games) {
+        int count = 0;
+        Object mf = getMainForm();
+        if (!(mf instanceof com.corkytux.launcher.forms.MainForm main)) return 0;
+        var im = com.corkytux.launcher.modules.IntegrationsManager.getInstance();
+        for (var g : games) {
+            var data = new java.util.LinkedHashMap<String, String>();
+            data.put("steamID", g.appId());
+            if (!g.libraryPath().isBlank()) {
+                data.put("mainPath", g.libraryPath());
+                data.put("executable", g.libraryPath());
+            }
+            data.put("source", "steam");
+            // Free artwork via Steam CDN (banner + icon)
+            try {
+                var art = im.fetchSteamArtwork(g.appId());
+                if (art.containsKey("banner")) data.put("banner", art.get("banner"));
+                if (art.containsKey("icon")) data.put("icon", art.get("icon"));
+            } catch (Exception e) {
+                LOG.debug("artwork failed for {}", g.name(), e);
+            }
+            try {
+                if (main.importExternalGame(g.name(), data)) count++;
+            } catch (Exception e) {
+                LOG.debug("Steam import failed for {}", g.name(), e);
+            }
+        }
+        return count;
+    }
+
+    private int importLutrisGames(java.util.List<com.corkytux.launcher.modules.IntegrationsManager.LutrisGame> games) {
+        int count = 0;
+        Object mf = getMainForm();
+        if (!(mf instanceof com.corkytux.launcher.forms.MainForm main)) return 0;
+        String home = com.corkytux.launcher.modules.FilesWorker.getExpectedHome();
+        // Backfill real icons for lutris games using coverart as icon
+        // Priority: Lutris hicolor 128px > exe-extracted
+        try {
+            var app = com.corkytux.launcher.modules.AppModule.getInstance();
+            // slug lookup from pga.db
+            var slugByName = new java.util.HashMap<String, String>();
+            try {
+                var db = com.corkytux.launcher.modules.IntegrationsManager.lutrisDataDir().resolve("pga.db");
+                if (java.nio.file.Files.isRegularFile(db)) {
+                    var pb2 = new ProcessBuilder("sqlite3", db.toString(),
+                            "SELECT slug,name FROM games WHERE installed=1;");
+                    pb2.redirectErrorStream(true);
+                    var proc2 = pb2.start();
+                    String out2 = new String(proc2.getInputStream().readAllBytes());
+                    proc2.waitFor();
+                    for (String line : out2.split("\n")) {
+                        String[] cols = line.split("\\|", 2);
+                        if (cols.length == 2 && !cols[1].isBlank()) slugByName.put(cols[1].trim(), cols[0].trim());
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("backfill slug lookup failed", e);
+            }
+            for (var entry : app.getGamesToArray().entrySet()) {
+                String n = entry.getKey();
+                var vals = entry.getValue();
+                if (!"lutris".equals(vals.get("source"))) continue;
+                String icon = vals.get("icon");
+                boolean iconIsCover = icon != null && (icon.contains("/coverart/") || icon.contains("/banners/")
+                        || isPortraitImage(icon));
+                if (icon == null || icon.isBlank() || iconIsCover) {
+                    // 1) hicolor first
+                    String slug = slugByName.getOrDefault(n, toSlug(n));
+                    var hicolor = com.corkytux.launcher.modules.IntegrationsManager.hicolorAppsDir().resolve("lutris_" + slug + ".png");
+                    if (java.nio.file.Files.isRegularFile(hicolor)) {
+                        app.setGame("icon", hicolor.toString(), n);
+                        continue;
+                    }
+                    // 2) exe-extracted
+                    String exe = vals.get("executable");
+                    if (exe == null || !exe.toLowerCase().endsWith(".exe")
+                            || !java.nio.file.Files.isRegularFile(java.nio.file.Path.of(exe))) {
+                        continue;
+                    }
+                    try {
+                        String realIcon = com.corkytux.launcher.modules.FixParser.parseIcon(exe);
+                        if (realIcon != null && isLoadablePng(realIcon)) {
+                            app.setGame("icon", ensurePngExtension(realIcon), n);
+                        } else if (iconIsCover) {
+                            // Corrupt extraction left bad path? ensure coverart fallback
+                            LOG.debug("backfill icon invalid for {}, keeping coverart", n);
+                        }
+                    } catch (Exception e) {
+                        LOG.debug("backfill icon failed for {}", n, e);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("exe icon backfill failed", e);
+        }
+        // Backfill banner artwork for lutris games missing it entirely
+        // (slug looked up from pga.db by exact name match)
+        try {
+            var app = com.corkytux.launcher.modules.AppModule.getInstance();
+            var slugByName = new java.util.HashMap<String, String>();
+            try {
+                var db = com.corkytux.launcher.modules.IntegrationsManager.lutrisDataDir().resolve("pga.db");
+                if (java.nio.file.Files.isRegularFile(db)) {
+                    var pb = new ProcessBuilder("sqlite3", db.toString(),
+                            "SELECT slug,name FROM games WHERE installed=1;");
+                    pb.redirectErrorStream(true);
+                    var proc = pb.start();
+                    String out = new String(proc.getInputStream().readAllBytes());
+                    proc.waitFor();
+                    for (String line : out.split("\n")) {
+                        String[] cols = line.split("\\|", 2);
+                        if (cols.length == 2 && !cols[1].isBlank()) slugByName.put(cols[1].trim(), cols[0].trim());
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("slug lookup failed", e);
+            }
+            for (var entry : app.getGamesToArray().entrySet()) {
+                String n = entry.getKey();
+                var vals = entry.getValue();
+                if (!"lutris".equals(vals.get("source"))) continue;
+                if (vals.get("banner") != null && !vals.get("banner").isBlank()) continue;
+                String slug = slugByName.getOrDefault(n, toSlug(n));
+                for (String dir : new String[]{"coverart", "banners"}) {
+                    var art = findLutrisArtwork(dir, slug);
+                    if (java.nio.file.Files.isRegularFile(art)) {
+                        app.setGame("banner", art.toString(), n);
+                        app.setGame("icon", art.toString(), n);
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("Lutris artwork backfill failed", e);
+        }
+        for (var g : games) {
+            if (g.name() == null || g.name().isBlank() || g.name().matches("\\d+")) {
+                LOG.debug("Skipping Lutris entry with invalid name: '{}'", g.name());
+                continue;
+            }
+            var data = new java.util.LinkedHashMap<String, String>();
+            if (!g.runner().isBlank()) data.put("lutrisRunner", g.runner());
+            String dir = g.directory();
+            String exe = g.executable();
+            // No ~/Games guessing: paths come only from Lutris (pga.db + game YAML).
+            // If Lutris has no path, user configures it manually in Game Settings.
+            if (dir != null && !dir.isBlank()) data.put("mainPath", dir);
+            if ((exe == null || exe.isBlank()) && dir != null && !dir.isBlank()) {
+                exe = findMainExe(dir, g.name()); // search dir for main .exe
+            }
+            if (exe != null && !exe.isBlank()) data.put("executable", exe);
+            if (g.prefix() != null && !g.prefix().isBlank()) data.put("prefixPath", g.prefix());
+            // Playtime: Lutris hours → CorkyTux seconds
+            if (g.playtimeHours() > 0) {
+                data.put("timeSpent", String.valueOf((long) (g.playtimeHours() * 3600)));
+            }
+            // Icon priority: 1) Lutris hicolor 128px, 2) exe-extracted, 3) coverart fallback
+            // 1) Lutris system icon (proper square game icon)
+            try {
+                if (g.slug() != null && !g.slug().isBlank()) {
+                    var hicolor = com.corkytux.launcher.modules.IntegrationsManager.hicolorAppsDir().resolve("lutris_" + g.slug() + ".png");
+                    if (java.nio.file.Files.isRegularFile(hicolor)) {
+                        data.put("icon", hicolor.toString());
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("hicolor icon failed for {}", g.name(), e);
+            }
+            // 2) Real game icon: extract from .exe for wine games (only if no hicolor)
+            // Validated: must be loadable PNG >=16px, else keep coverart
+            try {
+                if (!data.containsKey("icon")) {
+                    String exeForIcon = data.get("executable");
+                    if (exeForIcon != null && exeForIcon.toLowerCase().endsWith(".exe")
+                            && java.nio.file.Files.isRegularFile(java.nio.file.Path.of(exeForIcon))) {
+                        String realIcon = com.corkytux.launcher.modules.FixParser.parseIcon(exeForIcon);
+                        if (realIcon != null && isLoadablePng(realIcon)) {
+                            data.put("icon", ensurePngExtension(realIcon));
+                        } else {
+                            LOG.debug("exe icon invalid for {}, keeping coverart", g.name());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("exe icon extract failed for {}", g.name(), e);
+            }
+            // Lutris local artwork: copy coverart/{slug}.jpg into CorkyTux dirs
+            // (copy, not reference – survives Lutris uninstall)
+            if (g.slug() != null && !g.slug().isBlank()) {
+                for (String artDir : new String[]{"coverart", "banners"}) {
+                    var src = findLutrisArtwork(artDir, g.slug());
+                    if (java.nio.file.Files.isRegularFile(src)) {
+                        try {
+                            String safe = g.slug().replaceAll("[^a-z0-9]", "_") + ".jpg";
+                            var destB = java.nio.file.Path.of(home, ".config", "CorkyTux", "banners", safe);
+                            var destI = java.nio.file.Path.of(home, ".config", "CorkyTux", "icons", safe);
+                            if (!data.containsKey("banner")) {
+                                java.nio.file.Files.createDirectories(destB.getParent());
+                                java.nio.file.Files.copy(src, destB,
+                                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                data.put("banner", destB.toString());
+                            }
+                            if (!data.containsKey("icon")) {
+                                java.nio.file.Files.createDirectories(destI.getParent());
+                                java.nio.file.Files.copy(src, destI,
+                                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                data.put("icon", destI.toString());
+                            }
+                        } catch (Exception e) {
+                            LOG.debug("artwork copy failed for {}", g.slug(), e);
+                        }
+                        break;
+                    }
+                }
+            }
+            data.put("source", "lutris");
+            try {
+                if (main.importExternalGame(g.name(), data)) count++;
+            } catch (Exception e) {
+                LOG.debug("Lutris import failed for {}", g.name(), e);
+            }
+        }
+        return count;
     }
 
     private static void applyAccentToAllScenes() {
@@ -886,6 +1368,11 @@ public class LauncherSettings implements Initializable {
     private void handleVisualsButtonAction(javafx.event.ActionEvent e) { switchPage(visuals); }
 
     @FXML
+    private void handleIntegrationsButtonAction(javafx.event.ActionEvent e) {
+        if (integrations != null) switchPage(integrations);
+    }
+
+    @FXML
     private void handleDefaultProtonAction(javafx.event.ActionEvent e) {
         if (defaultProton == null || defaultProton.getValue() == null) return;
         appModule.setLauncher("defaultProton", defaultProton.getValue(), "User Settings");
@@ -922,9 +1409,11 @@ public class LauncherSettings implements Initializable {
         if (newPage == null) return;
         
         // Hide all pages immediately, show only the target
-        for (Node p : new Node[]{paths, protons, launcher, plugins, visuals, about}) {
+        // (integrations lives inside integrationsScroll wrapper)
+        Node effectivePage = (newPage == integrations && integrationsScroll != null) ? integrationsScroll : newPage;
+        for (Node p : new Node[]{paths, protons, launcher, plugins, visuals, about, integrationsScroll}) {
             if (p == null) continue;
-            if (p == newPage) {
+            if (p == effectivePage) {
                 p.setVisible(true);
                 p.setManaged(true);
             } else {
@@ -932,8 +1421,27 @@ public class LauncherSettings implements Initializable {
                 p.setManaged(false);
             }
         }
-        
+        // Sync tab buttons: exactly one selected (fixes double-highlight)
+        syncTabButtons(effectivePage);
+
         settingsModule.switchPage(newPage);
+    }
+
+    /** Marks only the tab button matching the visible page as selected. */
+    private void syncTabButtons(Node visiblePage) {
+        setTabSelected(pathsButton, visiblePage == paths);
+        setTabSelected(protonsButton, visiblePage == protons);
+        setTabSelected(launcherButton, visiblePage == launcher);
+        setTabSelected(pluginsButton, visiblePage == plugins);
+        setTabSelected(visualsButton, visiblePage == visuals);
+        setTabSelected(aboutButton, visiblePage == about);
+        setTabSelected(integrationsButton, visiblePage == integrationsScroll);
+    }
+
+    private static void setTabSelected(ToggleButton btn, boolean selected) {
+        if (btn == null) return;
+        // setSelected doesn't fire onAction, safe for syncing visual state
+        btn.setSelected(selected);
     }
 
     // -----------------------------------------------------------------------
@@ -1060,6 +1568,48 @@ public class LauncherSettings implements Initializable {
         Object o = host.getProperties().get("quUIElement");
         if (o instanceof com.corkytux.launcher.ui.SwitchComponent sw) sw.setSelected(val);
         else if (o instanceof ToggleButton tb) tb.setSelected(val);
+    }
+
+    private void initTabIcons() {
+        setTabIcon(visualsButton, ".data/img/palette.png");
+        setTabIcon(pathsButton, ".data/img/fileview.png");
+        setTabIcon(protonsButton, ".data/img/proton17.png");
+        setTabIcon(launcherButton, ".data/img/settings.png");
+        setTabIcon(pluginsButton, ".data/img/plugins.png");
+        setTabIcon(integrationsButton, ".data/img/openIn.png");
+        setTabIcon(aboutButton, ".data/img/about.png");
+        // About section image
+        if (image != null) {
+            try {
+                var is = getClass().getResourceAsStream("/.data/img/corkytux-about.png");
+                if (is != null) {
+                    image.setImage(new Image(is));
+                }
+            } catch (Exception e) {
+                LOG.debug("Failed to load about image", e);
+            }
+        }
+    }
+
+    private void setTabIcon(ToggleButton btn, String resource) {
+        if (btn == null) return;
+        try {
+            var is = getClass().getResourceAsStream("/" + resource);
+            if (is == null) {
+                is = getClass().getResourceAsStream("/img/" + java.nio.file.Path.of(resource).getFileName());
+            }
+            if (is != null) {
+                var img = new Image(is);
+                var iv = new ImageView(img);
+                iv.setFitWidth(20);
+                iv.setFitHeight(20);
+                iv.setPreserveRatio(true);
+                btn.setGraphic(iv);
+                btn.setContentDisplay(javafx.scene.control.ContentDisplay.TOP);
+            }
+        } catch (Exception e) {
+            LOG.debug("Failed to load tab icon: {}", resource);
+        }
     }
 
     private ImageView imageView(String resource, int size) {
