@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?import javafx.scene.*?><?import javafx.collections.*?><?import javafx.scene.layout.*?><?import javafx.scene.control.*?><?import javafx.scene.text.*?><?import javafx.scene.image.*?><?import javafx.scene.shape.*?><?import javafx.scene.paint.*?><?import javafx.scene.web.*?><?import javafx.geometry.*?><?import java.lang.*?><AnchorPane fx:id="root" id="root" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.GameStarting" AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="232" prefWidth="408" style="-fx-background-color:transparent;" styleClass="">
+  <children>
+    <ImageView AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" fitHeight="232" fx:id="backgroundImage" id="backgroundImage" layoutX="0" layoutY="0" styleClass="" fitWidth="408"/>
+    <Label AnchorPane.bottomAnchor="44" AnchorPane.leftAnchor="52" AnchorPane.rightAnchor="52" AnchorPane.topAnchor="44" alignment="CENTER" contentDisplay="TOP" focusTraversable="false" graphicTextGap="4" fx:id="label" id="label" layoutX="52" layoutY="44" prefHeight="144" prefWidth="304" styleClass="label " text="Starting..." textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+      <font>
+        <Font name="System Bold" size="15"/>
+      </font>
+    </Label>
+  </children>
+</AnchorPane>

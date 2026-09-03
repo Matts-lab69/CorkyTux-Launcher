@@ -1,0 +1,23 @@
+# Build output
+target/
+*.class
+*.jar.original
+dependency-reduced-pom.xml
+release/*.jar
+release/*.tar.gz
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+push-commands.txt

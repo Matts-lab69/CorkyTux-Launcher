@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?import javafx.scene.*?><?import javafx.collections.*?><?import javafx.scene.layout.*?><?import com.corkytux.launcher.util.Data?><?import javafx.scene.control.*?><?import javafx.scene.text.*?><?import javafx.scene.image.*?><?import javafx.scene.shape.*?><?import javafx.scene.paint.*?><?import javafx.scene.web.*?><?import javafx.geometry.*?><?import java.lang.*?><AnchorPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.GameRemover" AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" id="" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="144" prefWidth="368" style="-fx-background-color:#222226;" styleClass="">
+  <children>
+    <Label alignment="TOP_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label" id="label" layoutX="16" layoutY="16" prefHeight="24" prefWidth="336" styleClass="label " text="Remove %s from launcher?" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="true">
+      <font>
+        <Font name="System Bold" size="13"/>
+      </font>
+    </Label>
+    <Data id="data-label"/>
+    <CheckBox AnchorPane.bottomAnchor="56" AnchorPane.leftAnchor="16" alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="removeFiles" id="removeFiles" layoutX="16" layoutY="64" prefHeight="24" prefWidth="232" styleClass="check-box jfx-check-box " text="Remove game from disk" textAlignment="LEFT" textFill="#f2f2f2" underline="false" wrapText="false">
+      <font>
+        <Font name="System Regular" size="12"/>
+      </font>
+    </CheckBox>
+    <Data id="data-removeFiles"/>
+    <Button AnchorPane.bottomAnchor="16" AnchorPane.rightAnchor="16" alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="button" id="button" layoutX="208" layoutY="96" prefHeight="32" prefWidth="144" style="-fx-text-fill:#1a1a1a;-fx-font-weight:bold;-fx-background-radius:0px;" styleClass="button confirm-button" text="Yes" textAlignment="CENTER" underline="false" wrapText="false">
+      <font>
+        <Font name="System Bold" size="12"/>
+      </font>
+    </Button>
+    <Data id="data-button"/>
+    <Button AnchorPane.bottomAnchor="16" AnchorPane.rightAnchor="176" alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="buttonAlt" id="buttonAlt" layoutX="48" layoutY="96" prefHeight="32" prefWidth="144" styleClass="danger-button" text="No" textAlignment="CENTER" underline="false" wrapText="false">
+      <font>
+        <Font name="System Regular" size="12"/>
+      </font>
+    </Button>
+    <Data id="data-buttonAlt"/>
+    <CheckBox AnchorPane.bottomAnchor="80" AnchorPane.leftAnchor="16" alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="removePrefix" id="removePrefix" layoutX="16" layoutY="40" prefHeight="24" prefWidth="232" styleClass="check-box jfx-check-box " text="Remove game prefix" textAlignment="LEFT" textFill="#f2f2f2" underline="false" wrapText="false">
+      <font>
+        <Font name="System Regular" size="12"/>
+      </font>
+    </CheckBox>
+    <Data id="data-removePrefix"/>
+  </children>
+</AnchorPane>

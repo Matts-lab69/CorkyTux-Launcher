@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?import javafx.scene.*?><?import javafx.collections.*?><?import javafx.scene.layout.*?><?import com.corkytux.launcher.util.Data?><?import javafx.scene.control.*?><?import javafx.scene.text.*?><?import javafx.scene.image.*?><?import javafx.scene.shape.*?><?import javafx.scene.paint.*?><?import javafx.scene.web.*?><?import javafx.geometry.*?><?import java.lang.*?><AnchorPane fx:id="rootPane" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.MainForm" AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" id="rootPane" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="496" prefWidth="816" style="-fx-background-color:#222226;" styleClass="">
+  <children>
+    <Label AnchorPane.bottomAnchor="153" AnchorPane.leftAnchor="275" AnchorPane.rightAnchor="293" AnchorPane.topAnchor="135" alignment="CENTER" contentDisplay="TOP" focusTraversable="false" graphicTextGap="4" fx:id="noGamesHeader" id="noGamesHeader" layoutX="275" layoutY="135" prefHeight="208" prefWidth="256" style="-fx-background-color:#333337;-fx-background-radius:15px;" styleClass="label " text="Add a game" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+      <font>
+        <Font name="System Bold" size="25"/>
+      </font>
+    </Label>
+    <ImageView AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" fx:id="background" id="background" layoutX="0" layoutY="0" opacity="0" styleClass="" preserveRatio="false"/>
+    <ScrollPane AnchorPane.bottomAnchor="64" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" fitToHeight="true" fitToWidth="true" focusTraversable="false" hbarPolicy="NEVER" hvalue="0" fx:id="container" id="container" layoutX="0" layoutY="0" prefHeight="432" prefWidth="816" styleClass="scroll-pane " vbarPolicy="NEVER" vvalue="0">
+      <content>
+        <AnchorPane fx:id="containerContent" focusTraversable="false" id="containerContent" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="432" prefWidth="816" styleClass="">
+          <children>
+            <FlowPane fx:id="flowContent" hgap="35" id="flowContent" layoutX="0" layoutY="0" prefHeight="432" prefWidth="816" vgap="35">
+              <padding>
+                <Insets bottom="35" left="35" right="35" top="35"/>
+              </padding>
+            </FlowPane>
+          </children>
+        </AnchorPane>
+      </content>
+    </ScrollPane>
+    <Data id="data-container"/>
+    <Data id="data-noGamesHeader" graphic=".data/img/game.png"/>
+    <Data id="data-background" image=""/>
+    <Data id="data-gamePanel"/>
+    <HBox AnchorPane.bottomAnchor="16" AnchorPane.leftAnchor="16" alignment="TOP_LEFT" focusTraversable="false" fx:id="buttonsBox" id="buttonsBox" layoutX="16" layoutY="432" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="48" prefWidth="272" spacing="1" styleClass="">
+      <children>
+        <Button alignment="CENTER" contentDisplay="RIGHT" focusTraversable="false" graphicTextGap="4" fx:id="about" id="about" layoutX="0" layoutY="0" prefHeight="48" prefWidth="144" style="-fx-background-color: #33333799;-fx-background-radius:50px;" styleClass="button jfx-button " text="Settings" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+          <font>
+            <Font name="System Bold" size="12"/>
+          </font>
+        </Button>
+        <Data id="data-about" graphic=".data/img/settings-hires.png"/>
+      </children>
+    </HBox>
+    <Data id="data-buttonsBox"/>
+     <Button AnchorPane.bottomAnchor="16" AnchorPane.rightAnchor="16" alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="addGame" id="addGame" layoutX="656" layoutY="432" prefHeight="48" prefWidth="144" style="-fx-background-radius:50px;" styleClass="button jfx-button " text="Add game" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+      <font>
+        <Font name="System Bold" size="12"/>
+      </font>
+    </Button>
+    <Data id="data-addGame" graphic=".data/img/add.png"/>
+    <AnchorPane AnchorPane.bottomAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" fx:id="gamePanel" id="gamePanel" layoutX="504" layoutY="0" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="496" prefWidth="312" styleClass="" style="-fx-background-color:#333337db;" visible="false" opacity="0.0">
+      <children>
+        <ImageView AnchorPane.leftAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" fitHeight="144" fx:id="gameHeader" id="gameHeader" layoutX="0" layoutY="0" styleClass="" fitWidth="312"/>
+        <Data id="data-gameHeader" image=""/>
+        <VBox AnchorPane.bottomAnchor="21" AnchorPane.leftAnchor="24" AnchorPane.rightAnchor="24" AnchorPane.topAnchor="400" focusTraversable="false" fx:id="panel3" id="panel3" spacing="8" prefHeight="80" prefWidth="264" styleClass="" style="-fx-background-color:#4d4d4d99;-fx-background-radius:7px;"/>
+        <Data id="data-panel3"/>
+        <Button AnchorPane.topAnchor="160" alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="2" fx:id="playButton" id="playButton" layoutX="24" layoutY="160" prefHeight="40" prefWidth="120" style="-fx-background-radius:50px;" styleClass="button jfx-button " text="Play" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+          <font>
+            <Font name="System Bold" size="13"/>
+          </font>
+        </Button>
+        <Data id="data-playButton" graphic=".data/img/play.png"/>
+        <Label AnchorPane.topAnchor="160" alignment="CENTER_RIGHT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="timeHeader" id="timeHeader" layoutX="168" layoutY="160" prefHeight="19" prefWidth="120" styleClass="label " text="Time in game" textAlignment="RIGHT" textFill="#ffffff" underline="false" wrapText="false">
+          <font>
+            <Font name="System Bold" size="13"/>
+          </font>
+        </Label>
+        <Data id="data-timeHeader"/>
+        <Label AnchorPane.topAnchor="178" alignment="CENTER_RIGHT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="timeLabel" id="timeLabel" layoutX="192" layoutY="178" prefHeight="16" prefWidth="96" styleClass="label " text="0 h" textAlignment="RIGHT" textFill="#e6e6e6" underline="false" wrapText="false">
+          <font>
+            <Font name="System Regular" size="12"/>
+          </font>
+        </Label>
+        <Data id="data-timeLabel"/>
+        <FlowPane AnchorPane.topAnchor="208" alignment="CENTER" columnHalignment="LEFT" focusTraversable="false" hgap="12" fx:id="flowPane" id="flowPane" layoutX="24" layoutY="208" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" orientation="HORIZONTAL" prefHeight="184" prefWidth="264" rowValignment="CENTER" styleClass="" vgap="12">
+          <children>
+            <Button alignment="CENTER" contentDisplay="TOP" focusTraversable="false" graphicTextGap="0" fx:id="gameDebugButton" id="gameDebugButton" layoutX="0" layoutY="8" prefHeight="48" prefWidth="80" text="Debug" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+              <font>
+                <Font name="System Regular" size="12"/>
+              </font>
+              <styleClass xmlns:fx="http://javafx.com/fxml">
+                <String fx:value="button"/>
+                <String fx:value="jfx-button"/>
+                <String fx:value="jfx-menu-button"/>
+              </styleClass>
+            </Button>
+            <Data id="data-gameDebugButton" graphic=".data/img/debug.png"/>
+            <Button alignment="CENTER" contentDisplay="TOP" focusTraversable="false" graphicTextGap="0" fx:id="gameSettingsButton" id="gameSettingsButton" layoutX="92" layoutY="8" prefHeight="48" prefWidth="80" text="Settings" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+              <font>
+                <Font name="System Regular" size="12"/>
+              </font>
+              <styleClass xmlns:fx="http://javafx.com/fxml">
+                <String fx:value="button"/>
+                <String fx:value="jfx-button"/>
+                <String fx:value="jfx-menu-button"/>
+              </styleClass>
+            </Button>
+            <Data id="data-gameSettingsButton" graphic=".data/img/settings.png"/>
+            <Button alignment="CENTER" contentDisplay="TOP" focusTraversable="false" graphicTextGap="0" fx:id="gameDeleteButton" id="gameDeleteButton" layoutX="184" layoutY="8" prefHeight="48" prefWidth="80" text="Remove" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+              <font>
+                <Font name="System Regular" size="12"/>
+              </font>
+              <styleClass xmlns:fx="http://javafx.com/fxml">
+                <String fx:value="button"/>
+                <String fx:value="jfx-button"/>
+                <String fx:value="jfx-menu-button"/>
+              </styleClass>
+            </Button>
+            <Data id="data-gameDeleteButton" graphic=".data/img/remove.png"/>
+            <Button alignment="CENTER" contentDisplay="TOP" focusTraversable="false" graphicTextGap="0" fx:id="utilitiesButton" id="utilitiesButton" layoutX="0" layoutY="68" prefHeight="48" prefWidth="80" text="Utilities" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+              <font>
+                <Font name="System Regular" size="12"/>
+              </font>
+              <styleClass xmlns:fx="http://javafx.com/fxml">
+                <String fx:value="button"/>
+                <String fx:value="jfx-button"/>
+                <String fx:value="jfx-menu-button"/>
+              </styleClass>
+            </Button>
+            <Button alignment="CENTER" contentDisplay="TOP" focusTraversable="false" graphicTextGap="0" fx:id="runInPrefixButton" id="runInPrefixButton" layoutX="92" layoutY="68" prefHeight="48" prefWidth="80" text="Run" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="true">
+              <font>
+                <Font name="System Regular" size="11"/>
+              </font>
+              <styleClass xmlns:fx="http://javafx.com/fxml">
+                <String fx:value="button"/>
+                <String fx:value="jfx-button"/>
+                <String fx:value="jfx-menu-button"/>
+              </styleClass>
+            </Button>
+            <Button alignment="CENTER" contentDisplay="TOP" focusTraversable="false" graphicTextGap="0" fx:id="gameFolderButton" id="gameFolderButton" layoutX="184" layoutY="68" prefHeight="48" prefWidth="80" text="Folders" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+              <font>
+                <Font name="System Regular" size="12"/>
+              </font>
+              <styleClass xmlns:fx="http://javafx.com/fxml">
+                <String fx:value="button"/>
+                <String fx:value="jfx-button"/>
+                <String fx:value="jfx-menu-button"/>
+              </styleClass>
+            </Button>
+            <Button alignment="CENTER" contentDisplay="TOP" focusTraversable="false" graphicTextGap="0" fx:id="steamDBButton" id="steamDBButton" layoutX="0" layoutY="128" prefHeight="48" prefWidth="80" text="SteamDB" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+              <font>
+                <Font name="System Regular" size="12"/>
+              </font>
+              <styleClass xmlns:fx="http://javafx.com/fxml">
+                <String fx:value="button"/>
+                <String fx:value="jfx-button"/>
+                <String fx:value="jfx-menu-button"/>
+              </styleClass>
+            </Button>
+            <Button alignment="CENTER" contentDisplay="TOP" focusTraversable="false" graphicTextGap="0" fx:id="protonDBButton" id="protonDBButton" layoutX="92" layoutY="128" prefHeight="48" prefWidth="80" text="ProtonDB" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+              <font>
+                <Font name="System Regular" size="12"/>
+              </font>
+              <styleClass xmlns:fx="http://javafx.com/fxml">
+                <String fx:value="button"/>
+                <String fx:value="jfx-button"/>
+                <String fx:value="jfx-menu-button"/>
+              </styleClass>
+            </Button>
+            <Button alignment="CENTER" contentDisplay="TOP" focusTraversable="false" graphicTextGap="0" fx:id="steamButton" id="steamButton" layoutX="184" layoutY="128" prefHeight="48" prefWidth="80" text="Steam" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+              <font>
+                <Font name="System Regular" size="12"/>
+              </font>
+              <styleClass xmlns:fx="http://javafx.com/fxml">
+                <String fx:value="button"/>
+                <String fx:value="jfx-button"/>
+                <String fx:value="jfx-menu-button"/>
+              </styleClass>
+            </Button>
+            <Data id="data-utilitiesButton" graphic=".data/img/wine.png"/>
+            <Data id="data-protonDBButton" graphic=".data/img/protondb.png"/>
+            <Data id="data-steamButton" graphic=".data/img/steam.png"/>
+            <Data id="data-steamDBButton" graphic=".data/img/db.png"/>
+            <Data id="data-gameFolderButton" graphic=".data/img/folder.png"/>
+            <Data id="data-runInPrefixButton" graphic=".data/img/run.png"/>
+          </children>
+        </FlowPane>
+        <Data id="data-flowPane"/>
+      </children>
+      
+    </AnchorPane>
+  </children>
+</AnchorPane>

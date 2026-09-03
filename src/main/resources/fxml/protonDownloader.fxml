@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?import javafx.scene.*?><?import javafx.collections.*?><?import javafx.scene.layout.*?><?import com.corkytux.launcher.util.Data?><?import javafx.scene.control.*?><?import javafx.scene.text.*?><?import javafx.scene.image.*?><?import javafx.scene.shape.*?><?import javafx.scene.paint.*?><?import javafx.scene.web.*?><?import javafx.geometry.*?><?import java.lang.*?><AnchorPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.ProtonDownloader" AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" id="" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="88" prefWidth="368" style="-fx-background-color:#222226;" styleClass="">
+  <children>
+    <ProgressBar AnchorPane.bottomAnchor="16" AnchorPane.leftAnchor="16" AnchorPane.rightAnchor="16" focusTraversable="false" fx:id="progressBar" id="progressBar" layoutX="16" layoutY="48" prefHeight="24" prefWidth="336" progress="0" styleClass="progress-bar jfx-progress-bar "/>
+    <Data id="data-progressBar"/>
+    <Label AnchorPane.bottomAnchor="55" AnchorPane.leftAnchor="16" AnchorPane.rightAnchor="16" alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label" id="label" layoutX="16" layoutY="15" prefHeight="18" prefWidth="336" styleClass="label " text="Downloading" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+      <font>
+        <Font name="System Bold" size="13"/>
+      </font>
+    </Label>
+    <Data id="data-label"/>
+  </children>
+</AnchorPane>

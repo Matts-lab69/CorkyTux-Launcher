@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?import javafx.scene.*?><?import javafx.collections.*?><?import javafx.scene.layout.*?><?import com.corkytux.launcher.util.Data?><?import javafx.scene.control.*?><?import javafx.scene.text.*?><?import javafx.scene.image.*?><?import javafx.scene.shape.*?><?import javafx.scene.paint.*?><?import javafx.scene.web.*?><?import javafx.geometry.*?><?import java.lang.*?><AnchorPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" id="" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="480" prefWidth="640" styleClass="">
+  <children>
+    <AnchorPane focusTraversable="false" fx:id="panel" id="panel" layoutX="16" layoutY="16" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="136" prefWidth="224" styleClass="" style="-fx-background-color:#333333;-fx-background-radius:15px;">
+      <children>
+        <ImageView AnchorPane.leftAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" fitHeight="136" fx:id="imageAlt" id="imageAlt" layoutX="0" layoutY="0" styleClass="" fitWidth="224"/>
+        <Data id="data-imageAlt" image=""/>
+        <HBox alignment="CENTER_LEFT" focusTraversable="false" fx:id="hbox" id="hbox" layoutX="0" layoutY="88" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="48" prefWidth="224" spacing="5" style="-fx-background-color:#333337cd;-fx-background-radius:0 0 15 15;" styleClass="">
+          <padding>
+            <Insets bottom="0" left="10" right="0" top="0"/>
+          </padding>
+          <children>
+            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label" id="label" layoutX="10" layoutY="4" prefHeight="40" prefWidth="208" styleClass="label " text="game name" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="true">
+              <font>
+                <Font name="System Bold" size="12"/>
+              </font>
+            </Label>
+            <Data id="data-label"/>
+          </children>
+        </HBox>
+        <Data id="data-hbox"/>
+      </children>
+      
+    </AnchorPane>
+    <Data id="data-panel"/>
+    <AnchorPane focusTraversable="false" fx:id="gameDLPanel" id="gameDLPanel" layoutX="104" layoutY="248" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="56" prefWidth="416" styleClass="" style="-fx-background-color:#333337;-fx-background-radius:15px;">
+      <children>
+        <VBox AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="48" alignment="CENTER_LEFT" focusTraversable="false" fx:id="vboxAlt" id="vboxAlt" layoutX="0" layoutY="0" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="56" prefWidth="368" spacing="0" styleClass="">
+          <padding>
+            <Insets bottom="0" left="15" right="0" top="0"/>
+          </padding>
+          <children>
+            <Label AnchorPane.leftAnchor="15" AnchorPane.rightAnchor="-119" alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelAlt" id="labelAlt" layoutX="15" layoutY="11" prefHeight="17" prefWidth="344" styleClass="label " text="Game name" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+              <font>
+                <Font name="System Bold" size="12"/>
+              </font>
+            </Label>
+            <Label AnchorPane.leftAnchor="15" AnchorPane.rightAnchor="-119" alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label3" id="label3" layoutX="15" layoutY="28" prefHeight="18" prefWidth="344" styleClass="label " text="Game desc" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+              <font>
+                <Font name="System Regular" size="12"/>
+              </font>
+            </Label>
+            <Data id="data-label3"/>
+            <Data id="data-labelAlt"/>
+          </children>
+        </VBox>
+        <Data id="data-vboxAlt"/>
+        <ImageView AnchorPane.rightAnchor="16" focusTraversable="false" fitHeight="32" fx:id="image" id="image" layoutX="376" layoutY="12" styleClass="" fitWidth="24"/>
+        <Data id="data-image" image=".data/img/download.png"/>
+      </children>
+      
+    </AnchorPane>
+    <Data id="data-gameDLPanel"/>
+    <VBox alignment="CENTER" focusTraversable="false" fx:id="gameStubBox" id="gameStubBox" layoutX="272" layoutY="16" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="136" prefWidth="224" spacing="0" styleClass="modern-input-box ">
+      <children>
+        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label4" id="label4" layoutX="16" layoutY="51" prefHeight="18" prefWidth="192" styleClass="label " text="" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+          <font>
+            <Font name="System Bold" size="13"/>
+          </font>
+        </Label>
+        <Data id="data-label4"/>
+        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label5" id="label5" layoutX="12" layoutY="69" prefHeight="16" prefWidth="200" styleClass="label " text="Please wait until game added" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
+          <font>
+            <Font name="System Regular" size="12"/>
+          </font>
+        </Label>
+        <Data id="data-label5"/>
+      </children>
+    </VBox>
+    <Data id="data-gameStubBox"/>
+  </children>
+</AnchorPane>
