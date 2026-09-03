@@ -570,3 +570,77 @@
     -fx-font-weight: bold;
     -fx-padding: 2 8;
 }
+
+/* ===== THEME-AWARE SURFACES (used instead of inline backgrounds) ===== */
+.app-root {
+    -fx-background-color: #000000;
+}
+.main-scroll {
+    -fx-background-color: #121212;
+    -fx-background-radius: 8;
+}
+.empty-header {
+    -fx-background-color: #181818;
+    -fx-background-radius: 12;
+    -fx-padding: 40;
+}
+.text-primary {
+    -fx-text-fill: #ffffff;
+}
+.text-secondary {
+    -fx-text-fill: #a7a7a7;
+}
+
+/* ===== THEME BASE TEXT (light file mirrors with dark text) ===== */
+.label {
+    -fx-text-fill: #ffffff;
+}
+.label-secondary {
+    -fx-text-fill: #b3b3b3;
+}
+
+.check-box {
+    -fx-text-fill: #ffffff;
+}
+
+/* Hosts for SwitchComponent toggles + tab pills + cover frame */
+.toggle-host {
+    -fx-background-color: #181818;
+}
+.tab-pill {
+    -fx-background-color: #181818;
+    -fx-background-radius: 16;
+}
+.cover-frame {
+    -fx-background-color: #282828;
+    -fx-background-radius: 8;
+}
+
+.text-area {
+    -fx-background-color: #181818;
+    -fx-background-radius: 8;
+    -fx-text-fill: #ffffff;
+    -fx-prompt-text-fill: #a7a7a7;
+}
+.text-area .content {
+    -fx-background-color: #181818;
+    -fx-background-radius: 8;
+}
+.text-area .scroll-pane {
+    -fx-background-color: transparent;
+}
+
+/* Center scroll: explicit black hairline, no focus ring */
+.main-scroll {
+    -fx-border-color: #000000;
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+.main-scroll > .viewport {
+    -fx-background-color: #121212;
+}
+.main-scroll:focused {
+    -fx-background-insets: 0;
+}

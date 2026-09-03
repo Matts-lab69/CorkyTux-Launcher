@@ -62,8 +62,17 @@ public class AccentColorManager {
         String p  = val("primary");
         String h  = val("hover");
         String pr = val("pressed");
+        // Light theme (WCAG AA): darken button backgrounds so white text stays readable.
+        // Text/border accents keep the vivid tone.
+        boolean light = false;
+        try { light = ThemeManager.getInstance().isLight(); } catch (Exception ignored) {}
+        String bp  = light ? darken(p, 0.22) : p;
+        String bh  = light ? darken(h, 0.22) : h;
+        String bpr = light ? darken(pr, 0.22) : pr;
         String grad = "linear-gradient(to right," + p + "," + pr + ")";
         String selBg = darken(p, 0.6);
+        // Hover tint: translucent accent (luminous, never near-black)
+        String hoverTint = hexToRgba(p, 0.22);
 
         StringBuilder sb = new StringBuilder();
         sb.append("/* Accent color override – auto-generated for v2 UI */\n\n");
@@ -128,10 +137,10 @@ public class AccentColorManager {
         sb.append(".combo-box:focused { -fx-border-color: ").append(p).append("; }\n\n");
 
         // Action buttons (game detail panel)
-        sb.append(".action-btn:hover { -fx-background-color: ").append(selBg).append("; }\n\n");
+        sb.append(".action-btn:hover { -fx-background-color: ").append(hoverTint).append("; }\n\n");
 
         // Game list item hover
-        sb.append(".game-list-item:hover { -fx-background-color: ").append(selBg).append("; }\n\n");
+        sb.append(".game-list-item:hover { -fx-background-color: ").append(hoverTint).append("; }\n\n");
 
         // Download / proton icons tint (via -fx-background-color on icon containers)
         sb.append(".download-icon { -fx-background-color: ").append(p).append("; }\n\n");
@@ -171,14 +180,20 @@ public class AccentColorManager {
         sb.append(".tooltip { -fx-text-fill: ").append(p).append("; -fx-border-color: ").append(p).append("; }\n\n");
 
         // Confirm button (fixed green, not accent)
-        sb.append(".confirm-button { -fx-background-color: #1db954; }\n");
-        sb.append(".confirm-button:hover { -fx-background-color: #1ed760; }\n");
-        sb.append(".confirm-button:pressed { -fx-background-color: #1aa34a; }\n\n");
+        String cb = light ? "#198754" : "#1db954";
+        String cbh = light ? "#157347" : "#1ed760";
+        String cbp = light ? "#146c43" : "#1aa34a";
+        sb.append(".confirm-button { -fx-background-color: ").append(cb).append("; }\n");
+        sb.append(".confirm-button:hover { -fx-background-color: ").append(cbh).append("; }\n");
+        sb.append(".confirm-button:pressed { -fx-background-color: ").append(cbp).append("; }\n\n");
 
         // Danger button (fixed red)
-        sb.append(".danger-button { -fx-background-color: #FF0040; }\n");
-        sb.append(".danger-button:hover { -fx-background-color: #FF3366; }\n");
-        sb.append(".danger-button:pressed { -fx-background-color: #CC0033; }\n");
+        String db = light ? "#DC3545" : "#FF0040";
+        String dbh = light ? "#BB2D3B" : "#FF3366";
+        String dbp = light ? "#B02A37" : "#CC0033";
+        sb.append(".danger-button { -fx-background-color: ").append(db).append("; }\n");
+        sb.append(".danger-button:hover { -fx-background-color: ").append(dbh).append("; }\n");
+        sb.append(".danger-button:pressed { -fx-background-color: ").append(dbp).append("; }\n");
 
         return sb.toString();
     }
@@ -209,6 +224,17 @@ public class AccentColorManager {
             case "pressed" -> v[3];
             default        -> v[1];
         };
+    }
+
+    private static String hexToRgba(String hex, double alpha) {
+        try {
+            int r = Integer.parseInt(hex.substring(1, 3), 16);
+            int g = Integer.parseInt(hex.substring(3, 5), 16);
+            int b = Integer.parseInt(hex.substring(5, 7), 16);
+            return String.format("rgba(%d,%d,%d,%.2f)", r, g, b, alpha);
+        } catch (Exception e) {
+            return hex;
+        }
     }
 
     private static String darken(String hex, double amount) {

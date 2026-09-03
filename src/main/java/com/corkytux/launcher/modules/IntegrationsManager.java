@@ -244,12 +244,23 @@ public class IntegrationsManager {
                         .timeout(Duration.ofSeconds(10)).GET().build();
                 var resp = http.send(req, HttpResponse.BodyHandlers.ofString());
                 if (resp.statusCode() == 200) {
+                    String body = resp.body();
                     var m = java.util.regex.Pattern.compile("\"header_image\"\\s*:\\s*\"([^\"]+)\"")
-                            .matcher(resp.body());
+                            .matcher(body);
                     if (m.find()) {
                         String imgUrl = m.group(1).replace("\\/", "/");
                         var dest = Path.of(home, ".config", "CorkyTux", "banners", appId.trim() + "-store.jpg");
                         if (downloadTo(imgUrl, dest)) out.put("banner", dest.toString());
+                    }
+                    // capsule doubles as square-ish icon when CDN direct 404s
+                    if (!out.containsKey("icon")) {
+                        var c = java.util.regex.Pattern.compile("\"capsule_image\"\\s*:\\s*\"([^\"]+)\"")
+                                .matcher(body);
+                        if (c.find()) {
+                            String imgUrl = c.group(1).replace("\\/", "/");
+                            var dest = Path.of(home, ".config", "CorkyTux", "icons", appId.trim() + "-store.jpg");
+                            if (downloadTo(imgUrl, dest)) out.put("icon", dest.toString());
+                        }
                     }
                 }
             } catch (Exception e) {
@@ -527,7 +538,14 @@ public class IntegrationsManager {
                             slugify(gameName) + "-sgdb.jpg");
                     if (!out.containsKey("banner") && steamGridDownloadCover(gridId, dest)) {
                         out.put("banner", dest.toString());
-                        // Grid covers are portrait – also usable as fallback icon
+                    }
+                    // Proper square icon (PNG preferred) – overwrites capsule fallback
+                    var iconDest = Path.of(home, ".config", "CorkyTux", "icons",
+                            slugify(gameName) + "-sgdb.png");
+                    if (steamGridDownloadIcon(gridId, iconDest)) {
+                        out.put("icon", iconDest.toString());
+                    } else if (!out.containsKey("icon")) {
+                        // Grid covers are portrait – last-resort fallback icon
                         out.putIfAbsent("icon", dest.toString());
                     }
                 }
@@ -658,9 +676,44 @@ public class IntegrationsManager {
     }
 
     /**
-     * Downloads a grid cover (600x900) for a SteamGridDB game id into dest file.
+     * Downloads a proper square icon (prefers PNG) for a SteamGridDB game id.
      * Returns true on success.
      */
+    public boolean steamGridDownloadIcon(String gridId, Path dest) {
+        String key = getKey("steamgriddb");
+        if (key == null || key.isBlank() || gridId == null) return false;
+        try {
+            var req = HttpRequest.newBuilder(
+                    URI.create("https://www.steamgriddb.com/api/v2/icons/game/" + gridId + "?limit=20"))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Authorization", "Bearer " + key.trim())
+                    .GET().build();
+            var resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() != 200) return false;
+            String body = resp.body();
+            // Collect (url) candidates, PNG first
+            var urls = new java.util.ArrayList<String>();
+            var m = java.util.regex.Pattern.compile("\"url\"\\s*:\\s*\"([^\"]+)\"").matcher(body);
+            while (m.find()) urls.add(m.group(1).replace("\\/", "/"));
+            urls.sort((a, b) -> Boolean.compare(!b.endsWith(".png"), !a.endsWith(".png")));
+            for (String imgUrl : urls) {
+                try {
+                    var imgReq = HttpRequest.newBuilder(URI.create(imgUrl))
+                            .timeout(Duration.ofSeconds(30)).GET().build();
+                    var imgResp = http.send(imgReq, HttpResponse.BodyHandlers.ofByteArray());
+                    if (imgResp.statusCode() != 200 || imgResp.body().length <= 500) continue;
+                    Files.createDirectories(dest.getParent());
+                    Files.write(dest, imgResp.body());
+                    LOG.info("SteamGridDB icon saved to {}", dest);
+                    return true;
+                } catch (Exception ignored) {}
+            }
+            return false;
+        } catch (Exception e) {
+            LOG.debug("SteamGridDB icon download failed for {}", gridId, e);
+            return false;
+        }
+    }
     public boolean steamGridDownloadCover(String gridId, Path dest) {
         String key = getKey("steamgriddb");
         if (key == null || key.isBlank() || gridId == null) return false;

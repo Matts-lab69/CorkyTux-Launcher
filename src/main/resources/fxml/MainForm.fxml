@@ -8,12 +8,12 @@
 <?import javafx.scene.text.*?>
 <?import javafx.geometry.*?>
 <?import java.lang.*?>
-<StackPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.MainForm" prefHeight="700" prefWidth="1200" style="-fx-background-color:#000000;">
+<StackPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.MainForm" prefHeight="700" prefWidth="1200" styleClass="app-root">
   <BorderPane fx:id="mainBorderPane">
 
   <!-- ===== TOP BAR ===== -->
   <top>
-    <HBox alignment="CENTER_LEFT" spacing="12" style="-fx-background-color:#000000; -fx-padding:10 16;" BorderPane.alignment="CENTER_LEFT">
+    <HBox alignment="CENTER_LEFT" spacing="12" styleClass="top-bar" style="-fx-padding:10 16;" BorderPane.alignment="CENTER_LEFT">
       <children>
         <!-- Logo -->
         <ImageView fitHeight="32" fitWidth="32" preserveRatio="true">
@@ -76,7 +76,7 @@
             <!-- Search in library -->
             <HBox styleClass="search-filter" alignment="CENTER_LEFT" spacing="6">
               <children>
-                <ImageView fitWidth="16" fitHeight="16" preserveRatio="true" smooth="true">
+                <ImageView fx:id="librarySearchIcon" fitWidth="16" fitHeight="16" preserveRatio="true" smooth="true">
                   <image>
                     <Image url="@../img/search.png"/>
                   </image>
@@ -103,29 +103,25 @@
 
   <!-- ===== MAIN CONTENT - Game Cards Grid ===== -->
   <center>
-    <ScrollPane fx:id="container" fitToWidth="true" style="-fx-background-color:#121212; -fx-background-radius:8;" BorderPane.alignment="CENTER">
+    <ScrollPane fx:id="container" fitToWidth="true" styleClass="main-scroll" BorderPane.alignment="CENTER">
       <content>
         <VBox fx:id="containerContent" spacing="24" style="-fx-padding:24;">
           <children>
             <!-- Empty state -->
-            <VBox fx:id="noGamesHeader" alignment="CENTER" spacing="12" visible="true" managed="true" style="-fx-background-color:#181818; -fx-background-radius:12; -fx-padding:40;">
+            <VBox fx:id="noGamesHeader" alignment="CENTER" spacing="12" visible="true" managed="true" styleClass="empty-header">
               <children>
-                <Label text="No games yet" style="-fx-text-fill:#ffffff; -fx-font-size:24; -fx-font-weight:bold;"/>
-                <Label text="Add a game to get started" style="-fx-text-fill:#a7a7a7; -fx-font-size:14;"/>
+                <Label text="No games yet" styleClass="text-primary" style="-fx-font-size:24; -fx-font-weight:bold;"/>
+                <Label text="Add a game to get started" style=" -fx-font-size:14;" styleClass="label-secondary"/>
                 <Button fx:id="addGameButtonCenter" text="Add Game" styleClass="btn-primary" prefWidth="140"/>
               </children>
             </VBox>
 
             <!-- Recently Played section -->
-            <VBox fx:id="recentlyPlayedSection" spacing="16" visible="false" managed="false">
+            <VBox fx:id="recentlyPlayedSection" spacing="12" visible="false" managed="false">
               <children>
-                <HBox alignment="CENTER_LEFT">
-                  <children>
-                    <Label text="Recently Played" styleClass="content-title" HBox.hgrow="ALWAYS"/>
-                    <Button text="Show all" styleClass="btn-outline"/>
-                  </children>
-                </HBox>
-                <FlowPane fx:id="recentlyPlayedFlow" hgap="16" vgap="16"/>
+                <Label text="RECENTLY PLAYED" styleClass="content-title" alignment="CENTER" maxWidth="Infinity" textAlignment="CENTER"/>
+                <Separator/>
+                <FlowPane fx:id="recentlyPlayedFlow" hgap="16" vgap="16" alignment="CENTER"/>
               </children>
             </VBox>
 
@@ -165,7 +161,7 @@
           <children>
             <Label fx:id="gameTitle" text="Game Title" styleClass="game-detail-title" HBox.hgrow="ALWAYS"/>
             <Button fx:id="gameMenuButton" styleClass="btn-icon" prefWidth="36" prefHeight="36" maxWidth="36" maxHeight="36">
-              <graphic><Label fx:id="favoriteStarLabel" text="&#9734;" style="-fx-font-size:24; -fx-text-fill:#a7a7a7;"/></graphic>
+              <graphic><Label fx:id="favoriteStarLabel" text="&#9734;" style="-fx-font-size:24; " styleClass="label-secondary"/></graphic>
               <HBox.margin>
                 <Insets left="8"/>
               </HBox.margin>
@@ -174,7 +170,7 @@
         </HBox>
 
         <!-- Game cover (fixed frame, no overflow onto Play) -->
-        <StackPane prefWidth="348" prefHeight="200" minWidth="348" minHeight="200" maxWidth="348" maxHeight="200" style="-fx-background-color:#282828; -fx-background-radius:8;">
+        <StackPane prefWidth="348" prefHeight="200" minWidth="348" minHeight="200" maxWidth="348" maxHeight="200" styleClass="cover-frame">
           <children>
             <ImageView fx:id="gameHeader" fitWidth="340" fitHeight="192" preserveRatio="true"/>
           </children>
@@ -186,15 +182,15 @@
         <!-- Time played -->
         <HBox alignment="CENTER_LEFT" spacing="4">
           <children>
-            <Label text="Time played:" style="-fx-text-fill:#a7a7a7; -fx-font-size:12;"/>
-            <Label fx:id="timeLabel" text="0 h" style="-fx-text-fill:#ffffff; -fx-font-size:12;"/>
+            <Label text="Time played:" style=" -fx-font-size:12;" styleClass="label-secondary"/>
+            <Label fx:id="timeLabel" text="0 h" styleClass="text-primary" style="-fx-font-size:12;"/>
           </children>
         </HBox>
 
         <!-- Install info -->
         <VBox spacing="8">
           <children>
-            <Label text="Install Info" style="-fx-text-fill:#ffffff; -fx-font-size:14; -fx-font-weight:bold;"/>
+            <Label text="Install Info" styleClass="text-primary" style="-fx-font-size:14; -fx-font-weight:bold;"/>
             <VBox fx:id="installInfoBox" styleClass="game-detail-info" spacing="6">
               <children>
                 <VBox spacing="2">
@@ -225,7 +221,7 @@
         <!-- Action buttons grid -->
         <VBox spacing="8">
           <children>
-            <Label text="Actions" style="-fx-text-fill:#ffffff; -fx-font-size:14; -fx-font-weight:bold;"/>
+            <Label text="Actions" styleClass="text-primary" style="-fx-font-size:14; -fx-font-weight:bold;"/>
             <VBox styleClass="action-grid" spacing="4">
               <children>
                 <HBox spacing="4">
@@ -262,12 +258,12 @@
 
   <!-- Modal overlay -->
   <VBox fx:id="modalOverlay" visible="false" managed="false" style="-fx-background-color:rgba(0,0,0,0.7);" alignment="CENTER">
-    <VBox fx:id="modalContent" style="-fx-background-color:#121212; -fx-background-radius:12; -fx-border-color:#282828; -fx-border-radius:12; -fx-padding:0;" maxWidth="900" maxHeight="600" prefWidth="900" prefHeight="600">
+    <VBox fx:id="modalContent" styleClass="modal-content" style="-fx-padding:0;" maxWidth="900" maxHeight="600" prefWidth="900" prefHeight="600">
       <children>
         <!-- Modal header -->
-        <HBox fx:id="modalHeader" alignment="CENTER_LEFT" spacing="12" style="-fx-background-color:#121212; -fx-padding:16 24; -fx-border-color:transparent transparent #282828 transparent; -fx-border-width:0 0 1 0;">
+        <HBox fx:id="modalHeader" alignment="CENTER_LEFT" spacing="12" styleClass="modal-header" style="-fx-padding:16 24; -fx-border-width:0 0 1 0;">
           <children>
-            <Label fx:id="modalTitle" text="Settings" style="-fx-text-fill:#ffffff; -fx-font-size:18; -fx-font-weight:bold;" HBox.hgrow="ALWAYS"/>
+            <Label fx:id="modalTitle" text="Settings" styleClass="modal-title" HBox.hgrow="ALWAYS"/>
             <Button fx:id="modalCloseButton" styleClass="btn-icon" prefWidth="32" prefHeight="32" maxWidth="32" maxHeight="32">
               <graphic><Label text="&#10005;" styleClass="accent-text" style="-fx-font-size:14;"/></graphic>
             </Button>

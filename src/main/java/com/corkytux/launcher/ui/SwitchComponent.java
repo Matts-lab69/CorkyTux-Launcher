@@ -58,7 +58,7 @@ public class SwitchComponent extends HBox {
         track.getChildren().add(thumb);
 
         label = new Label(text);
-        label.setTextFill(Color.WHITE);
+        label.getStyleClass().add("label"); // themed base text (white dark / #212529 light)
         label.setStyle("-fx-font-size:12px;");
         HBox.setHgrow(label, javafx.scene.layout.Priority.ALWAYS);
 

@@ -3,13 +3,13 @@
   <children>
     <VBox AnchorPane.bottomAnchor="56" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="graphics" id="graphics" visible="false" managed="false" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="360" prefWidth="704" spacing="1" style="-fx-background-color:transparent;" styleClass="">
       <children>
-        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="wined3d" id="wined3d" prefHeight="58" prefWidth="272" style="-fx-background-color:#181818;-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="wined3d" id="wined3d" prefHeight="58" prefWidth="272" style="-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button toggle-host " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
           <font>
             <Font name="System Regular" size="13"/>
           </font>
         </Button>
         <Data id="data-wined3d"/>
-        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="useWayland" id="useWayland" prefHeight="58" prefWidth="272" style="-fx-background-color:#181818;-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="useWayland" id="useWayland" prefHeight="58" prefWidth="272" style="-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button toggle-host " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
           <font>
             <Font name="System Regular" size="13"/>
           </font>
@@ -21,11 +21,11 @@
       <children>
         <HBox alignment="CENTER" focusTraversable="false" fx:id="hbox4" id="hbox4" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="152" prefWidth="704" spacing="5" styleClass="">
           <children>
-            <AnchorPane focusTraversable="false" fx:id="panelAlt" id="panelAlt" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="152" prefWidth="240" style="-fx-background-color:#181818;-fx-background-radius:15px;" styleClass="">
+            <AnchorPane focusTraversable="false" fx:id="panelAlt" id="panelAlt" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="152" prefWidth="240" style="-fx-background-radius:15px;" styleClass="">
               <children>
                 <ImageView focusTraversable="false" fitHeight="128" fx:id="gameIcon" id="gameIcon" layoutX="56" layoutY="0" styleClass="" fitWidth="128"/>
                 <Data id="data-gameIcon"/>
-                <Button alignment="CENTER" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="4" fx:id="editIcon" id="editIcon" layoutX="160" layoutY="96" prefHeight="32" prefWidth="32" style="-fx-background-radius:50px;-fx-background-color:#38383b;" styleClass="button jfx-button " text="Button" textAlignment="CENTER" underline="false" wrapText="false">
+                <Button alignment="CENTER" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="4" fx:id="editIcon" id="editIcon" layoutX="160" layoutY="96" prefHeight="32" prefWidth="32" style="-fx-background-radius:50px;-fx-background-color:#38383b;" styleClass="button jfx-button toggle-host " text="Button" textAlignment="CENTER" underline="false" wrapText="false">
                   <font>
                     <Font name="System Regular" size="13"/>
                   </font>
@@ -36,10 +36,10 @@
             </AnchorPane>
             <Data id="data-panelAlt"/>
             <Separator focusTraversable="false" fx:id="separator" id="separator" orientation="VERTICAL" prefHeight="416" prefWidth="8" styleClass="separator "/>
-            <AnchorPane focusTraversable="false" fx:id="panel" id="panel" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="152" prefWidth="240" style="-fx-background-color:#181818;-fx-background-radius:15px;" styleClass="">
+            <AnchorPane focusTraversable="false" fx:id="panel" id="panel" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="152" prefWidth="240" style="-fx-background-radius:15px;" styleClass="">
               <children>
                 <ImageView focusTraversable="false" fitHeight="128" fx:id="banner" id="banner" layoutX="40" layoutY="0" styleClass="" fitWidth="160"/>
-                <Button alignment="CENTER" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="4" fx:id="editBanner" id="editBanner" layoutX="176" layoutY="96" prefHeight="32" prefWidth="32" style="-fx-background-radius:50px;-fx-background-color:#38383b;" styleClass="button jfx-button " text="Button" textAlignment="CENTER" underline="false" wrapText="false">
+                <Button alignment="CENTER" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="4" fx:id="editBanner" id="editBanner" layoutX="176" layoutY="96" prefHeight="32" prefWidth="32" style="-fx-background-radius:50px;-fx-background-color:#38383b;" styleClass="button jfx-button toggle-host " text="Button" textAlignment="CENTER" underline="false" wrapText="false">
                   <font>
                     <Font name="System Regular" size="13"/>
                   </font>
@@ -56,12 +56,12 @@
         <Data id="data-hbox4"/>
         <HBox alignment="CENTER" focusTraversable="false" fx:id="hbox3" id="hbox3" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="32" prefWidth="704" spacing="5" styleClass="">
           <children>
-            <TextField alignment="CENTER" editable="true" focusTraversable="false" fx:id="gameName" id="gameName" prefColumnCount="12" prefHeight="32" prefWidth="184" promptText="game name" style="-fx-background-radius:50px;-fx-background-color:#181818;" styleClass="text-input text-field " text="">
+            <TextField alignment="CENTER" editable="true" focusTraversable="false" fx:id="gameName" id="gameName" prefColumnCount="12" prefHeight="32" prefWidth="184" promptText="game name" style="-fx-background-radius:50px;" styleClass="text-input text-field " text="">
               <font>
                 <Font name="System Regular" size="13"/>
               </font>
             </TextField>
-            <Button alignment="CENTER" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="4" fx:id="applyGameName" id="applyGameName" prefHeight="32" prefWidth="32" style="-fx-background-radius:50px;" styleClass="button jfx-button " text="Button" textAlignment="CENTER" underline="false" wrapText="false">
+            <Button alignment="CENTER" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="4" fx:id="applyGameName" id="applyGameName" prefHeight="32" prefWidth="32" style="-fx-background-radius:50px;" styleClass="button jfx-button toggle-host " text="Button" textAlignment="CENTER" underline="false" wrapText="false">
               <font>
                 <Font name="System Regular" size="13"/>
               </font>
@@ -80,7 +80,7 @@
             <Insets bottom="0" left="44" right="44" top="0"/>
           </padding>
           <children>
-            <Label alignment="CENTER_RIGHT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label5" id="label5" prefHeight="18" prefWidth="112" styleClass="label " text="Proton version:" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+            <Label alignment="CENTER_RIGHT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label5" id="label5" prefHeight="18" prefWidth="112" styleClass="label " text="Proton version:" textAlignment="LEFT" underline="false" wrapText="false">
               <font>
                 <Font name="System Bold" size="13"/>
               </font>
@@ -93,13 +93,13 @@
             </ComboBox>
             <Data id="data-proton"/>
             <Separator focusTraversable="false" fx:id="separator3" id="separator3" orientation="VERTICAL" prefHeight="40" prefWidth="8" styleClass="separator "/>
-            <Label alignment="CENTER_RIGHT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label8" id="label8" prefHeight="18" prefWidth="120" styleClass="label " text="Prefix path:" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+            <Label alignment="CENTER_RIGHT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label8" id="label8" prefHeight="18" prefWidth="120" styleClass="label " text="Prefix path:" textAlignment="LEFT" underline="false" wrapText="false">
               <font>
                 <Font name="System Bold" size="13"/>
               </font>
             </Label>
             <Data id="data-label8"/>
-            <TextField alignment="CENTER_LEFT" editable="false" focusTraversable="true" fx:id="prefixPath" id="prefixPath" prefColumnCount="12" prefHeight="28" prefWidth="168" promptText="" style="-fx-background-radius:50px;-fx-background-color:#181818;" styleClass="text-input text-field " text="">
+            <TextField alignment="CENTER_LEFT" editable="false" focusTraversable="true" fx:id="prefixPath" id="prefixPath" prefColumnCount="12" prefHeight="28" prefWidth="168" promptText="" style="-fx-background-radius:50px;" styleClass="text-input text-field " text="">
               <font>
                 <Font name="System Regular" size="12"/>
               </font>
@@ -114,17 +114,17 @@
             <Data id="data-vbox5"/>
             <VBox alignment="CENTER" focusTraversable="false" fx:id="vbox5" id="vbox5" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="272" prefWidth="271" spacing="1" styleClass="">
               <children>
-                <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label" id="label" prefHeight="32" prefWidth="144" styleClass="label " text="Launch parameters" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
+                <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label" id="label" prefHeight="32" prefWidth="144" styleClass="label label-secondary" text="Launch parameters" textAlignment="CENTER" underline="false" wrapText="false">
                   <font>
                     <Font name="System Bold" size="13"/>
                   </font>
                 </Label>
-                <VBox alignment="TOP_LEFT" focusTraversable="false" fx:id="vboxAlt" id="vboxAlt" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="58" prefWidth="271" spacing="0" style="-fx-background-color:#181818;-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="modern-input-box ">
+                <VBox alignment="TOP_LEFT" focusTraversable="false" fx:id="vboxAlt" id="vboxAlt" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="58" prefWidth="271" spacing="0" style="-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="modern-input-box ">
                   <padding>
                     <Insets bottom="8" left="18" right="18" top="8"/>
                   </padding>
                   <children>
-                    <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label4" id="label4" prefHeight="16" prefWidth="192" styleClass="label " text="DLL overrides" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
+                    <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label4" id="label4" prefHeight="16" prefWidth="192" styleClass="label label-secondary" text="DLL overrides" textAlignment="LEFT" underline="false" wrapText="false">
                       <font>
                         <Font name="System Regular" size="12"/>
                       </font>
@@ -143,12 +143,12 @@
                     <Data id="data-overrides"/>
                   </children>
                 </VBox>
-                <VBox alignment="TOP_LEFT" focusTraversable="false" fx:id="envBox" id="envBox" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="58" prefWidth="271" spacing="0" style="-fx-background-color:#181818;-jfx-button-type: FLAT;-fx-background-radius:0px;" styleClass="modern-input-box ">
+                <VBox alignment="TOP_LEFT" focusTraversable="false" fx:id="envBox" id="envBox" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="58" prefWidth="271" spacing="0" style="-jfx-button-type: FLAT;-fx-background-radius:0px;" styleClass="modern-input-box ">
                   <padding>
                     <Insets bottom="8" left="18" right="18" top="8"/>
                   </padding>
                   <children>
-                    <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label6" id="label6" prefHeight="16" prefWidth="192" styleClass="label " text="Environment variables" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
+                    <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label6" id="label6" prefHeight="16" prefWidth="192" styleClass="label label-secondary" text="Environment variables" textAlignment="LEFT" underline="false" wrapText="false">
                       <font>
                         <Font name="System Regular" size="12"/>
                       </font>
@@ -173,7 +173,7 @@
                     <Insets bottom="8" left="18" right="18" top="8"/>
                   </padding>
                   <children>
-                    <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelAlt" id="labelAlt" prefHeight="17" prefWidth="232" styleClass="label " text="Arguments before executable" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
+                    <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelAlt" id="labelAlt" prefHeight="17" prefWidth="232" styleClass="label label-secondary" text="Arguments before executable" textAlignment="LEFT" underline="false" wrapText="false">
                       <font>
                         <Font name="System Regular" size="12"/>
                       </font>
@@ -199,7 +199,7 @@
                     <Insets bottom="8" left="18" right="18" top="8"/>
                   </padding>
                   <children>
-                    <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label7" id="label7" prefHeight="17" prefWidth="240" styleClass="label " text="Arguments after executable" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
+                    <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label7" id="label7" prefHeight="17" prefWidth="240" styleClass="label label-secondary" text="Arguments after executable" textAlignment="LEFT" underline="false" wrapText="false">
                       <font>
                         <Font name="System Regular" size="12"/>
                       </font>
@@ -225,23 +225,23 @@
             <Separator focusTraversable="false" fx:id="separatorAlt" id="separatorAlt" orientation="VERTICAL" prefHeight="280" prefWidth="8" styleClass="separator "/>
             <VBox alignment="CENTER" focusTraversable="false" fx:id="vbox6" id="vbox6" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="272" prefWidth="279" spacing="1" styleClass="">
               <children>
-                <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label3" id="label3" prefHeight="32" prefWidth="248" styleClass="label " text="Additional features" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
+                <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label3" id="label3" prefHeight="32" prefWidth="248" styleClass="label label-secondary" text="Additional features" textAlignment="CENTER" underline="false" wrapText="false">
                   <font>
                     <Font name="System Bold" size="13"/>
                   </font>
                 </Label>
-                <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="steamOverlay" id="steamOverlay" prefHeight="58" prefWidth="272" style="-fx-background-color:#181818;-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+                <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="steamOverlay" id="steamOverlay" prefHeight="58" prefWidth="272" style="-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button toggle-host " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
                   <font>
                     <Font name="System Regular" size="13"/>
                   </font>
                 </Button>
                 <Data id="data-steamOverlay"/>
-                <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="steamRuntime" id="steamRuntime" prefHeight="58" prefWidth="272" style="-fx-background-color:#181818;-jfx-button-type: FLAT;-fx-background-radius:0px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+                <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="steamRuntime" id="steamRuntime" prefHeight="58" prefWidth="272" style="-jfx-button-type: FLAT;-fx-background-radius:0px;" styleClass="button jfx-button toggle-host " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
                   <font>
                     <Font name="System Regular" size="13"/>
                   </font>
                 </Button>
-                <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="noSteamPath" id="noSteamPath" prefHeight="58" prefWidth="272" style="-fx-background-color:#181818;-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+                <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="noSteamPath" id="noSteamPath" prefHeight="58" prefWidth="272" style="-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button toggle-host " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
                   <font>
                     <Font name="System Regular" size="13"/>
                   </font>
@@ -262,7 +262,7 @@
     </VBox>
     <HBox AnchorPane.bottomAnchor="12" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" alignment="CENTER" focusTraversable="false" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="56" style="-fx-background-color:transparent; -fx-padding:0;">
       <children>
-    <HBox alignment="CENTER" focusTraversable="false" fx:id="hboxAlt" id="hboxAlt" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="56" spacing="4" style="-fx-background-color:#181818; -fx-background-radius:16; -fx-padding:4 12;">
+    <HBox alignment="CENTER" focusTraversable="false" fx:id="hboxAlt" styleClass="tab-pill" id="hboxAlt" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="56" spacing="4" style=" -fx-background-radius:16; -fx-padding:4 12;">
       <children>
         <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="viewButton" id="viewButton" prefHeight="56" prefWidth="72" selected="true" styleClass="toggle-button " text="View" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
           <font>

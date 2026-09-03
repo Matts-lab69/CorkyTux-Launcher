@@ -127,6 +127,7 @@ public class MainForm implements Initializable {
     @FXML private VBox allGamesSection;
     @FXML private TextField searchField; // removed from FXML, kept for compatibility
     @FXML private TextField librarySearch;
+    @FXML private ImageView librarySearchIcon;
     
     // Modal overlay fields
     @FXML private BorderPane mainBorderPane;
@@ -381,6 +382,9 @@ public class MainForm implements Initializable {
         setButtonGraphic(steamDBButton, "/img/db.png", 15);
         setButtonGraphic(gameFolderButton, "/img/folder.png", 15);
         setButtonGraphic(runInPrefixButton, "/img/run.png", 15);
+        if (librarySearchIcon != null) {
+            com.corkytux.launcher.modules.ThemedIcons.applyTo(librarySearchIcon, "/img/search.png");
+        }
         // Fix: Ensure network-dependent buttons are never gray due to failed internet check.
         // Run (third-party exe) and Utilities must work offline – no internet required.
         // Debug must be enabled when game idle (play yellow). Force enable after graphics set.
@@ -400,11 +404,13 @@ public class MainForm implements Initializable {
 
     private void setButtonGraphic(Button btn, String resource, int size) {
         if (btn == null) return;
-        var img = loadImage(resource, size, size);
+        var img = com.corkytux.launcher.modules.ThemedIcons.load(resource);
+        if (img == null) img = loadImage(resource, size, size);
         if (img != null) {
             var iv = new ImageView(img);
             iv.setFitWidth(size);
             iv.setFitHeight(size);
+            iv.getProperties().put("themedIconBase", resource);
             btn.setGraphic(iv);
         }
     }
@@ -658,7 +664,7 @@ public class MainForm implements Initializable {
     @FXML
     private void handleDesktopIconClick() {
         String desktop = execReadFully("xdg-user-dir DESKTOP");
-        if (desktop == null || desktop.isBlank()) desktop = System.getProperty("user.home") + "/Desktop";
+        if (desktop == null || desktop.isBlank()) desktop = com.corkytux.launcher.modules.FilesWorker.getExpectedHome() + "/Desktop";
         boolean selected = createDesktopFile(desktop.trim());
     }
 
@@ -1071,6 +1077,7 @@ public class MainForm implements Initializable {
             addGameToSidebarList(gameName, image, icon);
             // noGamesHeader vs container logic 1:1 – if header visible, hide it
             if (noGamesHeader != null && noGamesHeader.isVisible()) noGamesHeader.setVisible(false);
+            refreshRecentlyPlayed();
         };
         if (Platform.isFxApplicationThread()) r.run();
         else Platform.runLater(r);
@@ -1212,7 +1219,7 @@ public class MainForm implements Initializable {
         if (iconImg != null) iconView.setImage(iconImg);
 
         var nameLabel = new Label(gameName);
-        nameLabel.setStyle("-fx-text-fill:#ffffff; -fx-font-size:12;");
+        nameLabel.setStyle("-fx-font-size:12;");
         nameLabel.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(nameLabel, javafx.scene.layout.Priority.ALWAYS);
 
@@ -1228,6 +1235,51 @@ public class MainForm implements Initializable {
             if (raw != null) return Long.parseLong(raw.trim());
         } catch (Exception ignored) {}
         return 0;
+    }
+
+    /**
+     * Rebuilds the RECENTLY PLAYED center section: top 5 games by lastPlayed
+     * (big tiles). Hidden when nothing has been played yet.
+     */
+    public void refreshRecentlyPlayed() {
+        if (recentlyPlayedSection == null || recentlyPlayedFlow == null) return;
+        Runnable r = () -> {
+            try {
+                var scored = new java.util.ArrayList<Map.Entry<String, Long>>();
+                for (String n : masterGameList) {
+                    long lp = 0;
+                    try {
+                        String raw = appModule.getGame("lastPlayed", n);
+                        if (raw != null) lp = Long.parseLong(raw.trim());
+                    } catch (Exception ignored) {}
+                    if (lp > 0) scored.add(Map.entry(n, lp));
+                }
+                scored.sort((a, b) -> Long.compare(b.getValue(), a.getValue()));
+                recentlyPlayedFlow.getChildren().clear();
+                int shown = 0;
+                for (var e : scored) {
+                    if (shown >= 5) break;
+                    String n = e.getKey();
+                    try {
+                        Pane tile = createGameTile(n, masterGameImage.get(n), masterGameIcon.get(n));
+                        tile.getProperties().put("gameName", n);
+                        tile.setOnMouseClicked(ev -> showGameMenu(n, null, tile));
+                        recentlyPlayedFlow.getChildren().add(tile);
+                        addBasicEffects(tile);
+                        shown++;
+                    } catch (Exception ex) {
+                        LOG.debug("recent tile failed for {}", n, ex);
+                    }
+                }
+                boolean any = shown > 0;
+                recentlyPlayedSection.setVisible(any);
+                recentlyPlayedSection.setManaged(any);
+            } catch (Exception e) {
+                LOG.debug("refreshRecentlyPlayed failed", e);
+            }
+        };
+        if (Platform.isFxApplicationThread()) r.run();
+        else Platform.runLater(r);
     }
 
     /**
@@ -1581,8 +1633,16 @@ public class MainForm implements Initializable {
                 var ft2 = new FadeTransition(Duration.millis(200), containerNode);
                 ft2.setFromValue(containerNode.getOpacity()); ft2.setToValue(0.5); ft2.setOnFinished(e -> containerNode.setDisable(true)); ft2.play();
             }
-            try { com.corkytux.launcher.util.QuUI.animateWithoutConflict("FadeInRight", gamePanel, 1.6, null); }
-            catch (Exception ex) { fadeInRight(gamePanel, 250); }
+            // Node cache during slide-in: rasterizes heavy ScrollPane subtree once,
+            // avoiding per-frame repaints that caused intermittent lag.
+            gamePanel.setCache(true);
+            gamePanel.setCacheHint(javafx.scene.CacheHint.SPEED);
+            Runnable uncache = () -> {
+                gamePanel.setCache(false);
+                gamePanel.setCacheHint(javafx.scene.CacheHint.DEFAULT);
+            };
+            try { com.corkytux.launcher.util.QuUI.animateWithoutConflict("FadeInRight", gamePanel, 1.6, uncache); }
+            catch (Exception ex) { fadeInRight(gamePanel, 250); uncache.run(); }
 
             Thread.ofVirtual().start(() -> waitForWineServerTerminate(name));
         });
@@ -1706,6 +1766,13 @@ public class MainForm implements Initializable {
     }
 
     public void runGame(String gameName, String debug) {
+        // Track last played for Recently Played section
+        try {
+            appModule.setGame("lastPlayed", String.valueOf(System.currentTimeMillis() / 1000), gameName);
+            Platform.runLater(this::refreshRecentlyPlayed);
+        } catch (Exception e) {
+            LOG.debug("lastPlayed track failed", e);
+        }
         Thread.ofVirtual().start(() -> {
             var installedProtons = FilesWorker.getInstalledProtons();
             if (installedProtons.isEmpty()) {

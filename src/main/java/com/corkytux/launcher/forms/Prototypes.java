@@ -120,7 +120,7 @@ public class Prototypes {
         Image bannerImg = resolveImage(imagePath, null);
         if (bannerImg == null && imagePath != null) {
             // Try banners dir variant where imagePath may be bare appId without extension
-            String home = System.getProperty("user.home");
+            String home = com.corkytux.launcher.modules.FilesWorker.getExpectedHome();
             // Also handle case where imagePath was already a banners file but missing extension
             for (String ext : new String[]{".png", ".jpg", ".jpeg"}) {
                 if (imagePath.endsWith(ext)) continue;
@@ -130,7 +130,7 @@ public class Prototypes {
             }
         }
         if (bannerImg == null) {
-            String home = System.getProperty("user.home");
+            String home = com.corkytux.launcher.modules.FilesWorker.getExpectedHome();
             for (String ext : new String[]{".png", ".jpg", ".jpeg"}) {
                 String tryPath = home + "/.config/CorkyTux/banners/" + gameName + ext;
                 bannerImg = resolveImage(tryPath, null);
@@ -175,7 +175,7 @@ public class Prototypes {
         // Java: resolve explicit iconPath, then icons/{gameName}.*, then icons/{fileName}, then noImage.png fallback (both resource roots)
         Image iconImg = resolveImage(iconPath, null);
         if (iconImg == null) {
-            String home = System.getProperty("user.home");
+            String home = com.corkytux.launcher.modules.FilesWorker.getExpectedHome();
             // Try exact icons dir entry without extension (PHP stored without ext)
             for (String ext : new String[]{"", ".png", ".jpg", ".jpeg"}) {
                 String tryPath = home + "/.config/CorkyTux/icons/" + gameName + ext;

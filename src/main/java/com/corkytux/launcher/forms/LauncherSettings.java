@@ -327,6 +327,9 @@ public class LauncherSettings implements Initializable {
 
         // External links
         if (github != null) github.setOnMouseClicked(this::handleGithubClick);
+        if (github instanceof ImageView giv) {
+            com.corkytux.launcher.modules.ThemedIcons.applyTo(giv, "/.data/img/github.png");
+        }
 
         // protonsList selection reset – mirrors doProtonsListAction selectedIndex = -1
         if (protonsList != null) {
@@ -379,15 +382,59 @@ public class LauncherSettings implements Initializable {
         var acm = AccentColorManager.getInstance();
         var children = visuals.getChildren();
 
+        // Theme mode header
+        var themeHeader = new Label("Theme Mode");
+        themeHeader.getStyleClass().add("label");
+        themeHeader.setStyle("-fx-font-size:18px; -fx-font-weight:bold;");
+        themeHeader.setPrefHeight(40);
+        children.add(themeHeader);
+
+        // Dark / Light toggle row
+        var tm = com.corkytux.launcher.modules.ThemeManager.getInstance();
+        var themeRow = new javafx.scene.layout.HBox(8);
+        themeRow.setAlignment(Pos.CENTER_LEFT);
+        var darkBtn = new Button("🌙 Dark");
+        var lightBtn = new Button("☀ Light");
+        for (var b : new Button[]{darkBtn, lightBtn}) {
+            b.setPrefSize(110, 34);
+            b.setCursor(javafx.scene.Cursor.HAND);
+        }
+        Runnable refreshThemeBtns = () -> {
+            boolean isLight = tm.isLight();
+            darkBtn.setStyle(themeBtnStyle(!isLight, false));
+            lightBtn.setStyle(themeBtnStyle(isLight, true));
+        };
+        refreshThemeBtns.run();
+        darkBtn.setOnAction(e -> {
+            tm.setTheme(com.corkytux.launcher.modules.ThemeManager.DARK);
+            com.corkytux.launcher.Launcher.reapplyThemeToAllScenes();
+            refreshThemeBtns.run();
+        });
+        lightBtn.setOnAction(e -> {
+            tm.setTheme(com.corkytux.launcher.modules.ThemeManager.LIGHT);
+            com.corkytux.launcher.Launcher.reapplyThemeToAllScenes();
+            refreshThemeBtns.run();
+        });
+        themeRow.getChildren().addAll(darkBtn, lightBtn);
+        children.add(themeRow);
+
+        var themeDesc = new Label("Dark is the default look. Light is easier on bright screens.");
+        themeDesc.getStyleClass().add("label-secondary");
+        themeDesc.setStyle("-fx-font-size:11px;");
+        themeDesc.setPrefHeight(20);
+        children.add(themeDesc);
+
         // Header
         var header = new Label("Theme Colors");
-        header.setStyle("-fx-font-size:15px; -fx-font-weight:bold; -fx-text-fill:#ffffff;");
-        header.setPrefHeight(36);
+        header.getStyleClass().add("label");
+        header.setStyle("-fx-font-size:18px; -fx-font-weight:bold;");
+        header.setPrefHeight(40);
         children.add(header);
 
         // Description
         var desc = new Label("Choose an accent color for buttons, switches, and highlights");
-        desc.setStyle("-fx-text-fill:#b3b3b3; -fx-font-size:11px;");
+        desc.getStyleClass().add("label-secondary");
+        desc.setStyle("-fx-font-size:11px;");
         desc.setPrefHeight(20);
         children.add(desc);
 
@@ -472,11 +519,13 @@ public class LauncherSettings implements Initializable {
         children.clear();
 
         var header = new Label("🌐 Integrations");
-        header.setStyle("-fx-font-size:15px; -fx-font-weight:bold; -fx-text-fill:#ffffff;");
+        header.getStyleClass().add("label");
+        header.setStyle("-fx-font-size:18px; -fx-font-weight:bold;");
         children.add(header);
 
         var desc = new Label("Connect external platforms. Local scans need no API key.");
-        desc.setStyle("-fx-text-fill:#b3b3b3; -fx-font-size:11px;");
+        desc.getStyleClass().add("label-secondary");
+        desc.setStyle("-fx-font-size:11px;");
         desc.setWrapText(true);
         children.add(desc);
 
@@ -519,12 +568,14 @@ public class LauncherSettings implements Initializable {
             String actionLabel, Runnable action) {
         var im = com.corkytux.launcher.modules.IntegrationsManager.getInstance();
         var box = new javafx.scene.layout.VBox(4);
-        box.setStyle("-fx-background-color:#181818; -fx-background-radius:8; -fx-padding:10 14;");
+        box.getStyleClass().add("modern-input-box");
+        box.setStyle("-fx-background-radius:8; -fx-padding:10 14;");
 
         var topRow = new javafx.scene.layout.HBox(8);
         topRow.setAlignment(Pos.CENTER_LEFT);
         var titleLabel = new Label(title);
-        titleLabel.setStyle("-fx-text-fill:#ffffff; -fx-font-weight:bold; -fx-font-size:13;");
+        titleLabel.getStyleClass().add("label");
+        titleLabel.setStyle("-fx-font-weight:bold; -fx-font-size:13;");
         titleLabel.setMaxWidth(Double.MAX_VALUE);
         javafx.scene.layout.HBox.setHgrow(titleLabel, javafx.scene.layout.Priority.ALWAYS);
         topRow.getChildren().add(titleLabel);
@@ -545,7 +596,8 @@ public class LauncherSettings implements Initializable {
         box.getChildren().add(topRow);
 
         var sub = new Label(subtitle);
-        sub.setStyle("-fx-text-fill:#b3b3b3; -fx-font-size:11px;");
+        sub.getStyleClass().add("label-secondary");
+        sub.setStyle("-fx-font-size:11px;");
         sub.setWrapText(true);
         box.getChildren().add(sub);
 
@@ -554,7 +606,8 @@ public class LauncherSettings implements Initializable {
             field.setPromptText(keyHint);
             String saved = im.getKey(key);
             if (saved != null) field.setText(saved);
-            field.setStyle("-fx-background-color:#222226; -fx-text-fill:#ffffff; -fx-font-size:11px; -fx-background-radius:6;");
+            field.getStyleClass().add("text-input");
+            field.setStyle("-fx-font-size:11px; -fx-background-radius:6; -fx-prompt-text-fill:#6C757D;");
             field.focusedProperty().addListener((o, was, isNow) -> {
                 if (!isNow) im.setKey(key, field.getText().trim());
             });
@@ -564,8 +617,34 @@ public class LauncherSettings implements Initializable {
         return box;
     }
 
-    private void showInfoAlert(String title, String msg) {
-        try {
+    /**
+     * Dark/Light picker buttons: Dark = black bg + white text + white border,
+     * Light = white bg + black text + black border. Selected gets thicker border.
+     */
+    private static String themeBtnStyle(boolean selected, boolean isLightButton) {
+        String borderW = selected ? "3" : "1.5";
+        if (isLightButton) {
+            return "-fx-background-color:#ffffff; -fx-text-fill:#000000;"
+                    + "-fx-font-weight:bold; -fx-background-radius:8;"
+                    + "-fx-border-color:#000000; -fx-border-width:" + borderW + "; -fx-border-radius:8;";
+        }
+        return "-fx-background-color:#000000; -fx-text-fill:#ffffff;"
+                + "-fx-font-weight:bold; -fx-background-radius:8;"
+                + "-fx-border-color:#ffffff; -fx-border-width:" + borderW + "; -fx-border-radius:8;";
+    }
+
+    /** Style for Dark/Light selector buttons; selected uses accent color. */
+    private static String themeBtnStyle(boolean selected) {
+        String accent = AccentColorManager.getInstance().getPrimary();
+        if (selected) {
+            return "-fx-background-color:" + accent + "; -fx-text-fill:#ffffff;"
+                    + "-fx-font-weight:bold; -fx-background-radius:8;";
+        }
+        return "-fx-background-color:#282828; -fx-text-fill:#ffffff;"
+                + "-fx-background-radius:8;";
+    }
+
+    private void showInfoAlert(String title, String msg) {        try {
             var a = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.INFORMATION);
             a.setTitle(title);
             a.setHeaderText(null);
@@ -719,6 +798,16 @@ public class LauncherSettings implements Initializable {
         if (!(mf instanceof com.corkytux.launcher.forms.MainForm main)) return 0;
         var im = com.corkytux.launcher.modules.IntegrationsManager.getInstance();
         for (var g : games) {
+            // Skip Steam tools/runtimes (not games): Proton, redistributables, SDKs...
+            String lname = g.name() == null ? "" : g.name().toLowerCase(java.util.Locale.ROOT);
+            if (lname.contains("proton") || lname.contains("steamworks")
+                    || lname.contains("steam linux runtime") || lname.contains("redistributable")
+                    || lname.contains(" runtime") || lname.endsWith("runtime")
+                    || lname.contains(" sdk") || lname.endsWith("sdk")
+                    || lname.contains("dedicated server")) {
+                LOG.debug("Skipping Steam tool: {}", g.name());
+                continue;
+            }
             var data = new java.util.LinkedHashMap<String, String>();
             data.put("steamID", g.appId());
             if (!g.libraryPath().isBlank()) {
@@ -1015,7 +1104,7 @@ public class LauncherSettings implements Initializable {
                 boolean isInstalled = Files.isRegularFile(Path.of(protonPath, item.name(), "proton"));
 
                 var label = new Label(item.name());
-                label.setStyle("-fx-text-fill: white;");
+                label.getStyleClass().add("label"); // themed (white dark / #212529 light)
 
                 var dnBtn = new Button();
                 dnBtn.setPrefSize(20, 20);
@@ -1594,7 +1683,9 @@ public class LauncherSettings implements Initializable {
     private void setTabIcon(ToggleButton btn, String resource) {
         if (btn == null) return;
         try {
-            var is = getClass().getResourceAsStream("/" + resource);
+            String themed = com.corkytux.launcher.modules.ThemedIcons.pathFor(
+                    resource.startsWith("/") ? resource : "/" + resource);
+            var is = getClass().getResourceAsStream(themed);
             if (is == null) {
                 is = getClass().getResourceAsStream("/img/" + java.nio.file.Path.of(resource).getFileName());
             }
@@ -1604,6 +1695,8 @@ public class LauncherSettings implements Initializable {
                 iv.setFitWidth(20);
                 iv.setFitHeight(20);
                 iv.setPreserveRatio(true);
+                iv.getProperties().put("themedIconBase",
+                        resource.startsWith("/") ? resource : "/" + resource);
                 btn.setGraphic(iv);
                 btn.setContentDisplay(javafx.scene.control.ContentDisplay.TOP);
             }
@@ -1613,6 +1706,14 @@ public class LauncherSettings implements Initializable {
     }
 
     private ImageView imageView(String resource, int size) {
+        // Themed variant first (dark icon on light theme), then legacy fallbacks
+        Image themed = com.corkytux.launcher.modules.ThemedIcons.load(resource);
+        if (themed != null) {
+            var tiv = new ImageView(themed);
+            tiv.setFitWidth(size); tiv.setFitHeight(size); tiv.setPreserveRatio(true);
+            tiv.getProperties().put("themedIconBase", resource);
+            return tiv;
+        }
         try (var is = getClass().getResourceAsStream(resource)) {
             if (is == null) {
                 try (var alt = getClass().getResourceAsStream("/img/" + Path.of(resource).getFileName())) {
@@ -1620,12 +1721,14 @@ public class LauncherSettings implements Initializable {
                     var img = new Image(alt);
                     var iv = new ImageView(img);
                     iv.setFitWidth(size); iv.setFitHeight(size); iv.setPreserveRatio(true);
+                    iv.getProperties().put("themedIconBase", resource);
                     return iv;
                 }
             }
             var img = new Image(is);
             var iv = new ImageView(img);
             iv.setFitWidth(size); iv.setFitHeight(size); iv.setPreserveRatio(true);
+            iv.getProperties().put("themedIconBase", resource);
             return iv;
         } catch (Exception e) {
             LOG.debug("imageView failed {}", resource, e);

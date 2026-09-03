@@ -14,12 +14,12 @@
       <children>
         <ImageView focusTraversable="false" fitHeight="150" fx:id="image" id="image" styleClass="" fitWidth="150" smooth="true" cache="true"/>
         <Data id="data-image" image=".data/img/corkytux-about.png"/>
-        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label7" id="label7" prefHeight="16" prefWidth="248" styleClass="label " text="CorkyTux" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label7" id="label7" prefHeight="16" prefWidth="248" styleClass="label " text="CorkyTux" textAlignment="CENTER" underline="false" wrapText="false">
           <font>
             <Font name="System Bold" size="18"/>
           </font>
         </Label>
-        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="version" id="version" prefHeight="24" prefWidth="96" style="-fx-background-radius:50px;" styleClass="label accent-badge " text="version" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="version" id="version" prefHeight="24" prefWidth="96" style="-fx-background-radius:50px;" styleClass="label accent-badge " text="version" textAlignment="CENTER" underline="false" wrapText="false">
           <font>
             <Font name="System Bold" size="12"/>
           </font>
@@ -38,7 +38,7 @@
           </children>
         </HBox>
         <Data id="data-hbox3"/>
-        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="portCredit" id="portCredit" prefHeight="14" prefWidth="400" styleClass="label " text="Java port by Matts-lab69" textAlignment="CENTER" textFill="#888888" underline="false" wrapText="false">
+        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="portCredit" id="portCredit" prefHeight="14" prefWidth="400" styleClass="label label-secondary" text="Java port by Matts-lab69" textAlignment="CENTER" underline="false" wrapText="false">
           <font>
             <Font name="System Regular" size="10"/>
           </font>
@@ -65,7 +65,7 @@
         <Insets bottom="0" left="160" right="160" top="0"/>
       </padding>
       <children>
-        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label5" id="label5" prefHeight="32" prefWidth="232" styleClass="label " text="Default base paths" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label5" id="label5" prefHeight="32" prefWidth="232" styleClass="label " text="Default base paths" textAlignment="CENTER" underline="false" wrapText="false">
           <font>
             <Font name="System Bold" size="13"/>
           </font>
@@ -75,7 +75,7 @@
             <Insets bottom="8" left="18" right="18" top="8"/>
           </padding>
           <children>
-            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label4" id="label4" prefHeight="17" prefWidth="300" styleClass="label " text="Path for game downloads" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
+            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label4" id="label4" prefHeight="17" prefWidth="300" styleClass="label label-secondary" text="Path for game downloads" textAlignment="LEFT" underline="false" wrapText="false">
               <font>
                 <Font name="System Regular" size="12"/>
               </font>
@@ -100,7 +100,7 @@
             <Insets bottom="8" left="18" right="18" top="8"/>
           </padding>
           <children>
-            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label" id="label" prefHeight="17" prefWidth="300" styleClass="label " text="Path for game installs" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
+            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label" id="label" prefHeight="17" prefWidth="300" styleClass="label label-secondary" text="Path for game installs" textAlignment="LEFT" underline="false" wrapText="false">
               <font>
                 <Font name="System Regular" size="12"/>
               </font>
@@ -124,7 +124,7 @@
             <Insets bottom="8" left="18" right="18" top="8"/>
           </padding>
           <children>
-            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label6" id="label6" prefHeight="17" prefWidth="300" styleClass="label " text="Proton Path 1" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
+            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label6" id="label6" prefHeight="17" prefWidth="300" styleClass="label label-secondary" text="Proton Path 1" textAlignment="LEFT" underline="false" wrapText="false">
               <font>
                 <Font name="System Regular" size="12"/>
               </font>
@@ -148,7 +148,7 @@
             <Insets bottom="8" left="18" right="18" top="8"/>
           </padding>
           <children>
-            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelProtons2" id="labelProtons2" prefHeight="17" prefWidth="300" styleClass="label " text="Proton Path 2 (optional)" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
+            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelProtons2" id="labelProtons2" prefHeight="17" prefWidth="300" styleClass="label label-secondary" text="Proton Path 2 (optional)" textAlignment="LEFT" underline="false" wrapText="false">
               <font>
                 <Font name="System Regular" size="12"/>
               </font>
@@ -172,7 +172,7 @@
             <Insets bottom="8" left="18" right="18" top="8"/>
           </padding>
           <children>
-            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelProtons3" id="labelProtons3" prefHeight="17" prefWidth="300" styleClass="label " text="Proton Path 3 (optional)" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
+            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelProtons3" id="labelProtons3" prefHeight="17" prefWidth="300" styleClass="label label-secondary" text="Proton Path 3 (optional)" textAlignment="LEFT" underline="false" wrapText="false">
               <font>
                 <Font name="System Regular" size="12"/>
               </font>
@@ -196,7 +196,7 @@
             <Insets bottom="8" left="18" right="18" top="8"/>
           </padding>
           <children>
-            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelAlt" id="labelAlt" prefHeight="17" prefWidth="300" styleClass="label " text="Path for prefixes" textAlignment="LEFT" textFill="#b3b3b3" underline="false" wrapText="false">
+            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelAlt" id="labelAlt" prefHeight="17" prefWidth="300" styleClass="label label-secondary" text="Path for prefixes" textAlignment="LEFT" underline="false" wrapText="false">
               <font>
                 <Font name="System Regular" size="12"/>
               </font>
@@ -224,7 +224,7 @@
       <children>
         <HBox alignment="CENTER" focusTraversable="false" fx:id="hboxAlt" id="hboxAlt" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="40" prefWidth="606" spacing="16" styleClass="">
           <children>
-            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label3" id="label3" prefHeight="32" prefWidth="280" styleClass="label " text="Default Proton for new games:" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+            <Label alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label3" id="label3" prefHeight="32" prefWidth="280" styleClass="label " text="Default Proton for new games:" textAlignment="LEFT" underline="false" wrapText="false">
               <font>
                 <Font name="System Bold" size="13"/>
               </font>
@@ -241,18 +241,18 @@
         <Separator focusTraversable="false" fx:id="separator" id="separator" orientation="HORIZONTAL" prefHeight="8" prefWidth="144" styleClass="separator "/>
         <HBox alignment="CENTER_LEFT" spacing="8" focusTraversable="false">
           <children>
-            <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" text="Filter:" textFill="#ffffff" styleClass="label ">
+            <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" text="Filter:" styleClass="label ">
             </Label>
-            <ComboBox fx:id="protonFilter" prefWidth="200" prefHeight="28" style="-fx-background-color:#181818;-fx-background-radius:15px;-fx-text-fill:#ffffff;" styleClass="combo-box-base">
+            <ComboBox fx:id="protonFilter" prefWidth="200" prefHeight="28" style="-fx-background-radius:15px;-fx-text-fill:#ffffff;" styleClass="combo-box-base">
             </ComboBox>
             <Region prefWidth="20" prefHeight="1"/>
-            <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" text="Paths:" textFill="#ffffff" styleClass="label ">
+            <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" text="Paths:" styleClass="label ">
             </Label>
-            <ComboBox fx:id="protonPathsCombo" prefWidth="280" prefHeight="28" style="-fx-background-color:#181818;-fx-background-radius:15px;-fx-text-fill:#ffffff;" styleClass="combo-box-base">
+            <ComboBox fx:id="protonPathsCombo" prefWidth="280" prefHeight="28" style="-fx-background-radius:15px;-fx-text-fill:#ffffff;" styleClass="combo-box-base">
             </ComboBox>
           </children>
         </HBox>
-        <ListView editable="false" fixedCellSize="40" focusTraversable="true" fx:id="protonsList" id="protonsList" prefHeight="260" prefWidth="606" maxWidth="606" style="-fx-background-color:#181818;-fx-background-radius:15px;" styleClass="list-view ">
+        <ListView editable="false" fixedCellSize="40" focusTraversable="true" fx:id="protonsList" id="protonsList" prefHeight="260" prefWidth="606" maxWidth="606" style="-fx-background-radius:15px;" styleClass="list-view ">
           <items xmlns:fx="http://javafx.com/fxml">
             <FXCollections fx:factory="observableArrayList"/>
           </items>
@@ -260,7 +260,7 @@
         <Data id="data-protonsList"/>
         <Data id="data-separator"/>
         <Data id="data-hboxAlt"/>
-        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label9" id="label9" prefHeight="15" prefWidth="576" styleClass="label " text="(you can also install your own Proton builds in the directory selected in the «Paths» tab)" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label9" id="label9" prefHeight="15" prefWidth="576" styleClass="label " text="(you can also install your own Proton builds in the directory selected in the «Paths» tab)" textAlignment="CENTER" underline="false" wrapText="false">
           <font>
             <Font name="System Regular" size="10"/>
           </font>
@@ -273,38 +273,38 @@
         <Insets bottom="0" left="172" right="172" top="0"/>
       </padding>
       <children>
-        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelLauncher" id="labelLauncher" prefHeight="40" prefWidth="312" styleClass="label " text="General" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelLauncher" id="labelLauncher" prefHeight="40" prefWidth="312" styleClass="label " text="General" textAlignment="CENTER" underline="false" wrapText="false">
           <font>
             <Font name="System Bold" size="13"/>
           </font>
         </Label>
         <Data id="data-labelLauncher"/>
-        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="fullscreenLauncher" id="fullscreenLauncher" prefHeight="58" prefWidth="272" style="-fx-background-color: #181818;-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="fullscreenLauncher" id="fullscreenLauncher" prefHeight="58" prefWidth="272" style="-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button toggle-host " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
           <font>
             <Font name="System Regular" size="13"/>
           </font>
         </Button>
         <Data id="data-fullscreenLauncher"/>
-        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="requestSteam" id="requestSteam" prefHeight="58" prefWidth="272" style="-fx-background-color: #181818;-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="requestSteam" id="requestSteam" prefHeight="58" prefWidth="272" style="-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button toggle-host " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
           <font>
             <Font name="System Regular" size="13"/>
           </font>
         </Button>
         <Data id="data-requestSteam"/>
         <Separator focusTraversable="false" prefHeight="12" styleClass="separator "/>
-        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label10" id="label10" prefHeight="40" prefWidth="312" styleClass="label " text="Default graphics settings for new games" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+        <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label10" id="label10" prefHeight="40" prefWidth="312" styleClass="label " text="Default graphics settings for new games" textAlignment="CENTER" underline="false" wrapText="false">
           <font>
             <Font name="System Bold" size="13"/>
           </font>
         </Label>
         <Data id="data-label10"/>
-        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="wined3d" id="wined3d" prefHeight="58" prefWidth="272" style="-fx-background-color: #181818;-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="wined3d" id="wined3d" prefHeight="58" prefWidth="272" style="-jfx-button-type: FLAT;-fx-background-radius:15 15 0 0px;" styleClass="button jfx-button toggle-host " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
           <font>
             <Font name="System Regular" size="13"/>
           </font>
         </Button>
         <Data id="data-wined3d"/>
-        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="useWayland" id="useWayland" prefHeight="58" prefWidth="272" style="-fx-background-color: #181818;-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+        <Button alignment="CENTER_LEFT" contentDisplay="GRAPHIC_ONLY" focusTraversable="false" graphicTextGap="0" fx:id="useWayland" id="useWayland" prefHeight="58" prefWidth="272" style="-jfx-button-type: FLAT;-fx-background-radius:0 0 15 15px;" styleClass="button jfx-button toggle-host " text="" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
           <font>
             <Font name="System Regular" size="13"/>
           </font>
@@ -312,7 +312,7 @@
         <Data id="data-useWayland"/>
       </children>
     </VBox>
-    <HBox AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="hbox" id="hbox" layoutX="0" layoutY="360" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="48" prefWidth="860" spacing="0" style="-fx-background-color:#181818;" styleClass="">
+    <HBox AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" alignment="CENTER" focusTraversable="false" fx:id="hbox" id="hbox" layoutX="0" layoutY="360" maxHeight="-1" maxWidth="-1" minHeight="-1" minWidth="-1" prefHeight="48" prefWidth="860" spacing="0" style="" styleClass="">
       <children>
         <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="visualsButton" id="visualsButton" prefHeight="56" prefWidth="95" selected="true" styleClass="toggle-button " text="Visuals" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
           <font>

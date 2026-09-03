@@ -177,18 +177,39 @@ public class Launcher extends Application {
     // -----------------------------------------------------------------------
 
     private static void attachStylesheet(Scene scene) {
-        URL css = Launcher.class.getResource("/style-v2.css");
+        // Theme-aware base stylesheet (dark default, light optional)
+        String themeRes = com.corkytux.launcher.modules.ThemeManager.getInstance().getStylesheetResource();
+        // Remove any previous theme stylesheet, then attach current
+        scene.getStylesheets().removeIf(s -> s.contains("style-v2"));
+        URL css = Launcher.class.getResource(themeRes);
         if (css != null) {
             String url = css.toExternalForm();
             if (!scene.getStylesheets().contains(url)) {
                 scene.getStylesheets().add(url);
-                LOG.debug("Attached style-v2.css to scene {}", scene);
+                LOG.debug("Attached {} to scene {}", themeRes, scene);
             }
         } else {
-            LOG.warn("style-v2.css not found on classpath – theme will be missing");
+            LOG.warn("{} not found on classpath – theme will be missing", themeRes);
         }
         // Attach accent color override if user has changed from default
         attachAccentOverride(scene);
+    }
+
+    /** Re-applies theme + accent to all open scenes (called after theme/accent change). */
+    public static void reapplyThemeToAllScenes() {
+        try {
+            for (var window : javafx.stage.Window.getWindows()) {
+                if (window instanceof javafx.stage.Stage stage && stage.getScene() != null) {
+                    attachStylesheet(stage.getScene());
+                    // Force CSS re-evaluation so inline-free nodes pick up the new palette
+                    stage.getScene().getRoot().applyCss();
+                    // Swap white UI icons for dark variants (or back) on theme change
+                    com.corkytux.launcher.modules.ThemedIcons.refreshAll(stage.getScene().getRoot());
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("reapplyTheme failed", e);
+        }
     }
 
     private static void attachAccentOverride(Scene scene) {

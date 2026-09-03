@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <?import javafx.scene.*?><?import javafx.collections.*?><?import javafx.scene.layout.*?><?import com.corkytux.launcher.util.Data?><?import javafx.scene.control.*?><?import javafx.scene.text.*?><?import javafx.scene.image.*?><?import javafx.scene.shape.*?><?import javafx.scene.paint.*?><?import javafx.scene.web.*?><?import javafx.geometry.*?><?import java.lang.*?><AnchorPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.corkytux.launcher.forms.LogForm" AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" focusTraversable="false" id="" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="552" prefWidth="648" style="-fx-background-color:transparent;" styleClass="">
   <children>
-    <Label AnchorPane.leftAnchor="32" AnchorPane.rightAnchor="32" AnchorPane.topAnchor="24" alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label" id="label" layoutX="32" layoutY="24" prefHeight="21" prefWidth="584" styleClass="label " text="Game log" textAlignment="LEFT" textFill="#ffffff" underline="false" wrapText="false">
+    <Label AnchorPane.leftAnchor="32" AnchorPane.rightAnchor="32" AnchorPane.topAnchor="24" alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label" id="label" layoutX="32" layoutY="24" prefHeight="21" prefWidth="584" styleClass="label " text="Game log" textAlignment="LEFT" underline="false" wrapText="false">
       <font>
         <Font name="System Bold" size="15"/>
       </font>
@@ -13,7 +13,7 @@
       </font>
     </TextArea>
     <Data id="data-textArea"/>
-    <Label AnchorPane.leftAnchor="32" AnchorPane.rightAnchor="32" AnchorPane.topAnchor="48" alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelAlt" id="labelAlt" layoutX="32" layoutY="48" prefHeight="40" prefWidth="584" styleClass="label " text="If there are errors in it, you can figure it out yourself or send the log to the community and they will help you" textAlignment="LEFT" textFill="#e6e6e6" underline="false" wrapText="true">
+    <Label AnchorPane.leftAnchor="32" AnchorPane.rightAnchor="32" AnchorPane.topAnchor="48" alignment="CENTER_LEFT" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="labelAlt" id="labelAlt" layoutX="32" layoutY="48" prefHeight="40" prefWidth="584" styleClass="label label-secondary" text="If there are errors in it, you can figure it out yourself or send the log to the community and they will help you" textAlignment="LEFT" underline="false" wrapText="true">
       <font>
         <Font name="System Regular" size="13"/>
       </font>
@@ -25,7 +25,7 @@
       </font>
     </Button>
     <Data id="data-button3" graphic=".data/img/save.png"/>
-    <Button AnchorPane.bottomAnchor="24" AnchorPane.leftAnchor="32" alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="3" fx:id="button" id="button" layoutX="32" layoutY="488" prefHeight="40" prefWidth="112" style="-fx-background-color:#181818;-fx-background-radius:50px;" styleClass="button " text="GitHub" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
+    <Button AnchorPane.bottomAnchor="24" AnchorPane.leftAnchor="32" alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="3" fx:id="button" id="button" layoutX="32" layoutY="488" prefHeight="40" prefWidth="112" style="-fx-background-radius:50px;" styleClass="button btn-outline" text="GitHub" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
       <font>
         <Font name="System Bold" size="12"/>
       </font>

@@ -3,15 +3,15 @@
   <children>
     <VBox alignment="TOP_LEFT" spacing="12" AnchorPane.topAnchor="16" AnchorPane.leftAnchor="20" AnchorPane.rightAnchor="20" AnchorPane.bottomAnchor="16" style="-fx-background-color:transparent;">
       <children>
-        <Label alignment="TOP_LEFT" focusTraversable="false" fx:id="label" id="label" prefWidth="340" style="-fx-text-fill:#ffffff; -fx-font-size:13; -fx-font-weight:bold;" text="Remove game from launcher?" wrapText="true"/>
+        <Label alignment="TOP_LEFT" focusTraversable="false" fx:id="label" id="label" prefWidth="340" style=" -fx-font-size:13; -fx-font-weight:bold;" text="Remove game from launcher?" wrapText="true"/>
         <Data id="data-label"/>
-        <CheckBox alignment="CENTER_LEFT" focusTraversable="false" fx:id="removePrefix" id="removePrefix" prefWidth="340" styleClass="check-box" text="Remove game prefix" textFill="#f2f2f2">
+        <CheckBox alignment="CENTER_LEFT" focusTraversable="false" fx:id="removePrefix" id="removePrefix" prefWidth="340" styleClass="check-box label-secondary" text="Remove game prefix">
           <font>
             <Font name="System Regular" size="12"/>
           </font>
         </CheckBox>
         <Data id="data-removePrefix"/>
-        <CheckBox alignment="CENTER_LEFT" focusTraversable="false" fx:id="removeFiles" id="removeFiles" prefWidth="340" styleClass="check-box" text="Remove game from disk" textFill="#f2f2f2">
+        <CheckBox alignment="CENTER_LEFT" focusTraversable="false" fx:id="removeFiles" id="removeFiles" prefWidth="340" styleClass="check-box label-secondary" text="Remove game from disk">
           <font>
             <Font name="System Regular" size="12"/>
           </font>

@@ -227,7 +227,7 @@ public class LogForm implements Initializable {
         // $fileName = $this->data('gameName').' '.Time::now()->toString('yyyy-MM-dd HH:mm').'.log';
         // fs::makeDir("$documents/CorkyTux Logs"); file_put_contents(...); open(...)
         String documents = execReadFully("xdg-user-dir DOCUMENTS");
-        if (documents == null || documents.isBlank()) documents = System.getProperty("user.home") + "/Documents";
+        if (documents == null || documents.isBlank()) documents = com.corkytux.launcher.modules.FilesWorker.getExpectedHome() + "/Documents";
         else documents = documents.trim();
 
         String name = (gameName != null && !gameName.isBlank()) ? gameName : "Game";

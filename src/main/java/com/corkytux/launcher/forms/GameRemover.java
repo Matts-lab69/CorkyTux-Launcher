@@ -166,11 +166,11 @@ public class GameRemover implements Initializable {
         }
 
         String desktopBase = execReadFully("xdg-user-dir DESKTOP");
-        if (desktopBase == null || desktopBase.isBlank()) desktopBase = System.getProperty("user.home") + "/Desktop";
+        if (desktopBase == null || desktopBase.isBlank()) desktopBase = com.corkytux.launcher.modules.FilesWorker.getExpectedHome() + "/Desktop";
         else desktopBase = desktopBase.trim();
 
         String desktopIcon = desktopBase + "/" + gameName + ".desktop";
-        String appMenuIcon = System.getProperty("user.home") + "/.local/share/applications/" + gameName + ".desktop";
+        String appMenuIcon = com.corkytux.launcher.modules.FilesWorker.getExpectedHome() + "/.local/share/applications/" + gameName + ".desktop";
         String icon = appModule.getGame("icon", gameName);
         String banner = appModule.getGame("banner", gameName);
 
