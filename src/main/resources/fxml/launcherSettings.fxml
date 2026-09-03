@@ -312,12 +312,12 @@
             <Font name="System Bold" size="11"/>
           </font>
         </ToggleButton>
-        <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="launcherButton" id="launcherButton" prefHeight="56" prefWidth="72" styleClass="toggle-button " text="Launcher" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
+        <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="launcherButton" id="launcherButton" prefHeight="56" prefWidth="72" styleClass="toggle-button " text="Miscellaneous" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
           <font>
             <Font name="System Bold" size="11"/>
           </font>
         </ToggleButton>
-        <Data id="data-launcherButton" graphic=".data/img/oflogonegate17.png"/>
+        <Data id="data-launcherButton" graphic=".data/img/settings.png"/>
         <ToggleButton alignment="CENTER" contentDisplay="TOP" focusTraversable="true" graphicTextGap="4" fx:id="visualsButton" id="visualsButton" prefHeight="56" prefWidth="72" styleClass="toggle-button " text="Visuals" textAlignment="CENTER" textFill="#e6e6e6" underline="false" wrapText="false">
           <font>
             <Font name="System Bold" size="11"/>
