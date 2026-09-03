@@ -7,7 +7,7 @@
       </padding>
       <children>
         <ImageView focusTraversable="false" fitHeight="88" fx:id="image" id="image" styleClass="" fitWidth="88"/>
-        <Data id="data-image" image=".data/img/oflogo.png"/>
+        <Data id="data-image" image=".data/img/corkytux-about.png"/>
         <Label alignment="CENTER" contentDisplay="LEFT" focusTraversable="false" graphicTextGap="4" fx:id="label7" id="label7" prefHeight="16" prefWidth="248" styleClass="label " text="CorkyTux" textAlignment="CENTER" textFill="#ffffff" underline="false" wrapText="false">
           <font>
             <Font name="System Bold" size="18"/>

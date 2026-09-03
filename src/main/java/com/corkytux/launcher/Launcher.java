@@ -383,8 +383,7 @@ public class Launcher extends Application {
     }
 
     private static void applyFormIcon(Stage stage, String formName) {
-        // Try .data/img/oflogo.png as stage icon – mirrors form.icon=.data/img/oflogo.png
-        String iconPath = "/img/oflogo.png";
+        String iconPath = "/img/corkytux.png";
         try (InputStream is = Launcher.class.getResourceAsStream(iconPath)) {
             if (is != null) stage.getIcons().add(new Image(is));
         } catch (Exception e) {
