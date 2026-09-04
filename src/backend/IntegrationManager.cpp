@@ -26,6 +26,8 @@
 #include <QUrlQuery>
 #include <QtConcurrent>
 
+const char *IntegrationManager::SGDB_KEY = "0ab12f62e2d5e6b3717161be0c5e68fa";
+
 IntegrationManager *IntegrationManager::instance() {
     static IntegrationManager inst;
     return &inst;
@@ -48,7 +50,11 @@ void IntegrationManager::setEnabled(const QString &key, bool enabled) {
 
 QString IntegrationManager::apiKey(const QString &key) const {
     const QString v = ConfigManager::instance()->launcherValue("integration_key_" + key, "Integrations");
-    return v;
+    if (!v.isEmpty())
+        return v;
+    if (key == "steamgriddb")
+        return QString::fromLatin1(SGDB_KEY);
+    return {};
 }
 
 void IntegrationManager::setApiKey(const QString &key, const QString &value) {

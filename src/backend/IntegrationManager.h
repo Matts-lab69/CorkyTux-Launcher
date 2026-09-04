@@ -100,6 +100,8 @@ private:
     static QString copyArtwork(const QString &src, const QString &subdir,
                                const QString &name);
 
+    static const char *SGDB_KEY;
+
     class QNetworkAccessManager *m_nam = nullptr;
     QString m_igdbToken;
     qint64 m_igdbTokenExpiry = 0;
