@@ -317,6 +317,8 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     QStringList args;
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     QString workDir;
+    const QString protonName =
+        cfg->gameValue(gameName, "proton", cfg->launcherValue("defaultProton", "User Settings", "GE-Proton Latest"));
 
     auto truthy = [](const QString &v) {
         return v.compare("true", Qt::CaseInsensitive) == 0 || v == "1";
@@ -351,114 +353,110 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
             return;
         }
     }
-        // --- DXVK vs wined3d (mirrors FilesWorker.generateProcess) ---
-        QString wined3d = cfg->gameValue(gameName, "wined3d");
-        if (wined3d.isEmpty())
-            wined3d = cfg->launcherValue("gamesUsesWined3d", "User Settings");
-        const bool useWined3d = truthy(wined3d);
-        QString dxOverrides;
-        if (!useWined3d)
-            dxOverrides = "d3d11=n;d3d10=n;d3d10core=n;dxgi=n;openvr_api_dxvk=n;d3d12=n;d3d12core=n;d3d9=n;d3d8=n;";
-        QString overrides = cfg->gameValue(gameName, "overrides");
-        env.insert("WINEDLLOVERRIDES", dxOverrides + overrides);
-        env.insert("WINEDEBUG", debug ? "1" : "-all");
-        env.insert("WINEPREFIX", prefix);
-        // Proton script appends "/pfx/" to STEAM_COMPAT_DATA_PATH internally.
-        // So STEAM_COMPAT_DATA_PATH must be the parent of the actual pfx dir.
-        QString compatDataPath = prefix;
-        if (compatDataPath.endsWith("/pfx"))
-            compatDataPath.chop(4);
-        env.insert("STEAM_COMPAT_DATA_PATH", compatDataPath);
-        env.insert("STEAM_COMPAT_CLIENT_INSTALL_PATH", steamClientPath());
-        env.insert("STEAM_COMPAT_INSTALL_PATH", cfg->gameValue(gameName, "mainPath"));
-        // LIBRARY_PATHS = .../steamapps (where the "common" folder lives)
-        const QString mainPath = cfg->gameValue(gameName, "mainPath");
-        QString steamappsDir;
-        if (!mainPath.isEmpty()) {
-            // mainPath = .../steamapps/common/<game> → absolutePath = .../steamapps/common
-            // → parent = .../steamapps
-            const QString commonDir = QFileInfo(mainPath).absolutePath();
-            steamappsDir = QFileInfo(commonDir).absolutePath();
-        }
-        if (!steamappsDir.isEmpty())
-            env.insert("STEAM_COMPAT_LIBRARY_PATHS", steamappsDir);
-        env.insert("PROTON_USE_WINED3D", useWined3d ? "1" : "0");
-        const QString sid = cfg->gameValue(gameName, "steamID");
-        env.insert("SteamAppId", sid.isEmpty() ? "0" : sid);
-        // Wayland driver (only when explicitly configured)
-        QString wayland = cfg->gameValue(gameName, "nativeWayland");
-        if (wayland.isEmpty())
-            wayland = cfg->launcherValue("gamesUsesWayland", "User Settings");
-        if (!wayland.isEmpty())
-            env.insert("PROTON_ENABLE_WAYLAND", truthy(wayland) ? "1" : "0");
-        // Steam overlay via LD_PRELOAD (absent key = disabled, mirrors Java)
-        const QString steamOverlay = cfg->gameValue(gameName, "steamOverlay");
-        if (truthy(steamOverlay)) {
-            QString fakeId = cfg->gameValue(gameName, "fakeSteamID", "480");
-            const QString scp = steamClientPath();
-            QStringList preload;
-            for (const QString &rel :
-                 {"ubuntu12_32/gameoverlayrenderer.so", "ubuntu12_64/gameoverlayrenderer.so"}) {
-                if (QFile::exists(scp + "/" + rel))
-                    preload << scp + "/" + rel;
-            }
-            if (!preload.isEmpty()) {
-                QString existing = env.value("LD_PRELOAD", QString::fromLocal8Bit(qgetenv("LD_PRELOAD")));
-                env.insert("LD_PRELOAD", existing.isEmpty()
-                                            ? preload.join(':')
-                                            : preload.join(':') + ':' + existing);
-            }
-            env.insert("ENABLE_VK_LAYER_VALVE_steam_overlay_1", "1");
-            env.insert("SteamOverlayGameId", fakeId);
-            env.insert("SteamGameId", fakeId);
-        }
-        // Custom environment map ("environment" key, \\ separated, ==== k/v)
-        const QString envString = cfg->gameValue(gameName, "environment");
-        if (!envString.isEmpty()) {
-            QString norm = envString;
-            norm.replace("\\\\\\\\", "\\\\");
-            const auto putKv = [&](const QString &entry) {
-                const int i = entry.indexOf("====");
-                if (i < 0) {
-                    if (!entry.trimmed().isEmpty())
-                        env.insert(entry.trimmed(), "");
-                } else {
-                    env.insert(entry.left(i).trimmed(), entry.mid(i + 4));
-                }
-            };
-            if (!norm.contains("\\\\")) {
-                putKv(norm);
-            } else {
-                for (const QString &e : norm.split("\\\\"))
-                    putKv(e);
-            }
-        }
-        args << "waitforexitandrun" << exec;
-        const QString argsAfter = cfg->gameValue(gameName, "argsAfter");
-        if (!argsAfter.isEmpty())
-            args += argsAfter.split(' ', Qt::SkipEmptyParts);
-        // Steam runtime wrapper (findSteamRuntime equivalent)
-        const QString rtFlag = cfg->gameValue(gameName, "steamRuntime");
-        if (truthy(rtFlag)) {
-            const QString rt = findSteamRuntime(protonName);
-            if (rt.isEmpty()) {
-                cfg->setGameValue(gameName, "steamRuntime", "false");
-            } else {
-                args.prepend("--");
-                args.prepend(rt);
-            }
-        }
-        const QString argsBefore = cfg->gameValue(gameName, "argsBefore");
-        if (!argsBefore.isEmpty())
-            args = argsBefore.split(' ', Qt::SkipEmptyParts) + args;
-        // Working dir = exe parent (mirrors Java)
-        const QFileInfo fi(exec);
-        workDir = fi.dir().path();
+
+    // --- DXVK vs wined3d (mirrors FilesWorker.generateProcess) ---
+    QString wined3d = cfg->gameValue(gameName, "wined3d");
+    if (wined3d.isEmpty())
+        wined3d = cfg->launcherValue("gamesUsesWined3d", "User Settings");
+    const bool useWined3d = truthy(wined3d);
+    QString dxOverrides;
+    if (!useWined3d)
+        dxOverrides = "d3d11=n;d3d10=n;d3d10core=n;dxgi=n;openvr_api_dxvk=n;d3d12=n;d3d12core=n;d3d9=n;d3d8=n;";
+    QString overrides = cfg->gameValue(gameName, "overrides");
+    env.insert("WINEDLLOVERRIDES", dxOverrides + overrides);
+    env.insert("WINEDEBUG", debug ? "1" : "-all");
+    env.insert("WINEPREFIX", prefix);
+    // Proton script appends "/pfx/" to STEAM_COMPAT_DATA_PATH internally.
+    // So STEAM_COMPAT_DATA_PATH must be the parent of the actual pfx dir.
+    QString compatDataPath = prefix;
+    if (compatDataPath.endsWith("/pfx"))
+        compatDataPath.chop(4);
+    env.insert("STEAM_COMPAT_DATA_PATH", compatDataPath);
+    env.insert("STEAM_COMPAT_CLIENT_INSTALL_PATH", steamClientPath());
+    env.insert("STEAM_COMPAT_INSTALL_PATH", cfg->gameValue(gameName, "mainPath"));
+    // LIBRARY_PATHS = .../steamapps (where the "common" folder lives)
+    const QString mainPath = cfg->gameValue(gameName, "mainPath");
+    QString steamappsDir;
+    if (!mainPath.isEmpty()) {
+        const QString commonDir = QFileInfo(mainPath).absolutePath();
+        steamappsDir = QFileInfo(commonDir).absolutePath();
     }
+    if (!steamappsDir.isEmpty())
+        env.insert("STEAM_COMPAT_LIBRARY_PATHS", steamappsDir);
+    env.insert("PROTON_USE_WINED3D", useWined3d ? "1" : "0");
+    const QString sid = cfg->gameValue(gameName, "steamID");
+    env.insert("SteamAppId", sid.isEmpty() ? "0" : sid);
+    // Wayland driver (only when explicitly configured)
+    QString wayland = cfg->gameValue(gameName, "nativeWayland");
+    if (wayland.isEmpty())
+        wayland = cfg->launcherValue("gamesUsesWayland", "User Settings");
+    if (!wayland.isEmpty())
+        env.insert("PROTON_ENABLE_WAYLAND", truthy(wayland) ? "1" : "0");
+    // Steam overlay via LD_PRELOAD (absent key = disabled, mirrors Java)
+    const QString steamOverlay = cfg->gameValue(gameName, "steamOverlay");
+    if (truthy(steamOverlay)) {
+        QString fakeId = cfg->gameValue(gameName, "fakeSteamID", "480");
+        const QString scp = steamClientPath();
+        QStringList preload;
+        for (const QString &rel :
+             {"ubuntu12_32/gameoverlayrenderer.so", "ubuntu12_64/gameoverlayrenderer.so"}) {
+            if (QFile::exists(scp + "/" + rel))
+                preload << scp + "/" + rel;
+        }
+        if (!preload.isEmpty()) {
+            QString existing = env.value("LD_PRELOAD", QString::fromLocal8Bit(qgetenv("LD_PRELOAD")));
+            env.insert("LD_PRELOAD", existing.isEmpty()
+                                        ? preload.join(':')
+                                        : preload.join(':') + ':' + existing);
+        }
+        env.insert("ENABLE_VK_LAYER_VALVE_steam_overlay_1", "1");
+        env.insert("SteamOverlayGameId", fakeId);
+        env.insert("SteamGameId", fakeId);
+    }
+    // Custom environment map ("environment" key, \\ separated, ==== k/v)
+    const QString envString = cfg->gameValue(gameName, "environment");
+    if (!envString.isEmpty()) {
+        QString norm = envString;
+        norm.replace("\\\\\\\\", "\\\\");
+        const auto putKv = [&](const QString &entry) {
+            const int i = entry.indexOf("====");
+            if (i < 0) {
+                if (!entry.trimmed().isEmpty())
+                    env.insert(entry.trimmed(), "");
+            } else {
+                env.insert(entry.left(i).trimmed(), entry.mid(i + 4));
+            }
+        };
+        if (!norm.contains("\\\\")) {
+            putKv(norm);
+        } else {
+            for (const QString &e : norm.split("\\\\"))
+                putKv(e);
+        }
+    }
+    args << "waitforexitandrun" << exec;
+    const QString argsAfter = cfg->gameValue(gameName, "argsAfter");
+    if (!argsAfter.isEmpty())
+        args += argsAfter.split(' ', Qt::SkipEmptyParts);
+    // Steam runtime wrapper (findSteamRuntime equivalent)
+    const QString rtFlag = cfg->gameValue(gameName, "steamRuntime");
+    if (truthy(rtFlag)) {
+        const QString rt = findSteamRuntime(protonName);
+        if (rt.isEmpty()) {
+            cfg->setGameValue(gameName, "steamRuntime", "false");
+        } else {
+            args.prepend("--");
+            args.prepend(rt);
+        }
+    }
+    const QString argsBefore = cfg->gameValue(gameName, "argsBefore");
+    if (!argsBefore.isEmpty())
+        args = argsBefore.split(' ', Qt::SkipEmptyParts) + args;
+    // Working dir = exe parent (mirrors Java)
+    const QFileInfo fi(exec);
+    workDir = fi.dir().path();
 
     // Resolve Proton executable
-    const QString protonName =
-        cfg->gameValue(gameName, "proton", cfg->launcherValue("defaultProton", "User Settings", "GE-Proton Latest"));
     QString program = protonExecutable(protonName, "proton");
     if (program.isEmpty()) {
         const QStringList all = installedProtons();
@@ -474,7 +472,6 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
             args << "--gameid" << ("umu-" + sid)
                  << "--store" << "steam";
         }
-        // umu auto-detects proton, but we can specify if user has a preference
         if (!protonName.isEmpty() && protonName != "GE-Proton Latest") {
             args << "--protonpath" << protonExecutable(protonName, "proton");
         }
