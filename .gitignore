@@ -1,10 +1,15 @@
 # Build output
-target/
-*.class
-*.jar.original
-dependency-reduced-pom.xml
-release/*.jar
-release/*.tar.gz
+build/
+cmake-build-*/
+*.o
+*.moc
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+
+# Qt Creator
+*.pro.user
+*.pro.user.*
 
 # IDE
 .idea/
@@ -21,3 +26,7 @@ Thumbs.db
 # Logs
 *.log
 push-commands.txt
+
+# Release artifacts
+release/*.tar.gz
+release/*.AppImage

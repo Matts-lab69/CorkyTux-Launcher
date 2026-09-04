@@ -1,45 +1,29 @@
-# CorkyTux — Java Port
+# CorkyTux Qt — C++20 + QML native launcher
 
-A Java port of the [CorkyTux](https://github.com/ZzEdovec/corkytux), originally built with JPHP/DevelNext.
+Native launcher: zero dependencies beyond Qt, GPU-composited QML at 60fps, <60MB idle target.
 
-## Features
-
-- Launch games with custom multiplayer fixes on Linux
-- Automatic game cover fetching from Steam
-- Steam overlay support
-- Automatic OnlineFix and FreeTP game installation
-- Desktop and application menu shortcuts
-- Game downloads via aria2 (optional)
-
-## Requirements
-
-- Java 21+
-- ffmpeg
-- Steam
-- icoextract (optional)
-- aria2 (optional)
-
-## Installation
-
-1. Go to [Releases](https://github.com/Matts-lab69/corkytux/releases) and download the latest `.tar.gz`
-2. Extract and install:
-
-```bash
-tar xzf corkytux-launcher-*.tar.gz
-bash install.sh
+## Build
 ```
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+./build/corkytux
+```
+Requires: Qt 6.4+ (Core, Quick, QuickControls2, Network, Concurrent, Svg),
+CMake 3.21+, GCC with C++20. sqlite3 CLI (for Lutris pga.db scan).
 
-Then run with `corkytux` or find "CorkyTux" in your app menu.
+## Layout
+- `src/main.cpp` – entry, singleton + model wiring, context properties.
+- `src/backend/` – ConfigManager (INI+XDG), GameModel (+GameFilterProxy,
+  RecentModel), ProtonManager (QProcess run/stop, GitHub GE-Proton download),
+  IntegrationManager (Steam/Lutris scans, artwork chain, ProtonDB, SGDB, IGDB),
+  ThemeManager (dark/light + 10 accents as QML properties).
+- `qml/` – Main, Sidebar, GameCard, DetailsPanel, AddGameModal,
+  SettingsModal (7 tabs), GameSettingsModal, RemoveModal, LogModal,
+  ProtonModal, components (CButton/CCard/CModal/CSwitch/CTextField).
 
-## Supported Distros
-
-- Most Linux distributions
-
-## License
-
-AGPL-3.0 — Same as the original project.
-
-## Credits
-
-- **Original launcher**: [ZzEdovec](https://github.com/ZzEdovec) — queinu project
-- **Java port**: Matts-lab69
+## Parity notes (vs Java)
+- Same INI keys/paths (~/.config/CorkyTux, prefixes, banners, icons).
+- Same filter modes, favorites, lastPlayed/timeSpent semantics.
+- Artwork chain order identical; bundled SteamGridDB key identical.
+- Modals mirror Java modal overlays; hide paths never kill the main window.
+- Details overlay floats right with fast slide-in, instant hide.
