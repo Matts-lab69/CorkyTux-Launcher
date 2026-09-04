@@ -152,16 +152,6 @@ For emulators, install one through the Emulator Manager plugin, add your ROMs, a
 
 ---
 
-## Credits
-
-CorkyTux is built with [Qt](https://www.qt.io/) and uses:
-- [GE-Proton](https://github.com/GloriousEggroll/proton-ge-custom) and [CachyOS Proton](https://github.com/CachyOS/proton-cachyos) for Windows compatibility
-- [SteamGridDB](https://www.steamgriddb.com/) for game artwork
-- [ProtonDB](https://www.protondb.com/) for compatibility ratings
-- [Lutris](https://lutris.net/) for game library integration
-
----
-
 ## License
 
 CorkyTux is open source software. See [LICENSE](LICENSE) for details.
