@@ -431,6 +431,11 @@ CModal {
                     Component.onCompleted: setSilent(config.launcherValue("gamesUsesWayland", "User Settings") === "1")
                     onToggled: config.setLauncherValue("gamesUsesWayland", checked ? "1" : "0", "User Settings")
                 }
+                CSwitch {
+                    objectName: "Use umu-launcher (unified Proton runner)"
+                    Component.onCompleted: setSilent(proton.useUmu)
+                    onToggled: proton.useUmu = checked
+                }
                 }
             }
 
@@ -797,6 +802,33 @@ CModal {
                         font.pixelSize: 11
                         wrapMode: Text.Wrap
                         width: parent.width
+                    }
+                    // Steam
+                    CCard {
+                        width: parent.width
+                        Row {
+                            width: parent.width
+                            Text {
+                                text: "Steam"
+                                color: Theme.textMain
+                                font.bold: true
+                                font.pixelSize: 13
+                                width: parent.width - 150
+                            }
+                            CButton {
+                                text: "Scan & Import"
+                                width: 140
+                                height: 32
+                                onClicked: integrations.scanSteam()
+                            }
+                        }
+                        Text {
+                            text: "Import installed Steam games with their existing Proton prefixes"
+                            color: Theme.textSec
+                            font.pixelSize: 11
+                            wrapMode: Text.Wrap
+                            width: parent.width
+                        }
                     }
                     // Lutris
                     CCard {

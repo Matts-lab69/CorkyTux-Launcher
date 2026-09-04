@@ -26,6 +26,18 @@ ProtonManager::ProtonManager(QObject *parent) : QObject(parent) {
     m_nam = new QNetworkAccessManager(this);
 }
 
+bool ProtonManager::isUmuAvailable() const {
+    return !QStandardPaths::findExecutable("umu-run").isEmpty();
+}
+
+void ProtonManager::setUseUmu(bool on) {
+    if (on == m_useUmu)
+        return;
+    m_useUmu = on;
+    ConfigManager::instance()->setLauncherValue("useUmu", on ? "1" : "0", "User Settings");
+    emit useUmuChanged();
+}
+
 QString ProtonManager::protonsDir() const {
     // Primary configured path (mirrors Java getBasePathFor("protons"))
     return ConfigManager::instance()->basePathFor("protons");
@@ -300,6 +312,8 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     }
 
     // Wine/Proton game
+    const QString source = cfg->gameValue(gameName, "source");
+    const bool isSteamGame = (source == "steam");
     QStringList args;
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     QString workDir;
@@ -312,22 +326,31 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
         emit toast("No executable configured");
         return;
     }
-        const QString protonName =
-            cfg->gameValue(gameName, "proton", cfg->launcherValue("defaultProton", "User Settings", "GE-Proton Latest"));
-        QString proton = protonExecutable(protonName, "proton");
-        if (proton.isEmpty()) {
-            const QStringList all = installedProtons();
-            if (all.isEmpty()) {
-                emit toast("No Proton installed");
-                return;
+
+    // For Steam games, use Steam's own prefix (don't create a new one)
+    QString prefix;
+    if (isSteamGame) {
+        prefix = cfg->gameValue(gameName, "prefixPath");
+        if (prefix.isEmpty()) {
+            // Fallback: construct from steamapps/compatdata/<appid>/pfx
+            const QString mainPath = cfg->gameValue(gameName, "mainPath");
+            const QString sid = cfg->gameValue(gameName, "steamID");
+            if (!mainPath.isEmpty() && !sid.isEmpty()) {
+                const QString steamapps = QFileInfo(mainPath).absolutePath(); // .../steamapps/common -> .../steamapps
+                prefix = QFileInfo(steamapps).absolutePath() + "/steamapps/compatdata/" + sid + "/pfx";
             }
-            proton = protonExecutable(all.last(), "proton");
         }
-        const QString prefix = ensurePrefixPath(gameName);
+        if (prefix.isEmpty() || !QDir(prefix).exists()) {
+            emit toast("Steam prefix not found for this game");
+            return;
+        }
+    } else {
+        prefix = ensurePrefixPath(gameName);
         if (prefix.isEmpty()) {
             emit toast("Cannot create prefix dir");
             return;
         }
+    }
         // --- DXVK vs wined3d (mirrors FilesWorker.generateProcess) ---
         QString wined3d = cfg->gameValue(gameName, "wined3d");
         if (wined3d.isEmpty())
@@ -441,7 +464,28 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
         const QStringList all = installedProtons();
         program = all.isEmpty() ? QString() : protonExecutable(all.last(), "proton");
     }
-    if (program.isEmpty()) {
+
+    // Use umu-launcher if enabled and available
+    if (m_useUmu && isUmuAvailable()) {
+        program = "umu-run";
+        args.clear();
+        const QString sid = cfg->gameValue(gameName, "steamID");
+        if (!sid.isEmpty()) {
+            args << "--gameid" << ("umu-" + sid)
+                 << "--store" << "steam";
+        }
+        // umu auto-detects proton, but we can specify if user has a preference
+        if (!protonName.isEmpty() && protonName != "GE-Proton Latest") {
+            args << "--protonpath" << protonExecutable(protonName, "proton");
+        }
+        args << exec;
+        const QString argsAfter = cfg->gameValue(gameName, "argsAfter");
+        if (!argsAfter.isEmpty())
+            args += argsAfter.split(' ', Qt::SkipEmptyParts);
+        const QString argsBefore = cfg->gameValue(gameName, "argsBefore");
+        if (!argsBefore.isEmpty())
+            args = argsBefore.split(' ', Qt::SkipEmptyParts) + args;
+    } else if (program.isEmpty()) {
         emit toast("No Proton executable found");
         return;
     }

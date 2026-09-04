@@ -332,6 +332,35 @@ void IntegrationManager::scanLutris() {
     });
 }
 
+// ---------------- Steam scan ----------------
+
+void IntegrationManager::scanSteam() {
+    QtConcurrent::run([this] { doScanSteam(); });
+}
+
+void IntegrationManager::doScanSteam() {
+    QVariantList games;
+    for (const QString &root : steamRoots()) {
+        for (const QString &lib : steamLibraries(root)) {
+            const QString steamapps = lib + "/steamapps";
+            QDir dir(steamapps);
+            if (!dir.exists())
+                continue;
+            for (const QString &acf :
+                 dir.entryList({"appmanifest_*.acf"}, QDir::Files, QDir::Name)) {
+                QVariantMap game = parseAcf(steamapps + "/" + acf, steamapps);
+                if (game.isEmpty())
+                    continue;
+                if (isSteamTool(game["name"].toString()))
+                    continue;
+                game["source"] = "steam";
+                games << game;
+            }
+        }
+    }
+    QMetaObject::invokeMethod(this, [this, games] { emit steamScanReady(games); });
+}
+
 // ---------------- network helpers ----------------
 
 static QNetworkRequest artRequest(const QUrl &url, const QString &bearer = {}) {

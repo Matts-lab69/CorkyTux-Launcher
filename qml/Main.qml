@@ -122,6 +122,27 @@ ApplicationWindow {
             toastLabel.text = "Lutris scan: " + scanGames.length + " found, " + imported + " new.";
             toastPopup.open();
         }
+        function onSteamScanReady(scanGames) {
+            var imported = 0;
+            for (var i = 0; i < scanGames.length; i++) {
+                var g = scanGames[i];
+                if (!g.name || /^\d+$/.test(g.name))
+                    continue;
+                if (games.importExternalGame(g.name, {
+                        "mainPath": g.libraryPath,
+                        "executable": "",
+                        "prefixPath": g.prefixPath || "",
+                        "steamID": g.appId,
+                        "source": "steam"
+                    })) {
+                    imported++;
+                    if (g.libraryPath)
+                        integrations.resolveArtwork(g.name, g.appId);
+                }
+            }
+            toastLabel.text = "Steam scan: " + scanGames.length + " found, " + imported + " new.";
+            toastPopup.open();
+        }
     }
 
     Column {

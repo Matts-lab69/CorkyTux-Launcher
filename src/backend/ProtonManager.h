@@ -43,6 +43,12 @@ public:
     Q_INVOKABLE bool isRunning() const { return m_running; }
     QString currentGame() const { return m_currentGame; }
 
+    // ---- umu-launcher ----
+    Q_INVOKABLE bool isUmuAvailable() const;
+    Q_PROPERTY(bool useUmu READ useUmu WRITE setUseUmu NOTIFY useUmuChanged)
+    bool useUmu() const { return m_useUmu; }
+    void setUseUmu(bool on);
+
     /** Async: fetch GE-Proton releases {tag -> {url, date}}. */
     Q_INVOKABLE void fetchReleases();
     /** Async download+extract of a release tarball. */
@@ -57,6 +63,7 @@ public:
 signals:
     void runningChanged();
     void currentGameChanged();
+    void useUmuChanged();
     void downloadProgressChanged();
     void releasesReady(const QVariantList &releases);
     void downloadFinished(bool ok, const QString &message);
@@ -76,6 +83,7 @@ private:
 
     QProcess *m_proc = nullptr;
     bool m_running = false;
+    bool m_useUmu = false;
     QString m_currentGame;
     qint64 m_startEpoch = 0;
     double m_dlProgress = -1.0;

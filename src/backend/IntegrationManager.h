@@ -33,6 +33,9 @@ public:
     // ---- Lutris ----
     Q_INVOKABLE void scanLutris(); // -> lutrisScanReady(QVariantList)
 
+    // ---- Steam ----
+    Q_INVOKABLE void scanSteam(); // -> steamScanReady(QVariantList)
+
     // ---- Artwork resolver (any game): banner/icon local paths ----
     Q_INVOKABLE void resolveArtwork(const QString &gameName, const QString &steamId);
     // -> artworkReady(gameName, bannerPath, iconPath)
@@ -77,6 +80,7 @@ signals:
     void exeIconReady(const QString &gameName, const QString &iconPath);
     void exeIconFailed(const QString &gameName, const QString &message);
     void lutrisScanReady(const QVariantList &games); // {slug,name,runner,directory,executable,prefix,playtimeHours}
+    void steamScanReady(const QVariantList &games); // {appId,name,installDir,libraryPath,prefixPath}
     void artworkReady(const QString &gameName, const QString &banner, const QString &icon);
     void protonRatingReady(const QString &appId, const QString &tier,
                            const QString &confidence, int total);
