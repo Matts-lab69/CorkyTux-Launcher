@@ -338,14 +338,19 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
             const QString mainPath = cfg->gameValue(gameName, "mainPath");
             const QString sid = cfg->gameValue(gameName, "steamID");
             if (!mainPath.isEmpty() && !sid.isEmpty()) {
-                const QString steamapps = QFileInfo(mainPath).absolutePath(); // .../steamapps/common -> .../steamapps
-                prefix = QFileInfo(steamapps).absolutePath() + "/steamapps/compatdata/" + sid + "/pfx";
+                // mainPath = .../steamapps/common/GameName → go up to .../steamapps
+                const QString commonDir = QFileInfo(mainPath).absolutePath();
+                const QString steamapps = QFileInfo(commonDir).absolutePath();
+                prefix = steamapps + "/compatdata/" + sid + "/pfx";
             }
         }
-        if (prefix.isEmpty() || !QDir(prefix).exists()) {
-            emit toast("Steam prefix not found for this game");
+        if (prefix.isEmpty()) {
+            emit toast("Cannot determine Steam prefix for this game");
             return;
         }
+        // Create prefix dir if it doesn't exist yet (first run through CorkyTux)
+        if (!QDir(prefix).exists())
+            QDir().mkpath(prefix);
     } else {
         prefix = ensurePrefixPath(gameName);
         if (prefix.isEmpty()) {

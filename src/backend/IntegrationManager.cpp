@@ -149,7 +149,7 @@ QVariantMap IntegrationManager::parseAcf(const QString &acfPath, const QString &
     const QString steamPrefix = steamapps + "/compatdata/" + appId + "/pfx";
     return {{"appId", appId}, {"name", name}, {"installDir", installDir},
             {"libraryPath", libPath}, {"executable", executable},
-            {"prefixPath", QDir(steamPrefix).exists() ? steamPrefix : ""}};
+            {"prefixPath", steamPrefix}};
 }
 
 bool IntegrationManager::isSteamTool(const QString &name) {
