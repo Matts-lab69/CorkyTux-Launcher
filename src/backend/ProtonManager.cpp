@@ -420,8 +420,29 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
         }
     }
     const QString argsBefore = cfg->gameValue(gameName, "argsBefore");
-    if (!argsBefore.isEmpty())
-        args = argsBefore.split(' ', Qt::SkipEmptyParts) + args;
+    if (!argsBefore.isEmpty()) {
+        // Shell-like split: handles quoted strings with spaces
+        QStringList parsed;
+        QString current;
+        bool inQuote = false;
+        QChar quoteChar;
+        for (int i = 0; i < argsBefore.size(); ++i) {
+            QChar c = argsBefore[i];
+            if (inQuote) {
+                if (c == quoteChar) { inQuote = false; continue; }
+                current += c;
+            } else if (c == '"' || c == '\'') {
+                inQuote = true;
+                quoteChar = c;
+            } else if (c == ' ') {
+                if (!current.isEmpty()) { parsed << current; current.clear(); }
+            } else {
+                current += c;
+            }
+        }
+        if (!current.isEmpty()) parsed << current;
+        args = parsed + args;
+    }
     // Working dir = exe parent (mirrors Java)
     const QFileInfo fi(exec);
     workDir = fi.dir().path();
@@ -567,8 +588,15 @@ void ProtonManager::stopGame() {
     if (m_proc) {
         // Try wineserver -k with WINEPREFIX to only kill this prefix's processes
         const QString prog = m_proc->program();
-        const QString ws = prog.left(prog.lastIndexOf('/') + 1) + "wineserver";
-        if (QFile::exists(ws) && !prefix.isEmpty()) {
+        const QString protonDir = prog.left(prog.lastIndexOf('/'));
+        // Search for wineserver in proton directory tree
+        QString ws;
+        for (const QString &cand : {protonDir + "/wineserver",
+                                     protonDir + "/../wineserver",
+                                     protonDir + "/../../wineserver"}) {
+            if (QFile::exists(cand)) { ws = cand; break; }
+        }
+        if (!ws.isEmpty() && !prefix.isEmpty()) {
             QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
             env.insert("WINEPREFIX", prefix);
             QProcess wsProc;

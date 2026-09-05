@@ -19,7 +19,7 @@ Popup {
         border.width: 1
     }
     contentItem: Column {
-        width: root.boxWidth
+        width: Math.min(root.boxWidth, parent ? parent.width - 48 : root.boxWidth)
         spacing: 0
         Row {
             width: parent.width

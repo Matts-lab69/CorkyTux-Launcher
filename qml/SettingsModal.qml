@@ -11,6 +11,7 @@ CModal {
 
     signal openProton
     property string page: "visuals"
+    readonly property int tabCount: 7
 
     function setPage(p) {
         root.page = p;
@@ -388,7 +389,7 @@ CModal {
                     function onDownloadFinished(ok, message) {
                         protonStatus.text = ok ? ("Installed " + message) : ("Failed: " + message);
                         protonsPage.installedDetails = proton.installedProtonDetails();
-                        defaultProtonBox.model = proton.installedProtons();
+                        protonsPage.defaultProtonModel = proton.installedProtons();
                     }
                 }
                 Component.onCompleted: proton.fetchReleases()
@@ -575,7 +576,6 @@ CModal {
                                     height: 28
                                     kind: "outline"
                                     onClicked: {
-                                        pluginsPage.emuStatus = "Removing plugin…";
                                         plugins.removePlugin(modelData.id);
                                     }
                                 }
@@ -1000,7 +1000,7 @@ CModal {
                 Button {
                     required property var modelData
                     text: modelData.label
-                    width: parent.width / 7
+                    width: parent.width / root.tabCount
                     height: 52
                     checkable: true
                     checked: root.page === modelData.id

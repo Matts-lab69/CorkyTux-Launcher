@@ -8,6 +8,9 @@ import "components"
 ApplicationWindow {
     id: root
     visible: true
+
+    readonly property int sidebarWidth: 320
+    readonly property int topBarHeight: 52
     width: 1200
     height: 700
     // Minima por debajo de media pantalla 1080p (960x540) para que el
@@ -156,7 +159,7 @@ ApplicationWindow {
         // ---- top bar ----
         Rectangle {
             width: parent.width
-            height: 52
+            height: root.topBarHeight
             color: Theme.bg
             RowLayout {
                 id: topRow
@@ -200,16 +203,16 @@ ApplicationWindow {
         // ---- body ----
         Row {
             width: parent.width
-            height: parent.height - 52
+            height: parent.height - root.topBarHeight
             Sidebar {
                 id: sidebar
-                width: 320
+                width: root.sidebarWidth
                 height: parent.height
                 onGameClicked: function(name) { root.openGame(name); }
             }
             // ---- center ----
             Flickable {
-                width: parent.width - 320
+                width: parent.width - root.sidebarWidth
                 height: parent.height
                 contentHeight: centerCol.height + 48
                 clip: true
@@ -268,9 +271,9 @@ ApplicationWindow {
     function updateRecentLimit() {
         var scrW = Screen.width || 1920;
         var scrH = Screen.height || 1080;
-        var availW = Math.max(240, scrW - 320 - 48);
+        var availW = Math.max(240, scrW - root.sidebarWidth - 48);
         var cols = Math.max(1, Math.floor((availW + 16) / 240));
-        var availH = Math.max(200, scrH - 52 - 140);
+        var availH = Math.max(200, scrH - root.topBarHeight - 140);
         var rows = Math.max(1, Math.floor((availH + 16) / 156));
         recent.limit = Math.min(30, Math.max(1, cols * rows));
     }

@@ -106,7 +106,7 @@ QStringList IntegrationManager::steamLibraries(const QString &steamRoot) {
     static const QRegularExpression re("\"path\"\\s+\"([^\"]+)\"");
     for (const auto &m : re.globalMatch(content)) {
         QString p = m.captured(1);
-        p.replace("\\\\", "/");
+        p.replace('\\', '/');
         if (QDir(p).exists() && !libs.contains(p))
             libs << p;
     }
@@ -260,10 +260,6 @@ void IntegrationManager::scanLutris() {
                             QString dir, QString exe, const QString &prefix, double playtime) {
             if (looksNumericName(name))
                 return;
-            if ((exe.isEmpty() || dir.isEmpty())) {
-                // YAML is authoritative for exe/prefix
-                // (configpath lookup happens in pga.db branch below)
-            }
             games << QVariantMap({{"slug", slug}, {"name", name}, {"runner", runner},
                                   {"directory", dir}, {"executable", exe},
                                   {"prefix", prefix}, {"playtimeHours", playtime}});

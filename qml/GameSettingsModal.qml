@@ -69,7 +69,7 @@ CModal {
             spacing: 8
             visible: root.tab === "view"
             Text { text: "Game name in launcher"; color: Theme.textSec; font.pixelSize: 12 }
-            CTextField { id: nameField; width: parent.width; onEditingFinished: save() }
+            CTextField { id: nameField; width: parent.width; readOnly: true }
             Text { text: "Install path"; color: Theme.textSec; font.pixelSize: 12 }
             CTextField { width: parent.width; readOnly: true; text: games.getGame(root.gameName).mainPath || "" }
             Text { text: "Proton version"; color: Theme.textSec; font.pixelSize: 12 }

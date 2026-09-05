@@ -102,7 +102,7 @@ void PluginManager::applyScanPlugins(const QString &gameName, const QString &gam
             continue;
         if (!m.value("capabilities").toStringList().contains("scan"))
             continue;
-        plugDirs << m.value("path").toString();
+        plugDirs << QFileInfo(m.value("path").toString()).absolutePath();
     }
     QtConcurrent::run([this, gameName, gameDir, plugDirs] {
         QString foundSteamId;
@@ -203,13 +203,16 @@ void PluginManager::downloadPlugin(const QString &tag, const QString &url) {
     QNetworkRequest req{dlUrl};
     req.setHeader(QNetworkRequest::UserAgentHeader, "CorkyTux/2.10");
     QNetworkReply *rep = m_nam->get(req);
-    const QString dest = pluginsDir() + "/" + tag + ".tar.gz";
+    QString safeTag(tag);
+    safeTag.replace(QRegularExpression("[^a-zA-Z0-9._-]"), "_");
+    const QString dest = pluginsDir() + "/" + safeTag + ".tar.gz";
     // Snapshot dirs BEFORE extraction
     const QStringList before =
         QDir(pluginsDir()).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     QFile *file = new QFile(dest);
     if (!file->open(QIODevice::WriteOnly)) {
         emit downloadFinished(false, "Cannot write " + dest);
+        file->deleteLater();
         rep->abort();
         rep->deleteLater();
         return;
