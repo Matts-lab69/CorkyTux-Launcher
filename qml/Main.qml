@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Dialogs
 import "components"
 
 // Main – ApplicationWindow 1200x700: top bar, sidebar, center, details overlay,
@@ -308,7 +307,19 @@ ApplicationWindow {
                 proton.runGameDebug(root.currentGameName);
             }
             else if (action === "Wine") wineMenu.open();
-            else if (action === "Run exe") runExeDialog.open();
+            else if (action === "Run exe") {
+                var g = games.getGame(root.currentGameName);
+                var dir = g ? (g.mainPath || "") : "";
+                if (!dir) { toastLabel.text = "No game directory"; toastPopup.open(); return; }
+                var all = integrations.scanDirSync(dir);
+                var exes = [];
+                for (var i = 0; i < all.length; i++) {
+                    if (all[i].toLowerCase().endsWith(".exe"))
+                        exes.push(all[i]);
+                }
+                root.runExeCandidates = exes;
+                runExeModal.open();
+            }
             else if (action === "Folders") {
                 if (root.currentGame.mainPath)
                     Qt.openUrlExternally("file://" + root.currentGame.mainPath);
@@ -349,13 +360,64 @@ ApplicationWindow {
         }
     }
 
-    FileDialog {
-        id: runExeDialog
-        title: "Select executable to run"
-        nameFilters: ["Executables (*.exe *.msi)", "All files (*)"]
-        onAccepted: {
-            var path = String(selectedFile).replace("file://", "");
-            proton.runCustomExe(root.currentGameName, decodeURIComponent(path));
+    // ---- Run Exe picker (scans game dir for .exe files) ----
+    property var runExeCandidates: []
+    CModal {
+        id: runExeModal
+        title: "Run Executable"
+        boxWidth: 440
+        Column {
+            width: parent.width
+            spacing: 8
+            Text {
+                text: "Select an executable from the game directory"
+                color: Theme.textSec
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+                width: parent.width
+            }
+            Repeater {
+                model: root.runExeCandidates
+                delegate: Rectangle {
+                    required property string modelData
+                    required property int index
+                    width: parent.width
+                    height: 44
+                    radius: 6
+                    color: exeMouse.containsMouse ? Theme.hover : Theme.well
+                    Row {
+                        anchors.fill: parent
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 12
+                        spacing: 8
+                        Text {
+                            text: modelData.split("/").pop()
+                            color: Theme.textMain
+                            font.bold: true
+                            font.pixelSize: 13
+                            elide: Text.ElideMiddle
+                            width: parent.width - 24
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                    MouseArea {
+                        id: exeMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: {
+                            runExeModal.close();
+                            proton.runCustomExe(root.currentGameName, modelData);
+                        }
+                    }
+                }
+            }
+            Text {
+                text: root.runExeCandidates.length === 0 ? "No executables found in game directory" : ""
+                color: Theme.textSec
+                font.pixelSize: 12
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+            }
         }
     }
 
