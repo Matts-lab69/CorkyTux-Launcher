@@ -108,9 +108,12 @@ bool GameModel::addGame(const QString &name, const QVariantMap &fields) {
     if (!m_cfg->hasGame(name)) {
         if (!isEmulator)
             m_cfg->setGameValue(name, "proton", defProton);
-        m_cfg->setGameValue(name, "executor", executor);
     }
+    // Always save executor (allows updating existing games with emulator info)
+    if (!executor.isEmpty())
+        m_cfg->setGameValue(name, "executor", executor);
     for (auto it = fields.constBegin(); it != fields.constEnd(); ++it) {
+        if (it.key() == "executor") continue; // already handled above
         if (it.key() == "emuSettings") {
             // Save emulator settings as JSON string
             QJsonDocument doc(QJsonObject::fromVariantMap(it.value().toMap()));

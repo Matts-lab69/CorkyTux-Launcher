@@ -28,6 +28,10 @@ CModal {
     function openFor(name) {
         gameName = name;
         tab = "view";
+        // Detect emulator BEFORE opening so tabs render correctly
+        var g = games.getGame(name);
+        var executor = (g && g.executor) ? g.executor : "";
+        isEmulatorGame = executor !== "";
         pendingLoad = true;
         // Clear dependency state
         depScanResults = [];
@@ -37,12 +41,8 @@ CModal {
         depCompleted = 0;
         depBusy = false;
         open();
-        // Load immediately if emulators already cached, otherwise wait
-        if (plugins.emulators.length > 0) {
-            loadFields();
-        } else {
-            plugins.listEmulators();
-        }
+        // Load fields immediately (emulators may already be cached)
+        loadFields();
     }
     function loadFields() {
         var g = games.getGame(gameName);
@@ -102,8 +102,9 @@ CModal {
             target: plugins
             enabled: root.visible
             function onEmulatorsChanged() {
-                if (root.pendingLoad || root.isEmulatorGame)
+                if (root.isEmulatorGame || root.pendingLoad) {
                     loadFields();
+                }
             }
         }
         // View tab (shared)
