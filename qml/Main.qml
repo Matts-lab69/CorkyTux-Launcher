@@ -91,12 +91,10 @@ ApplicationWindow {
                 games.addGame(name, fields);
         }
         function onPluginResult(result) {
-            if (result && result.ok) {
+            if (result && result.ok && result.installed) {
                 toastLabel.text = "Dependencies installed: " + (result.installed || []).join(", ");
-            } else {
-                toastLabel.text = "Install failed: " + (result ? result.error || "unknown error" : "no response");
+                toastPopup.open();
             }
-            toastPopup.open();
         }
         function onExeIconReady(name, path) {
             // Real exe icon beats cover-as-icon fallbacks (lutris banners,

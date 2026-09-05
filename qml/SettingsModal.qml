@@ -786,20 +786,6 @@ CModal {
                         plugins.listEmulators();
                     }
                 }
-                Connections {
-                    target: integrations
-                    function onPluginResult(result) {
-                        if (result && result.ok && result.deps) {
-                            pluginsPage.depScanResults = result.deps;
-                        } else if (result && result.ok && result.installed) {
-                            toastLabel.text = "Installed: " + result.installed.join(", ");
-                            toastPopup.open();
-                        } else {
-                            toastLabel.text = result ? (result.error || "Plugin failed") : "No response";
-                            toastPopup.open();
-                        }
-                    }
-                }
             }
 
             // INTEGRATIONS
