@@ -194,7 +194,7 @@ QVariantMap GameModel::getGame(const QString &name) const {
             {"steamID", g.steamID}, {"banner", g.banner}, {"icon", g.icon},
             {"timeSpent", g.timeSpent}, {"lastPlayed", g.lastPlayed},
             {"favorite", g.favorite}, {"source", g.source},
-            {"executor", g.executor},
+            {"executor", g.executor}, {"emuSettings", g.emuSettings},
         };
         // pass through any extra INI keys (env, argsBefore/After, flags...)
         const QMap<QString, QString> section = m_cfg->gameSection(name);

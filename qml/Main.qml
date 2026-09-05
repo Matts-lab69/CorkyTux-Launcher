@@ -132,10 +132,17 @@ ApplicationWindow {
                     continue;
                 // Detect emulator from runner name
                 var executor = runnerMap[(g.runner || "").toLowerCase()] || "";
+                // Derive mainPath: use directory if it exists, otherwise parent of executable
+                var mainDir = g.directory || "";
+                var exePath = g.executable || "";
+                if (!mainDir && exePath)
+                    mainDir = exePath.substring(0, exePath.lastIndexOf("/"));
+                else if (mainDir && !integrations.pathExists(mainDir) && exePath)
+                    mainDir = exePath.substring(0, exePath.lastIndexOf("/"));
                 var fields = {
                     "lutrisRunner": g.runner,
-                    "mainPath": g.directory,
-                    "executable": g.executable || g.directory,
+                    "mainPath": mainDir,
+                    "executable": exePath || mainDir,
                     "prefixPath": g.prefix || "",
                     "timeSpent": g.playtimeHours > 0 ? Math.round(g.playtimeHours * 3600) : "",
                     "source": "lutris"

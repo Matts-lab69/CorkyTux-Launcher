@@ -67,6 +67,9 @@ void PluginManager::refresh() {
     }
     m_plugins = out;
     emit pluginsChanged();
+    // Auto-load emulators if emulator-manager plugin is available
+    if (isEmulatorManagerInstalled() && m_emulators.isEmpty())
+        listEmulators();
 }
 
 bool PluginManager::isEnabled(const QString &id) const {
