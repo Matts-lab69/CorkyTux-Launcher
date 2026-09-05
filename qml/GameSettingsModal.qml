@@ -266,7 +266,7 @@ CModal {
                             id: checkBox
                             width: 40
                             visible: depStatus === "" && depSection.parent.depMode === "scan"
-                            Component.onCompleted: setSilent(true)
+                            Component.onCompleted: setSilent(false)
                         }
 
                         Column {
@@ -302,7 +302,7 @@ CModal {
                         var deps = [];
                         for (var i = 0; i < depList.count; i++) {
                             var item = depList.itemAt(i);
-                            if (item && item.depCheck.checked)
+                            if (item && item.depCheck.checked && item.depStatus !== "installed")
                                 deps.push(item.depId);
                         }
                         if (deps.length === 0) return;

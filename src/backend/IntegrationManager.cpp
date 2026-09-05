@@ -1014,51 +1014,68 @@ void IntegrationManager::runPlugin(const QString &pluginPath, const QStringList 
 
         if (isInstall) {
             // For installs, read line-by-line for real-time progress
+            QByteArray lineBuffer;
             while (proc.state() != QProcess::NotRunning) {
                 if (!proc.waitForReadyRead(1000)) {
                     if (proc.state() == QProcess::NotRunning) break;
-                    if (!proc.waitForFinished(1000)) {
-                        // Check for timeout
-                        qDebug() << "[PluginRunner] Install still running...";
-                    }
                     continue;
                 }
-                QByteArray line = proc.readLine().trimmed();
-                if (line.isEmpty()) continue;
+                lineBuffer.append(proc.readAllStandardOutput());
+                // Process complete lines
+                int nlPos;
+                while ((nlPos = lineBuffer.indexOf('\n')) >= 0) {
+                    QByteArray line = lineBuffer.left(nlPos).trimmed();
+                    lineBuffer.remove(0, nlPos + 1);
+                    if (line.isEmpty()) continue;
 
-                QJsonDocument doc = QJsonDocument::fromJson(line);
-                QVariantMap msg = doc.object().toVariantMap();
-                QString type = msg.value("type").toString();
-                qDebug() << "[PluginRunner] Line:" << line.left(200);
+                    QJsonDocument doc = QJsonDocument::fromJson(line);
+                    QVariantMap msg = doc.object().toVariantMap();
+                    QString type = msg.value("type").toString();
+                    qDebug() << "[PluginRunner] Line:" << line.left(200);
 
-                if (type == "progress") {
-                    QMetaObject::invokeMethod(this, [this, msg] { emit pluginProgress(msg); });
-                } else if (type == "done") {
-                    // Final result
-                    QMetaObject::invokeMethod(this, [this, msg] { emit pluginResult(msg); });
-                    return;
+                    if (type == "progress") {
+                        QMetaObject::invokeMethod(this, [this, msg] { emit pluginProgress(msg); });
+                    } else if (type == "done") {
+                        QMetaObject::invokeMethod(this, [this, msg] { emit pluginResult(msg); });
+                        return;
+                    }
                 }
             }
-            // Process finished without a "done" line
+            // Process any remaining data in buffer
             proc.waitForFinished(5000);
-            QByteArray out = proc.readAllStandardOutput();
+            lineBuffer.append(proc.readAllStandardOutput());
             QByteArray err = proc.readAllStandardError();
             qDebug() << "[PluginRunner] Install done, exit:" << proc.exitCode();
-            if (!out.isEmpty()) {
-                QJsonDocument doc = QJsonDocument::fromJson(out.trimmed());
+            // Try to find a "done" line in remaining buffer
+            QByteArray remaining = lineBuffer.trimmed();
+            if (!remaining.isEmpty()) {
+                // Try to parse the last JSON object
+                int lastNl = remaining.lastIndexOf('\n');
+                QByteArray lastLine = (lastNl >= 0) ? remaining.mid(lastNl + 1) : remaining;
+                lastLine = lastLine.trimmed();
+                if (!lastLine.isEmpty()) {
+                    QJsonDocument doc = QJsonDocument::fromJson(lastLine);
+                    QVariantMap res = doc.object().toVariantMap();
+                    if (res.value("type").toString() == "done") {
+                        QMetaObject::invokeMethod(this, [this, res] { emit pluginResult(res); });
+                        return;
+                    }
+                }
+                // Try the full buffer as a single JSON
+                QJsonDocument doc = QJsonDocument::fromJson(remaining);
                 QVariantMap res = doc.object().toVariantMap();
-                if (!res.isEmpty() && res.value("type").toString() == "done") {
+                if (res.value("type").toString() == "done") {
                     QMetaObject::invokeMethod(this, [this, res] { emit pluginResult(res); });
                     return;
                 }
             }
-            // Fallback
+            // Fallback: build result from collected progress
             QVariantMap res;
             res["ok"] = proc.exitCode() == 0;
             res["type"] = "done";
             res["installed"] = QStringList();
             res["failed"] = QStringList();
-            res["error"] = QString::fromUtf8(err).left(200);
+            if (!err.isEmpty()) res["error"] = QString::fromUtf8(err).left(200);
             QMetaObject::invokeMethod(this, [this, res] { emit pluginResult(res); });
         } else {
             // For scans, single JSON output
