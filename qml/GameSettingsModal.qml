@@ -142,20 +142,28 @@ CModal {
             }
 
             // ---- Dependency Installer (only if plugin installed) ----
-            property var depPlugin: {
-                for (var i = 0; i < plugins.plugins.length; i++) {
-                    if (plugins.plugins[i].id === "dependency-installer" && plugins.plugins[i].enabled)
-                        return plugins.plugins[i];
-                }
-                return null;
-            }
             property var depScanResults: []
             property string depMessage: ""
 
             Column {
+                id: depSection
                 width: parent.width
                 spacing: 8
-                visible: parent.depPlugin !== null
+                visible: {
+                    for (var i = 0; i < plugins.plugins.length; i++) {
+                        if (plugins.plugins[i].id === "dependency-installer" && plugins.plugins[i].enabled)
+                            return true;
+                    }
+                    return false;
+                }
+
+                function getPluginPath() {
+                    for (var i = 0; i < plugins.plugins.length; i++) {
+                        if (plugins.plugins[i].id === "dependency-installer" && plugins.plugins[i].enabled)
+                            return plugins.plugins[i].path || "";
+                    }
+                    return "";
+                }
 
                 Rectangle {
                     width: parent.width
@@ -185,16 +193,16 @@ CModal {
                     onClicked: {
                         var g = games.getGame(root.gameName);
                         if (!g || !g.mainPath) { toastLabel.text = "No game directory found"; toastPopup.open(); return; }
-                        var plugPath = parent.parent.depPlugin.path || "";
+                        var plugPath = depSection.getPluginPath();
                         if (!plugPath) { toastLabel.text = "Plugin path not found"; toastPopup.open(); return; }
-                        parent.parent.depMessage = "Scanning...";
-                        parent.parent.depScanResults = [];
+                        depSection.parent.depMessage = "Scanning...";
+                        depSection.parent.depScanResults = [];
                         integrations.runPlugin(plugPath, ["scan", g.mainPath]);
                     }
                 }
                 Text {
-                    text: parent.parent.depMessage
-                    color: parent.parent.depScanResults.length > 0 ? Theme.textSec : Theme.accent
+                    text: depSection.parent.depMessage
+                    color: depSection.parent.depScanResults.length > 0 ? Theme.textSec : Theme.accent
                     font.pixelSize: 12
                     wrapMode: Text.Wrap
                     width: parent.width
@@ -202,7 +210,7 @@ CModal {
                 }
                 Repeater {
                     id: depList
-                    model: parent.parent.depScanResults
+                    model: depSection.parent.depScanResults
                     delegate: Row {
                         property string depId: modelData.id || ""
                         property alias depCheck: checkBox
@@ -241,7 +249,7 @@ CModal {
                                 deps.push(item.depId);
                         }
                         if (deps.length === 0) return;
-                        var plugPath = parent.parent.depPlugin.path || "";
+                        var plugPath = depSection.getPluginPath();
                         if (!plugPath) { toastLabel.text = "Plugin path not found"; toastPopup.open(); return; }
                         var g = games.getGame(root.gameName);
                         if (!g) { toastLabel.text = "Game not found"; toastPopup.open(); return; }
@@ -260,18 +268,18 @@ CModal {
                 target: integrations
                 function onPluginResult(result) {
                     if (result && result.ok && result.deps) {
-                        parent.depScanResults = result.deps;
-                        parent.depMessage = result.deps.length > 0
+                        depSection.parent.depScanResults = result.deps;
+                        depSection.parent.depMessage = result.deps.length > 0
                             ? ""
                             : (result.message || "No dependencies needed");
                     } else if (result && result.ok && result.installed) {
                         toastLabel.text = "Installed: " + result.installed.join(", ");
                         toastPopup.open();
-                        parent.depMessage = "";
+                        depSection.parent.depMessage = "";
                     } else {
                         toastLabel.text = result ? (result.error || "Plugin failed") : "No response";
                         toastPopup.open();
-                        parent.depMessage = "";
+                        depSection.parent.depMessage = "";
                     }
                 }
             }
