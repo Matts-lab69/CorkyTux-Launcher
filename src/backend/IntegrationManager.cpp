@@ -133,9 +133,23 @@ QVariantMap IntegrationManager::parseAcf(const QString &acfPath, const QString &
         name = installDir.isEmpty() ? ("Steam " + appId) : installDir;
     const QString libPath =
         installDir.isEmpty() ? QString() : steamapps + "/common/" + installDir;
+    // Find main executable: scan for .exe files, pick largest
+    QString executable;
+    if (!libPath.isEmpty() && QDir(libPath).exists()) {
+        qint64 bestSize = -1;
+        QDirIterator it(libPath, {"*.exe"}, QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            it.next();
+            if (it.fileInfo().size() > bestSize) {
+                bestSize = it.fileInfo().size();
+                executable = it.filePath();
+            }
+        }
+    }
     const QString steamPrefix = steamapps + "/compatdata/" + appId + "/pfx";
     return {{"appId", appId}, {"name", name}, {"installDir", installDir},
-            {"libraryPath", libPath}, {"prefixPath", QDir(steamPrefix).exists() ? steamPrefix : ""}};
+            {"libraryPath", libPath}, {"executable", executable},
+            {"prefixPath", QDir(steamPrefix).exists() ? steamPrefix : ""}};
 }
 
 bool IntegrationManager::isSteamTool(const QString &name) {
@@ -415,7 +429,7 @@ void IntegrationManager::resolveArtwork(const QString &gameName, const QString &
             const QString i = home + "/.config/CorkyTux/icons/" + id + ".jpg";
             if (downloadTo(&nam, "https://cdn.cloudflare.steamstatic.com/steam/apps/" + id + "/header.jpg", b))
                 banner = b;
-            if (downloadTo(&nam, "https://cdn.cloudflare.steamstatic.com/steam/apps/" + id + "/capsule_184x69.jpg", i))
+            if (downloadTo(&nam, "https://cdn.cloudflare.steamstatic.com/steam/apps/" + id + "/logo.png", i))
                 icon = i;
             // 1b) Store API fallback (header_image + capsule_image, unescaped)
             if (banner.isEmpty() || icon.isEmpty()) {

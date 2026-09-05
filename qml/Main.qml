@@ -130,7 +130,7 @@ ApplicationWindow {
                     continue;
                 if (games.importExternalGame(g.name, {
                         "mainPath": g.libraryPath,
-                        "executable": "",
+                        "executable": g.executable || "",
                         "prefixPath": g.prefixPath || "",
                         "steamID": g.appId,
                         "source": "steam"
