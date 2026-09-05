@@ -192,13 +192,19 @@ CModal {
                     height: 32
                     onClicked: {
                         var g = games.getGame(root.gameName);
-                        if (!g || !g.mainPath) { toastLabel.text = "No game directory found"; toastPopup.open(); return; }
+                        if (!g || !g.mainPath) {
+                            depSection.parent.depMessage = "No game directory found";
+                            depSection.parent.depScanResults = [];
+                            return;
+                        }
                         var plugPath = depSection.getPluginPath();
-                        if (!plugPath) { toastLabel.text = "Plugin path not found"; toastPopup.open(); return; }
-                        depSection.parent.depMessage = "Scanning...";
+                        if (!plugPath) {
+                            depSection.parent.depMessage = "Plugin not found or not enabled";
+                            depSection.parent.depScanResults = [];
+                            return;
+                        }
+                        depSection.parent.depMessage = "Scanning " + g.mainPath + "...";
                         depSection.parent.depScanResults = [];
-                        toastLabel.text = "DEBUG: " + plugPath + " scan " + g.mainPath;
-                        toastPopup.open();
                         integrations.runPlugin(plugPath, ["scan", g.mainPath]);
                     }
                 }
@@ -252,16 +258,18 @@ CModal {
                         }
                         if (deps.length === 0) return;
                         var plugPath = depSection.getPluginPath();
-                        if (!plugPath) { toastLabel.text = "Plugin path not found"; toastPopup.open(); return; }
+                        if (!plugPath) { depSection.parent.depMessage = "Plugin not found"; return; }
                         var g = games.getGame(root.gameName);
-                        if (!g) { toastLabel.text = "Game not found"; toastPopup.open(); return; }
+                        if (!g) { depSection.parent.depMessage = "Game not found"; return; }
                         var prefix = g.prefixPath || "";
                         var prog = g.proton || "";
-                        if (!prefix) { toastLabel.text = "No prefix found"; toastPopup.open(); return; }
-                        var args = ["install", "--prefix", prefix];
-                        if (prog) args.push("--proton", prog);
-                        args = args.concat(deps);
-                        integrations.runPlugin(plugPath, args);
+                        if (!prefix) { depSection.parent.depMessage = "No prefix found"; return; }
+                        var installArgs = ["install", "--prefix", prefix];
+                        if (prog) installArgs.push("--proton", prog);
+                        installArgs = installArgs.concat(deps);
+                        depSection.parent.depMessage = "Installing " + deps.length + " dependencies...";
+                        depSection.parent.depScanResults = [];
+                        integrations.runPlugin(plugPath, installArgs);
                     }
                 }
             }
@@ -269,19 +277,16 @@ CModal {
             Connections {
                 target: integrations
                 function onPluginResult(result) {
+                    console.log("[DepInstaller] result:", JSON.stringify(result))
                     if (result && result.ok && result.deps) {
                         depSection.parent.depScanResults = result.deps;
                         depSection.parent.depMessage = result.deps.length > 0
                             ? ""
                             : (result.message || "No dependencies needed");
                     } else if (result && result.ok && result.installed) {
-                        toastLabel.text = "Installed: " + result.installed.join(", ");
-                        toastPopup.open();
-                        depSection.parent.depMessage = "";
+                        depSection.parent.depMessage = "Installed: " + result.installed.join(", ");
                     } else {
-                        toastLabel.text = result ? (result.error || "Plugin failed") : "No response";
-                        toastPopup.open();
-                        depSection.parent.depMessage = "";
+                        depSection.parent.depMessage = result ? (result.error || "Plugin failed") : "No response";
                     }
                 }
             }

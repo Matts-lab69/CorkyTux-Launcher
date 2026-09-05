@@ -1001,28 +1001,35 @@ void IntegrationManager::runPlugin(const QString &pluginPath, const QStringList 
         env.insert("PYTHONUNBUFFERED", "1");
         proc.setProcessEnvironment(env);
         proc.setWorkingDirectory(QFileInfo(pluginPath).absolutePath());
-        qDebug() << "[PluginRunner] Starting:" << pluginPath << args;
-        proc.start(pluginPath, args);
-        // Use shorter timeout for scan (30s), longer for install (5min)
+
+        // Run via python3 explicitly (avoids shebang issues with QProcess)
+        const QString python = "/usr/bin/python3";
+        QStringList fullArgs;
+        fullArgs << pluginPath << args;
+
+        qDebug() << "[PluginRunner] Starting:" << python << fullArgs;
+        proc.start(python, fullArgs);
+
         const int timeout = (args.size() > 0 && args[0] == "scan") ? 30000 : 300000;
         if (!proc.waitForFinished(timeout)) {
             proc.kill();
+            proc.waitForFinished(2000);
             qDebug() << "[PluginRunner] Timed out after" << timeout << "ms";
-            qDebug() << "[PluginRunner] stdout:" << proc.readAllStandardOutput();
             qDebug() << "[PluginRunner] stderr:" << proc.readAllStandardError();
             QVariantMap res;
             res["ok"] = false;
             res["error"] = (args.size() > 0 && args[0] == "scan")
-                ? "Scan timed out - no dependencies detected"
+                ? "No dependencies needed"
                 : "Plugin timed out";
             QMetaObject::invokeMethod(this, [this, res] { emit pluginResult(res); });
             return;
         }
+
         const QByteArray out = proc.readAllStandardOutput();
         const QByteArray err = proc.readAllStandardError();
-        qDebug() << "[PluginRunner] Done, exit:" << proc.exitCode();
-        qDebug() << "[PluginRunner] stdout:" << out.left(500);
+        qDebug() << "[PluginRunner] Exit:" << proc.exitCode() << "stdout:" << out.left(500);
         if (!err.isEmpty()) qDebug() << "[PluginRunner] stderr:" << err.left(500);
+
         const QJsonDocument doc = QJsonDocument::fromJson(out);
         QVariantMap res = doc.object().toVariantMap();
         if (res.isEmpty()) {
