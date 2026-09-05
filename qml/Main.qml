@@ -314,7 +314,8 @@ ApplicationWindow {
                 var all = integrations.scanDirSync(dir);
                 var exes = [];
                 for (var i = 0; i < all.length; i++) {
-                    if (all[i].toLowerCase().endsWith(".exe"))
+                    var lower = all[i].toLowerCase();
+                    if (lower.endsWith(".exe") || lower.endsWith(".bat") || lower.endsWith(".msi"))
                         exes.push(all[i]);
                 }
                 root.runExeCandidates = exes;
