@@ -90,33 +90,35 @@ CModal {
         Column {
             width: parent.width
             spacing: 8
-            visible: root.tab === "view" && !root.isEmulatorGame
+            visible: root.tab === "view"
             Text { text: "Game name in launcher"; color: Theme.textSec; font.pixelSize: 12 }
             CTextField { id: nameField; width: parent.width; readOnly: true }
             Text { text: "Install path"; color: Theme.textSec; font.pixelSize: 12 }
             CTextField { width: parent.width; readOnly: true; text: games.getGame(root.gameName).mainPath || "" }
-            Text { text: "Proton version"; color: Theme.textSec; font.pixelSize: 12 }
-            CComboBox {
-                id: protonBox
+            // Wine/Proton specific
+            Column {
                 width: parent.width
-                editable: true
-                onActivated: save()
-                onAccepted: save()
+                spacing: 8
+                visible: !root.isEmulatorGame
+                Text { text: "Proton version"; color: Theme.textSec; font.pixelSize: 12 }
+                CComboBox {
+                    id: protonBox
+                    width: parent.width
+                    editable: true
+                    onActivated: save()
+                    onAccepted: save()
+                }
+                Text { text: "Prefix path"; color: Theme.textSec; font.pixelSize: 12 }
+                CTextField { id: prefixField; width: parent.width; onEditingFinished: save() }
             }
-            Text { text: "Prefix path"; color: Theme.textSec; font.pixelSize: 12 }
-            CTextField { id: prefixField; width: parent.width; onEditingFinished: save() }
-        }
-        // View tab for emulator games
-        Column {
-            width: parent.width
-            spacing: 8
-            visible: root.tab === "view" && root.isEmulatorGame
-            Text { text: "Game name in launcher"; color: Theme.textSec; font.pixelSize: 12 }
-            CTextField { id: nameField; width: parent.width; readOnly: true }
-            Text { text: "Install path"; color: Theme.textSec; font.pixelSize: 12 }
-            CTextField { width: parent.width; readOnly: true; text: games.getGame(root.gameName).mainPath || "" }
-            Text { text: "Emulator"; color: Theme.textSec; font.pixelSize: 12 }
-            CTextField { width: parent.width; readOnly: true; text: games.getGame(root.gameName).executor || "" }
+            // Emulator specific
+            Column {
+                width: parent.width
+                spacing: 8
+                visible: root.isEmulatorGame
+                Text { text: "Emulator"; color: Theme.textSec; font.pixelSize: 12 }
+                CTextField { width: parent.width; readOnly: true; text: games.getGame(root.gameName).executor || "" }
+            }
         }
         // Run tab
         Column {
