@@ -995,14 +995,14 @@ void IntegrationManager::fetchIgdbGame(const QString &name) {
 // ---------------- plugin runner ----------------
 
 void IntegrationManager::runPlugin(const QString &pluginPath, const QStringList &args) {
-    QtConcurrent::run([this, pluginPath, args] {
+    const bool isInstall = (args.size() > 0 && args[0] == "install");
+    QtConcurrent::run([this, pluginPath, args, isInstall] {
         QProcess proc;
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
         env.insert("PYTHONUNBUFFERED", "1");
         proc.setProcessEnvironment(env);
         proc.setWorkingDirectory(QFileInfo(pluginPath).absolutePath());
 
-        // Run via python3 explicitly (avoids shebang issues with QProcess)
         const QString python = "/usr/bin/python3";
         QStringList fullArgs;
         fullArgs << pluginPath << args;
@@ -1010,32 +1010,78 @@ void IntegrationManager::runPlugin(const QString &pluginPath, const QStringList 
         qDebug() << "[PluginRunner] Starting:" << python << fullArgs;
         proc.start(python, fullArgs);
 
-        const int timeout = (args.size() > 0 && args[0] == "scan") ? 30000 : 300000;
-        if (!proc.waitForFinished(timeout)) {
-            proc.kill();
-            proc.waitForFinished(2000);
-            qDebug() << "[PluginRunner] Timed out after" << timeout << "ms";
-            qDebug() << "[PluginRunner] stderr:" << proc.readAllStandardError();
+        const int timeout = isInstall ? 600000 : 30000;
+
+        if (isInstall) {
+            // For installs, read line-by-line for real-time progress
+            while (proc.state() != QProcess::NotRunning) {
+                if (!proc.waitForReadyRead(1000)) {
+                    if (proc.state() == QProcess::NotRunning) break;
+                    if (!proc.waitForFinished(1000)) {
+                        // Check for timeout
+                        qDebug() << "[PluginRunner] Install still running...";
+                    }
+                    continue;
+                }
+                QByteArray line = proc.readLine().trimmed();
+                if (line.isEmpty()) continue;
+
+                QJsonDocument doc = QJsonDocument::fromJson(line);
+                QVariantMap msg = doc.object().toVariantMap();
+                QString type = msg.value("type").toString();
+                qDebug() << "[PluginRunner] Line:" << line.left(200);
+
+                if (type == "progress") {
+                    QMetaObject::invokeMethod(this, [this, msg] { emit pluginProgress(msg); });
+                } else if (type == "done") {
+                    // Final result
+                    QMetaObject::invokeMethod(this, [this, msg] { emit pluginResult(msg); });
+                    return;
+                }
+            }
+            // Process finished without a "done" line
+            proc.waitForFinished(5000);
+            QByteArray out = proc.readAllStandardOutput();
+            QByteArray err = proc.readAllStandardError();
+            qDebug() << "[PluginRunner] Install done, exit:" << proc.exitCode();
+            if (!out.isEmpty()) {
+                QJsonDocument doc = QJsonDocument::fromJson(out.trimmed());
+                QVariantMap res = doc.object().toVariantMap();
+                if (!res.isEmpty() && res.value("type").toString() == "done") {
+                    QMetaObject::invokeMethod(this, [this, res] { emit pluginResult(res); });
+                    return;
+                }
+            }
+            // Fallback
             QVariantMap res;
-            res["ok"] = false;
-            res["error"] = (args.size() > 0 && args[0] == "scan")
-                ? "No dependencies needed"
-                : "Plugin timed out";
+            res["ok"] = proc.exitCode() == 0;
+            res["type"] = "done";
+            res["installed"] = QStringList();
+            res["failed"] = QStringList();
+            res["error"] = QString::fromUtf8(err).left(200);
             QMetaObject::invokeMethod(this, [this, res] { emit pluginResult(res); });
-            return;
+        } else {
+            // For scans, single JSON output
+            if (!proc.waitForFinished(timeout)) {
+                proc.kill();
+                proc.waitForFinished(2000);
+                QVariantMap res;
+                res["ok"] = false;
+                res["error"] = "No dependencies needed";
+                QMetaObject::invokeMethod(this, [this, res] { emit pluginResult(res); });
+                return;
+            }
+            const QByteArray out = proc.readAllStandardOutput();
+            const QByteArray err = proc.readAllStandardError();
+            qDebug() << "[PluginRunner] Exit:" << proc.exitCode() << "stdout:" << out.left(500);
+            if (!err.isEmpty()) qDebug() << "[PluginRunner] stderr:" << err.left(500);
+            const QJsonDocument doc = QJsonDocument::fromJson(out);
+            QVariantMap res = doc.object().toVariantMap();
+            if (res.isEmpty()) {
+                res["ok"] = false;
+                res["error"] = err.isEmpty() ? "No output from plugin" : QString::fromUtf8(err).left(200);
+            }
+            QMetaObject::invokeMethod(this, [this, res] { emit pluginResult(res); });
         }
-
-        const QByteArray out = proc.readAllStandardOutput();
-        const QByteArray err = proc.readAllStandardError();
-        qDebug() << "[PluginRunner] Exit:" << proc.exitCode() << "stdout:" << out.left(500);
-        if (!err.isEmpty()) qDebug() << "[PluginRunner] stderr:" << err.left(500);
-
-        const QJsonDocument doc = QJsonDocument::fromJson(out);
-        QVariantMap res = doc.object().toVariantMap();
-        if (res.isEmpty()) {
-            res["ok"] = false;
-            res["error"] = err.isEmpty() ? "No output from plugin" : QString::fromUtf8(err).left(200);
-        }
-        QMetaObject::invokeMethod(this, [this, res] { emit pluginResult(res); });
     });
 }

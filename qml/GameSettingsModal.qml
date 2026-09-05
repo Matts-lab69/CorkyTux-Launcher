@@ -222,24 +222,42 @@ CModal {
                     delegate: Row {
                         property string depId: modelData.id || ""
                         property alias depCheck: checkBox
+                        property string depStatus: modelData.status || ""
                         spacing: 8
                         width: parent.width
+
+                        // Status icon (shown during install)
+                        Text {
+                            text: depStatus === "done" ? "\u2714" : depStatus === "error" ? "\u2718" : depStatus === "installing" ? "\u25B6" : ""
+                            color: depStatus === "done" ? "#4caf50" : depStatus === "error" ? "#f44336" : Theme.accent
+                            font.pixelSize: 14
+                            font.bold: true
+                            visible: depStatus !== ""
+                            width: 18
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
+                        // Checkbox (hidden during install)
                         CSwitch {
                             id: checkBox
                             width: 40
+                            visible: depStatus === ""
                             Component.onCompleted: setSilent(true)
                         }
+
                         Column {
-                            width: parent.width - 50
+                            width: parent.width - (depStatus !== "" ? 26 : 50)
                             Text {
                                 text: modelData.desc || modelData.id || "?"
                                 color: Theme.textMain
                                 font.pixelSize: 12
                             }
                             Text {
-                                text: modelData.confidence || ""
+                                text: modelData.confidence || (depStatus === "error" ? (modelData.error || "Failed") : "")
                                 color: modelData.confidence === "recommended" ? "#ff6b6b" : Theme.textSec
                                 font.pixelSize: 10
+                                elide: Text.ElideRight
+                                width: parent.width
                             }
                         }
                     }
@@ -286,15 +304,46 @@ CModal {
 
             Connections {
                 target: integrations
+                function onPluginProgress(progress) {
+                    console.log("[DepInstaller] progress:", JSON.stringify(progress))
+                    // Update or add item in the results list
+                    var results = depSection.parent.depScanResults.slice();
+                    var found = false;
+                    for (var i = 0; i < results.length; i++) {
+                        if (results[i].id === progress.id) {
+                            results[i] = progress;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) results.push(progress);
+                    depSection.parent.depScanResults = results;
+                    depSection.parent.depMessage = "Installing " + progress.desc + "...";
+                }
                 function onPluginResult(result) {
                     console.log("[DepInstaller] result:", JSON.stringify(result))
-                    if (result && result.ok && result.deps) {
+                    if (result && result.type === "done") {
+                        var installed = result.installed || [];
+                        var failed = result.failed || [];
+                        if (failed.length === 0) {
+                            depSection.parent.depMessage = "All " + installed.length + " dependencies installed successfully";
+                        } else {
+                            depSection.parent.depMessage = installed.length + " installed, " + failed.length + " failed";
+                        }
+                        // Mark all results with final status
+                        var results = depSection.parent.depScanResults.slice();
+                        for (var i = 0; i < results.length; i++) {
+                            if (installed.indexOf(results[i].id) >= 0)
+                                results[i].status = "done";
+                            else if (failed.indexOf(results[i].id) >= 0)
+                                results[i].status = "error";
+                        }
+                        depSection.parent.depScanResults = results;
+                    } else if (result && result.ok && result.deps) {
                         depSection.parent.depScanResults = result.deps;
                         depSection.parent.depMessage = result.deps.length > 0
                             ? ""
                             : (result.message || "No dependencies needed");
-                    } else if (result && result.ok && result.installed) {
-                        depSection.parent.depMessage = "Installed: " + result.installed.join(", ");
                     } else {
                         depSection.parent.depMessage = result ? (result.error || "Plugin failed") : "No response";
                     }

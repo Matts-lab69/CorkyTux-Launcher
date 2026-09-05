@@ -90,6 +90,7 @@ signals:
                            const QString &confidence, int total);
     void igdbReady(const QString &name, double rating, const QString &summary);
     void pluginResult(const QVariantMap &result);
+    void pluginProgress(const QVariantMap &progress);
     void scanError(const QString &message);
 
 private:
