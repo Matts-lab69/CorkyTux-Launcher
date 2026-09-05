@@ -142,11 +142,17 @@ ApplicationWindow {
                 };
                 if (executor)
                     fields["executor"] = executor;
-                if (games.importExternalGame(g.name, fields)) {
+                var existingGame = games.importExternalGame(g.name, fields);
+                if (existingGame) {
                     imported++;
-                    if (g.directory)
-                        plugins.applyScanPlugins(g.name, g.directory);
                 }
+                // Always run scan plugins for icon/cover download (new and existing)
+                if (g.directory)
+                    plugins.applyScanPlugins(g.name, g.directory);
+                // Resolve artwork (SGDB/Lutris) for games missing banners
+                var gData = games.getGame(g.name);
+                if (gData && (!gData.banner || gData.banner === ""))
+                    integrations.resolveArtwork(g.name, g.steamID || "");
             }
             toastLabel.text = "Lutris scan: " + scanGames.length + " found, " + imported + " new.";
             toastPopup.open();
@@ -454,8 +460,19 @@ ApplicationWindow {
         id: emuReloadTimer
         interval: 300
         repeat: false
-        onTriggered: gameSettingsModal.reloadEmuFields()
+        onTriggered: {
+            gameSettingsModal.reloadEmuFields();
+            // Retry if emulator settings still empty (listEmulators may still be running)
+            if (gameSettingsModal.isEmulatorGame && !gameSettingsModal.hasEmuSettings
+                    && plugins.emulators.length === 0) {
+                retryCount++;
+                if (retryCount < 10) emuReloadTimer.start();
+            } else {
+                retryCount = 0;
+            }
+        }
     }
+    property int retryCount: 0
     Connections {
         target: plugins
         function onEmulatorsChanged() {

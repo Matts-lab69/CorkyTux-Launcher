@@ -18,6 +18,7 @@ CModal {
     property bool pendingLoad: false
 
     function reloadEmuFields() {
+        console.log("[GS] reloadEmuFields called, pendingLoad:", pendingLoad, "isEmu:", isEmulatorGame);
         if (pendingLoad || isEmulatorGame)
             loadFields();
     }
@@ -46,13 +47,11 @@ CModal {
         depCompleted = 0;
         depBusy = false;
         open();
-        // Load fields - if emulator, ensure emulators list is loaded first
-        if (isEmulatorGame && plugins.emulators.length === 0) {
+        // Always load fields immediately
+        loadFields();
+        // If emulator, ensure emulators list loads (Main.qml will call reloadEmuFields on change)
+        if (isEmulatorGame && plugins.emulators.length === 0)
             plugins.listEmulators();
-            emuLoadTimer.start();
-        } else {
-            loadFields();
-        }
     }
     function loadFields() {
         var g = games.getGame(gameName);
@@ -77,10 +76,12 @@ CModal {
         hasEmuSettings = false;
         if (isEmulatorGame) {
             var emus = plugins.emulators;
+            console.log("[GS] loadFields executor:", executor, "emus:", emus.length);
             for (var i = 0; i < emus.length; i++) {
                 if (emus[i].name === executor) {
                     emuSettingsDefs = emus[i].settings || [];
                     hasEmuSettings = emuSettingsDefs.length > 0;
+                    console.log("[GS] matched:", executor, "defs:", emuSettingsDefs.length);
                     break;
                 }
             }
@@ -212,7 +213,7 @@ CModal {
                             text: modelData.desc
                             color: Theme.textMain
                             font.pixelSize: 12
-                            anchors.verticalCenter: parent.verticalCenter
+                            y: (parent.height - height) / 2
                         }
                     }
                     // Path setting
