@@ -352,7 +352,7 @@ CModal {
                     }
                     if (!found) results.push(progress);
                     depSection.parent.depScanResults = results;
-                    depSection.parent.depMessage = "Installing " + progress.desc + "...";
+                    depSection.parent.depMessage = "Installing " + (depSection.parent.depCompleted + 1) + "/" + depSection.parent.depTotal + ": " + progress.desc + "...";
                     // Update progress counter
                     if (progress.status === "done" || progress.status === "error") {
                         depSection.parent.depCompleted = depSection.parent.depCompleted + 1;
