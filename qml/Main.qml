@@ -311,9 +311,16 @@ ApplicationWindow {
             else if (action === "Folders") {
                 if (root.currentGame.mainPath)
                     Qt.openUrlExternally("file://" + root.currentGame.mainPath);
-            } else if (action === "SteamDB" && sid) Qt.openUrlExternally("https://steamdb.info/app/" + sid + "/");
-            else if (action === "ProtonDB" && sid) Qt.openUrlExternally("https://protondb.com/app/" + sid);
-            else if (action === "Steam" && sid) Qt.openUrlExternally("steam://store/" + sid);
+            } else if (action === "SteamDB") {
+                if (sid) Qt.openUrlExternally("https://steamdb.info/app/" + sid + "/");
+                else Qt.openUrlExternally("https://steamdb.info/search/?q=" + encodeURIComponent(root.currentGameName));
+            } else if (action === "ProtonDB") {
+                if (sid) Qt.openUrlExternally("https://www.protondb.com/app/" + sid);
+                else Qt.openUrlExternally("https://www.protondb.com/search?q=" + encodeURIComponent(root.currentGameName));
+            } else if (action === "Steam") {
+                if (sid) Qt.openUrlExternally("steam://store/" + sid);
+                else Qt.openUrlExternally("https://store.steampowered.com/search/?term=" + encodeURIComponent(root.currentGameName));
+            }
         }
     }
 
