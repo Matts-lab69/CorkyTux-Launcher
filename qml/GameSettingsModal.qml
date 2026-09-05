@@ -140,6 +140,125 @@ CModal {
                 Component.onCompleted: setSilent(config.launcherValue("gamesUsesWayland", "User Settings") === "1")
                 onToggled: config.setLauncherValue("gamesUsesWayland", checked ? "1" : "0", "User Settings")
             }
+
+            // ---- Dependency Installer (only if plugin installed) ----
+            property var depPlugin: {
+                for (var i = 0; i < plugins.plugins.length; i++) {
+                    if (plugins.plugins[i].id === "dependency-installer" && plugins.plugins[i].enabled)
+                        return plugins.plugins[i];
+                }
+                return null;
+            }
+            property var depScanResults: []
+
+            Column {
+                width: parent.width
+                spacing: 8
+                visible: parent.depPlugin !== null
+
+                Rectangle {
+                    width: parent.width
+                    height: 1
+                    color: Theme.border
+                    anchors.topMargin: 4
+                    anchors.bottomMargin: 4
+                }
+
+                Text {
+                    text: "Plugin: Dependency Installer"
+                    color: Theme.accent
+                    font.bold: true
+                    font.pixelSize: 13
+                }
+                Text {
+                    text: "Auto-detect missing Windows components (VC++, DirectX, .NET)"
+                    color: Theme.textSec
+                    font.pixelSize: 11
+                    wrapMode: Text.Wrap
+                    width: parent.width
+                }
+                CButton {
+                    text: "Scan Game"
+                    width: parent.width
+                    height: 32
+                    onClicked: {
+                        var g = games.getGame(root.gameName);
+                        if (!g || !g.mainPath) { toastLabel.text = "No game directory found"; toastPopup.open(); return; }
+                        var plugPath = parent.parent.depPlugin.path || "";
+                        if (!plugPath) { toastLabel.text = "Plugin path not found"; toastPopup.open(); return; }
+                        integrations.runPlugin(plugPath, ["scan", g.mainPath]);
+                    }
+                }
+                Repeater {
+                    id: depList
+                    model: parent.parent.depScanResults
+                    delegate: Row {
+                        property string depId: modelData.id || ""
+                        property alias depCheck: checkBox
+                        spacing: 8
+                        width: parent.width
+                        CSwitch {
+                            id: checkBox
+                            width: 40
+                            Component.onCompleted: setSilent(true)
+                        }
+                        Column {
+                            width: parent.width - 50
+                            Text {
+                                text: modelData.desc || modelData.id || "?"
+                                color: Theme.textMain
+                                font.pixelSize: 12
+                            }
+                            Text {
+                                text: modelData.confidence || ""
+                                color: modelData.confidence === "recommended" ? "#ff6b6b" : Theme.textSec
+                                font.pixelSize: 10
+                            }
+                        }
+                    }
+                }
+                CButton {
+                    text: "Install Selected"
+                    width: parent.width
+                    height: 32
+                    visible: depList.count > 0
+                    onClicked: {
+                        var deps = [];
+                        for (var i = 0; i < depList.count; i++) {
+                            var item = depList.itemAt(i);
+                            if (item && item.depCheck.checked)
+                                deps.push(item.depId);
+                        }
+                        if (deps.length === 0) return;
+                        var plugPath = parent.parent.depPlugin.path || "";
+                        if (!plugPath) { toastLabel.text = "Plugin path not found"; toastPopup.open(); return; }
+                        var g = games.getGame(root.gameName);
+                        if (!g) { toastLabel.text = "Game not found"; toastPopup.open(); return; }
+                        var prefix = g.prefixPath || "";
+                        var prog = g.proton || "";
+                        if (!prefix) { toastLabel.text = "No prefix found"; toastPopup.open(); return; }
+                        var args = ["install", "--prefix", prefix];
+                        if (prog) args.push("--proton", prog);
+                        args = args.concat(deps);
+                        integrations.runPlugin(plugPath, args);
+                    }
+                }
+            }
+
+            Connections {
+                target: integrations
+                function onPluginResult(result) {
+                    if (result && result.ok && result.deps) {
+                        parent.depScanResults = result.deps;
+                    } else if (result && result.ok && result.installed) {
+                        toastLabel.text = "Installed: " + result.installed.join(", ");
+                        toastPopup.open();
+                    } else {
+                        toastLabel.text = result ? (result.error || "Plugin failed") : "No response";
+                        toastPopup.open();
+                    }
+                }
+            }
         }
         // bottom tab pill (centered, wraps content tightly)
         Rectangle {
