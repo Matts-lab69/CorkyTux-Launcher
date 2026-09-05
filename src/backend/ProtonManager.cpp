@@ -201,6 +201,22 @@ void ProtonManager::runGameDebug(const QString &gameName) {
     runGameImpl(gameName, true);
 }
 
+void ProtonManager::runCustomExe(const QString &gameName, const QString &exePath) {
+    if (m_running || gameName.isEmpty() || exePath.isEmpty())
+        return;
+    if (!QFile::exists(exePath)) {
+        emit toast("File not found: " + exePath);
+        return;
+    }
+    ConfigManager *cfg = ConfigManager::instance();
+    // Save the custom exe temporarily, run, then restore original
+    const QString origExec = cfg->gameValue(gameName, "executable");
+    cfg->setGameValue(gameName, "executable", exePath);
+    runGameImpl(gameName, false);
+    // Restore original executable after game starts (or fails to start)
+    cfg->setGameValue(gameName, "executable", origExec);
+}
+
 void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     if (m_running || gameName.isEmpty())
         return;

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import "components"
 
 // Main – ApplicationWindow 1200x700: top bar, sidebar, center, details overlay,
@@ -307,7 +308,7 @@ ApplicationWindow {
                 proton.runGameDebug(root.currentGameName);
             }
             else if (action === "Wine") wineMenu.open();
-            else if (action === "Run exe") proton.runGame(root.currentGameName);
+            else if (action === "Run exe") runExeDialog.open();
             else if (action === "Folders") {
                 if (root.currentGame.mainPath)
                     Qt.openUrlExternally("file://" + root.currentGame.mainPath);
@@ -345,6 +346,16 @@ ApplicationWindow {
         MenuItem {
             text: "cmd"
             onTriggered: proton.runWineTool(root.currentGameName, "cmd")
+        }
+    }
+
+    FileDialog {
+        id: runExeDialog
+        title: "Select executable to run"
+        nameFilters: ["Executables (*.exe *.msi)", "All files (*)"]
+        onAccepted: {
+            var path = String(selectedFile).replace("file://", "");
+            proton.runCustomExe(root.currentGameName, decodeURIComponent(path));
         }
     }
 

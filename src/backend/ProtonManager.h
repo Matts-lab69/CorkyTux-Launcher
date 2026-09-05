@@ -38,6 +38,8 @@ public:
     Q_INVOKABLE void runGame(const QString &gameName);
     /** Debug run: same as runGame but with WINEDEBUG=1 (verbose Wine log). */
     Q_INVOKABLE void runGameDebug(const QString &gameName);
+    /** Run a custom .exe using the game's prefix/proton configuration. */
+    Q_INVOKABLE void runCustomExe(const QString &gameName, const QString &exePath);
     Q_INVOKABLE void stopGame();
     /** Runs a wine builtin (winecfg, taskmgr, control, explorer, cmd) detached in the game prefix. */    Q_INVOKABLE void runWineTool(const QString &gameName, const QString &tool);
     Q_INVOKABLE bool isRunning() const { return m_running; }
