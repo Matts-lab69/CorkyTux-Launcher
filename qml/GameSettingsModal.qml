@@ -17,6 +17,11 @@ CModal {
     property bool hasEmuSettings: false
     property bool pendingLoad: false
 
+    function reloadEmuFields() {
+        if (pendingLoad || isEmulatorGame)
+            loadFields();
+    }
+
     // Dependency Installer state
     property var depScanResults: []
     property string depMessage: ""
@@ -41,8 +46,13 @@ CModal {
         depCompleted = 0;
         depBusy = false;
         open();
-        // Load fields immediately (emulators may already be cached)
-        loadFields();
+        // Load fields - if emulator, ensure emulators list is loaded first
+        if (isEmulatorGame && plugins.emulators.length === 0) {
+            plugins.listEmulators();
+            emuLoadTimer.start();
+        } else {
+            loadFields();
+        }
     }
     function loadFields() {
         var g = games.getGame(gameName);
@@ -98,15 +108,6 @@ CModal {
     Column {
         width: parent.width
         spacing: 12
-        Connections {
-            target: plugins
-            enabled: root.visible
-            function onEmulatorsChanged() {
-                if (root.isEmulatorGame || root.pendingLoad) {
-                    loadFields();
-                }
-            }
-        }
         // View tab (shared)
         Column {
             width: parent.width

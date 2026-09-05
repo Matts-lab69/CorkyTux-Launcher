@@ -134,8 +134,15 @@ bool GameModel::addGame(const QString &name, const QVariantMap &fields) {
 bool GameModel::importExternalGame(const QString &name, const QVariantMap &fields) {
     if (name.trimmed().isEmpty())
         return false;
-    if (m_cfg->hasGame(name))
-        return false; // already exists, skip
+    // If game exists, update executor if it's now set (Lutris re-scan)
+    if (m_cfg->hasGame(name)) {
+        const QString newExecutor = fields.value("executor").toString();
+        if (!newExecutor.isEmpty() && m_cfg->gameValue(name, "executor").isEmpty()) {
+            m_cfg->setGameValue(name, "executor", newExecutor);
+            loadFromDisk();
+        }
+        return false; // already exists, skip full import
+    }
     return addGame(name, fields);
 }
 

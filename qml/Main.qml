@@ -450,6 +450,19 @@ ApplicationWindow {
         onOpenProton: protonModal.open()
     }
     GameSettingsModal { id: gameSettingsModal }
+    Timer {
+        id: emuReloadTimer
+        interval: 300
+        repeat: false
+        onTriggered: gameSettingsModal.reloadEmuFields()
+    }
+    Connections {
+        target: plugins
+        function onEmulatorsChanged() {
+            if (gameSettingsModal.visible)
+                emuReloadTimer.start();
+        }
+    }
     RemoveModal {
         id: removeModal
         onRemoved: function(name) {
