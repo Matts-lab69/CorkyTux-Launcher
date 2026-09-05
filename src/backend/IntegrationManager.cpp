@@ -998,19 +998,25 @@ void IntegrationManager::runPlugin(const QString &pluginPath, const QStringList 
     QtConcurrent::run([this, pluginPath, args] {
         QProcess proc;
         proc.start(pluginPath, args);
-        if (!proc.waitForFinished(300000)) {
+        // Use shorter timeout for scan (30s), longer for install (5min)
+        const int timeout = (args.size() > 0 && args[0] == "scan") ? 30000 : 300000;
+        if (!proc.waitForFinished(timeout)) {
+            proc.kill();
             QVariantMap res;
             res["ok"] = false;
-            res["error"] = "Plugin timed out";
+            res["error"] = (args.size() > 0 && args[0] == "scan")
+                ? "Scan timed out - no dependencies detected"
+                : "Plugin timed out";
             QMetaObject::invokeMethod(this, [this, res] { emit pluginResult(res); });
             return;
         }
         const QByteArray out = proc.readAllStandardOutput();
+        const QByteArray err = proc.readAllStandardError();
         const QJsonDocument doc = QJsonDocument::fromJson(out);
         QVariantMap res = doc.object().toVariantMap();
         if (res.isEmpty()) {
             res["ok"] = false;
-            res["error"] = QString::fromUtf8(proc.readAllStandardError());
+            res["error"] = err.isEmpty() ? "No output from plugin" : QString::fromUtf8(err).left(200);
         }
         QMetaObject::invokeMethod(this, [this, res] { emit pluginResult(res); });
     });

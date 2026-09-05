@@ -150,6 +150,7 @@ CModal {
                 return null;
             }
             property var depScanResults: []
+            property string depMessage: ""
 
             Column {
                 width: parent.width
@@ -186,8 +187,18 @@ CModal {
                         if (!g || !g.mainPath) { toastLabel.text = "No game directory found"; toastPopup.open(); return; }
                         var plugPath = parent.parent.depPlugin.path || "";
                         if (!plugPath) { toastLabel.text = "Plugin path not found"; toastPopup.open(); return; }
+                        parent.parent.depMessage = "Scanning...";
+                        parent.parent.depScanResults = [];
                         integrations.runPlugin(plugPath, ["scan", g.mainPath]);
                     }
+                }
+                Text {
+                    text: parent.parent.depMessage
+                    color: parent.parent.depScanResults.length > 0 ? Theme.textSec : Theme.accent
+                    font.pixelSize: 12
+                    wrapMode: Text.Wrap
+                    width: parent.width
+                    visible: text !== ""
                 }
                 Repeater {
                     id: depList
@@ -250,12 +261,17 @@ CModal {
                 function onPluginResult(result) {
                     if (result && result.ok && result.deps) {
                         parent.depScanResults = result.deps;
+                        parent.depMessage = result.deps.length > 0
+                            ? ""
+                            : (result.message || "No dependencies needed");
                     } else if (result && result.ok && result.installed) {
                         toastLabel.text = "Installed: " + result.installed.join(", ");
                         toastPopup.open();
+                        parent.depMessage = "";
                     } else {
                         toastLabel.text = result ? (result.error || "Plugin failed") : "No response";
                         toastPopup.open();
+                        parent.depMessage = "";
                     }
                 }
             }

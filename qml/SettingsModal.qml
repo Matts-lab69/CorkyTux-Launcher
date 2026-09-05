@@ -727,10 +727,11 @@ CModal {
                 Connections {
                     target: plugins
                     function onRegistryReady(list) {
-                        // Filter out plugins already installed (match by name, ignore version)
+                        // Filter out plugins already installed (match by id or fuzzy name)
+                        var installedIds = [];
                         var installedNames = [];
                         for (var i = 0; i < plugins.plugins.length; i++) {
-                            // Strip version suffix like " v1.0.1"
+                            installedIds.push((plugins.plugins[i].id || "").toLowerCase());
                             var n = plugins.plugins[i].name || "";
                             n = n.replace(/\s+v[\d.]+\s*$/i, "").trim().toLowerCase();
                             installedNames.push(n);
@@ -738,7 +739,16 @@ CModal {
                         var filtered = [];
                         for (var j = 0; j < list.length; j++) {
                             var rname = (list[j].name || "").replace(/\s+v[\d.]+\s*$/i, "").trim().toLowerCase();
-                            if (installedNames.indexOf(rname) < 0)
+                            var rtag = (list[j].tag || "").toLowerCase();
+                            // Check if any installed id is contained in the tag or name
+                            var found = false;
+                            for (var k = 0; k < installedIds.length; k++) {
+                                if (rtag.indexOf(installedIds[k]) >= 0 || rname === installedNames[k]) {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (!found)
                                 filtered.push(list[j]);
                         }
                         registryList.model = filtered;
