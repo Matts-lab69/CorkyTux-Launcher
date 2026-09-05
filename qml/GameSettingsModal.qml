@@ -199,27 +199,15 @@ CModal {
                         : modelData.type === "path" ? pathSettingComp : null
                     Component {
                         id: boolSettingComp
-                        Row {
+                        CSwitch {
                             width: parent.width
-                            spacing: 8
-                            height: 32
-                            CSwitch {
-                                objectName: modelData.desc
-                                checked: root.emuSettingsValues[modelData.id] === true
-                                onToggled: {
-                                    var vals = root.emuSettingsValues;
-                                    vals[modelData.id] = checked;
-                                    root.emuSettingsValues = vals;
-                                    root.save();
-                                }
-                            }
-                            Text {
-                                text: modelData.desc
-                                color: Theme.textMain
-                                font.pixelSize: 12
-                                width: parent.width - 48
-                                elide: Text.ElideRight
-                                anchors.verticalCenter: parent.verticalCenter
+                            objectName: modelData.desc
+                            checked: root.emuSettingsValues[modelData.id] === true
+                            onToggled: {
+                                var vals = root.emuSettingsValues;
+                                vals[modelData.id] = checked;
+                                root.emuSettingsValues = vals;
+                                root.save();
                             }
                         }
                     }
