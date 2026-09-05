@@ -144,6 +144,9 @@ CModal {
             // ---- Dependency Installer (only if plugin installed) ----
             property var depScanResults: []
             property string depMessage: ""
+            property string depMode: "scan"  // "scan" or "install"
+            property int depTotal: 0
+            property int depCompleted: 0
 
             Column {
                 id: depSection
@@ -203,9 +206,12 @@ CModal {
                             depSection.parent.depScanResults = [];
                             return;
                         }
+                        depSection.parent.depMode = "scan";
                         depSection.parent.depMessage = "Scanning " + g.mainPath + "...";
                         depSection.parent.depScanResults = [];
-                        integrations.runPlugin(plugPath, ["scan", g.mainPath]);
+                        var scanArgs = ["scan", g.mainPath];
+                        if (g.prefixPath) scanArgs = scanArgs.concat(["--prefix", g.prefixPath]);
+                        integrations.runPlugin(plugPath, scanArgs);
                     }
                 }
                 Text {
@@ -216,20 +222,38 @@ CModal {
                     width: parent.width
                     visible: text !== ""
                 }
+                // Progress bar (visible during install)
+                Rectangle {
+                    width: parent.width
+                    height: 6
+                    radius: 3
+                    color: Theme.border
+                    visible: depSection.parent.depMode === "install" && depSection.parent.depTotal > 0
+                    Rectangle {
+                        width: parent.width * (depSection.parent.depTotal > 0 ? depSection.parent.depCompleted / depSection.parent.depTotal : 0)
+                        height: parent.height
+                        radius: 3
+                        color: Theme.accent
+                        Behavior on width { NumberAnimation { duration: 300 } }
+                    }
+                }
                 Repeater {
                     id: depList
                     model: depSection.parent.depScanResults
                     delegate: Row {
                         property string depId: modelData.id || ""
                         property alias depCheck: checkBox
-                        property string depStatus: modelData.status || ""
+                        property string depStatus: modelData.status || (modelData.confidence === "installed" ? "installed" : "")
                         spacing: 8
                         width: parent.width
 
-                        // Status icon (shown during install)
+                        // Status icon
                         Text {
-                            text: depStatus === "done" ? "\u2714" : depStatus === "error" ? "\u2718" : depStatus === "installing" ? "\u25B6" : ""
-                            color: depStatus === "done" ? "#4caf50" : depStatus === "error" ? "#f44336" : Theme.accent
+                            text: depStatus === "done" || depStatus === "installed" ? "\u2714"
+                                : depStatus === "error" ? "\u2718"
+                                : depStatus === "installing" ? "\u25B6" : ""
+                            color: depStatus === "done" || depStatus === "installed" ? "#4caf50"
+                                : depStatus === "error" ? "#f44336" : Theme.accent
                             font.pixelSize: 14
                             font.bold: true
                             visible: depStatus !== ""
@@ -237,16 +261,16 @@ CModal {
                             horizontalAlignment: Text.AlignHCenter
                         }
 
-                        // Checkbox (hidden during install)
+                        // Checkbox (hidden for installed items or during install)
                         CSwitch {
                             id: checkBox
                             width: 40
-                            visible: depStatus === ""
+                            visible: depStatus === "" && depSection.parent.depMode === "scan"
                             Component.onCompleted: setSilent(true)
                         }
 
                         Column {
-                            width: parent.width - (depStatus !== "" ? 26 : 50)
+                            width: parent.width - (depStatus !== "" || depSection.parent.depMode === "install" ? 26 : 50)
                             Text {
                                 text: modelData.desc || modelData.id || "?"
                                 color: Theme.textMain
@@ -266,7 +290,14 @@ CModal {
                     text: "Install Selected"
                     width: parent.width
                     height: 32
-                    visible: depList.count > 0
+                    visible: {
+                        if (depSection.parent.depMode !== "scan") return false;
+                        for (var i = 0; i < depList.count; i++) {
+                            var item = depList.itemAt(i);
+                            if (item && item.depStatus === "" && item.depCheck.visible) return true;
+                        }
+                        return false;
+                    }
                     onClicked: {
                         var deps = [];
                         for (var i = 0; i < depList.count; i++) {
@@ -295,6 +326,9 @@ CModal {
                         var installArgs = ["install", "--prefix", prefix];
                         if (protonFullPath) installArgs.push("--proton", protonFullPath);
                         installArgs = installArgs.concat(deps);
+                        depSection.parent.depMode = "install";
+                        depSection.parent.depTotal = deps.length;
+                        depSection.parent.depCompleted = 0;
                         depSection.parent.depMessage = "Installing " + deps.length + " dependencies...";
                         depSection.parent.depScanResults = [];
                         integrations.runPlugin(plugPath, installArgs);
@@ -319,12 +353,18 @@ CModal {
                     if (!found) results.push(progress);
                     depSection.parent.depScanResults = results;
                     depSection.parent.depMessage = "Installing " + progress.desc + "...";
+                    // Update progress counter
+                    if (progress.status === "done" || progress.status === "error") {
+                        depSection.parent.depCompleted = depSection.parent.depCompleted + 1;
+                    }
                 }
                 function onPluginResult(result) {
                     console.log("[DepInstaller] result:", JSON.stringify(result))
                     if (result && result.type === "done") {
                         var installed = result.installed || [];
                         var failed = result.failed || [];
+                        depSection.parent.depCompleted = depSection.parent.depTotal;
+                        depSection.parent.depMode = "scan";
                         if (failed.length === 0) {
                             depSection.parent.depMessage = "All " + installed.length + " dependencies installed successfully";
                         } else {
