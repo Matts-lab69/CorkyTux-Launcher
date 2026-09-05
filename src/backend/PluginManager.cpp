@@ -62,7 +62,7 @@ void PluginManager::refresh() {
                             {"description", m.value("description").toString()},
                             {"capabilities", caps},
                             {"type", m.value("type").toString()},
-                            {"path", dir},
+                            {"path", dir + "/" + m.value("entry").toString()},
                             {"enabled", isEnabled(id)}});
     }
     m_plugins = out;
