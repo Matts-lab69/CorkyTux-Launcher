@@ -17,6 +17,13 @@ CModal {
         loadFields();
         globalWined3d.setSilent(config.launcherValue("gamesUsesWined3d", "User Settings") === "1");
         globalWayland.setSilent(config.launcherValue("gamesUsesWayland", "User Settings") === "1");
+        // Clear dependency state when opening for a new game
+        depScanResults = [];
+        depMessage = "";
+        depMode = "scan";
+        depTotal = 0;
+        depCompleted = 0;
+        depBusy = false;
         open();
     }
     function loadFields() {
@@ -147,6 +154,7 @@ CModal {
             property string depMode: "scan"  // "scan" or "install"
             property int depTotal: 0
             property int depCompleted: 0
+            property bool depBusy: false
 
             Column {
                 id: depSection
@@ -193,6 +201,7 @@ CModal {
                     text: "Scan Game"
                     width: parent.width
                     height: 32
+                    enabled: !depSection.parent.depBusy
                     onClicked: {
                         var g = games.getGame(root.gameName);
                         if (!g || !g.mainPath) {
@@ -206,6 +215,7 @@ CModal {
                             depSection.parent.depScanResults = [];
                             return;
                         }
+                        depSection.parent.depBusy = true;
                         depSection.parent.depMode = "scan";
                         depSection.parent.depMessage = "Scanning " + g.mainPath + "...";
                         depSection.parent.depScanResults = [];
@@ -290,6 +300,7 @@ CModal {
                     text: "Install Selected"
                     width: parent.width
                     height: 32
+                    enabled: !depSection.parent.depBusy
                     visible: {
                         if (depSection.parent.depMode !== "scan") return false;
                         for (var i = 0; i < depList.count; i++) {
@@ -326,6 +337,7 @@ CModal {
                         var installArgs = ["install", "--prefix", prefix];
                         if (protonFullPath) installArgs.push("--proton", protonFullPath);
                         installArgs = installArgs.concat(deps);
+                        depSection.parent.depBusy = true;
                         depSection.parent.depMode = "install";
                         depSection.parent.depTotal = deps.length;
                         depSection.parent.depCompleted = 0;
@@ -360,6 +372,7 @@ CModal {
                 }
                 function onPluginResult(result) {
                     console.log("[DepInstaller] result:", JSON.stringify(result))
+                    depSection.parent.depBusy = false;
                     if (result && result.type === "done") {
                         var installed = result.installed || [];
                         var failed = result.failed || [];
