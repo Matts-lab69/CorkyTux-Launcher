@@ -111,18 +111,38 @@ ApplicationWindow {
         }
         function onLutrisScanReady(scanGames) {
             var imported = 0;
+            // Map Lutris runner names to emulator-manager names
+            var runnerMap = {
+                "mupen64plus": "Mupen64Plus",
+                "pcsx2": "PCSX2",
+                "ppsspp": "PPSSPP",
+                "rpcs3": "RPCS3",
+                "ryujinx": "Ryujinx",
+                "dolphin": "Dolphin",
+                "cemu": "Cemu",
+                "melonDS": "melonDS",
+                "desmume": "Desmume",
+                "duckstation": "DuckStation",
+                "vita3k": "Vita3K",
+                "azahar": "Azahar"
+            };
             for (var i = 0; i < scanGames.length; i++) {
                 var g = scanGames[i];
                 if (!g.name || /^\d+$/.test(g.name))
                     continue;
-                if (games.importExternalGame(g.name, {
-                        "lutrisRunner": g.runner,
-                        "mainPath": g.directory,
-                        "executable": g.executable || g.directory,
-                        "prefixPath": g.prefix || "",
-                        "timeSpent": g.playtimeHours > 0 ? Math.round(g.playtimeHours * 3600) : "",
-                        "source": "lutris"
-                    })) {
+                // Detect emulator from runner name
+                var executor = runnerMap[(g.runner || "").toLowerCase()] || "";
+                var fields = {
+                    "lutrisRunner": g.runner,
+                    "mainPath": g.directory,
+                    "executable": g.executable || g.directory,
+                    "prefixPath": g.prefix || "",
+                    "timeSpent": g.playtimeHours > 0 ? Math.round(g.playtimeHours * 3600) : "",
+                    "source": "lutris"
+                };
+                if (executor)
+                    fields["executor"] = executor;
+                if (games.importExternalGame(g.name, fields)) {
                     imported++;
                     if (g.directory)
                         plugins.applyScanPlugins(g.name, g.directory);

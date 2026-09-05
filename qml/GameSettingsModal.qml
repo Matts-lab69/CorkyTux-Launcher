@@ -26,6 +26,8 @@ CModal {
 
     function openFor(name) {
         gameName = name;
+        // Ensure emulator list is loaded
+        plugins.listEmulators();
         loadFields();
         globalWined3d.setSilent(config.launcherValue("gamesUsesWined3d", "User Settings") === "1");
         globalWayland.setSilent(config.launcherValue("gamesUsesWayland", "User Settings") === "1");
@@ -91,6 +93,14 @@ CModal {
     Column {
         width: parent.width
         spacing: 12
+        Connections {
+            target: plugins
+            enabled: root.visible
+            function onEmulatorsChanged() {
+                if (root.isEmulatorGame)
+                    loadFields();
+            }
+        }
         // View tab (shared)
         Column {
             width: parent.width
