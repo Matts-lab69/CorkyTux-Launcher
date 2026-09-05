@@ -15,6 +15,7 @@ CModal {
     property var emuSettingsDefs: []
     property var emuSettingsValues: ({})
     property bool hasEmuSettings: false
+    property bool pendingLoad: false
 
     // Dependency Installer state
     property var depScanResults: []
@@ -26,12 +27,9 @@ CModal {
 
     function openFor(name) {
         gameName = name;
-        // Ensure emulator list is loaded
-        plugins.listEmulators();
-        loadFields();
-        globalWined3d.setSilent(config.launcherValue("gamesUsesWined3d", "User Settings") === "1");
-        globalWayland.setSilent(config.launcherValue("gamesUsesWayland", "User Settings") === "1");
-        // Clear dependency state when opening for a new game
+        tab = "view";
+        pendingLoad = true;
+        // Clear dependency state
         depScanResults = [];
         depMessage = "";
         depMode = "scan";
@@ -39,9 +37,16 @@ CModal {
         depCompleted = 0;
         depBusy = false;
         open();
+        // Load immediately if emulators already cached, otherwise wait
+        if (plugins.emulators.length > 0) {
+            loadFields();
+        } else {
+            plugins.listEmulators();
+        }
     }
     function loadFields() {
         var g = games.getGame(gameName);
+        if (!g || !g.name) return;
         nameField.text = g.name || gameName;
         protonBox.model = ["GE-Proton Latest"].concat(proton.installedProtons());
         protonBox.currentIndex = Math.max(0, protonBox.find(g.proton || "GE-Proton Latest"));
@@ -69,10 +74,10 @@ CModal {
                     break;
                 }
             }
-            // Reset tab to "view" for emulator games
             if (tab === "run" || tab === "graphics")
                 tab = "view";
         }
+        pendingLoad = false;
     }
     function save() {
         var fields = {
@@ -97,7 +102,7 @@ CModal {
             target: plugins
             enabled: root.visible
             function onEmulatorsChanged() {
-                if (root.isEmulatorGame)
+                if (root.pendingLoad || root.isEmulatorGame)
                     loadFields();
             }
         }
