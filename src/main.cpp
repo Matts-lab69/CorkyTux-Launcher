@@ -44,6 +44,7 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("proton", proton);
     engine.rootContext()->setContextProperty("integrations", integrations);
     engine.rootContext()->setContextProperty("plugins", plugins);
+    engine.rootContext()->setContextProperty("appVersion", QVariant(app.applicationVersion()));
 
     // Re-runnable helpers for QML (import flows need MainForm-like access).
     QObject::connect(games, &GameModel::countChanged, recent,

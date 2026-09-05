@@ -948,7 +948,7 @@ CModal {
                     width: parent.width
                 }
                 Text {
-                    text: "v2.10.0"
+                    text: appVersion
                     color: Theme.textMain
                     font.bold: true
                     font.pixelSize: 12
