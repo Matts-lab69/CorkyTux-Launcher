@@ -522,6 +522,16 @@ QStringList PluginManager::buildEmulatorCommand(const QString &name, const QStri
                 args << "-F";
             else if (name == "Vita3K" && sid == "load_config")
                 args << "-l";
+            else if (name == "Azahar" && sid == "fullscreen")
+                args << "--fullscreen";
+            else if (name == "DuckStation" && sid == "fullscreen")
+                args << "--fullscreen";
+            else if (name == "DuckStation" && sid == "no_gui")
+                args << "-no-gui";
+            else if (name == "Desmume" && sid == "fullscreen")
+                args << "--fullscreen";
+            else if (name == "Desmume" && sid == "frameskip")
+                args << "--frameskip=1";
         }
     }
 
