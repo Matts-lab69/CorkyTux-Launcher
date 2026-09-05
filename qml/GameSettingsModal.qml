@@ -262,10 +262,20 @@ CModal {
                         var g = games.getGame(root.gameName);
                         if (!g) { depSection.parent.depMessage = "Game not found"; return; }
                         var prefix = g.prefixPath || "";
-                        var prog = g.proton || "";
                         if (!prefix) { depSection.parent.depMessage = "No prefix found"; return; }
+                        var protonName = g.proton || "";
+                        var protonFullPath = "";
+                        if (protonName) {
+                            var details = proton.installedProtonDetails();
+                            for (var j = 0; j < details.length; j++) {
+                                if (details[j].name === protonName) {
+                                    protonFullPath = details[j].path + "/" + protonName;
+                                    break;
+                                }
+                            }
+                        }
                         var installArgs = ["install", "--prefix", prefix];
-                        if (prog) installArgs.push("--proton", prog);
+                        if (protonFullPath) installArgs.push("--proton", protonFullPath);
                         installArgs = installArgs.concat(deps);
                         depSection.parent.depMessage = "Installing " + deps.length + " dependencies...";
                         depSection.parent.depScanResults = [];
