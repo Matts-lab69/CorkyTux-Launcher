@@ -200,6 +200,7 @@ CModal {
                     Component {
                         id: boolSettingComp
                         Row {
+                            width: parent.width
                             spacing: 8
                             height: 32
                             CSwitch {
@@ -216,6 +217,8 @@ CModal {
                                 text: modelData.desc
                                 color: Theme.textMain
                                 font.pixelSize: 12
+                                width: parent.width - 48
+                                elide: Text.ElideRight
                                 anchors.verticalCenter: parent.verticalCenter
                             }
                         }

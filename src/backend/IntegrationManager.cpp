@@ -292,6 +292,26 @@ void IntegrationManager::scanLutris() {
                         }
                         prefix = y.value("prefix");
                     }
+                    // Fix case-mismatch paths: if dir doesn't exist, search parent case-insensitive
+                    if (!dir.isEmpty() && !QDir(dir).exists()) {
+                        const QDir parentDir = QDir(dir).absolutePath();
+                        const QString baseName = parentDir.dirName();
+                        const QString parentPath = parentDir.absolutePath();
+                        QDir parent(parentPath);
+                        if (parent.exists()) {
+                            const QStringList siblings = parent.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+                            for (const QString &s : siblings) {
+                                if (s.compare(baseName, Qt::CaseInsensitive) == 0) {
+                                    dir = parent.absoluteFilePath(s);
+                                    if (!exe.isEmpty()) {
+                                        const QFileInfo fi(exe);
+                                        exe = QDir(dir).absoluteFilePath(fi.fileName());
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
                     pushGame(slug, nm, runner, dir, exe, prefix, pt);
                 }
             }
