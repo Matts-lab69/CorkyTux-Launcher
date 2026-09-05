@@ -190,74 +190,77 @@ CModal {
             visible: root.tab === "emulator" && root.isEmulatorGame && root.hasEmuSettings
             Repeater {
                 model: root.emuSettingsDefs
-                delegate: Column {
+                delegate: Loader {
                     required property var modelData
                     required property int index
                     width: parent.width
-                    spacing: 4
-                    // Boolean setting
-                    Row {
-                        visible: modelData.type === "bool"
-                        spacing: 8
-                        CSwitch {
-                            objectName: modelData.desc
-                            checked: root.emuSettingsValues[modelData.id] === true
-                            onToggled: {
-                                var vals = root.emuSettingsValues;
-                                vals[modelData.id] = checked;
-                                root.emuSettingsValues = vals;
-                                root.save();
+                    active: true
+                    sourceComponent: modelData.type === "bool" ? boolSettingComp
+                        : modelData.type === "path" ? pathSettingComp : null
+                    Component {
+                        id: boolSettingComp
+                        Row {
+                            spacing: 8
+                            height: 32
+                            CSwitch {
+                                objectName: modelData.desc
+                                checked: root.emuSettingsValues[modelData.id] === true
+                                onToggled: {
+                                    var vals = root.emuSettingsValues;
+                                    vals[modelData.id] = checked;
+                                    root.emuSettingsValues = vals;
+                                    root.save();
+                                }
                             }
-                        }
-                        Text {
-                            text: modelData.desc
-                            color: Theme.textMain
-                            font.pixelSize: 12
-                            y: (parent.height - height) / 2
+                            Text {
+                                text: modelData.desc
+                                color: Theme.textMain
+                                font.pixelSize: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
                         }
                     }
-                    // Path setting
-                    Column {
-                        visible: modelData.type === "path"
-                        width: parent.width
-                        spacing: 4
-                        Text {
-                            text: modelData.desc
-                            color: Theme.textSec
-                            font.pixelSize: 12
-                        }
-                        Row {
+                    Component {
+                        id: pathSettingComp
+                        Column {
                             width: parent.width
-                            spacing: 8
-                            CTextField {
-                                id: pathField
-                                width: parent.width - 88
-                                text: root.emuSettingsValues[modelData.id] || ""
-                                onEditingFinished: {
-                                    var vals = root.emuSettingsValues;
-                                    vals[modelData.id] = text.trim();
-                                    root.emuSettingsValues = vals;
-                                    root.save();
-                                }
+                            spacing: 4
+                            Text {
+                                text: modelData.desc
+                                color: Theme.textSec
+                                font.pixelSize: 12
                             }
-                            CButton {
-                                text: "..."
-                                width: 36
-                                height: 32
-                                onClicked: {
-                                    // TODO: file dialog for path selection
+                            Row {
+                                width: parent.width
+                                spacing: 8
+                                CTextField {
+                                    id: pathField
+                                    width: parent.width - 88
+                                    text: root.emuSettingsValues[modelData.id] || ""
+                                    onEditingFinished: {
+                                        var vals = root.emuSettingsValues;
+                                        vals[modelData.id] = text.trim();
+                                        root.emuSettingsValues = vals;
+                                        root.save();
+                                    }
                                 }
-                            }
-                            CButton {
-                                text: "X"
-                                width: 36
-                                height: 32
-                                onClicked: {
-                                    pathField.text = "";
-                                    var vals = root.emuSettingsValues;
-                                    vals[modelData.id] = "";
-                                    root.emuSettingsValues = vals;
-                                    root.save();
+                                CButton {
+                                    text: "..."
+                                    width: 36
+                                    height: 32
+                                    onClicked: {}
+                                }
+                                CButton {
+                                    text: "X"
+                                    width: 36
+                                    height: 32
+                                    onClicked: {
+                                        pathField.text = "";
+                                        var vals = root.emuSettingsValues;
+                                        vals[modelData.id] = "";
+                                        root.emuSettingsValues = vals;
+                                        root.save();
+                                    }
                                 }
                             }
                         }
