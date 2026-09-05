@@ -14,6 +14,7 @@ CModal {
     property bool isEmulatorGame: false
     property var emuSettingsDefs: []
     property var emuSettingsValues: ({})
+    property bool hasEmuSettings: false
 
     // Dependency Installer state
     property var depScanResults: []
@@ -55,16 +56,20 @@ CModal {
         var executor = g.executor || "";
         isEmulatorGame = executor !== "";
         emuSettingsValues = g.emuSettings || {};
+        emuSettingsDefs = [];
+        hasEmuSettings = false;
         if (isEmulatorGame) {
             var emus = plugins.emulators;
             for (var i = 0; i < emus.length; i++) {
                 if (emus[i].name === executor) {
                     emuSettingsDefs = emus[i].settings || [];
+                    hasEmuSettings = emuSettingsDefs.length > 0;
                     break;
                 }
             }
-        } else {
-            emuSettingsDefs = [];
+            // Reset tab to "view" for emulator games
+            if (tab === "run" || tab === "graphics")
+                tab = "view";
         }
     }
     function save() {
@@ -86,7 +91,7 @@ CModal {
     Column {
         width: parent.width
         spacing: 12
-        // View tab
+        // View tab (shared)
         Column {
             width: parent.width
             spacing: 8
@@ -95,7 +100,7 @@ CModal {
             CTextField { id: nameField; width: parent.width; readOnly: true }
             Text { text: "Install path"; color: Theme.textSec; font.pixelSize: 12 }
             CTextField { width: parent.width; readOnly: true; text: games.getGame(root.gameName).mainPath || "" }
-            // Wine/Proton specific
+            // Wine/Proton fields
             Column {
                 width: parent.width
                 spacing: 8
@@ -111,7 +116,7 @@ CModal {
                 Text { text: "Prefix path"; color: Theme.textSec; font.pixelSize: 12 }
                 CTextField { id: prefixField; width: parent.width; onEditingFinished: save() }
             }
-            // Emulator specific
+            // Emulator name
             Column {
                 width: parent.width
                 spacing: 8
@@ -120,7 +125,7 @@ CModal {
                 CTextField { width: parent.width; readOnly: true; text: games.getGame(root.gameName).executor || "" }
             }
         }
-        // Run tab
+        // Run tab (Wine/Proton only)
         Column {
             width: parent.width
             spacing: 8
@@ -160,22 +165,11 @@ CModal {
                 }
             }
         }
-        // Emulator Settings tab (only for emulator games)
+        // Emulator tab (emulator games only, only if settings exist)
         Column {
             width: parent.width
             spacing: 8
-            visible: root.tab === "view" && root.isEmulatorGame
-            Text {
-                text: "Emulator Settings"
-                color: Theme.textMain
-                font.bold: true
-                font.pixelSize: 14
-            }
-            Text {
-                text: "Settings for " + (games.getGame(root.gameName).executor || "")
-                color: Theme.textSec
-                font.pixelSize: 12
-            }
+            visible: root.tab === "emulator" && root.isEmulatorGame && root.hasEmuSettings
             Repeater {
                 model: root.emuSettingsDefs
                 delegate: Column {
@@ -188,7 +182,6 @@ CModal {
                         visible: modelData.type === "bool"
                         spacing: 8
                         CSwitch {
-                            id: boolSwitch
                             objectName: modelData.desc
                             checked: root.emuSettingsValues[modelData.id] === true
                             onToggled: {
@@ -549,7 +542,10 @@ CModal {
             anchors.centerIn: parent
             spacing: 10
             Repeater {
-                model: [
+                model: root.isEmulatorGame ? [
+                    { "id": "view", "label": "View", "icon": "palette" },
+                    { "id": "emulator", "label": "Emulator", "icon": "startup" }
+                ] : [
                     { "id": "view", "label": "View", "icon": "palette" },
                     { "id": "run", "label": "Run", "icon": "startup" },
                     { "id": "graphics", "label": "Graphics", "icon": "graphics" }
