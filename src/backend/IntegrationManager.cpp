@@ -991,3 +991,27 @@ void IntegrationManager::fetchIgdbGame(const QString &name) {
         });
     });
 }
+
+// ---------------- plugin runner ----------------
+
+void IntegrationManager::runPlugin(const QString &pluginPath, const QStringList &args) {
+    QtConcurrent::run([this, pluginPath, args] {
+        QProcess proc;
+        proc.start(pluginPath, args);
+        if (!proc.waitForFinished(300000)) {
+            QVariantMap res;
+            res["ok"] = false;
+            res["error"] = "Plugin timed out";
+            QMetaObject::invokeMethod(this, [this, res] { emit pluginResult(res); });
+            return;
+        }
+        const QByteArray out = proc.readAllStandardOutput();
+        const QJsonDocument doc = QJsonDocument::fromJson(out);
+        QVariantMap res = doc.object().toVariantMap();
+        if (res.isEmpty()) {
+            res["ok"] = false;
+            res["error"] = QString::fromUtf8(proc.readAllStandardError());
+        }
+        QMetaObject::invokeMethod(this, [this, res] { emit pluginResult(res); });
+    });
+}

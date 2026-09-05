@@ -90,6 +90,14 @@ ApplicationWindow {
             if (Object.keys(fields).length > 0)
                 games.addGame(name, fields);
         }
+        function onPluginResult(result) {
+            if (result && result.ok) {
+                toastLabel.text = "Dependencies installed: " + (result.installed || []).join(", ");
+            } else {
+                toastLabel.text = "Install failed: " + (result ? result.error || "unknown error" : "no response");
+            }
+            toastPopup.open();
+        }
         function onExeIconReady(name, path) {
             // Real exe icon beats cover-as-icon fallbacks (lutris banners,
             // capsules, store images); keeps hicolor/SGDB/exe icons.

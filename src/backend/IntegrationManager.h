@@ -70,6 +70,10 @@ public:
     Q_INVOKABLE void fetchIgdbGame(const QString &name);
     // -> igdbReady(name, rating, summary)
 
+    // ---- Plugin runner (generic async plugin invocation) ----
+    Q_INVOKABLE void runPlugin(const QString &pluginPath, const QStringList &args);
+    // -> pluginResult(QVariantMap)
+
     // ---- path helpers (XDG + Flatpak aware) ----
     static QStringList lutrisDataDirs();
     static QString hicolorAppsDir();
@@ -79,12 +83,13 @@ signals:
     void rarFailed(const QString &message);
     void exeIconReady(const QString &gameName, const QString &iconPath);
     void exeIconFailed(const QString &gameName, const QString &message);
-    void lutrisScanReady(const QVariantList &games); // {slug,name,runner,directory,executable,prefix,playtimeHours}
-    void steamScanReady(const QVariantList &games); // {appId,name,installDir,libraryPath,prefixPath}
+    void lutrisScanReady(const QVariantList &games);
+    void steamScanReady(const QVariantList &games);
     void artworkReady(const QString &gameName, const QString &banner, const QString &icon);
     void protonRatingReady(const QString &appId, const QString &tier,
                            const QString &confidence, int total);
     void igdbReady(const QString &name, double rating, const QString &summary);
+    void pluginResult(const QVariantMap &result);
     void scanError(const QString &message);
 
 private:

@@ -139,7 +139,7 @@ Rectangle {
                         font.pixelSize: 12
                         anchors.verticalCenter: parent.verticalCenter
                         elide: Text.ElideRight
-                        width: parent.width - 40
+                        width: parent.width - 32
                     }
                 }
                 MouseArea {

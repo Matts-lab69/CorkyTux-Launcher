@@ -237,6 +237,7 @@ CModal {
                             text: modelData.label
                             width: 110
                             height: 30
+                            kind: protonsPage.filter === modelData.id ? "primary" : "outline"
                             onClicked: protonsPage.filter = modelData.id
                         }
                     }
@@ -412,16 +413,6 @@ CModal {
                 CCard {
                     width: parent.width
                     CSwitch {
-                    objectName: "Fullscreen launcher"
-                    Component.onCompleted: setSilent(config.launcherValue("fullscreen", "User Settings") === "1")
-                    onToggled: config.setLauncherValue("fullscreen", checked ? "1" : "0", "User Settings")
-                }
-                CSwitch {
-                    objectName: "Request Steam (noSteamRequest off)"
-                    Component.onCompleted: setSilent(config.launcherValue("noSteamRequest", "User Settings") !== "1")
-                    onToggled: config.setLauncherValue("noSteamRequest", checked ? "0" : "1", "User Settings")
-                }
-                CSwitch {
                     objectName: "Use wined3d instead of DXVK"
                     Component.onCompleted: setSilent(config.launcherValue("gamesUsesWined3d", "User Settings") === "1")
                     onToggled: config.setLauncherValue("gamesUsesWined3d", checked ? "1" : "0", "User Settings")
@@ -448,6 +439,12 @@ CModal {
                 property bool emuExpanded: false
                 property var emuList: []
                 property var emuInstalling: ({})
+
+                Timer {
+                    id: emuErrorTimer
+                    interval: 3000
+                    onTriggered: { delete pluginsPage.emuInstalling["_error"]; pluginsPage.emuInstalling = pluginsPage.emuInstalling; }
+                }
 
                 Text { text: "Plugins"; color: Theme.textMain; font.bold: true; font.pixelSize: 18
                 horizontalAlignment: Text.AlignHCenter
@@ -773,7 +770,7 @@ CModal {
                         pluginsPage.emuInstalling = installing;
                         if (!ok) {
                             pluginsPage.emuInstalling["_error"] = message;
-                            setTimeout(function() { delete pluginsPage.emuInstalling["_error"]; pluginsPage.emuInstalling = pluginsPage.emuInstalling; }, 3000);
+                            emuErrorTimer.start();
                         }
                         plugins.listEmulators();
                     }
@@ -912,6 +909,97 @@ CModal {
                             onEditingFinished: integrations.setApiKey("igdb", text.trim())
                         }
                     }
+                    // Dependency Installer
+                    CCard {
+                        width: parent.width
+                        property var scanResults: []
+                        property bool scanning: false
+                        property var installing: ({})
+                        Row {
+                            width: parent.width
+                            Text {
+                                text: "Dependency Installer"
+                                color: Theme.textMain
+                                font.bold: true
+                                font.pixelSize: 13
+                                width: parent.width - 150
+                            }
+                            CButton {
+                                text: "Install Selected"
+                                width: 140
+                                height: 32
+                                enabled: depList.count > 0
+                                onClicked: {
+                                    var deps = [];
+                                    for (var i = 0; i < depList.count; i++) {
+                                        var item = depList.itemAt(i);
+                                        if (item && item.depCheck.checked)
+                                            deps.push(item.depId);
+                                    }
+                                    if (deps.length === 0) return;
+                                    // Find the Dependency Installer plugin
+                                    var plugPath = "";
+                                    for (var j = 0; j < plugins.installed.length; j++) {
+                                        var p = plugins.installed[j];
+                                        if (p.id === "dependency-installer") { plugPath = p.path; break; }
+                                    }
+                                    if (plugPath === "") { toastLabel.text = "Dependency Installer not installed"; toastPopup.open(); return; }
+                                    var gameName = root.currentGameName || "";
+                                    var prefix = "";
+                                    if (gameName) {
+                                        var g = games.getGame(gameName);
+                                        if (g) prefix = g.prefixPath || "";
+                                    }
+                                    if (!prefix) { toastLabel.text = "No prefix found for current game"; toastPopup.open(); return; }
+                                    var prog = "";
+                                    if (gameName) {
+                                        var gg = games.getGame(gameName);
+                                        if (gg) prog = gg.proton || "";
+                                    }
+                                    // Build args
+                                    var args = ["install", "--prefix", prefix];
+                                    if (prog) args.push("--proton", prog);
+                                    args = args.concat(deps);
+                                    integrations.runPlugin(plugPath, args);
+                                }
+                            }
+                        }
+                        Text {
+                            text: "Auto-detect and install missing Windows components (VC++, DirectX, .NET)"
+                            color: Theme.textSec
+                            font.pixelSize: 11
+                            wrapMode: Text.Wrap
+                            width: parent.width
+                        }
+                        Repeater {
+                            id: depList
+                            model: parent.scanResults
+                            delegate: Row {
+                                property string depId: modelData.id || ""
+                                property alias depCheck: checkBox
+                                spacing: 8
+                                width: parent.width
+                                CSwitch {
+                                    id: checkBox
+                                    width: 40
+                                    Component.onCompleted: setSilent(true)
+                                }
+                                Column {
+                                    width: parent.width - 50
+                                    Text {
+                                        text: modelData.desc || modelData.id || "?"
+                                        color: Theme.textMain
+                                        font.pixelSize: 12
+                                    }
+                                    Text {
+                                        text: modelData.confidence || ""
+                                        color: modelData.confidence === "recommended" ? "#ff6b6b" : Theme.textSec
+                                        font.pixelSize: 10
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -941,7 +1029,7 @@ CModal {
                 }
                 Text {
                     text: "v2.10.0"
-                    color: "#FFFFFF"
+                    color: Theme.textMain
                     font.bold: true
                     font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter
@@ -1030,13 +1118,5 @@ CModal {
         }
     }
 
-    // scan wiring lives in Main (non-visual safe zone); local import helper:
-    function gamesModelImport(name, fields) {
-        return games.importExternalGame(name, fields);
-    }
     signal notice(string message)
-
-    function settingsToast(msg) {
-        notice(msg);
-    }
 }

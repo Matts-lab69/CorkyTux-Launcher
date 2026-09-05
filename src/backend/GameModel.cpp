@@ -83,12 +83,15 @@ GameEntry GameModel::entryFromMap(const QString &name,
 }
 
 void GameModel::reload() {
+    if (m_batchUpdating)
+        return;
     loadFromDisk();
 }
 
 bool GameModel::addGame(const QString &name, const QVariantMap &fields) {
     if (name.trimmed().isEmpty())
         return false;
+    m_batchUpdating = true;
     const QString executor = fields.value("executor").toString();
     const bool isEmulator = !executor.isEmpty();
     const QString defProton =
@@ -106,6 +109,7 @@ bool GameModel::addGame(const QString &name, const QVariantMap &fields) {
     if (!isEmulator && m_cfg->gameValue(name, "prefixPath").isEmpty())
         m_cfg->setGameValue(name, "prefixPath",
                             ConfigManager::prefixesDir() + "/" + name + "/pfx");
+    m_batchUpdating = false;
     loadFromDisk();
     return true;
 }

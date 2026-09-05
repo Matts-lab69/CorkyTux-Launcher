@@ -12,6 +12,7 @@ Rectangle {
     height: 140
     radius: 15
     color: Theme.card
+    clip: true
     border.color: Theme.border
     border.width: Theme.isLight ? 1 : 0
 

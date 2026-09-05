@@ -188,43 +188,8 @@ QString ProtonManager::ensurePrefixPath(const QString &gameName) {
     const QString p = prefixPath(gameName);
     if (p.isEmpty())
         return {};
-    const bool existed = QDir(p).exists();
     if (!QDir().mkpath(p))
         return {};
-    // On fresh prefix: install VC++ runtime so games don't ask for it
-    if (!existed) {
-        ConfigManager *cfg = ConfigManager::instance();
-        const QString protonName =
-            cfg->gameValue(gameName, "proton", cfg->launcherValue("defaultProton", "User Settings", "GE-Proton Latest"));
-        for (const QString &dir :
-             {protonsDir() + "/" + protonName,
-              ConfigManager::expectedHome() + "/.local/share/Steam/compatibilitytools.d/" + protonName,
-              ConfigManager::expectedHome() + "/.local/share/lutris/runners/wine/" + protonName}) {
-            for (const QString &wtCand :
-                 {dir + "/protonfixes/winetricks", dir + "/protonfixes/files/bin/winetricks"}) {
-                if (!QFile::exists(wtCand))
-                    continue;
-                QString wineBin;
-                for (const QString &wc : {dir + "/files/bin/wine", dir + "/files/bin/wine64"}) {
-                    if (QFile::exists(wc)) { wineBin = wc; break; }
-                }
-                if (wineBin.isEmpty())
-                    continue;
-                const QString wt = wtCand;
-                const QString wine = wineBin;
-                const QString prefix = p;
-                // Run synchronously on first launch so VC++ is ready
-                QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-                env.insert("WINEPREFIX", prefix);
-                env.insert("WINE", wine);
-                QProcess proc;
-                proc.setProcessEnvironment(env);
-                proc.start(wt, {"vcrun2022"});
-                proc.waitForFinished(1000 * 60 * 5);
-                return p;
-            }
-        }
-    }
     return p;
 }
 
@@ -549,7 +514,9 @@ void ProtonManager::onGameFinished(int exitCode, QProcess::ExitStatus) {
         m_proc = nullptr;
     }
     m_running = false;
+    m_currentGame.clear();
     emit runningChanged();
+    emit currentGameChanged();
     emit gameFinished(game, exitCode);
 }
 
@@ -596,28 +563,29 @@ void ProtonManager::stopGame() {
     if (!m_running)
         return;
     const QString game = m_currentGame;
-    // Try wineserver -k with the game prefix first
     const QString prefix = prefixPath(game);
-    bool killed = false;
-    // Locate a wineserver next to the running proton
     if (m_proc) {
+        // Try wineserver -k with WINEPREFIX to only kill this prefix's processes
         const QString prog = m_proc->program();
         const QString ws = prog.left(prog.lastIndexOf('/') + 1) + "wineserver";
         if (QFile::exists(ws) && !prefix.isEmpty()) {
-            QProcess::execute(ws, {"-k"});
-            killed = true;
+            QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+            env.insert("WINEPREFIX", prefix);
+            QProcess wsProc;
+            wsProc.setProcessEnvironment(env);
+            wsProc.start(ws, {"-k"});
+            wsProc.waitForFinished(5000);
         }
+        // Terminate the main process
         m_proc->terminate();
         if (!m_proc->waitForFinished(3000))
             m_proc->kill();
     }
-    if (!killed && !game.isEmpty())
-        QProcess::execute("pkill", {"-f", game});
-    // onGameFinished via signal finishes state; force-reset as fallback
-    if (m_running) {
-        m_running = false;
-        emit runningChanged();
-    }
+    // Reset state
+    m_running = false;
+    m_currentGame.clear();
+    emit runningChanged();
+    emit currentGameChanged();
 }
 
 void ProtonManager::fetchReleases() {

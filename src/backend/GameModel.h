@@ -77,6 +77,7 @@ private:
 
     QVector<GameEntry> m_games;
     ConfigManager *m_cfg = nullptr;
+    bool m_batchUpdating = false;
 };
 
 /**
