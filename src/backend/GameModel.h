@@ -25,6 +25,7 @@ struct GameEntry {
     QString source;
     QString lutrisRunner;
     QString executor;     // empty = Wine/Proton, or emulator name (e.g. "melonDS")
+    QVariantMap emuSettings; // per-game emulator settings (fullscreen, batch, etc.)
 };
 
 /**
@@ -48,6 +49,7 @@ public:
         FavoriteRole,
         SourceRole,
         ExecutorRole,
+        EmuSettingsRole,
     };
     Q_ENUM(Roles)
 

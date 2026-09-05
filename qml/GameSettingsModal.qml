@@ -11,6 +11,9 @@ CModal {
 
     property string gameName: ""
     property string tab: "view"
+    property bool isEmulatorGame: false
+    property var emuSettingsDefs: []
+    property var emuSettingsValues: ({})
 
     // Dependency Installer state
     property var depScanResults: []
@@ -48,16 +51,36 @@ CModal {
         runtimeSwitch.setSilent(g.steamRuntime === "true" || g.steamRuntime === "1");
         wined3dSwitch.setSilent(g.wined3d === "true" || g.wined3d === "1");
         waylandSwitch.setSilent(g.nativeWayland === "true" || g.nativeWayland === "1");
+        // Load emulator settings
+        var executor = g.executor || "";
+        isEmulatorGame = executor !== "";
+        emuSettingsValues = g.emuSettings || {};
+        if (isEmulatorGame) {
+            var emus = plugins.emulators;
+            for (var i = 0; i < emus.length; i++) {
+                if (emus[i].name === executor) {
+                    emuSettingsDefs = emus[i].settings || [];
+                    break;
+                }
+            }
+        } else {
+            emuSettingsDefs = [];
+        }
     }
     function save() {
-        games.addGame(gameName, {
+        var fields = {
             "proton": protonBox.currentText,
             "prefixPath": prefixField.text.trim(),
             "overrides": overridesField.text.trim(),
             "environment": envField.text.trim(),
             "argsBefore": argsBeforeField.text.trim(),
             "argsAfter": argsAfterField.text.trim()
-        });
+        };
+        // Save emulator settings if this is an emulator game
+        if (isEmulatorGame) {
+            fields["emuSettings"] = emuSettingsValues;
+        }
+        games.addGame(gameName, fields);
     }
 
     Column {
@@ -67,7 +90,7 @@ CModal {
         Column {
             width: parent.width
             spacing: 8
-            visible: root.tab === "view"
+            visible: root.tab === "view" && !root.isEmulatorGame
             Text { text: "Game name in launcher"; color: Theme.textSec; font.pixelSize: 12 }
             CTextField { id: nameField; width: parent.width; readOnly: true }
             Text { text: "Install path"; color: Theme.textSec; font.pixelSize: 12 }
@@ -83,11 +106,23 @@ CModal {
             Text { text: "Prefix path"; color: Theme.textSec; font.pixelSize: 12 }
             CTextField { id: prefixField; width: parent.width; onEditingFinished: save() }
         }
+        // View tab for emulator games
+        Column {
+            width: parent.width
+            spacing: 8
+            visible: root.tab === "view" && root.isEmulatorGame
+            Text { text: "Game name in launcher"; color: Theme.textSec; font.pixelSize: 12 }
+            CTextField { id: nameField; width: parent.width; readOnly: true }
+            Text { text: "Install path"; color: Theme.textSec; font.pixelSize: 12 }
+            CTextField { width: parent.width; readOnly: true; text: games.getGame(root.gameName).mainPath || "" }
+            Text { text: "Emulator"; color: Theme.textSec; font.pixelSize: 12 }
+            CTextField { width: parent.width; readOnly: true; text: games.getGame(root.gameName).executor || "" }
+        }
         // Run tab
         Column {
             width: parent.width
             spacing: 8
-            visible: root.tab === "run"
+            visible: root.tab === "run" && !root.isEmulatorGame
             Text { text: "DLL overrides (WINEDLLOVERRIDES)"; color: Theme.textSec; font.pixelSize: 12 }
             CTextField { id: overridesField; width: parent.width; onEditingFinished: save() }
             Text { text: "Environment variables"; color: Theme.textSec; font.pixelSize: 12 }
@@ -120,6 +155,100 @@ CModal {
                     id: waylandSwitch
                     objectName: "Prefer Wayland"
                     onToggled: games.addGame(root.gameName, {"nativeWayland": checked ? "true" : "false"})
+                }
+            }
+        }
+        // Emulator Settings tab (only for emulator games)
+        Column {
+            width: parent.width
+            spacing: 8
+            visible: root.tab === "view" && root.isEmulatorGame
+            Text {
+                text: "Emulator Settings"
+                color: Theme.textMain
+                font.bold: true
+                font.pixelSize: 14
+            }
+            Text {
+                text: "Settings for " + (games.getGame(root.gameName).executor || "")
+                color: Theme.textSec
+                font.pixelSize: 12
+            }
+            Repeater {
+                model: root.emuSettingsDefs
+                delegate: Column {
+                    required property var modelData
+                    required property int index
+                    width: parent.width
+                    spacing: 4
+                    // Boolean setting
+                    Row {
+                        visible: modelData.type === "bool"
+                        spacing: 8
+                        CSwitch {
+                            id: boolSwitch
+                            objectName: modelData.desc
+                            checked: root.emuSettingsValues[modelData.id] === true
+                            onToggled: {
+                                var vals = root.emuSettingsValues;
+                                vals[modelData.id] = checked;
+                                root.emuSettingsValues = vals;
+                                root.save();
+                            }
+                        }
+                        Text {
+                            text: modelData.desc
+                            color: Theme.textMain
+                            font.pixelSize: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                    // Path setting
+                    Column {
+                        visible: modelData.type === "path"
+                        width: parent.width
+                        spacing: 4
+                        Text {
+                            text: modelData.desc
+                            color: Theme.textSec
+                            font.pixelSize: 12
+                        }
+                        Row {
+                            width: parent.width
+                            spacing: 8
+                            CTextField {
+                                id: pathField
+                                width: parent.width - 88
+                                text: root.emuSettingsValues[modelData.id] || ""
+                                onEditingFinished: {
+                                    var vals = root.emuSettingsValues;
+                                    vals[modelData.id] = text.trim();
+                                    root.emuSettingsValues = vals;
+                                    root.save();
+                                }
+                            }
+                            CButton {
+                                text: "..."
+                                width: 36
+                                height: 32
+                                onClicked: {
+                                    // TODO: file dialog for path selection
+                                }
+                            }
+                            CButton {
+                                text: "X"
+                                width: 36
+                                height: 32
+                                onClicked: {
+                                    pathField.text = "";
+                                    var vals = root.emuSettingsValues;
+                                    vals[modelData.id] = "";
+                                    root.emuSettingsValues = vals;
+                                    root.save();
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

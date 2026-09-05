@@ -226,7 +226,7 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
 
     // Check if this is an emulator game
     if (!executor.isEmpty()) {
-        // Find the emulator AppImage
+        // Find the emulator
         const QString emuPath = PluginManager::instance()->emulatorPath(executor);
         if (emuPath.isEmpty()) {
             emit toast("Emulator not found: " + executor);
@@ -252,19 +252,23 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
                     QFile::remove("/tmp/" + f);
             }
         }
-        // Get launch args template and replace {rom} with actual path
-        const QString argsTemplate = PluginManager::instance()->emulatorLaunchArgs(executor);
-        QStringList args;
-        for (const QString &part : argsTemplate.split(' ', Qt::SkipEmptyParts)) {
-            if (part == "{rom}")
-                args << exec;
-            else
-                args << part;
+        // Load emulator settings from game config
+        const QString emuSettingsJson = cfg->gameValue(gameName, "emuSettings");
+        QVariantMap emuSettings;
+        if (!emuSettingsJson.isEmpty()) {
+            QJsonDocument doc = QJsonDocument::fromJson(emuSettingsJson.toUtf8());
+            emuSettings = doc.object().toVariantMap();
         }
-        // Launch emulator with ROM as argument
+        // Build full command with settings
+        const QStringList cmd = PluginManager::instance()->buildEmulatorCommand(executor, exec, emuSettings);
+        if (cmd.isEmpty()) {
+            emit toast("Failed to build command for " + executor);
+            return;
+        }
+        // Launch emulator
         m_proc = new QProcess(this);
-        m_proc->setProgram(emuPath);
-        m_proc->setArguments(args);
+        m_proc->setProgram(cmd.first());
+        m_proc->setArguments(cmd.mid(1));
         m_proc->setWorkingDirectory(QFileInfo(exec).absolutePath());
         connect(m_proc, &QProcess::finished, this, &ProtonManager::onGameFinished);
         connect(m_proc, &QProcess::readyReadStandardOutput, this, [this] {

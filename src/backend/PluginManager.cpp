@@ -453,6 +453,104 @@ QString PluginManager::emulatorLaunchArgs(const QString &name) const {
     return "{rom}";
 }
 
+QVariantList PluginManager::emulatorSettings(const QString &name) const {
+    for (const QVariant &v : m_emulators) {
+        const QVariantMap m = v.toMap();
+        if (m.value("name").toString() == name)
+            return m.value("settings").toList();
+    }
+    return {};
+}
+
+QStringList PluginManager::buildEmulatorCommand(const QString &name, const QString &romPath, const QVariantMap &settings) const {
+    const QString emuExe = emulatorPath(name);
+    if (emuExe.isEmpty())
+        return {};
+
+    QString argsTemplate = emulatorLaunchArgs(name);
+    // Replace {rom} with actual path
+    QString argsStr = argsTemplate.replace("{rom}", romPath);
+
+    // Split args into list (simple split, handles quotes)
+    QStringList args;
+    QString current;
+    bool inQuote = false;
+    for (int i = 0; i < argsStr.length(); i++) {
+        QChar c = argsStr[i];
+        if (c == '"') {
+            inQuote = !inQuote;
+        } else if (c == ' ' && !inQuote) {
+            if (!current.isEmpty()) {
+                args << current;
+                current.clear();
+            }
+        } else {
+            current += c;
+        }
+    }
+    if (!current.isEmpty())
+        args << current;
+
+    // Apply boolean settings as flags
+    QVariantList settingsDefs = emulatorSettings(name);
+    for (const QVariant &sdef : settingsDefs) {
+        QVariantMap sd = sdef.toMap();
+        if (sd.value("type").toString() != "bool")
+            continue;
+        QString sid = sd.value("id").toString();
+        if (settings.contains(sid) && settings.value(sid).toBool()) {
+            // Add emulator-specific flags
+            if (name == "Dolphin" && sid == "batch")
+                args << "--batch";
+            else if (name == "Mupen64Plus" && sid == "fullscreen")
+                args << "--fullscreen";
+            else if (name == "Mupen64Plus" && sid == "hide_osd")
+                args << "--no-osd";
+            else if (name == "PCSX2" && sid == "fullscreen")
+                args << "--fullscreen";
+            else if (name == "PCSX2" && sid == "exit_on_pause")
+                args << "--exit-pause";
+            else if (name == "PPSSPP" && sid == "no_gui")
+                args << "--headless";
+            else if (name == "RPCS3" && sid == "fullscreen")
+                args << "--fullscreen";
+            else if (name == "RPCS3" && sid == "full_boot")
+                args << "--full-boot";
+            else if (name == "RPCS3" && sid == "no_gui")
+                args << "--no-gui";
+            else if (name == "Vita3K" && sid == "fullscreen")
+                args << "-F";
+            else if (name == "Vita3K" && sid == "load_config")
+                args << "-l";
+        }
+    }
+
+    // Apply path settings
+    for (const QVariant &sdef : settingsDefs) {
+        QVariantMap sd = sdef.toMap();
+        if (sd.value("type").toString() != "path")
+            continue;
+        QString sid = sd.value("id").toString();
+        if (settings.contains(sid)) {
+            QString val = settings.value(sid).toString();
+            if (!val.isEmpty()) {
+                if (name == "Dolphin" && sid == "user_dir")
+                    args << "--user" << val;
+                else if (name == "Cemu" && sid == "mlc_path")
+                    args << "-M" << val;
+                else if (name == "Ryujinx" && sid == "keys_path")
+                    args << "--keys" << val;
+                else if (name == "Ryujinx" && sid == "title_keys_path")
+                    args << "--title-keys" << val;
+                else if (name == "Vita3K" && sid == "config_path")
+                    args << "-c" << val;
+            }
+        }
+    }
+
+    return QStringList() << emuExe << args;
+}
+
 void PluginManager::registerGameWithEmulator(const QString &emulatorName, const QString &gameDir) {
     const QString exe = emulatorManagerExe();
     if (!QFileInfo::exists(exe) || emulatorName.isEmpty() || gameDir.isEmpty())

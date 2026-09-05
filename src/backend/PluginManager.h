@@ -67,6 +67,10 @@ public:
     Q_INVOKABLE QString emulatorPath(const QString &name) const;
     /** Get the launch arguments template for an emulator (e.g. "-e {rom}"). */
     Q_INVOKABLE QString emulatorLaunchArgs(const QString &name) const;
+    /** Get settings definitions for an emulator. */
+    Q_INVOKABLE QVariantList emulatorSettings(const QString &name) const;
+    /** Build full launch command for an emulator with settings applied. */
+    Q_INVOKABLE QStringList buildEmulatorCommand(const QString &name, const QString &romPath, const QVariantMap &settings) const;
     /** Register a game directory with the emulator so it appears in its game list. */
     Q_INVOKABLE void registerGameWithEmulator(const QString &emulatorName, const QString &gameDir);
     QVariantList emulators() const { return m_emulators; }

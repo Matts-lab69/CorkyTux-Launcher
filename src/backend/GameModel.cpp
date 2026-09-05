@@ -5,6 +5,8 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 GameModel::GameModel(QObject *parent)
     : QAbstractListModel(parent), m_cfg(ConfigManager::instance()) {
@@ -34,6 +36,7 @@ QVariant GameModel::data(const QModelIndex &index, int role) const {
     case FavoriteRole: return g.favorite;
     case SourceRole: return g.source;
     case ExecutorRole: return g.executor;
+    case EmuSettingsRole: return g.emuSettings;
     case Qt::DisplayRole: return g.name;
     default: return {};
     }
@@ -47,7 +50,7 @@ QHash<int, QByteArray> GameModel::roleNames() const {
         {BannerRole, "banner"}, {IconRole, "icon"},
         {TimeSpentRole, "timeSpent"}, {LastPlayedRole, "lastPlayed"},
         {FavoriteRole, "favorite"}, {SourceRole, "source"},
-        {ExecutorRole, "executor"},
+        {ExecutorRole, "executor"}, {EmuSettingsRole, "emuSettings"},
     };
 }
 
@@ -79,6 +82,12 @@ GameEntry GameModel::entryFromMap(const QString &name,
     g.source = m.value("source");
     g.lutrisRunner = m.value("lutrisRunner");
     g.executor = m.value("executor");
+    // Load emulator settings from JSON string
+    const QString emuJson = m.value("emuSettings");
+    if (!emuJson.isEmpty()) {
+        QJsonDocument doc = QJsonDocument::fromJson(emuJson.toUtf8());
+        g.emuSettings = doc.object().toVariantMap();
+    }
     return g;
 }
 
@@ -102,8 +111,13 @@ bool GameModel::addGame(const QString &name, const QVariantMap &fields) {
         m_cfg->setGameValue(name, "executor", executor);
     }
     for (auto it = fields.constBegin(); it != fields.constEnd(); ++it) {
-        if (!it.value().toString().isEmpty())
+        if (it.key() == "emuSettings") {
+            // Save emulator settings as JSON string
+            QJsonDocument doc(QJsonObject::fromVariantMap(it.value().toMap()));
+            m_cfg->setGameValue(name, "emuSettings", QString::fromUtf8(doc.toJson(QJsonDocument::Compact)));
+        } else if (!it.value().toString().isEmpty()) {
             m_cfg->setGameValue(name, it.key(), it.value().toString());
+        }
     }
     // Only auto-set prefixPath for Wine/Proton games (emulators don't need it)
     if (!isEmulator && m_cfg->gameValue(name, "prefixPath").isEmpty())
