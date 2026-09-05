@@ -727,7 +727,7 @@ CModal {
                 Connections {
                     target: plugins
                     function onRegistryReady(list) {
-                        // Filter out plugins already installed (match by id or fuzzy name)
+                        // Filter out plugins already installed
                         var installedIds = [];
                         var installedNames = [];
                         for (var i = 0; i < plugins.plugins.length; i++) {
@@ -740,10 +740,12 @@ CModal {
                         for (var j = 0; j < list.length; j++) {
                             var rname = (list[j].name || "").replace(/\s+v[\d.]+\s*$/i, "").trim().toLowerCase();
                             var rtag = (list[j].tag || "").toLowerCase();
-                            // Check if any installed id is contained in the tag or name
+                            var rasset = (list[j].assetName || "").toLowerCase();
+                            // Check against tag, name, or asset name
                             var found = false;
                             for (var k = 0; k < installedIds.length; k++) {
-                                if (rtag.indexOf(installedIds[k]) >= 0 || rname === installedNames[k]) {
+                                var id = installedIds[k];
+                                if (rtag.indexOf(id) >= 0 || rasset.indexOf(id) >= 0 || rname === installedNames[k]) {
                                     found = true;
                                     break;
                                 }
@@ -758,7 +760,6 @@ CModal {
                         if (ok) {
                             registryStatus.text = "Installed " + message;
                             plugins.refresh();
-                            plugins.fetchRegistry();
                         } else {
                             registryStatus.text = "Failed: " + message;
                         }
