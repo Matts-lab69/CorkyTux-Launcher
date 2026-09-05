@@ -426,6 +426,16 @@ void PluginManager::removeEmulator(const QString &name) {
 }
 
 QString PluginManager::emulatorPath(const QString &name) const {
+    // First check the emulators list (includes linked paths)
+    for (const QVariant &v : m_emulators) {
+        const QVariantMap m = v.toMap();
+        if (m.value("name").toString() == name) {
+            const QString p = m.value("path").toString();
+            if (!p.isEmpty() && QFileInfo::exists(p))
+                return p;
+        }
+    }
+    // Fallback: check AppImage directory
     const QString dir = pluginsDir() + "/" + kEmulatorManagerId + "/emulators";
     const QString path = dir + "/" + name + ".AppImage";
     if (QFileInfo::exists(path))
