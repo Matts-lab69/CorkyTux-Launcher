@@ -197,6 +197,8 @@ CModal {
                         if (!plugPath) { toastLabel.text = "Plugin path not found"; toastPopup.open(); return; }
                         depSection.parent.depMessage = "Scanning...";
                         depSection.parent.depScanResults = [];
+                        toastLabel.text = "DEBUG: " + plugPath + " scan " + g.mainPath;
+                        toastPopup.open();
                         integrations.runPlugin(plugPath, ["scan", g.mainPath]);
                     }
                 }
