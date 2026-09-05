@@ -340,7 +340,7 @@ void PluginManager::listEmulators() {
     }
     QtConcurrent::run([this, exe] {
         QProcess proc;
-        proc.start(exe, {"list"});
+        proc.start(exe, {"corky-list"});
         if (!proc.waitForFinished(30000) || proc.exitCode() != 0) {
             QMetaObject::invokeMethod(this, [this] {
                 m_emulators.clear();
@@ -373,7 +373,7 @@ void PluginManager::installEmulator(const QString &name) {
     }
     QtConcurrent::run([this, exe, name] {
         QProcess proc;
-        proc.start(exe, {"install", name});
+        proc.start(exe, {"corky-install", name});
         if (!proc.waitForFinished(300000) || proc.exitCode() != 0) {
             const QString err = QString(proc.readAllStandardError());
             QMetaObject::invokeMethod(this, [this, name, err] {
@@ -404,7 +404,7 @@ void PluginManager::removeEmulator(const QString &name) {
     }
     QtConcurrent::run([this, exe, name] {
         QProcess proc;
-        proc.start(exe, {"remove", name});
+        proc.start(exe, {"corky-remove", name});
         if (!proc.waitForFinished(30000) || proc.exitCode() != 0) {
             const QString err = QString(proc.readAllStandardError());
             QMetaObject::invokeMethod(this, [this, name, err] {
@@ -459,7 +459,7 @@ void PluginManager::registerGameWithEmulator(const QString &emulatorName, const 
         return;
     QtConcurrent::run([exe, emulatorName, gameDir] {
         QProcess proc;
-        proc.start(exe, {"register-game", emulatorName, gameDir});
+        proc.start(exe, {"corky-register-game", emulatorName, gameDir});
         proc.waitForFinished(30000);
     });
 }
