@@ -640,7 +640,7 @@ QStringList IntegrationManager::scanDirSync(const QString &dir) const {
             || dirname.compare("pfx", Qt::CaseInsensitive) == 0
             || dirname.endsWith(".prefix", Qt::CaseInsensitive))
             return;
-        for (const QString &f : d.entryList({"*.exe"}, QDir::Files))
+        for (const QString &f : d.entryList({"*.exe", "*.bat"}, QDir::Files))
             exes << d.filePath(f);
         for (const QString &pat : {"*.msi", "*.rar", "*.zip"}) {
             for (const QString &f : d.entryList({pat}, QDir::Files))
