@@ -25,6 +25,10 @@ Rectangle {
             source: banner ? ("file://" + banner) : ""
             fillMode: Image.PreserveAspectCrop
             smooth: true
+            asynchronous: true
+            sourceSize.width: 224
+            sourceSize.height: 140
+            cache: true
             Rectangle {
                 anchors.fill: parent
                 radius: 15
@@ -52,6 +56,9 @@ Rectangle {
                         source: icon ? ("file://" + icon) : ""
                         fillMode: Image.PreserveAspectFit
                         visible: status === Image.Ready
+                        asynchronous: true
+                        sourceSize.width: 64
+                        sourceSize.height: 64
                     }
                     Text {
                         text: root.name

@@ -39,28 +39,33 @@ QString ConfigManager::expectedHome() {
 }
 
 QString ConfigManager::configDir() {
-    QDir().mkpath(expectedHome() + "/.config/CorkyTux");
-    return expectedHome() + "/.config/CorkyTux";
+    static const QString d = expectedHome() + "/.config/CorkyTux";
+    QDir().mkpath(d);
+    return d;
 }
 
 QString ConfigManager::bannersDir() {
-    QDir().mkpath(configDir() + "/banners");
-    return configDir() + "/banners";
+    static const QString d = configDir() + "/banners";
+    QDir().mkpath(d);
+    return d;
 }
 
 QString ConfigManager::iconsDir() {
-    QDir().mkpath(configDir() + "/icons");
-    return configDir() + "/icons";
+    static const QString d = configDir() + "/icons";
+    QDir().mkpath(d);
+    return d;
 }
 
 QString ConfigManager::dataDir() {
-    QDir().mkpath(expectedHome() + "/.local/share/CorkyTux");
-    return expectedHome() + "/.local/share/CorkyTux";
+    static const QString d = expectedHome() + "/.local/share/CorkyTux";
+    QDir().mkpath(d);
+    return d;
 }
 
 QString ConfigManager::prefixesDir() {
-    QDir().mkpath(dataDir() + "/prefixes");
-    return dataDir() + "/prefixes";
+    static const QString d = dataDir() + "/prefixes";
+    QDir().mkpath(d);
+    return d;
 }
 
 ConfigManager::ConfigManager(QObject *parent) : QObject(parent) {

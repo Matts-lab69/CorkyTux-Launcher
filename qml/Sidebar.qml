@@ -132,6 +132,9 @@ Rectangle {
                         source: gameIcon ? ("file://" + gameIcon) : ""
                         fillMode: Image.PreserveAspectFit
                         visible: status === Image.Ready
+                        asynchronous: true
+                        sourceSize.width: 48
+                        sourceSize.height: 48
                     }
                     Text {
                         text: gameName

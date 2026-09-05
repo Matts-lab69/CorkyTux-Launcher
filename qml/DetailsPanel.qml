@@ -97,6 +97,9 @@ Rectangle {
                     source: game.banner ? ("file://" + game.banner) : ""
                     fillMode: Image.PreserveAspectFit
                     smooth: true
+                    asynchronous: true
+                    sourceSize.width: 460
+                    sourceSize.height: 215
                 }
             }
 
