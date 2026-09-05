@@ -12,6 +12,14 @@ CModal {
     property string gameName: ""
     property string tab: "view"
 
+    // Dependency Installer state
+    property var depScanResults: []
+    property string depMessage: ""
+    property string depMode: "scan"
+    property int depTotal: 0
+    property int depCompleted: 0
+    property bool depBusy: false
+
     function openFor(name) {
         gameName = name;
         loadFields();
@@ -149,13 +157,6 @@ CModal {
             }
 
             // ---- Dependency Installer (only if plugin installed) ----
-            property var depScanResults: []
-            property string depMessage: ""
-            property string depMode: "scan"  // "scan" or "install"
-            property int depTotal: 0
-            property int depCompleted: 0
-            property bool depBusy: false
-
             Column {
                 id: depSection
                 width: parent.width
@@ -201,32 +202,32 @@ CModal {
                     text: "Scan Game"
                     width: parent.width
                     height: 32
-                    enabled: !depSection.parent.depBusy
+                    enabled: !root.depBusy
                     onClicked: {
                         var g = games.getGame(root.gameName);
                         if (!g || !g.mainPath) {
-                            depSection.parent.depMessage = "No game directory found";
-                            depSection.parent.depScanResults = [];
+                            root.depMessage = "No game directory found";
+                            root.depScanResults = [];
                             return;
                         }
                         var plugPath = depSection.getPluginPath();
                         if (!plugPath) {
-                            depSection.parent.depMessage = "Plugin not found or not enabled";
-                            depSection.parent.depScanResults = [];
+                            root.depMessage = "Plugin not found or not enabled";
+                            root.depScanResults = [];
                             return;
                         }
-                        depSection.parent.depBusy = true;
-                        depSection.parent.depMode = "scan";
-                        depSection.parent.depMessage = "Scanning " + g.mainPath + "...";
-                        depSection.parent.depScanResults = [];
+                        root.depBusy = true;
+                        root.depMode = "scan";
+                        root.depMessage = "Scanning " + g.mainPath + "...";
+                        root.depScanResults = [];
                         var scanArgs = ["scan", g.mainPath];
                         if (g.prefixPath) scanArgs = scanArgs.concat(["--prefix", g.prefixPath]);
                         integrations.runPlugin(plugPath, scanArgs);
                     }
                 }
                 Text {
-                    text: depSection.parent.depMessage
-                    color: depSection.parent.depScanResults.length > 0 ? Theme.textSec : Theme.accent
+                    text: root.depMessage
+                    color: root.depScanResults.length > 0 ? Theme.textSec : Theme.accent
                     font.pixelSize: 12
                     wrapMode: Text.Wrap
                     width: parent.width
@@ -238,9 +239,9 @@ CModal {
                     height: 6
                     radius: 3
                     color: Theme.border
-                    visible: depSection.parent.depMode === "install" && depSection.parent.depTotal > 0
+                    visible: root.depMode === "install" && root.depTotal > 0
                     Rectangle {
-                        width: parent.width * (depSection.parent.depTotal > 0 ? depSection.parent.depCompleted / depSection.parent.depTotal : 0)
+                        width: parent.width * (root.depTotal > 0 ? root.depCompleted / root.depTotal : 0)
                         height: parent.height
                         radius: 3
                         color: Theme.accent
@@ -249,7 +250,7 @@ CModal {
                 }
                 Repeater {
                     id: depList
-                    model: depSection.parent.depScanResults
+                    model: root.depScanResults
                     delegate: Row {
                         property string depId: modelData.id || ""
                         property alias depCheck: checkBox
@@ -275,12 +276,12 @@ CModal {
                         CSwitch {
                             id: checkBox
                             width: 40
-                            visible: depStatus === "" && depSection.parent.depMode === "scan"
+                            visible: depStatus === "" && root.depMode === "scan"
                             Component.onCompleted: setSilent(false)
                         }
 
                         Column {
-                            width: parent.width - (depStatus !== "" || depSection.parent.depMode === "install" ? 26 : 50)
+                            width: parent.width - (depStatus !== "" || root.depMode === "install" ? 26 : 50)
                             Text {
                                 text: modelData.desc || modelData.id || "?"
                                 color: Theme.textMain
@@ -300,9 +301,9 @@ CModal {
                     text: "Install Selected"
                     width: parent.width
                     height: 32
-                    enabled: !depSection.parent.depBusy
+                    enabled: !root.depBusy
                     visible: {
-                        if (depSection.parent.depMode !== "scan") return false;
+                        if (root.depMode !== "scan") return false;
                         for (var i = 0; i < depList.count; i++) {
                             var item = depList.itemAt(i);
                             if (item && item.depStatus === "" && item.depCheck.visible) return true;
@@ -318,11 +319,11 @@ CModal {
                         }
                         if (deps.length === 0) return;
                         var plugPath = depSection.getPluginPath();
-                        if (!plugPath) { depSection.parent.depMessage = "Plugin not found"; return; }
+                        if (!plugPath) { root.depMessage = "Plugin not found"; return; }
                         var g = games.getGame(root.gameName);
-                        if (!g) { depSection.parent.depMessage = "Game not found"; return; }
+                        if (!g) { root.depMessage = "Game not found"; return; }
                         var prefix = g.prefixPath || "";
-                        if (!prefix) { depSection.parent.depMessage = "No prefix found"; return; }
+                        if (!prefix) { root.depMessage = "No prefix found"; return; }
                         var protonName = g.proton || "";
                         var protonFullPath = "";
                         if (protonName) {
@@ -337,12 +338,12 @@ CModal {
                         var installArgs = ["install", "--prefix", prefix];
                         if (protonFullPath) installArgs.push("--proton", protonFullPath);
                         installArgs = installArgs.concat(deps);
-                        depSection.parent.depBusy = true;
-                        depSection.parent.depMode = "install";
-                        depSection.parent.depTotal = deps.length;
-                        depSection.parent.depCompleted = 0;
-                        depSection.parent.depMessage = "Installing " + deps.length + " dependencies...";
-                        depSection.parent.depScanResults = [];
+                        root.depBusy = true;
+                        root.depMode = "install";
+                        root.depTotal = deps.length;
+                        root.depCompleted = 0;
+                        root.depMessage = "Installing " + deps.length + " dependencies...";
+                        root.depScanResults = [];
                         integrations.runPlugin(plugPath, installArgs);
                     }
                 }
@@ -353,7 +354,7 @@ CModal {
                 function onPluginProgress(progress) {
                     console.log("[DepInstaller] progress:", JSON.stringify(progress))
                     // Update or add item in the results list
-                    var results = depSection.parent.depScanResults.slice();
+                    var results = root.depScanResults.slice();
                     var found = false;
                     for (var i = 0; i < results.length; i++) {
                         if (results[i].id === progress.id) {
@@ -363,42 +364,42 @@ CModal {
                         }
                     }
                     if (!found) results.push(progress);
-                    depSection.parent.depScanResults = results;
-                    depSection.parent.depMessage = "Installing " + (depSection.parent.depCompleted + 1) + "/" + depSection.parent.depTotal + ": " + progress.desc + "...";
+                    root.depScanResults = results;
+                    root.depMessage = "Installing " + (root.depCompleted + 1) + "/" + root.depTotal + ": " + progress.desc + "...";
                     // Update progress counter
                     if (progress.status === "done" || progress.status === "error") {
-                        depSection.parent.depCompleted = depSection.parent.depCompleted + 1;
+                        root.depCompleted = root.depCompleted + 1;
                     }
                 }
                 function onPluginResult(result) {
                     console.log("[DepInstaller] result:", JSON.stringify(result))
-                    depSection.parent.depBusy = false;
+                    root.depBusy = false;
                     if (result && result.type === "done") {
                         var installed = result.installed || [];
                         var failed = result.failed || [];
-                        depSection.parent.depCompleted = depSection.parent.depTotal;
-                        depSection.parent.depMode = "scan";
+                        root.depCompleted = root.depTotal;
+                        root.depMode = "scan";
                         if (failed.length === 0) {
-                            depSection.parent.depMessage = "All " + installed.length + " dependencies installed successfully";
+                            root.depMessage = "All " + installed.length + " dependencies installed successfully";
                         } else {
-                            depSection.parent.depMessage = installed.length + " installed, " + failed.length + " failed";
+                            root.depMessage = installed.length + " installed, " + failed.length + " failed";
                         }
                         // Mark all results with final status
-                        var results = depSection.parent.depScanResults.slice();
+                        var results = root.depScanResults.slice();
                         for (var i = 0; i < results.length; i++) {
                             if (installed.indexOf(results[i].id) >= 0)
                                 results[i].status = "done";
                             else if (failed.indexOf(results[i].id) >= 0)
                                 results[i].status = "error";
                         }
-                        depSection.parent.depScanResults = results;
+                        root.depScanResults = results;
                     } else if (result && result.ok && result.deps) {
-                        depSection.parent.depScanResults = result.deps;
-                        depSection.parent.depMessage = result.deps.length > 0
+                        root.depScanResults = result.deps;
+                        root.depMessage = result.deps.length > 0
                             ? ""
                             : (result.message || "No dependencies needed");
                     } else {
-                        depSection.parent.depMessage = result ? (result.error || "Plugin failed") : "No response";
+                        root.depMessage = result ? (result.error || "Plugin failed") : "No response";
                     }
                 }
             }
