@@ -139,24 +139,23 @@ bool GameModel::addGame(const QString &name, const QVariantMap &fields) {
 bool GameModel::importExternalGame(const QString &name, const QVariantMap &fields) {
     if (name.trimmed().isEmpty())
         return false;
-    // If game exists, update with fresh data from scan (Steam re-scan, Lutris re-scan)
     if (m_cfg->hasGame(name)) {
+        const QString curSource = m_cfg->gameValue(name, "source");
+        const QString newSource = fields.value("source").toString();
+        // Never downgrade a Steam game to Lutris
+        if (curSource == "steam" && newSource == "lutris")
+            return false;
         bool updated = false;
-        // Update executor if it's now set
         const QString newExecutor = fields.value("executor").toString();
         if (!newExecutor.isEmpty() && m_cfg->gameValue(name, "executor").isEmpty()) {
             m_cfg->setGameValue(name, "executor", newExecutor);
             updated = true;
         }
-        // Update Steam-specific fields if game was re-scanned from Steam
-        const QString newSource = fields.value("source").toString();
         if (newSource == "steam") {
-            const QString curSource = m_cfg->gameValue(name, "source");
             if (curSource != "steam") {
                 m_cfg->setGameValue(name, "source", "steam");
                 updated = true;
             }
-            // Update executable, prefixPath, steamID from Steam scan
             for (const QString &key : {"executable", "prefixPath", "steamID", "mainPath"}) {
                 const QString newVal = fields.value(key).toString();
                 if (!newVal.isEmpty() && m_cfg->gameValue(name, key) != newVal) {
@@ -167,7 +166,7 @@ bool GameModel::importExternalGame(const QString &name, const QVariantMap &field
         }
         if (updated)
             loadFromDisk();
-        return false; // already existed
+        return false;
     }
     return addGame(name, fields);
 }

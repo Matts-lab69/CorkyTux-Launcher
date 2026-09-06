@@ -113,7 +113,6 @@ ApplicationWindow {
         }
         function onLutrisScanReady(scanGames) {
             var imported = 0;
-            // Map Lutris runner names (lowercase) to emulator-manager names
             var runnerMap = {
                 "mupen64plus": "Mupen64Plus",
                 "pcsx2": "PCSX2",
@@ -132,9 +131,11 @@ ApplicationWindow {
                 var g = scanGames[i];
                 if (!g.name || /^\d+$/.test(g.name))
                     continue;
-                // Detect emulator from runner name
+                // Skip games already in Steam library
+                var existing = games.getGame(g.name);
+                if (existing && existing.source === "steam")
+                    continue;
                 var executor = runnerMap[(g.runner || "").toLowerCase()] || "";
-                // Derive mainPath: use directory if it exists, otherwise parent of executable
                 var mainDir = g.directory || "";
                 var exePath = g.executable || "";
                 if (!mainDir && exePath)
@@ -152,23 +153,16 @@ ApplicationWindow {
                 };
                 if (executor)
                     fields["executor"] = executor;
-                var existingGame = games.importExternalGame(g.name, fields);
-                if (existingGame) {
-                    imported++;
-                } else {
-                    // Refresh paths and Lutris metadata for games imported before.
-                    games.addGame(g.name, fields);
-                }
-                // Always run scan plugins for icon/cover download (new and existing)
+                games.importExternalGame(g.name, fields);
+                imported++;
                 if (g.directory)
                     plugins.applyScanPlugins(g.name, g.directory);
-                // Resolve artwork (local Lutris, Lutris.net and SGDB) when either asset is missing.
                 var gData = games.getGame(g.name);
                 if (gData && ((!gData.banner || gData.banner === "")
                               || (!gData.icon || gData.icon === "")))
                     integrations.resolveArtwork(g.name, g.steamID || "");
             }
-            toastLabel.text = "Lutris scan: " + scanGames.length + " found, " + imported + " new.";
+            toastLabel.text = "Lutris scan: " + scanGames.length + " found, " + imported + " added.";
             toastPopup.open();
         }
         function onSteamScanReady(scanGames) {
