@@ -1,6 +1,7 @@
 #include "GameModel.h"
 #include "ConfigManager.h"
 #include "PluginManager.h"
+#include "ProtonManager.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -103,8 +104,12 @@ bool GameModel::addGame(const QString &name, const QVariantMap &fields) {
     m_batchUpdating = true;
     const QString executor = fields.value("executor").toString();
     const bool isEmulator = !executor.isEmpty();
-    const QString defProton =
-        m_cfg->launcherValue("defaultProton", "User Settings", "GE-Proton Latest");
+    // Detect installed proton instead of hardcoded "GE-Proton Latest"
+    QString defProton = m_cfg->launcherValue("defaultProton", "User Settings");
+    if (defProton.isEmpty() || defProton == "GE-Proton Latest") {
+        const QStringList installed = ProtonManager::instance()->installedProtons();
+        defProton = installed.isEmpty() ? "GE-Proton Latest" : installed.last();
+    }
     if (!m_cfg->hasGame(name)) {
         if (!isEmulator)
             m_cfg->setGameValue(name, "proton", defProton);
@@ -134,14 +139,35 @@ bool GameModel::addGame(const QString &name, const QVariantMap &fields) {
 bool GameModel::importExternalGame(const QString &name, const QVariantMap &fields) {
     if (name.trimmed().isEmpty())
         return false;
-    // If game exists, update executor if it's now set (Lutris re-scan)
+    // If game exists, update with fresh data from scan (Steam re-scan, Lutris re-scan)
     if (m_cfg->hasGame(name)) {
+        bool updated = false;
+        // Update executor if it's now set
         const QString newExecutor = fields.value("executor").toString();
         if (!newExecutor.isEmpty() && m_cfg->gameValue(name, "executor").isEmpty()) {
             m_cfg->setGameValue(name, "executor", newExecutor);
-            loadFromDisk();
+            updated = true;
         }
-        return false; // already exists, skip full import
+        // Update Steam-specific fields if game was re-scanned from Steam
+        const QString newSource = fields.value("source").toString();
+        if (newSource == "steam") {
+            const QString curSource = m_cfg->gameValue(name, "source");
+            if (curSource != "steam") {
+                m_cfg->setGameValue(name, "source", "steam");
+                updated = true;
+            }
+            // Update executable, prefixPath, steamID from Steam scan
+            for (const QString &key : {"executable", "prefixPath", "steamID", "mainPath"}) {
+                const QString newVal = fields.value(key).toString();
+                if (!newVal.isEmpty() && m_cfg->gameValue(name, key) != newVal) {
+                    m_cfg->setGameValue(name, key, newVal);
+                    updated = true;
+                }
+            }
+        }
+        if (updated)
+            loadFromDisk();
+        return false; // already existed
     }
     return addGame(name, fields);
 }

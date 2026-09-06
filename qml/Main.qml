@@ -177,19 +177,19 @@ ApplicationWindow {
                 var g = scanGames[i];
                 if (!g.name || /^\d+$/.test(g.name))
                     continue;
-                if (games.importExternalGame(g.name, {
+                games.importExternalGame(g.name, {
                         "mainPath": g.libraryPath,
                         "executable": g.executable || "",
                         "prefixPath": g.prefixPath || "",
                         "steamID": g.appId,
                         "source": "steam"
-                    })) {
-                    imported++;
-                    if (g.libraryPath)
-                        integrations.resolveArtwork(g.name, g.appId);
-                }
+                    });
+                imported++;
+                // Resolve artwork for all Steam games (new and existing)
+                if (g.libraryPath)
+                    integrations.resolveArtwork(g.name, g.appId);
             }
-            toastLabel.text = "Steam scan: " + scanGames.length + " found, " + imported + " new.";
+            toastLabel.text = "Steam scan: " + scanGames.length + " found, " + imported + " games updated.";
             toastPopup.open();
         }
     }

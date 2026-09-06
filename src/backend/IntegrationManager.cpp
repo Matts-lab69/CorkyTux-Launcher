@@ -137,13 +137,25 @@ QVariantMap IntegrationManager::parseAcf(const QString &acfPath, const QString &
         name = installDir.isEmpty() ? ("Steam " + appId) : installDir;
     const QString libPath =
         installDir.isEmpty() ? QString() : steamapps + "/common/" + installDir;
-    // Find main executable: scan for .exe files, pick largest
+    // Find main executable: prefer game name match, fallback to largest
     QString executable;
     if (!libPath.isEmpty() && QDir(libPath).exists()) {
+        // Priority 1: exe matching the game name or install dir
+        const QString lowerName = name.toLower();
+        const QString lowerDir = installDir.toLower().replace(" ", "");
         qint64 bestSize = -1;
         QDirIterator it(libPath, {"*.exe"}, QDir::Files, QDirIterator::Subdirectories);
         while (it.hasNext()) {
             it.next();
+            const QString bn = it.fileInfo().fileName().toLower();
+            // Skip crash handlers and common non-game exes
+            if (bn.contains("crashhandler") || bn.contains("unins") || bn.contains("setup"))
+                continue;
+            // Prefer exe matching game name
+            if (bn.contains(lowerName) || bn.contains(lowerDir)) {
+                executable = it.filePath();
+                break;
+            }
             if (it.fileInfo().size() > bestSize) {
                 bestSize = it.fileInfo().size();
                 executable = it.filePath();
