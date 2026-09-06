@@ -2,6 +2,7 @@
 #include "ConfigManager.h"
 #include "PluginManager.h"
 
+#include <algorithm>
 #include <QDir>
 #include <QDirIterator>
 #include <QDateTime>
@@ -195,15 +196,21 @@ QString ProtonManager::findSteamRuntime(const QString &protonName) const {
     // Runtime lives under the Steam client that owns the compat tools
     for (const QString &root :
          {ConfigManager::expectedHome() + "/.local/share/Steam",
-          ConfigManager::expectedHome() + "/.steam/steam"}) {
+          ConfigManager::expectedHome() + "/.steam/steam",
+          ConfigManager::expectedHome() + "/.var/app/com.valvesoftware.Steam/data/Steam",
+          ConfigManager::expectedHome() + "/.var/app/com.valvesoftware.Steam/.steam/steam"}) {
         const QString rt = root + "/ubuntu12_32/steam-runtime/run.sh";
-        Q_UNUSED(appId);
-        Q_UNUSED(dirname);
         if (QFile::exists(rt))
             return rt;
+        const QString rt64 = root + "/ubuntu12_64/steam-runtime/run.sh";
+        if (QFile::exists(rt64))
+            return rt64;
         const QString alt = root + "/compatibilitytools.d/" + dirname + "/run.sh";
         if (QFile::exists(alt))
             return alt;
+        const QString alt2 = root + "/steamapps/compatibilitytools.d/" + dirname + "/run.sh";
+        if (QFile::exists(alt2))
+            return alt2;
     }
     return {};
 }
@@ -515,8 +522,22 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     // Resolve Proton executable
     QString program = protonExecutable(protonName, "proton");
     if (program.isEmpty()) {
+        // Try installed protons sorted by version (newest first)
         const QStringList all = installedProtons();
-        program = all.isEmpty() ? QString() : protonExecutable(all.last(), "proton");
+        QStringList sorted = all;
+        std::sort(sorted.begin(), sorted.end(), [](const QString &a, const QString &b) {
+            // Extract last number for version comparison (e.g. GE-Proton9-20 → 20)
+            const QRegularExpression re("(\\d+)(?:\\D*)$");
+            const auto ma = re.match(a), mb = re.match(b);
+            const int va = ma.hasMatch() ? ma.captured(1).toInt() : 0;
+            const int vb = mb.hasMatch() ? mb.captured(1).toInt() : 0;
+            return va > vb;
+        });
+        for (const QString &p : sorted) {
+            program = protonExecutable(p, "proton");
+            if (!program.isEmpty())
+                break;
+        }
     }
 
     // Use umu-launcher if enabled and available
@@ -591,7 +612,7 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     }
 }
 
-void ProtonManager::onGameFinished(int exitCode, QProcess::ExitStatus) {
+void ProtonManager::onGameFinished(int exitCode, QProcess::ExitStatus status) {
     const QString game = m_currentGame;
     // Accumulate playtime (mirrors Java updateTimeSpent flow)
     if (!game.isEmpty() && m_startEpoch > 0) {
@@ -603,6 +624,9 @@ void ProtonManager::onGameFinished(int exitCode, QProcess::ExitStatus) {
         }
     }
     m_startEpoch = 0;
+    // Report crashes/errors so the user knows why the game stopped
+    if (!game.isEmpty() && (exitCode != 0 || status == QProcess::CrashExit))
+        emit toast(game + " exited with code " + QString::number(exitCode));
     if (m_proc) {
         m_proc->deleteLater();
         m_proc = nullptr;
@@ -659,6 +683,16 @@ void ProtonManager::stopGame() {
     const QString game = m_currentGame;
     const QString prefix = prefixPath(game);
     if (m_proc) {
+        // Accumulate playtime before stopping
+        if (m_startEpoch > 0) {
+            const qint64 elapsed = QDateTime::currentSecsSinceEpoch() - m_startEpoch;
+            if (elapsed > 0) {
+                ConfigManager *cfg = ConfigManager::instance();
+                const qint64 prev = cfg->gameValue(game, "timeSpent", "0").toLongLong();
+                cfg->setGameValue(game, "timeSpent", QString::number(prev + elapsed));
+            }
+        }
+        m_startEpoch = 0;
         // Try wineserver -k with WINEPREFIX to only kill this prefix's processes
         const QString prog = m_proc->program();
         const QString protonDir = prog.left(prog.lastIndexOf('/'));
@@ -687,6 +721,7 @@ void ProtonManager::stopGame() {
     m_currentGame.clear();
     emit runningChanged();
     emit currentGameChanged();
+    emit gameFinished(game, 0);
 }
 
 void ProtonManager::fetchReleases() {
