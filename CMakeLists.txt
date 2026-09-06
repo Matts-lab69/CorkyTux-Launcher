@@ -45,6 +45,7 @@ qt_add_qml_module(corkytux
         qml/RemoveModal.qml
         qml/LogModal.qml
         qml/ProtonModal.qml
+        qml/PrefixWarningModal.qml
         qml/components/CButton.qml
         qml/components/CCard.qml
         qml/components/CComboBox.qml
