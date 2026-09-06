@@ -30,3 +30,4 @@ push-commands.txt
 # Release artifacts
 release/*.tar.gz
 release/*.AppImage
+corkytux-*.tar.gz
