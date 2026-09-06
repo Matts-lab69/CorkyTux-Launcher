@@ -230,9 +230,13 @@ QString ProtonManager::ensurePrefixPath(const QString &gameName) {
     const QString p = prefixPath(gameName);
     if (p.isEmpty())
         return {};
-    if (!QDir().mkpath(p))
+    // Ensure path ends with /pfx — proton expects WINEPREFIX to be the pfx dir
+    QString pp = p;
+    if (!pp.endsWith("/pfx"))
+        pp += "/pfx";
+    if (!QDir().mkpath(pp))
         return {};
-    return p;
+    return pp;
 }
 
 void ProtonManager::runGame(const QString &gameName) {
@@ -683,7 +687,7 @@ void ProtonManager::stopGame() {
     if (!m_running)
         return;
     const QString game = m_currentGame;
-    const QString prefix = prefixPath(game);
+    const QString prefix = ensurePrefixPath(game);
     if (m_proc) {
         // Accumulate playtime before stopping
         if (m_startEpoch > 0) {
