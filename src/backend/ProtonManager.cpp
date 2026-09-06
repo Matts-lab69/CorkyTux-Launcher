@@ -391,11 +391,11 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     if (wined3d.isEmpty())
         wined3d = cfg->launcherValue("gamesUsesWined3d", "User Settings");
     const bool useWined3d = truthy(wined3d);
-    QString dxOverrides;
-    if (!useWined3d)
-        dxOverrides = "d3d11=n;d3d10=n;d3d10core=n;dxgi=n;openvr_api_dxvk=n;d3d12=n;d3d12core=n;d3d9=n;d3d8=n;";
+    // Proton already bundles DXVK — don't override its DLLs.
+    // Only set overrides for custom user DLL overrides.
     QString overrides = cfg->gameValue(gameName, "overrides");
-    env.insert("WINEDLLOVERRIDES", dxOverrides + overrides);
+    if (!overrides.isEmpty())
+        env.insert("WINEDLLOVERRIDES", overrides);
     env.insert("WINEDEBUG", debug ? "1" : "-all");
     env.insert("WINEPREFIX", prefix);
     // Proton script appends "/pfx/" to STEAM_COMPAT_DATA_PATH internally.
