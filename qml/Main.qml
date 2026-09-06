@@ -52,10 +52,12 @@ ApplicationWindow {
         target: proton
         function onRunningChanged() {
             details.gameRunning = proton.running && proton.currentGame === root.currentGameName;
-            logModal.gameRunning = proton.running;
         }
         function onGameLogOutput(text) {
             logModal.logText += text;
+        }
+        function onGameFinished(game, exitCode) {
+            logModal.gameRunning = false;
         }
         function onToast(msg) { toastLabel.text = msg; toastPopup.open(); }
         function onFolderSizeReady(path, bytes) {
