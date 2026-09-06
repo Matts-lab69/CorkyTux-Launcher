@@ -406,6 +406,8 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     env.insert("STEAM_COMPAT_DATA_PATH", compatDataPath);
     env.insert("STEAM_COMPAT_CLIENT_INSTALL_PATH", steamClientPath());
     env.insert("STEAM_COMPAT_INSTALL_PATH", cfg->gameValue(gameName, "mainPath"));
+    // Enable DXVK d3d8 — CachyOS Proton only provides DXVK d3d8 when set in compat_config
+    env.insert("STEAM_COMPAT_CONFIG", "dxvkd3d8");
     // LIBRARY_PATHS = .../steamapps (where the "common" folder lives)
     const QString mainPath = cfg->gameValue(gameName, "mainPath");
     QString steamappsDir;
