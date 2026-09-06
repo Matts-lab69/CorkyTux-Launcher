@@ -64,3 +64,14 @@ qt_add_resources(corkytux "corkytux_assets"
 )
 
 install(TARGETS corkytux RUNTIME DESTINATION bin)
+
+# Desktop entry + icon (so cmake --install puts CorkyTux in the app menu)
+install(FILES release/corkytux.png
+        DESTINATION share/icons
+        RENAME corkytux.png)
+
+configure_file(release/corkytux.desktop.in
+               ${CMAKE_CURRENT_BINARY_DIR}/corkytux.desktop
+               @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/corkytux.desktop
+        DESTINATION share/applications)

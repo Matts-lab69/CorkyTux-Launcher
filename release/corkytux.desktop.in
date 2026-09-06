@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Name=CorkyTux
+Comment=Native Linux game launcher
+Exec=@CMAKE_INSTALL_PREFIX@/bin/corkytux
+Icon=corkytux
+Terminal=false
+Type=Application
+Categories=Game;
+StartupWMClass=corkytux
