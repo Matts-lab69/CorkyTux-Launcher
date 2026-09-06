@@ -12,9 +12,13 @@ CModal {
     signal openProton
     property string page: "visuals"
     readonly property int tabCount: 7
+    property var gameModeStatus: ({"available": false, "installed32": false, "installed64": false})
+    property var mangoHudStatus: ({"available": false, "installed32": false, "installed64": false})
 
     function setPage(p) {
         root.page = p;
+        root.gameModeStatus = proton.graphicsComponentStatus("gamemode");
+        root.mangoHudStatus = proton.graphicsComponentStatus("mangohud");
         if (p === "integrations")
             integrationsPage.refresh();
         if (p === "protons")
@@ -36,9 +40,15 @@ CModal {
             clip: true
             contentWidth: width
             contentHeight: pagesCol.height
+            ScrollBar.vertical: ScrollBar {
+                policy: ScrollBar.AsNeeded
+                visible: root.page !== "misc" && root.page !== "integrations" && root.page !== "about"
+                contentItem: Rectangle { implicitWidth: 3; radius: 2; color: Theme.accent }
+                background: Rectangle { implicitWidth: 3; color: "transparent" }
+            }
             Column {
                 id: pagesCol
-                width: parent.width
+                width: parent.width - 8
 
             // VISUALS
             Column {
@@ -55,7 +65,11 @@ CModal {
                     horizontalAlignment: Text.AlignHCenter
                     width: parent.width
                 }
-                Row {
+                    CCard {
+                    width: parent.width
+                    outlineColor: Theme.border
+                    outlineWidth: 1
+                    Row {
                     spacing: 8
                     anchors.horizontalCenter: parent.horizontalCenter
                     Button {
@@ -114,6 +128,7 @@ CModal {
                         }
                         onClicked: Theme.theme = "light"
                     }
+                    }
                 }
                 Text { text: "Theme Colors"; color: Theme.textMain; font.bold: true; font.pixelSize: 18
                 horizontalAlignment: Text.AlignHCenter
@@ -122,35 +137,42 @@ CModal {
                     text: "Choose an accent color for buttons, switches, and highlights"
                     color: Theme.textSec
                     font.pixelSize: 11
-                }
-                Flow {
+                    horizontalAlignment: Text.AlignHCenter
                     width: parent.width
-                    spacing: 8
-                    Repeater {
-                        model: Theme.accentIds()
-                        Button {
-                            required property string modelData
-                            text: Theme.accentInfo(modelData).name
-                            width: 100
-                            height: 34
-                            checkable: true
-                            checked: Theme.accentId === modelData
-                            autoExclusive: true
-                            background: Rectangle {
-                                radius: 8
-                                color: Theme.accentInfo(modelData).primary
-                                border.color: Theme.isLight ? "#000000" : "#FFFFFF"
-                                border.width: parent.checked ? 3 : 0
+                }
+                CCard {
+                    width: parent.width
+                    outlineColor: Theme.border
+                    outlineWidth: 1
+                    Flow {
+                        width: parent.width
+                        spacing: 8
+                        Repeater {
+                            model: Theme.accentIds()
+                            Button {
+                                required property string modelData
+                                text: Theme.accentInfo(modelData).name
+                                width: 100
+                                height: 34
+                                checkable: true
+                                checked: Theme.accentId === modelData
+                                autoExclusive: true
+                                background: Rectangle {
+                                    radius: 8
+                                    color: Theme.accentInfo(modelData).primary
+                                    border.color: Theme.isLight ? "#000000" : "#FFFFFF"
+                                    border.width: parent.checked ? 3 : 0
+                                }
+                                contentItem: Text {
+                                    text: parent.text
+                                    color: "#FFFFFF"
+                                    font.bold: true
+                                    font.pixelSize: 12
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                                onClicked: Theme.accentId = modelData
                             }
-                            contentItem: Text {
-                                text: parent.text
-                                color: "#FFFFFF"
-                                font.bold: true
-                                font.pixelSize: 12
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            onClicked: Theme.accentId = modelData
                         }
                     }
                 }
@@ -219,6 +241,7 @@ CModal {
                     CComboBox {
                         id: defaultProtonBox
                         width: 260
+                        height: 28
                         model: protonsPage.defaultProtonModel
                         Component.onCompleted: currentIndex = Math.max(0, find(config.launcherValue("defaultProton", "User Settings")))
                         onActivated: config.setLauncherValue("defaultProton", currentText, "User Settings")
@@ -271,6 +294,7 @@ CModal {
                     CComboBox {
                         id: protonPathBox
                         width: 400
+                        height: 28
                         model: ["All paths"].concat(config.allProtonPaths())
                         onActivated: {
                             protonsPage.pathFilter = currentIndex <= 0 ? "" : currentText;
@@ -286,12 +310,15 @@ CModal {
                     visible: count > 0
                     clip: true
                     spacing: 4
+                    ScrollBar.vertical: ScrollBar {
+                        policy: ScrollBar.AlwaysOff
+                    }
                     model: protonsPage.installedDetails.filter(function(d) {
                         return protonsPage.pathFilter === "" || d.path === protonsPage.pathFilter;
                     })
                     delegate: Rectangle {
                         required property var modelData
-                        width: parent ? parent.width : 0
+                        width: parent ? parent.width - 8 : 0
                         height: 36
                         radius: 8
                         color: Theme.well
@@ -338,6 +365,9 @@ CModal {
                     visible: count > 0
                     clip: true
                     spacing: 4
+                    ScrollBar.vertical: ScrollBar {
+                        policy: ScrollBar.AlwaysOff
+                    }
                     model: protonsPage.releases.filter(function(r) {
                         if (protonsPage.filter === "cachy") return r.source === "cachy";
                         if (protonsPage.filter === "ge") return r.source === "ge";
@@ -345,7 +375,7 @@ CModal {
                     })
                     delegate: Rectangle {
                         required property var modelData
-                        width: protonAvailList.width
+                        width: protonAvailList.width - 8
                         height: 40
                         radius: 8
                         color: Theme.well
@@ -413,6 +443,8 @@ CModal {
                 }
                 CCard {
                     width: parent.width
+                    outlineColor: Theme.border
+                    outlineWidth: 1
                     CSwitch {
                     objectName: "Use wined3d instead of DXVK"
                     Component.onCompleted: setSilent(config.launcherValue("gamesUsesWined3d", "User Settings") === "1")
@@ -427,6 +459,34 @@ CModal {
                     objectName: "Use umu-launcher (unified Proton runner)"
                     Component.onCompleted: setSilent(proton.useUmu)
                     onToggled: proton.useUmu = checked
+                }
+                CSwitch {
+                    objectName: "Use GameMode for new games"
+                    enabled: root.gameModeStatus.available === true
+                    Component.onCompleted: setSilent(config.launcherValue("gamesUsesGameMode", "User Settings") === "1")
+                    onToggled: config.setLauncherValue("gamesUsesGameMode", checked ? "1" : "0", "User Settings")
+                }
+                Text {
+                    text: "GameMode: " + (root.gameModeStatus.available === true ? "32-bit and 64-bit ready"
+                        : root.gameModeStatus.installed32 === true ? "32-bit installed; 64-bit missing"
+                        : root.gameModeStatus.installed64 === true ? "64-bit installed; 32-bit missing"
+                        : "not installed")
+                    color: Theme.textSec
+                    font.pixelSize: 11
+                }
+                CSwitch {
+                    objectName: "Use MangoHud for new games"
+                    enabled: root.mangoHudStatus.available === true
+                    Component.onCompleted: setSilent(config.launcherValue("gamesUsesMangoHud", "User Settings") === "1")
+                    onToggled: config.setLauncherValue("gamesUsesMangoHud", checked ? "1" : "0", "User Settings")
+                }
+                Text {
+                    text: "MangoHud: " + (root.mangoHudStatus.available === true ? "32-bit and 64-bit ready"
+                        : root.mangoHudStatus.installed32 === true ? "32-bit installed; 64-bit missing"
+                        : root.mangoHudStatus.installed64 === true ? "64-bit installed; 32-bit missing"
+                        : "not installed")
+                    color: Theme.textSec
+                    font.pixelSize: 11
                 }
                 }
             }
@@ -473,6 +533,8 @@ CModal {
                     CCard {
                         required property var modelData
                         width: parent.width
+                        outlineColor: Theme.border
+                        outlineWidth: 1
                         // ---- Regular plugin (switch + delete) ----
                         Column {
                             width: parent.width
@@ -600,7 +662,8 @@ CModal {
                                         }
                                         Text {
                                             width: parent.width - 140
-                                            text: modelData.name + " — " + modelData.description
+                                            text: modelData.name + (modelData.native ? " (native)" : "")
+                                                + " — " + modelData.description
                                             color: Theme.textMain
                                             font.pixelSize: 12
                                             elide: Text.ElideRight
@@ -615,14 +678,14 @@ CModal {
                                             visible: (pluginsPage.emuInstalling[modelData.name] || "") !== ""
                                         }
                                         CButton {
-                                            text: modelData.installed ? "Remove" : "Install"
+                                            text: modelData.native ? "Linked" : (modelData.installed ? "Remove" : "Install")
                                             width: 70
                                             height: 26
                                             kind: modelData.installed ? "outline" : "filled"
-                                            enabled: !(pluginsPage.emuInstalling[modelData.name] || "")
+                                            enabled: !modelData.native && !(pluginsPage.emuInstalling[modelData.name] || "")
                                             anchors.verticalCenter: parent.verticalCenter
                                             onClicked: {
-                                                if (modelData.installed) {
+                                                if (modelData.installed && !modelData.native) {
                                                     plugins.removeEmulator(modelData.name);
                                                 } else {
                                                     pluginsPage.emuInstalling[modelData.name] = "Installing…";
@@ -681,6 +744,8 @@ CModal {
                         required property var modelData
                         required property int index
                         width: parent.width
+                        outlineColor: Theme.border
+                        outlineWidth: 1
                         Row {
                             width: parent.width
                             spacing: 8
@@ -799,8 +864,6 @@ CModal {
                     width: parent.width
                     spacing: 10
                     function refresh() {
-                        protondbToggle.setSilent(integrations.isEnabled("protondb"));
-                        igdbToggle.setSilent(integrations.isEnabled("igdb"));
                     }
                     Text { text: "Integrations"; color: Theme.textMain; font.bold: true; font.pixelSize: 18
                 horizontalAlignment: Text.AlignHCenter
@@ -815,6 +878,8 @@ CModal {
                     // Steam
                     CCard {
                         width: parent.width
+                        outlineColor: Theme.border
+                        outlineWidth: 1
                         Row {
                             width: parent.width
                             Text {
@@ -842,6 +907,8 @@ CModal {
                     // Lutris
                     CCard {
                         width: parent.width
+                        outlineColor: Theme.border
+                        outlineWidth: 1
                         Row {
                             width: parent.width
                             Text {
@@ -864,61 +931,6 @@ CModal {
                             font.pixelSize: 11
                             wrapMode: Text.Wrap
                             width: parent.width
-                        }
-                    }
-                    // ProtonDB toggle
-                    CCard {
-                        width: parent.width
-                        Row {
-                            width: parent.width
-                            spacing: 8
-                            Text {
-                                text: "ProtonDB – compatibility ratings (public API, no key)"
-                                color: Theme.textMain
-                                font.pixelSize: 12
-                                width: parent.width - 60
-                                wrapMode: Text.Wrap
-                            }
-                            CSwitch {
-                                id: protondbToggle
-                                objectName: ""
-                                width: 52
-                                onToggled: integrations.setEnabled("protondb", checked)
-                            }
-                        }
-                    }
-                    // IGDB key
-                    CCard {
-                        width: parent.width
-                        Row {
-                            width: parent.width
-                            Text {
-                                text: "IGDB"
-                                color: Theme.textMain
-                                font.bold: true
-                                font.pixelSize: 13
-                                width: parent.width - 60
-                            }
-                            CSwitch {
-                                id: igdbToggle
-                                objectName: ""
-                                width: 52
-                                onToggled: integrations.setEnabled("igdb", checked)
-                            }
-                        }
-                        Text {
-                            text: "Game info & ratings – needs Twitch ClientID:ClientSecret"
-                            color: Theme.textSec
-                            font.pixelSize: 11
-                            wrapMode: Text.Wrap
-                            width: parent.width
-                        }
-                        CTextField {
-                            id: igdbField
-                            width: parent.width
-                            placeholderText: "ClientID:Secret"
-                            Component.onCompleted: text = integrations.apiKey("igdb")
-                            onEditingFinished: integrations.setApiKey("igdb", text.trim())
                         }
                     }
                 }

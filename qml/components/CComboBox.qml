@@ -34,11 +34,15 @@ ComboBox {
             implicitHeight: contentHeight
             model: root.popup.visible ? root.delegateModel : null
             currentIndex: root.highlightedIndex
-            ScrollIndicator.vertical: ScrollIndicator {}
+            ScrollBar.vertical: ScrollBar {
+                policy: ScrollBar.AsNeeded
+                contentItem: Rectangle { implicitWidth: 3; radius: 2; color: Theme.accent }
+                background: Rectangle { implicitWidth: 3; color: "transparent" }
+            }
         }
     }
     delegate: ItemDelegate {
-        width: root.width
+        width: root.width - 8
         contentItem: Text {
             text: modelData
             color: Theme.textMain

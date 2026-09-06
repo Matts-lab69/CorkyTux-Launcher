@@ -5,36 +5,53 @@ INSTALL_DIR="${HOME}/.local/share/corkytux"
 DATA_DIR="${HOME}/.local/share/CorkyTux"
 CONFIG_DIR="${HOME}/.config/CorkyTux"
 BIN_DIR="${HOME}/.local/bin"
+ICON_DIR="${HOME}/.local/share/icons"
+DESKTOP_DIR="${HOME}/.local/share/applications"
 
-echo "=== CorkyTux — Uninstaller ==="
+echo ""
+echo "=== CorkyTux Uninstaller ==="
 echo ""
 
-# Remove install dir
+removed=0
+
 if [[ -d "$INSTALL_DIR" ]]; then
   rm -rf "$INSTALL_DIR"
   echo "  Removed ${INSTALL_DIR}"
+  ((removed++))
 fi
 
-# Remove data (protons, prefixes, etc.)
 if [[ -d "$DATA_DIR" ]]; then
-  rm -rf "$DATA_DIR"
-  echo "  Removed ${DATA_DIR}"
+  echo -n "  Remove game data (${DATA_DIR})? [y/N]: "
+  read -r ans
+  if [[ "$ans" =~ ^[Yy]$ ]]; then
+    rm -rf "$DATA_DIR"
+    echo "  Removed game data"
+    ((removed++))
+  else
+    echo "  Skipped game data"
+  fi
 fi
 
-# Remove config
 if [[ -d "$CONFIG_DIR" ]]; then
-  rm -rf "$CONFIG_DIR"
-  echo "  Removed ${CONFIG_DIR}"
+  echo -n "  Remove config (${CONFIG_DIR})? [y/N]: "
+  read -r ans
+  if [[ "$ans" =~ ^[Yy]$ ]]; then
+    rm -rf "$CONFIG_DIR"
+    echo "  Removed config"
+    ((removed++))
+  else
+    echo "  Skipped config"
+  fi
 fi
 
-# Remove symlink
-rm -f "${BIN_DIR}/corkytux" 2>/dev/null
-
-# Remove desktop entry
-rm -f "${HOME}/.local/share/applications/corkytux.desktop" 2>/dev/null
-
-# Remove icon
-rm -f "${HOME}/.local/share/icons/corkytux.png" 2>/dev/null
+rm -f "${BIN_DIR}/corkytux" 2>/dev/null && echo "  Removed symlink" && ((removed++))
+rm -f "${DESKTOP_DIR}/corkytux.desktop" 2>/dev/null && echo "  Removed desktop entry" && ((removed++))
+rm -f "${ICON_DIR}/corkytux.png" 2>/dev/null && echo "  Removed icon" && ((removed++))
 
 echo ""
-echo "=== Completely uninstalled ==="
+if [[ $removed -gt 0 ]]; then
+  echo "=== CorkyTux uninstalled ==="
+else
+  echo "=== Nothing to remove ==="
+fi
+echo ""

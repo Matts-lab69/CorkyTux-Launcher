@@ -42,8 +42,10 @@ ApplicationWindow {
     }
     function refreshAll() {
         recent.refresh(games);
-        if (root.currentGameName !== "")
+        if (root.currentGameName !== "") {
             root.currentGame = games.getGame(root.currentGameName);
+            details.game = root.currentGame;
+        }
     }
 
     Connections {
@@ -140,6 +142,7 @@ ApplicationWindow {
                 else if (mainDir && !integrations.pathExists(mainDir) && exePath)
                     mainDir = exePath.substring(0, exePath.lastIndexOf("/"));
                 var fields = {
+                    "lutrisSlug": g.slug || "",
                     "lutrisRunner": g.runner,
                     "mainPath": mainDir,
                     "executable": exePath || mainDir,
@@ -152,13 +155,17 @@ ApplicationWindow {
                 var existingGame = games.importExternalGame(g.name, fields);
                 if (existingGame) {
                     imported++;
+                } else {
+                    // Refresh paths and Lutris metadata for games imported before.
+                    games.addGame(g.name, fields);
                 }
                 // Always run scan plugins for icon/cover download (new and existing)
                 if (g.directory)
                     plugins.applyScanPlugins(g.name, g.directory);
-                // Resolve artwork (SGDB/Lutris) for games missing banners
+                // Resolve artwork (local Lutris, Lutris.net and SGDB) when either asset is missing.
                 var gData = games.getGame(g.name);
-                if (gData && (!gData.banner || gData.banner === ""))
+                if (gData && ((!gData.banner || gData.banner === "")
+                              || (!gData.icon || gData.icon === "")))
                     integrations.resolveArtwork(g.name, g.steamID || "");
             }
             toastLabel.text = "Lutris scan: " + scanGames.length + " found, " + imported + " new.";
@@ -255,41 +262,59 @@ ApplicationWindow {
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: 24
                     spacing: 24
-                    Column {
+                    Rectangle {
+                        id: recentFrame
                         width: parent.width
-                        spacing: 12
-                        Text {
-                            text: "RECENTLY PLAYED"
-                            color: Theme.textMain
-                            font.bold: true
-                            font.pixelSize: 24
-                            horizontalAlignment: Text.AlignHCenter
-                            width: parent.width
-                        }
-                        Rectangle {
-                            width: parent.width
-                            height: 1
-                            color: Theme.border
-                        }
-                        Text {
-                            text: recent.count > 0 ? "" : "Play a game and it will show up here"
-                            color: Theme.textSec
-                            font.pixelSize: 12
-                            horizontalAlignment: Text.AlignHCenter
-                            width: parent.width
-                            visible: recent.count === 0
-                        }
-                        Flow {
-                            id: recentFlow
-                            width: parent.width
-                            spacing: 16
-                            Repeater {
-                                model: recent
-                                GameCard {
-                                    name: model.name || ""
-                                    banner: model.banner || ""
-                                    icon: model.icon || ""
-                                    onClicked: root.openGame(model.name)
+                        height: Math.max(360, root.height - root.topBarHeight - 48)
+                        radius: 10
+                        color: "transparent"
+                        border.color: Theme.accent
+                        border.width: 1
+                        Column {
+                            id: recentContent
+                            anchors.top: parent.top
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.topMargin: 14
+                            width: parent.width - 28
+                            spacing: 12
+                            Text {
+                                text: "RECENTLY PLAYED"
+                                color: Theme.textMain
+                                font.bold: true
+                                font.pixelSize: 24
+                                horizontalAlignment: Text.AlignHCenter
+                                width: parent.width
+                            }
+                            Rectangle {
+                                width: parent.width
+                                height: 1
+                                color: Theme.border
+                            }
+                            Text {
+                                text: recent.count > 0 ? "" : "Play a game and it will show up here"
+                                color: Theme.textSec
+                                font.pixelSize: 12
+                                horizontalAlignment: Text.AlignHCenter
+                                width: parent.width
+                                visible: recent.count === 0
+                            }
+                            Flow {
+                                id: recentFlow
+                                width: {
+                                    var columns = Math.max(1, Math.min(recent.count || 1,
+                                        Math.floor((parent.width + 16) / 240)));
+                                    return Math.min(parent.width, columns * 224 + (columns - 1) * 16);
+                                }
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                spacing: 16
+                                Repeater {
+                                    model: recent
+                                    GameCard {
+                                        name: model.name || ""
+                                        banner: model.banner || ""
+                                        icon: model.icon || ""
+                                        onClicked: root.openGame(model.name)
+                                    }
                                 }
                             }
                         }
@@ -356,7 +381,7 @@ ApplicationWindow {
             }
             else if (action === "Folders") {
                 if (root.currentGame.mainPath)
-                    Qt.openUrlExternally("file://" + root.currentGame.mainPath);
+                    Qt.openUrlExternally(Qt.resolvedUrl("file://" + root.currentGame.mainPath));
             } else if (action === "SteamDB") {
                 if (sid) Qt.openUrlExternally("https://steamdb.info/app/" + sid + "/");
                 else Qt.openUrlExternally("https://steamdb.info/search/?q=" + encodeURIComponent(root.currentGameName));

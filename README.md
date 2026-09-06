@@ -148,6 +148,18 @@ cmake --build build -j$(nproc)
 ./build/corkytux
 ```
 
+## Release packaging
+
+The binary release layout and installation steps are documented in
+[`docs/RELEASE_TARBALL.md`](docs/RELEASE_TARBALL.md). The release is a Qt binary
+tarball; it does not require Java.
+
+## Emulator manager plugin
+
+The emulator linking, AppImage installation, native-emulator protection, and
+`corky-*` command contract are documented in
+[`docs/EMULATOR_PLUGIN.md`](docs/EMULATOR_PLUGIN.md).
+
 ### Debug Build
 
 ```bash

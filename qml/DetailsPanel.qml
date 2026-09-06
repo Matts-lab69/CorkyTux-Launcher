@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import "components"
 
 // DetailsPanel – floating right overlay: title + star, cover, Play, time,
@@ -16,7 +17,7 @@ Rectangle {
     width: 380
     color: Theme.panel
     radius: 8
-    border.color: Theme.border
+    border.color: Theme.accent
     border.width: 1
     visible: false
 
@@ -50,7 +51,7 @@ Rectangle {
         clip: true
         Column {
             id: contentCol
-            width: parent.width
+            width: parent.width - 8
             spacing: 16
 
             Row {
@@ -129,7 +130,15 @@ Rectangle {
             CCard {
                 width: parent.width
                 corner: 6
+                outlineColor: Theme.border
+                outlineWidth: 1
+                Row {
+                    width: parent.width
+                    spacing: 8
+                    CIcon { iconName: "folder"; iconSize: 18; anchors.verticalCenter: parent.verticalCenter }
                     Text { text: "Install Info"; color: Theme.textMain; font.bold: true; font.pixelSize: 14 }
+                }
+                Rectangle { width: parent.width; height: 1; color: Theme.border }
                     Text { text: "SIZE"; color: Theme.textMuted; font.pixelSize: 11; font.bold: true }
                     Text { text: game.sizeText || "--"; color: Theme.textMain; font.pixelSize: 13 }
                     Text { text: "INSTALL PATH"; color: Theme.textMuted; font.pixelSize: 11; font.bold: true }
@@ -140,9 +149,10 @@ Rectangle {
                     Text { text: game.executor || "--"; color: Theme.textMain; font.pixelSize: 13; visible: !!(game.executor || "") }
             }
 
-            Column {
+            CCard {
                 width: parent.width
-                spacing: 8
+                outlineColor: Theme.accent
+                outlineWidth: 1
                 Text { text: "Actions"; color: Theme.textMain; font.bold: true; font.pixelSize: 14 }
                 Grid {
                     width: parent.width
@@ -173,6 +183,11 @@ Rectangle {
                     }
                 }
             }
+        }
+        ScrollBar.vertical: ScrollBar {
+            policy: ScrollBar.AsNeeded
+            contentItem: Rectangle { implicitWidth: 3; radius: 2; color: Theme.accent }
+            background: Rectangle { implicitWidth: 3; color: "transparent" }
         }
     }
 }

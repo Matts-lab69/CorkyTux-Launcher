@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import "components"
 
 // LogModal – game log viewer with Save/Close/GitHub buttons.
@@ -32,9 +33,14 @@ CModal {
                 anchors.margins: 8
                 contentHeight: area.height
                 clip: true
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                    contentItem: Rectangle { implicitWidth: 3; radius: 2; color: Theme.accent }
+                    background: Rectangle { implicitWidth: 3; color: "transparent" }
+                }
                 TextEdit {
                     id: area
-                    width: parent.width
+                    width: parent.width - 8
                     readOnly: true
                     wrapMode: TextEdit.Wrap
                     color: Theme.textMain

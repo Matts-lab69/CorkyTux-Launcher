@@ -44,9 +44,14 @@ CModal {
             height: 220
             clip: true
             spacing: 4
+            ScrollBar.vertical: ScrollBar {
+                policy: ScrollBar.AsNeeded
+                contentItem: Rectangle { implicitWidth: 3; radius: 2; color: Theme.accent }
+                background: Rectangle { implicitWidth: 3; color: "transparent" }
+            }
             delegate: Rectangle {
                 required property var modelData
-                width: relList.width
+                width: relList.width - 8
                 height: 40
                 radius: 8
                 color: Theme.well

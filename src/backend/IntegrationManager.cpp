@@ -61,6 +61,10 @@ void IntegrationManager::setApiKey(const QString &key, const QString &value) {
     ConfigManager::instance()->setLauncherValue("integration_key_" + key, value, "Integrations");
 }
 
+bool IntegrationManager::pathExists(const QString &path) const {
+    return !path.trimmed().isEmpty() && QFileInfo::exists(path);
+}
+
 // ---------------- paths ----------------
 
 QStringList IntegrationManager::lutrisDataDirs() {
@@ -266,11 +270,12 @@ void IntegrationManager::scanLutris() {
         };
         if (!db.isEmpty()) {
             QProcess sqlite;
-            sqlite.start("sqlite3", {db, "SELECT slug,name,runner,directory,executable,configpath,playtime FROM games WHERE installed=1;"});
+            sqlite.start("sqlite3", {"-batch", "-noheader", "-separator", "\t", db,
+                                      "SELECT slug,name,runner,directory,executable,configpath,playtime FROM games WHERE installed=1;"});
             if (sqlite.waitForFinished(15000)) {
                 for (const QString &line :
                      QString::fromUtf8(sqlite.readAllStandardOutput()).split('\n')) {
-                    const QStringList cols = line.split('|');
+                    const QStringList cols = line.split('\t');
                     if (cols.size() < 2 || cols[1].trimmed().isEmpty())
                         continue;
                     const QString slug = cols[0], nm = cols[1].trimmed();
@@ -488,7 +493,9 @@ void IntegrationManager::resolveArtwork(const QString &gameName, const QString &
         }
         // 2) Lutris local by slug
         if ((banner.isEmpty() || icon.isEmpty()) && !gameName.isEmpty()) {
-            const QString slug = slugify(gameName);
+            const QString storedSlug = ConfigManager::instance()->gameValue(
+                gameName, "lutrisSlug");
+            const QString slug = storedSlug.isEmpty() ? slugify(gameName) : storedSlug;
             for (const QString &dir : lutrisDataDirs()) {
                 if (banner.isEmpty()) {
                     for (const QString &ad : {"coverart", "banners"}) {

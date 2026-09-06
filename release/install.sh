@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ─── CorkyTux Installer v2.10.0 ──────────────────────────────────
+# Supports: Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE
+# Checks Qt6 runtime deps, installs binary, icon, desktop entry.
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-JAR_NAME="corkytux.jar"
 INSTALL_DIR="${HOME}/.local/share/corkytux"
 BIN_DIR="${HOME}/.local/bin"
-JAR="${SCRIPT_DIR}/${JAR_NAME}"
+ICON_DIR="${HOME}/.local/share/icons"
+DESKTOP_DIR="${HOME}/.local/share/applications"
+VERSION="2.10.0"
 
+# ─── Colors ──────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 log()  { echo -e "${GREEN}[OK]${NC} $*"; }
@@ -18,28 +25,47 @@ warn() { echo -e "${YELLOW}[!]${NC} $*"; }
 err()  { echo -e "${RED}[ERROR]${NC} $*"; }
 info() { echo -e "${CYAN}[i]${NC} $*"; }
 
+# ─── Header ──────────────────────────────────────────────────────
 echo ""
-echo "╔══════════════════════════════════════════════╗"
-echo "║  CorkyTux — Installer v2.8.0 ║"
-echo "╚══════════════════════════════════════════════╝"
+echo -e "${BOLD}╔══════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}║       CorkyTux Installer v${VERSION}            ║${NC}"
+echo -e "${BOLD}╚══════════════════════════════════════════════╝${NC}"
 echo ""
 
-# ─── Check JAR ────────────────────────────────────
-# Accept both plain and versioned jar names
-if [[ ! -f "$JAR" ]]; then
-  VERSIONED=$(ls "${SCRIPT_DIR}"/corkytux-*.jar 2>/dev/null | head -1)
-  if [[ -n "$VERSIONED" ]]; then
-    JAR="$VERSIONED"
-  fi
+# ─── Uninstall mode ──────────────────────────────────────────────
+if [[ "${1:-}" == "--uninstall" || "${1:-}" == "-u" ]]; then
+  echo -e "${YELLOW}Uninstalling CorkyTux...${NC}"
+  rm -rf "${INSTALL_DIR}" 2>/dev/null && echo "  Removed ${INSTALL_DIR}"
+  rm -rf "${HOME}/.local/share/CorkyTux" 2>/dev/null && echo "  Removed data dir"
+  rm -rf "${HOME}/.config/CorkyTux" 2>/dev/null && echo "  Removed config dir"
+  rm -f "${BIN_DIR}/corkytux" 2>/dev/null && echo "  Removed symlink"
+  rm -f "${DESKTOP_DIR}/corkytux.desktop" 2>/dev/null && echo "  Removed desktop entry"
+  rm -f "${ICON_DIR}/corkytux.png" 2>/dev/null && echo "  Removed icon"
+  echo ""
+  echo -e "${GREEN}CorkyTux completely uninstalled.${NC}"
+  exit 0
 fi
-if [[ ! -f "$JAR" ]]; then
-  err "${JAR_NAME} not found in ${SCRIPT_DIR}"
-  echo "  Download it from: https://github.com/Matts-lab69/onlinefix-linux/releases"
+
+# ─── Check binary ────────────────────────────────────────────────
+APP=""
+for candidate in "${SCRIPT_DIR}/corkytux" "${SCRIPT_DIR}/build/corkytux"; do
+  if [[ -f "$candidate" ]] && file "$candidate" | grep -q 'ELF'; then
+    APP="$candidate"
+    break
+  fi
+done
+
+if [[ -z "$APP" ]]; then
+  err "CorkyTux ELF binary not found in ${SCRIPT_DIR}"
+  echo "  Build it first:"
+  echo "    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release"
+  echo "    cmake --build build -j\$(nproc)"
+  echo "    cp build/corkytux release/"
   exit 1
 fi
-log "JAR found"
+log "Binary found: $(basename "$APP")"
 
-# ─── Detect distro ───────────────────────────────
+# ─── Detect distro ───────────────────────────────────────────────
 detect_distro() {
   if [[ -f /etc/os-release ]]; then
     . /etc/os-release
@@ -56,322 +82,158 @@ detect_distro() {
 detect_distro
 info "Detected: ${DISTRO_ID} (${DISTRO_LIKE})"
 
-# ─── Sudo check ──────────────────────────────────
-SUDO=""
-if [[ "$(id -u)" -ne 0 ]]; then
-  if command -v sudo &>/dev/null; then
-    SUDO="sudo"
-  else
-    warn "sudo not found. Some operations may need root."
+# ─── Check Qt6 runtime deps ─────────────────────────────────────
+# Required .so libraries the binary links against
+QT6_LIBS=(
+  libQt6Core.so.6
+  libQt6Gui.so.6
+  libQt6Quick.so.6
+  libQt6Qml.so.6
+  libQt6QmlModels.so.6
+  libQt6Network.so.6
+  libQt6Concurrent.so.6
+  libQt6Svg.so.6
+  libQt6OpenGL.so.6
+  libQt6DBus.so.6
+)
+
+missing_qt=()
+for lib in "${QT6_LIBS[@]}"; do
+  if ! ldconfig -p 2>/dev/null | grep -q "$lib"; then
+    # Fallback: check common lib paths
+    found=false
+    for path in /usr/lib64 /usr/lib /usr/lib/x86_64-linux-gnu /usr/local/lib; do
+      if [[ -f "${path}/${lib}" ]]; then
+        found=true
+        break
+      fi
+    done
+    if ! $found; then
+      missing_qt+=("$lib")
+    fi
   fi
+done
+
+# Other runtime deps
+missing_other=()
+for cmd in ffmpeg; do
+  if ! command -v "$cmd" &>/dev/null; then
+    missing_other+=("$cmd")
+  fi
+done
+
+# Steam (optional but important)
+has_steam=false
+if command -v steam &>/dev/null || [[ -f /usr/bin/steam ]] \
+   || [[ -f "${HOME}/.var/app/com.valvesoftware.Steam/data/Steam" ]]; then
+  has_steam=true
 fi
 
-# ─── Find or install Java ────────────────────────
-find_java() {
-  local candidates=(
-    /opt/jvm/jdk-25.0.4.1+1 /opt/jvm/jdk-21.0.4.1+1
-    /opt/jvm/temurin-25 /opt/jvm/temurin-24 /opt/jvm/temurin-23 /opt/jvm/temurin-22 /opt/jvm/temurin-21
-    /usr/lib/jvm/java-25-temurin /usr/lib/jvm/java-21-temurin
-    /usr/lib/jvm/java-25-temurin-amd64 /usr/lib/jvm/java-21-temurin-amd64
-    /usr/lib/jvm/java-25-temurin-arm64 /usr/lib/jvm/java-21-temurin-arm64
-    /usr/lib/jvm/openjdk-25 /usr/lib/jvm/openjdk-21
-    /usr/lib/jvm/java-25-openjdk-amd64 /usr/lib/jvm/java-21-openjdk-amd64
-    /usr/lib/jvm/java-25-openjdk /usr/lib/jvm/java-21-openjdk
-  )
-  for p in "${candidates[@]}"; do
-    if [[ -x "$p/bin/java" ]]; then
-      local ver
-      ver=$("$p/bin/java" -version 2>&1 | head -1 | sed -n 's/.*"\([0-9][0-9]*\).*/\1/p')
-      if [[ "$ver" -ge 21 ]]; then
-        echo "$p"
-        return 0
-      fi
-    fi
-  done
-  # Fallback: java on PATH
-  if command -v java &>/dev/null; then
-    local jp ver
-    jp=$(readlink -f "$(command -v java)")
-    ver=$(java -version 2>&1 | head -1 | sed -n 's/.*"\([0-9][0-9]*\).*/\1/p')
-    if [[ "$ver" -ge 21 ]]; then
-      dirname "$(dirname "$jp")"
-      return 0
-    fi
-  fi
-  return 1
-}
-
-install_java_gentoo() {
-  info "Installing Temurin JDK via emerge..."
-  $SUDO emerge --ask=n --autounmask-write dev-java/temurin:25 2>&1 \
-    || $SUDO emerge --ask=n --autounmask-write dev-java/temurin:21 2>&1 \
-    || { err "Failed to install via emerge. Check output above."; return 1; }
-}
-
-install_java_debian() {
-  info "Installing Temurin JDK via apt..."
-  # Get codename
-  local CODENAME=""
-  if command -v lsb_release &>/dev/null; then
-    CODENAME=$(lsb_release -cs)
-  elif [[ -f /etc/os-release ]]; then
-    CODENAME=$(. /etc/os-release; echo "${VERSION_CODENAME:-}")
-  fi
-  if [[ -z "$CODENAME" ]]; then
-    err "Cannot determine distribution codename. Install lsb-release first."
-    return 1
-  fi
-  # Add Adoptium repo
-  if [[ ! -f /etc/apt/keyrings/adoptium.gpg ]]; then
-    $SUDO mkdir -p /etc/apt/keyrings
-    if command -v wget &>/dev/null; then
-      wget -qO- https://packages.adoptium.net/artifactory/api/gpg/key/public | $SUDO gpg --dearmor -o /etc/apt/keyrings/adoptium.gpg
-    elif command -v curl &>/dev/null; then
-      curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public | $SUDO gpg --dearmor -o /etc/apt/keyrings/adoptium.gpg
-    else
-      err "Neither wget nor curl found. Install one and retry."
-      return 1
-    fi
-    echo "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb ${CODENAME} main" \
-      | $SUDO tee /etc/apt/sources.list.d/adoptium.list > /dev/null
-  fi
-  $SUDO apt-get update -qq
-  $SUDO apt-get install -y temurin-21-jdk || $SUDO apt-get install -y temurin-25-jdk
-}
-
-install_java_fedora() {
-  info "Installing Temurin JDK..."
-  if command -v dnf &>/dev/null; then
-    $SUDO dnf install -y temurin-21-jdk || $SUDO dnf install -y temurin-25-jdk
-  elif command -v yum &>/dev/null; then
-    $SUDO yum install -y temurin-21-jdk || $SUDO yum install -y temurin-25-jdk
-  else
-    err "Neither dnf nor yum found."
-    return 1
-  fi
-}
-
-install_java_arch() {
-  info "Installing JDK via pacman..."
-  $SUDO pacman -S --noconfirm jdk21-openjdk || $SUDO pacman -S --noconfirm jdk25-openjdk
-}
-
-install_java_suse() {
-  info "Installing Temurin JDK via zypper..."
-  $SUDO zypper --non-interactive install temurin-21-jdk || $SUDO zypper --non-interactive install temurin-25-jdk
-}
-
-JAVA_HOME=""
-JAVA_HOME=$(find_java 2>/dev/null) || true
-if [[ -n "$JAVA_HOME" ]]; then
-  log "Java found: ${JAVA_HOME}"
+# ─── Report status ───────────────────────────────────────────────
+echo ""
+if [[ ${#missing_qt[@]} -eq 0 ]]; then
+  log "All Qt6 libraries found"
 else
-  warn "Java 21+ not found. Installing..."
+  warn "Missing Qt6 libraries: ${missing_qt[*]}"
+fi
+
+if [[ ${#missing_other[@]} -gt 0 ]]; then
+  warn "Missing optional packages: ${missing_other[*]}"
+fi
+
+if $has_steam; then
+  log "Steam detected"
+else
+  warn "Steam not found (needed for Proton games)"
+fi
+
+# ─── Install missing deps ───────────────────────────────────────
+if [[ ${#missing_qt[@]} -gt 0 ]]; then
+  echo ""
+  info "Qt6 is required. Install commands by distro:"
+  echo ""
   case "$DISTRO_LIKE" in
-    *gentoo*)   install_java_gentoo ;;
-    *debian*|*ubuntu*) install_java_debian ;;
-    *fedora*|*rhel*|*centos*) install_java_fedora ;;
-    *arch*)     install_java_arch ;;
-    *suse*)     install_java_suse ;;
+    *gentoo*)
+      echo "  sudo emerge --ask=n dev-qt/qtbase dev-qt/qtdeclarative dev-qt/qtsvg"
+      ;;
+    *debian*|*ubuntu*)
+      echo "  sudo apt install qt6-base-dev qt6-declarative-dev libqt6svg6-dev"
+      echo "  # Or for runtime only:"
+      echo "  sudo apt install libqt6core6t64 libqt6gui6t64 libqt6quick6 libqt6network6 \\"
+      echo "    libqt6concurrent6t64 libqt6svg6 libqt6opengl6t64 libqt6qml6 libqt6dbus6t64"
+      ;;
+    *fedora*|*rhel*|*centos*)
+      echo "  sudo dnf install qt6-qtbase qt6-qtdeclarative qt6-qtsvg qt6-qt5compat"
+      ;;
+    *arch*)
+      echo "  sudo pacman -S qt6-base qt6-declarative qt6-svg"
+      ;;
+    *suse*)
+      echo "  sudo zypper install libQt6Core6 libQt6Gui6 libQt6Quick6 libQt6Svg6"
+      ;;
     *)
-      err "Unsupported distro: ${DISTRO_ID}"
-      echo "  Install Java 21+ manually: https://adoptium.net"
-      echo "  Then re-run this installer."
-      exit 1
+      echo "  Install Qt6 development packages for your distro."
+      echo "  Required: Qt6 Core, Gui, Quick, Qml, Network, Concurrent, Svg, OpenGL, DBus"
       ;;
   esac
-  JAVA_HOME=$(find_java 2>/dev/null) || true
-  if [[ -n "$JAVA_HOME" ]]; then
-    log "Java installed: ${JAVA_HOME}"
-  else
-    err "Java installation failed. Install manually and re-run."
+  echo ""
+  read -rp "Continue installation anyway? [y/N]: " CONTINUE
+  if [[ ! "$CONTINUE" =~ ^[Yy]$ ]]; then
+    echo "Install Qt6 first, then re-run: ./install.sh"
     exit 1
   fi
 fi
 
-# ─── Check dependencies ──────────────────────────
-check_deps() {
-  local missing=()
-  local optional=()
-  
-  # Required
-  for cmd in ffmpeg; do
-    if ! command -v "$cmd" &>/dev/null; then
-      missing+=("$cmd")
-    fi
-  done
-  
-  # Steam - check binary or flatpak
-  if ! command -v steam &>/dev/null; then
-    if [[ -f /usr/bin/steam ]]; then
-      : # ok
-    elif [[ -f "${HOME}/.var/app/com.valvesoftware.Steam/data/Steam" ]]; then
-      : # flatpak steam
-    else
-      missing+=("steam")
-    fi
-  fi
-  
-  # Optional
-  for cmd in icoextract aria2c; do
-    if ! command -v "$cmd" &>/dev/null; then
-      optional+=("$cmd")
-    fi
-  done
-  
-  if [[ ${#missing[@]} -gt 0 ]]; then
-    warn "Missing required packages: ${missing[*]}"
-    info "Installing dependencies..."
-    
-    case "$DISTRO_LIKE" in
-      *gentoo*)
-        for pkg in "${missing[@]}"; do
-          case "$pkg" in
-            ffmpeg)   $SUDO emerge --ask=n --autounmask-write media-video/ffmpeg ;;
-            steam)    $SUDO emerge --ask=n --autounmask-write games-util/steam-launcher ;;
-          esac
-        done
-        ;;
-      *debian*|*ubuntu*)
-        $SUDO apt-get install -y "${missing[@]}"
-        ;;
-      *fedora*|*rhel*|*centos*)
-        $SUDO dnf install -y "${missing[@]}" 2>/dev/null || $SUDO yum install -y "${missing[@]}"
-        ;;
-      *arch*)
-        $SUDO pacman -S --noconfirm "${missing[@]}"
-        ;;
-      *suse*)
-        $SUDO zypper --non-interactive install "${missing[@]}"
-        ;;
-      *)
-        err "Cannot auto-install dependencies. Please install manually:"
-        echo "  ${missing[*]}"
-        return 1
-        ;;
-    esac
-  fi
-  
-  if [[ ${#optional[@]} -gt 0 ]]; then
-    warn "Optional packages not found: ${optional[*]}"
-    echo ""
-    echo "  - icoextract: better .exe icon extraction"
-    echo "  - aria2c: game downloads (aria2 package)"
-    echo ""
-    read -rp "Install optional packages now? [y/N]: " INSTALL_OPTIONAL
-    if [[ "$INSTALL_OPTIONAL" =~ ^[Yy]$ ]]; then
-      local pkgs=()
-      for pkg in "${optional[@]}"; do
-        case "$pkg" in
-          icoextract) pkgs+=("icoextract") ;;
-          aria2c)     pkgs+=("aria2") ;;
-        esac
-      done
-      
-      case "$DISTRO_LIKE" in
-        *gentoo*)
-          for pkg in "${pkgs[@]}"; do
-            case "$pkg" in
-              icoextract) $SUDO emerge --ask=n --autounmask-write dev-python/icoextract || warn "Failed to install icoextract, skipping" ;;
-              aria2)      $SUDO emerge --ask=n --autounmask-write net-misc/aria2 || warn "Failed to install aria2, skipping" ;;
-            esac
-          done
-          ;;
-        *debian*|*ubuntu*)
-          $SUDO apt-get install -y "${pkgs[@]}"
-          ;;
-        *fedora*|*rhel*|*centos*)
-          $SUDO dnf install -y "${pkgs[@]}" 2>/dev/null || $SUDO yum install -y "${pkgs[@]}"
-          ;;
-        *arch*)
-          $SUDO pacman -S --noconfirm "${pkgs[@]}"
-          ;;
-        *suse*)
-          $SUDO zypper --non-interactive install "${pkgs[@]}"
-          ;;
-        *)
-          warn "Cannot auto-install. Install manually:"
-          echo "  ${pkgs[*]}"
-          ;;
-      esac
-    else
-      info "Skipping optional packages"
-    fi
-  fi
-}
+# ─── Install ─────────────────────────────────────────────────────
+echo ""
+info "Installing CorkyTux v${VERSION}..."
 
-check_deps
-info "Installing launcher to ${INSTALL_DIR}..."
-mkdir -p "${INSTALL_DIR}"
-mkdir -p "${BIN_DIR}"
-cp -f "$JAR" "${INSTALL_DIR}/${JAR_NAME}"
-cp -f "${SCRIPT_DIR}/corkytux" "${INSTALL_DIR}/corkytux"
-chmod +x "${INSTALL_DIR}/corkytux"
-log "Files installed"
+mkdir -p "$INSTALL_DIR" "$BIN_DIR" "$ICON_DIR" "$DESKTOP_DIR"
+install -m 0755 "$APP" "${INSTALL_DIR}/corkytux"
+log "Binary: ${INSTALL_DIR}/corkytux"
 
-# ─── Launch wrapper ──────────────────────────────
-cat > "${INSTALL_DIR}/launch.sh" << LAUNCH
-#!/bin/bash
-set -e
-export DISPLAY="\${DISPLAY:-:0}"
-export DBUS_SESSION_BUS_ADDRESS="\${DBUS_SESSION_BUS_ADDRESS:-}"
-JAVA_BIN="${JAVA_HOME}/bin/java"
-JAR_PATH="${INSTALL_DIR}/${JAR_NAME}"
-if [[ ! -x "\$JAVA_BIN" ]]; then
-  notify-send "CorkyTux" "Java not found at \$JAVA_BIN" 2>/dev/null
-  echo "Error: Java not found at \$JAVA_BIN" >&2
-  exit 1
-fi
-exec "\$JAVA_BIN" \${CORKYTUX_JAVA_OPTS:--Xmx512m} -jar "\$JAR_PATH" "\$@"
-LAUNCH
-chmod +x "${INSTALL_DIR}/launch.sh"
-log "Launch wrapper created"
-
-# ─── Symlink ─────────────────────────────────────
+# Symlink
 ln -sf "${INSTALL_DIR}/corkytux" "${BIN_DIR}/corkytux"
 log "Symlink: ${BIN_DIR}/corkytux"
 
-# ─── PATH check ──────────────────────────────────
+# Icon
+if [[ -f "${SCRIPT_DIR}/corkytux.png" ]]; then
+  install -m 0644 "${SCRIPT_DIR}/corkytux.png" "${ICON_DIR}/corkytux.png"
+  log "Icon: ${ICON_DIR}/corkytux.png"
+else
+  warn "corkytux.png not found, skipping icon"
+fi
+
+# Desktop entry
+cat > "${DESKTOP_DIR}/corkytux.desktop" <<DESKTOP
+[Desktop Entry]
+Version=1.0
+Name=CorkyTux
+Comment=Native Linux game launcher
+Exec=${INSTALL_DIR}/corkytux
+Icon=${ICON_DIR}/corkytux.png
+Terminal=false
+Type=Application
+Categories=Game;
+StartupWMClass=corkytux
+DESKTOP
+log "Desktop entry: ${DESKTOP_DIR}/corkytux.desktop"
+
+# PATH hint
 if ! echo "$PATH" | tr ':' '\n' | grep -qxF "$BIN_DIR"; then
+  echo ""
   warn "Add to your shell profile (~/.bashrc, ~/.zshrc, etc.):"
   echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
 fi
 
-# ─── Icon ────────────────────────────────────────
-ICON_DIR="${HOME}/.local/share/icons"
-mkdir -p "$ICON_DIR"
-if [[ -f "${SCRIPT_DIR}/corkytux.png" ]]; then
-  cp -f "${SCRIPT_DIR}/corkytux.png" "${ICON_DIR}/corkytux.png"
-  log "Icon installed"
-elif [[ -f "${ICON_DIR}/corkytux.png" ]]; then
-  log "Icon already exists"
-else
-  warn "Icon not found. Desktop entry may show no icon."
-fi
-
-# ─── Desktop entry ───────────────────────────────
-DESKTOP_DIR="${HOME}/.local/share/applications"
-mkdir -p "$DESKTOP_DIR"
-cat > "${DESKTOP_DIR}/corkytux.desktop" << DESKTOP
-[Desktop Entry]
-Version=1.0
-Name=CorkyTux
-Comment=Play OnlineFix games on Linux
-Exec=${INSTALL_DIR}/launch.sh
-Icon=${HOME}/.local/share/icons/corkytux.png
-Terminal=false
-Type=Application
-Categories=Game;
-StartupWMClass=com-corkytux
-DESKTOP
-log "Desktop entry created"
-
-# ─── Verify ──────────────────────────────────────
+# ─── Done ────────────────────────────────────────────────────────
 echo ""
-echo "╔══════════════════════════════════════════════╗"
-echo "║             Installation complete!           ║"
-echo "╠══════════════════════════════════════════════╣"
-echo "║  Run: corkytux                                   ║"
-echo "║  Or find 'CorkyTux' in menu  ║"
-echo "╚══════════════════════════════════════════════╝"
+echo -e "${BOLD}╔══════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}║           Installation complete!             ║${NC}"
+echo -e "${BOLD}╠══════════════════════════════════════════════╣${NC}"
+echo -e "${BOLD}║  Run:  corkytux                              ║${NC}"
+echo -e "${BOLD}║  Or find 'CorkyTux' in your app menu         ║${NC}"
+echo -e "${BOLD}║                                              ║${NC}"
+echo -e "${BOLD}║  Uninstall:  ./install.sh --uninstall        ║${NC}"
+echo -e "${BOLD}╚══════════════════════════════════════════════╝${NC}"
 echo ""

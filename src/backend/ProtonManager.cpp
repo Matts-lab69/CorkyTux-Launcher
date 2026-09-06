@@ -15,6 +15,7 @@
 #include <QNetworkRequest>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QVariantMap>
 #include <QtConcurrent>
 
 ProtonManager *ProtonManager::instance() {
@@ -28,6 +29,40 @@ ProtonManager::ProtonManager(QObject *parent) : QObject(parent) {
 
 bool ProtonManager::isUmuAvailable() const {
     return !QStandardPaths::findExecutable("umu-run").isEmpty();
+}
+
+QVariantMap ProtonManager::graphicsComponentStatus(const QString &component) const {
+    const bool gameMode = component.compare("gamemode", Qt::CaseInsensitive) == 0;
+    const QString executable = gameMode ? "gamemoderun" : "mangohud";
+    const QString library = gameMode ? "libgamemode.so" : "libMangoHud.so";
+    const QStringList roots = {
+        "/usr/lib", "/usr/lib64", "/usr/lib32", "/usr/lib/i386-linux-gnu",
+        "/usr/lib/x86_64-linux-gnu", "/usr/libexec", "/lib", "/lib64"
+    };
+    bool has32 = false;
+    bool has64 = false;
+    for (const QString &root : roots) {
+        if (!QDir(root).exists())
+            continue;
+        QDirIterator it(root, {library + "*"}, QDir::Files,
+                        QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString path = it.next();
+            const QString lower = path.toLower();
+            const bool is32 = lower.contains("/lib32/") || lower.contains("/i386/")
+                || lower.contains("/i686/") || lower.contains("/x86/");
+            const bool is64 = lower.contains("/lib64/") || lower.contains("/x86_64/")
+                || lower.contains("/amd64/");
+            has32 = has32 || is32;
+            has64 = has64 || is64;
+        }
+    }
+    const QString exePath = QStandardPaths::findExecutable(executable);
+    // Some distros expose only a versioned library; the executable is still a
+    // useful positive signal, while the architecture flags remain explicit.
+    return {{"name", component}, {"executable", exePath},
+            {"installed32", has32}, {"installed64", has64},
+            {"available", !exePath.isEmpty() && has32 && has64}};
 }
 
 void ProtonManager::setUseUmu(bool on) {
@@ -424,6 +459,16 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
                 putKv(e);
         }
     }
+    auto enabledValue = [&](const QString &key, const QString &globalKey) {
+        QString value = cfg->gameValue(gameName, key);
+        if (value.isEmpty())
+            value = cfg->launcherValue(globalKey, "User Settings");
+        return truthy(value);
+    };
+    const bool useGameMode = enabledValue("gameMode", "gamesUsesGameMode");
+    const bool useMangoHud = enabledValue("mangoHud", "gamesUsesMangoHud");
+    if (useMangoHud)
+        env.insert("MANGOHUD", "1");
     args << "waitforexitandrun" << exec;
     const QString argsAfter = cfg->gameValue(gameName, "argsAfter");
     if (!argsAfter.isEmpty())
@@ -496,6 +541,14 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     } else if (program.isEmpty()) {
         emit toast("No Proton executable found");
         return;
+    }
+
+    if (useGameMode) {
+        const QString gameMode = QStandardPaths::findExecutable("gamemoderun");
+        if (!gameMode.isEmpty()) {
+            args.prepend(program);
+            program = gameMode;
+        }
     }
 
     m_proc = new QProcess(this);

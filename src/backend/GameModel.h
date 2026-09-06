@@ -63,6 +63,7 @@ public:
     /** Adds or refreshes a game. Returns false if name is empty. */
     Q_INVOKABLE bool addGame(const QString &name, const QVariantMap &fields);
     Q_INVOKABLE bool importExternalGame(const QString &name, const QVariantMap &fields);
+    Q_INVOKABLE bool renameGame(const QString &oldName, const QString &newName);
     Q_INVOKABLE void removeGame(const QString &name);
     /** Full removal: INI section + optional prefix dir + game files + art + .desktop. */
     Q_INVOKABLE void removeGameFull(const QString &name, bool removePrefix, bool removeFiles);

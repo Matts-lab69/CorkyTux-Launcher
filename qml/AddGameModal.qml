@@ -232,12 +232,17 @@ CModal {
                 width: parent.width
                 height: 220
                 clip: true
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                    contentItem: Rectangle { implicitWidth: 3; radius: 2; color: Theme.accent }
+                    background: Rectangle { implicitWidth: 3; color: "transparent" }
+                }
                 model: root.candidates
                 onCountChanged: console.log("[AddGame] list count: " + count)
                 delegate: Rectangle {
                     required property string modelData
                     required property int index
-                    width: candList.width
+                    width: candList.width - 8
                     height: 50
                     radius: 8
                     Component.onCompleted: console.log("[AddGame] row: " + modelData)

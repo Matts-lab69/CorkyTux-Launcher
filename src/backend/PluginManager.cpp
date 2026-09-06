@@ -360,7 +360,16 @@ void PluginManager::listEmulators() {
             });
             return;
         }
-        const QVariantList emus = res.value("emulators").toList();
+        QVariantList emus = res.value("emulators").toList();
+        for (QVariant &value : emus) {
+            QVariantMap emulator = value.toMap();
+            const QString path = emulator.value("path").toString();
+            const bool linked = emulator.value("linked").toBool()
+                || (!path.isEmpty() && !path.startsWith(pluginsDir() + "/"));
+            emulator["native"] = linked;
+            emulator["linked"] = linked;
+            value = emulator;
+        }
         QMetaObject::invokeMethod(this, [this, emus] {
             m_emulators = emus;
             emit emulatorsChanged();
@@ -404,6 +413,14 @@ void PluginManager::removeEmulator(const QString &name) {
     if (!QFileInfo::exists(exe)) {
         emit emulatorInstallFinished(false, "Emulator Manager plugin not installed");
         return;
+    }
+    for (const QVariant &value : m_emulators) {
+        const QVariantMap emulator = value.toMap();
+        if (emulator.value("name").toString() == name
+            && (emulator.value("native").toBool() || emulator.value("linked").toBool())) {
+            emit emulatorInstallFinished(true, name + " is linked to a native emulator; nothing was removed");
+            return;
+        }
     }
     QtConcurrent::run([this, exe, name] {
         QProcess proc;
@@ -472,7 +489,7 @@ QStringList PluginManager::buildEmulatorCommand(const QString &name, const QStri
 
     QString argsTemplate = emulatorLaunchArgs(name);
     // Replace {rom} with actual path
-    QString argsStr = argsTemplate.replace("{rom}", romPath);
+    QString argsStr = argsTemplate.replace("{rom}", "\"" + romPath + "\"");
 
     // Split args into list (simple split, handles quotes)
     QStringList args;
@@ -535,6 +552,12 @@ QStringList PluginManager::buildEmulatorCommand(const QString &name, const QStri
                 args << "--fullscreen";
             else if (name == "Desmume" && sid == "frameskip")
                 args << "--frameskip=1";
+            else if (name == "melonDS" && sid == "fullscreen")
+                args << "--fullscreen";
+            else if (name == "melonDS" && sid == "show_osd")
+                args << "--show-osd";
+            else if (name == "melonDS" && sid == "jit_enable")
+                args << "--jit";
         }
     }
 

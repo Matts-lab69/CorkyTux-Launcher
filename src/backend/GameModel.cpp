@@ -146,6 +146,22 @@ bool GameModel::importExternalGame(const QString &name, const QVariantMap &field
     return addGame(name, fields);
 }
 
+bool GameModel::renameGame(const QString &oldName, const QString &newName) {
+    const QString oldKey = oldName.trimmed();
+    const QString newKey = newName.trimmed();
+    if (oldKey.isEmpty() || newKey.isEmpty() || oldKey == newKey
+        || !m_cfg->hasGame(oldKey) || m_cfg->hasGame(newKey))
+        return false;
+    const QMap<QString, QString> section = m_cfg->gameSection(oldKey);
+    m_batchUpdating = true;
+    m_cfg->removeGame(oldKey);
+    for (auto it = section.constBegin(); it != section.constEnd(); ++it)
+        m_cfg->setGameValue(newKey, it.key(), it.value());
+    m_batchUpdating = false;
+    loadFromDisk();
+    return true;
+}
+
 void GameModel::removeGame(const QString &name) {
     m_cfg->removeGame(name); // emits gamesChanged -> reload
 }
@@ -154,6 +170,14 @@ void GameModel::removeGameFull(const QString &name, bool removePrefix, bool remo
     if (name.isEmpty())
         return;
     const QMap<QString, QString> section = m_cfg->gameSection(name);
+    const auto ownedPath = [](const QString &path, const QString &root) {
+        if (path.isEmpty() || root.isEmpty())
+            return false;
+        const QString candidate = QFileInfo(path).canonicalFilePath();
+        const QString base = QFileInfo(root).canonicalFilePath();
+        return !candidate.isEmpty() && !base.isEmpty()
+            && (candidate == base || candidate.startsWith(base + "/"));
+    };
     auto rmDir = [](const QString &p) {
         if (p.isEmpty())
             return;
@@ -169,15 +193,18 @@ void GameModel::removeGameFull(const QString &name, bool removePrefix, bool remo
         QString pp = section.value("prefixPath");
         if (pp.isEmpty())
             pp = ConfigManager::prefixesDir() + "/" + name;
-        rmDir(pp);
+        if (ownedPath(pp, ConfigManager::prefixesDir()))
+            rmDir(pp);
     }
     if (removeFiles) {
         const QString mp = section.value("mainPath");
-        if (!mp.isEmpty() && QDir(mp).exists())
+        if (ownedPath(mp, ConfigManager::dataDir() + "/installs"))
             rmDir(mp);
     }
-    rmFile(section.value("banner"));
-    rmFile(section.value("icon"));
+    if (ownedPath(section.value("banner"), ConfigManager::bannersDir()))
+        rmFile(section.value("banner"));
+    if (ownedPath(section.value("icon"), ConfigManager::iconsDir()))
+        rmFile(section.value("icon"));
     rmFile(ConfigManager::expectedHome() + "/Desktop/" + name + ".desktop");
     rmFile(ConfigManager::expectedHome() + "/.local/share/applications/" + name + ".desktop");
     m_cfg->removeGame(name);

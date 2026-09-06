@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import "components"
 
 // GameSettingsModal – per-game Proton/paths/overrides/env/args/flags.
@@ -16,6 +17,8 @@ CModal {
     property var emuSettingsValues: ({})
     property bool hasEmuSettings: false
     property bool pendingLoad: false
+    property var gameModeStatus: ({})
+    property var mangoHudStatus: ({})
 
     function reloadEmuFields() {
         console.log("[GS] reloadEmuFields called, pendingLoad:", pendingLoad, "isEmu:", isEmulatorGame);
@@ -59,6 +62,8 @@ CModal {
         nameField.text = g.name || gameName;
         protonBox.model = ["GE-Proton Latest"].concat(proton.installedProtons());
         protonBox.currentIndex = Math.max(0, protonBox.find(g.proton || "GE-Proton Latest"));
+        bannerField.text = g.banner || "";
+        iconField.text = g.icon || "";
         prefixField.text = g.prefixPath || "";
         overridesField.text = g.overrides || "";
         envField.text = g.environment || "";
@@ -66,8 +71,10 @@ CModal {
         argsAfterField.text = g.argsAfter || "";
         overlaySwitch.setSilent(g.steamOverlay === "true" || g.steamOverlay === "1");
         runtimeSwitch.setSilent(g.steamRuntime === "true" || g.steamRuntime === "1");
-        wined3dSwitch.setSilent(g.wined3d === "true" || g.wined3d === "1");
-        waylandSwitch.setSilent(g.nativeWayland === "true" || g.nativeWayland === "1");
+        graphicsWined3d.setSilent(g.wined3d === "true" || g.wined3d === "1");
+        graphicsWayland.setSilent(g.nativeWayland === "true" || g.nativeWayland === "1");
+        gameModeStatus = proton.graphicsComponentStatus("gamemode");
+        mangoHudStatus = proton.graphicsComponentStatus("mangohud");
         // Load emulator settings
         var executor = g.executor || "";
         isEmulatorGame = executor !== "";
@@ -97,13 +104,57 @@ CModal {
             "overrides": overridesField.text.trim(),
             "environment": envField.text.trim(),
             "argsBefore": argsBeforeField.text.trim(),
-            "argsAfter": argsAfterField.text.trim()
+            "argsAfter": argsAfterField.text.trim(),
+            "banner": bannerField.text.trim(),
+            "icon": iconField.text.trim()
         };
         // Save emulator settings if this is an emulator game
         if (isEmulatorGame) {
             fields["emuSettings"] = emuSettingsValues;
         }
         games.addGame(gameName, fields);
+    }
+    function saveName() {
+        var newName = nameField.text.trim();
+        if (newName !== "" && newName !== gameName && games.renameGame(gameName, newName))
+            gameName = newName;
+    }
+    property string pendingEmuPathId: ""
+
+    function saveEmuPath(path) {
+        var vals = {};
+        for (var k in root.emuSettingsValues)
+            vals[k] = root.emuSettingsValues[k];
+        vals[root.pendingEmuPathId] = path;
+        root.emuSettingsValues = vals;
+        root.save();
+    }
+    function localFilePath(url) {
+        var value = url.toString();
+        if (value.indexOf("file://") === 0)
+            value = value.substring(7);
+        return decodeURIComponent(value);
+    }
+
+    function emulatorSettingLabel(setting) {
+        var labels = {
+            "fullscreen": "Fullscreen",
+            "show_osd": "Show OSD overlay",
+            "jit_enable": "Enable JIT (higher performance)",
+            "batch": "Batch mode (run without opening the interface)",
+            "user_dir": "Save and configuration folder",
+            "hide_osd": "Hide OSD overlay",
+            "exit_on_pause": "Exit when opening the pause menu",
+            "no_gui": "No GUI (run the game directly)",
+            "full_boot": "Full boot (do not skip the PS3 animation)",
+            "keys_path": "Encryption keys path (prod.keys)",
+            "title_keys_path": "Title keys path (title.keys)",
+            "config_path": "Custom configuration path",
+            "load_config": "Load configuration file",
+            "frameskip": "Frame skip (higher speed, less smooth)",
+            "mlc_path": "Custom mlc folder path"
+        };
+        return labels[setting.id] || setting.id || "Setting";
     }
 
     Column {
@@ -115,25 +166,76 @@ CModal {
             spacing: 8
             visible: root.tab === "view"
             Text { text: "Game name in launcher"; color: Theme.textSec; font.pixelSize: 12 }
-            CTextField { id: nameField; width: parent.width; readOnly: true }
-            Text { text: "Install path"; color: Theme.textSec; font.pixelSize: 12 }
-            CTextField { width: parent.width; readOnly: true; text: games.getGame(root.gameName).mainPath || "" }
-            // Wine/Proton fields
-            Column {
+            CTextField { id: nameField; width: parent.width; onEditingFinished: saveName() }
+            Row {
                 width: parent.width
-                spacing: 8
-                visible: !root.isEmulatorGame
-                Text { text: "Proton version"; color: Theme.textSec; font.pixelSize: 12 }
-                CComboBox {
-                    id: protonBox
-                    width: parent.width
-                    editable: true
-                    onActivated: save()
-                    onAccepted: save()
+                spacing: 12
+                Column {
+                    width: (parent.width - 12) / 2
+                    spacing: 4
+                    Text { text: "Icon"; color: Theme.textSec; font.pixelSize: 12 }
+                    Rectangle {
+                        width: parent.width
+                        height: 120
+                        radius: 8
+                        color: Theme.isLight ? "#E9ECEF" : "#181818"
+                        border.color: Theme.border
+                        border.width: 1
+                        Image {
+                            anchors.centerIn: parent
+                            width: 88
+                            height: 88
+                            source: iconField.text ? ("file://" + iconField.text) : ""
+                            fillMode: Image.PreserveAspectFit
+                            sourceSize.width: 128
+                            sourceSize.height: 128
+                        }
+                        CButton {
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.margins: 6
+                            text: "✎"
+                            width: 34
+                            height: 30
+                            onClicked: iconDialog.open()
+                        }
+                    }
                 }
-                Text { text: "Prefix path"; color: Theme.textSec; font.pixelSize: 12 }
-                CTextField { id: prefixField; width: parent.width; onEditingFinished: save() }
+                Column {
+                    width: (parent.width - 12) / 2
+                    spacing: 4
+                    Text { text: "Banner / cover"; color: Theme.textSec; font.pixelSize: 12 }
+                    Rectangle {
+                        width: parent.width
+                        height: 120
+                        radius: 8
+                        color: Theme.isLight ? "#E9ECEF" : "#181818"
+                        border.color: Theme.border
+                        border.width: 1
+                        Image {
+                            anchors.fill: parent
+                            anchors.margins: 4
+                            source: bannerField.text ? ("file://" + bannerField.text) : ""
+                            fillMode: Image.PreserveAspectFit
+                            sourceSize.width: 460
+                            sourceSize.height: 215
+                        }
+                        CButton {
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.margins: 6
+                            text: "✎"
+                            width: 34
+                            height: 30
+                            onClicked: bannerDialog.open()
+                        }
+                    }
+                }
             }
+            CTextField { id: bannerField; visible: false }
+            CTextField { id: iconField; visible: false }
+            Text { text: "Install path"; color: Theme.textSec; font.pixelSize: 12; visible: false }
+            CTextField { visible: false; readOnly: true; text: games.getGame(root.gameName).mainPath || "" }
             // Emulator name
             Column {
                 width: parent.width
@@ -148,38 +250,52 @@ CModal {
             width: parent.width
             spacing: 8
             visible: root.tab === "run" && !root.isEmulatorGame
-            Text { text: "DLL overrides (WINEDLLOVERRIDES)"; color: Theme.textSec; font.pixelSize: 12 }
-            CTextField { id: overridesField; width: parent.width; onEditingFinished: save() }
-            Text { text: "Environment variables"; color: Theme.textSec; font.pixelSize: 12 }
-            CTextField { id: envField; width: parent.width; onEditingFinished: save() }
-            Text { text: "Arguments before executable"; color: Theme.textSec; font.pixelSize: 12 }
-            CTextField { id: argsBeforeField; width: parent.width; onEditingFinished: save() }
-            Text { text: "Arguments after executable"; color: Theme.textSec; font.pixelSize: 12 }
-            CTextField { id: argsAfterField; width: parent.width; onEditingFinished: save() }
             Row {
-                spacing: 16
-                CSwitch {
-                    id: overlaySwitch
-                    objectName: "Steam overlay"
-                    onToggled: games.addGame(root.gameName, {"steamOverlay": checked ? "true" : "false"})
+                width: parent.width
+                spacing: 12
+                CCard {
+                    width: (parent.width - 12) / 2
+                    outlineColor: Theme.border
+                    outlineWidth: 1
+                    Text { text: "Launch options"; color: Theme.textMain; font.bold: true; font.pixelSize: 13 }
+                    Text { text: "DLL overrides (WINEDLLOVERRIDES)"; color: Theme.textSec; font.pixelSize: 12 }
+                    CTextField { id: overridesField; width: parent.width; onEditingFinished: save() }
+                    Text { text: "Environment variables"; color: Theme.textSec; font.pixelSize: 12 }
+                    CTextField { id: envField; width: parent.width; onEditingFinished: save() }
+                    Text { text: "Arguments before executable"; color: Theme.textSec; font.pixelSize: 12 }
+                    CTextField { id: argsBeforeField; width: parent.width; onEditingFinished: save() }
+                    Text { text: "Arguments after executable"; color: Theme.textSec; font.pixelSize: 12 }
+                    CTextField { id: argsAfterField; width: parent.width; onEditingFinished: save() }
+                    Row {
+                        spacing: 10
+                        CSwitch {
+                            id: overlaySwitch
+                            objectName: "Steam overlay"
+                            onToggled: games.addGame(root.gameName, {"steamOverlay": checked ? "true" : "false"})
+                        }
+                        CSwitch {
+                            id: runtimeSwitch
+                            objectName: "Steam runtime"
+                            onToggled: games.addGame(root.gameName, {"steamRuntime": checked ? "true" : "false"})
+                        }
+                    }
                 }
-                CSwitch {
-                    id: runtimeSwitch
-                    objectName: "Steam runtime"
-                    onToggled: games.addGame(root.gameName, {"steamRuntime": checked ? "true" : "false"})
-                }
-            }
-            Row {
-                spacing: 16
-                CSwitch {
-                    id: wined3dSwitch
-                    objectName: "Use wined3d"
-                    onToggled: games.addGame(root.gameName, {"wined3d": checked ? "true" : "false"})
-                }
-                CSwitch {
-                    id: waylandSwitch
-                    objectName: "Prefer Wayland"
-                    onToggled: games.addGame(root.gameName, {"nativeWayland": checked ? "true" : "false"})
+                CCard {
+                    width: (parent.width - 12) / 2
+                    outlineColor: Theme.border
+                    outlineWidth: 1
+                    Text { text: "Proton and prefix"; color: Theme.textMain; font.bold: true; font.pixelSize: 13 }
+                    Text { text: "Proton version"; color: Theme.textSec; font.pixelSize: 12 }
+                    CComboBox {
+                        id: protonBox
+                        width: parent.width
+                        height: 28
+                        editable: true
+                        onActivated: save()
+                        onAccepted: save()
+                    }
+                    Text { text: "Prefix path"; color: Theme.textSec; font.pixelSize: 12 }
+                    CTextField { id: prefixField; width: parent.width; onEditingFinished: save() }
                 }
             }
         }
@@ -201,10 +317,14 @@ CModal {
                         id: boolSettingComp
                         CSwitch {
                             width: parent.width
-                            objectName: modelData.desc
-                            checked: root.emuSettingsValues[modelData.id] === true
+                            objectName: root.emulatorSettingLabel(modelData)
+                            checked: root.emuSettingsValues[modelData.id] !== undefined
+                                ? root.emuSettingsValues[modelData.id] === true
+                                : modelData.default === true
                             onToggled: {
-                                var vals = root.emuSettingsValues;
+                                var vals = {};
+                                for (var k in root.emuSettingsValues)
+                                    vals[k] = root.emuSettingsValues[k];
                                 vals[modelData.id] = checked;
                                 root.emuSettingsValues = vals;
                                 root.save();
@@ -217,7 +337,7 @@ CModal {
                             width: parent.width
                             spacing: 4
                             Text {
-                                text: modelData.desc
+                                text: root.emulatorSettingLabel(modelData)
                                 color: Theme.textSec
                                 font.pixelSize: 12
                             }
@@ -229,7 +349,9 @@ CModal {
                                     width: parent.width - 88
                                     text: root.emuSettingsValues[modelData.id] || ""
                                     onEditingFinished: {
-                                        var vals = root.emuSettingsValues;
+                                        var vals = {};
+                                        for (var k in root.emuSettingsValues)
+                                            vals[k] = root.emuSettingsValues[k];
                                         vals[modelData.id] = text.trim();
                                         root.emuSettingsValues = vals;
                                         root.save();
@@ -239,7 +361,10 @@ CModal {
                                     text: "..."
                                     width: 36
                                     height: 32
-                                    onClicked: {}
+                                    onClicked: {
+                                        root.pendingEmuPathId = modelData.id;
+                                        emuPathDialog.open();
+                                    }
                                 }
                                 CButton {
                                     text: "X"
@@ -247,7 +372,9 @@ CModal {
                                     height: 32
                                     onClicked: {
                                         pathField.text = "";
-                                        var vals = root.emuSettingsValues;
+                                        var vals = {};
+                                        for (var k in root.emuSettingsValues)
+                                            vals[k] = root.emuSettingsValues[k];
                                         vals[modelData.id] = "";
                                         root.emuSettingsValues = vals;
                                         root.save();
@@ -259,37 +386,66 @@ CModal {
                 }
             }
         }
-        // Graphics tab: GLOBAL defaults for new games (mirrors Java
-        // gamesUsesWined3d/gamesUsesWayland). Per-game override stays manual.
+        // Graphics tab: per-game graphics overrides.
         Column {
             width: parent.width
             spacing: 8
             visible: root.tab === "graphics"
             Text {
-                text: "Defaults for new games (applies automatically on add)."
+                text: "Graphics options for this game only."
                 color: Theme.textSec
                 font.pixelSize: 12
                 wrapMode: Text.Wrap
                 width: parent.width
             }
             Text {
-                text: "Per-game override stays manual in each game's own settings."
+                text: "New games use the defaults from Settings > Miscellaneous."
                 color: Theme.textMuted
                 font.pixelSize: 11
                 wrapMode: Text.Wrap
                 width: parent.width
             }
             CSwitch {
-                id: globalWined3d
-                objectName: "Use wined3d for new games"
-                Component.onCompleted: setSilent(config.launcherValue("gamesUsesWined3d", "User Settings") === "1")
-                onToggled: config.setLauncherValue("gamesUsesWined3d", checked ? "1" : "0", "User Settings")
+                id: graphicsWined3d
+                objectName: "Use wined3d"
+                Component.onCompleted: setSilent(games.getGame(root.gameName).wined3d === "true"
+                    || games.getGame(root.gameName).wined3d === "1")
+                onToggled: games.addGame(root.gameName, {"wined3d": checked ? "true" : "false"})
             }
             CSwitch {
-                id: globalWayland
-                objectName: "Prefer Wayland for new games"
-                Component.onCompleted: setSilent(config.launcherValue("gamesUsesWayland", "User Settings") === "1")
-                onToggled: config.setLauncherValue("gamesUsesWayland", checked ? "1" : "0", "User Settings")
+                id: graphicsWayland
+                objectName: "Prefer Wayland"
+                Component.onCompleted: setSilent(games.getGame(root.gameName).nativeWayland === "true"
+                    || games.getGame(root.gameName).nativeWayland === "1")
+                onToggled: games.addGame(root.gameName, {"nativeWayland": checked ? "true" : "false"})
+            }
+            CSwitch {
+                objectName: "Use GameMode"
+                enabled: gameModeStatus.available === true
+                Component.onCompleted: setSilent(games.getGame(root.gameName).gameMode === "true")
+                onToggled: games.addGame(root.gameName, {"gameMode": checked ? "true" : "false"})
+            }
+            Text {
+                text: "GameMode: " + (gameModeStatus.available === true ? "32-bit and 64-bit ready"
+                    : gameModeStatus.installed32 === true ? "32-bit installed; 64-bit missing"
+                    : gameModeStatus.installed64 === true ? "64-bit installed; 32-bit missing"
+                    : "not installed")
+                color: Theme.textSec
+                font.pixelSize: 11
+            }
+            CSwitch {
+                objectName: "Use MangoHud"
+                enabled: mangoHudStatus.available === true
+                Component.onCompleted: setSilent(games.getGame(root.gameName).mangoHud === "true")
+                onToggled: games.addGame(root.gameName, {"mangoHud": checked ? "true" : "false"})
+            }
+            Text {
+                text: "MangoHud: " + (mangoHudStatus.available === true ? "32-bit and 64-bit ready"
+                    : mangoHudStatus.installed32 === true ? "32-bit installed; 64-bit missing"
+                    : mangoHudStatus.installed64 === true ? "64-bit installed; 32-bit missing"
+                    : "not installed")
+                color: Theme.textSec
+                font.pixelSize: 11
             }
 
             // ---- Dependency Installer (only if plugin installed) ----
@@ -565,6 +721,8 @@ CModal {
                 Button {
                     required property var modelData
                     text: modelData.label
+                    width: 104
+                    height: 52
                     checkable: true
                     checked: root.tab === modelData.id
                     autoExclusive: true
@@ -600,6 +758,38 @@ CModal {
                 }
             }
         }
+        }
+    }
+
+    Item {
+        width: 0
+        height: 0
+        Connections {
+            target: plugins
+            function onEmulatorsChanged() { root.reloadEmuFields(); }
+        }
+        FileDialog {
+            id: emuPathDialog
+            title: "Choose emulator path"
+            onAccepted: root.saveEmuPath(root.localFilePath(selectedFile))
+        }
+        FileDialog {
+            id: bannerDialog
+            title: "Choose cover or banner"
+            nameFilters: ["Images (*.png *.jpg *.jpeg *.webp)", "All files (*)"]
+            onAccepted: {
+                bannerField.text = root.localFilePath(selectedFile);
+                save();
+            }
+        }
+        FileDialog {
+            id: iconDialog
+            title: "Choose icon"
+            nameFilters: ["Images (*.png *.jpg *.jpeg *.webp *.ico)", "All files (*)"]
+            onAccepted: {
+                iconField.text = root.localFilePath(selectedFile);
+                save();
+            }
         }
     }
 }

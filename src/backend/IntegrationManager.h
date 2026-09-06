@@ -39,6 +39,7 @@ public:
     // ---- Artwork resolver (any game): banner/icon local paths ----
     Q_INVOKABLE void resolveArtwork(const QString &gameName, const QString &steamId);
     // -> artworkReady(gameName, bannerPath, iconPath)
+    Q_INVOKABLE bool pathExists(const QString &path) const;
 
     /** Sync shallow scan of a dir for .exe/.rar candidates (Add Game flow). */
     Q_INVOKABLE QStringList scanDirSync(const QString &dir) const;
