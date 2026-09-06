@@ -10,7 +10,7 @@ INSTALL_DIR="${HOME}/.local/share/corkytux"
 BIN_DIR="${HOME}/.local/bin"
 ICON_DIR="${HOME}/.local/share/icons"
 DESKTOP_DIR="${HOME}/.local/share/applications"
-VERSION="2.10.0"
+VERSION="2.12.0"
 
 # ─── Colors ──────────────────────────────────────────────────────
 RED='\033[0;31m'
