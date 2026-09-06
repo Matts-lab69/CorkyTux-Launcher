@@ -5,6 +5,7 @@
 #include <QProcess>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 #include <QVariantMap>
 
 /**
@@ -82,15 +83,22 @@ private slots:
 
 private:
     void runGameImpl(const QString &gameName, bool debug);
+    void startLogMonitor();
+    void stopLogMonitor();
+    void emitNewLogLines();
     explicit ProtonManager(QObject *parent = nullptr);
     QString protonsDir() const;
     static qint64 dirSize(const QString &path);
 
     QProcess *m_proc = nullptr;
     bool m_running = false;
+    bool m_debug = false;
     bool m_useUmu = false;
     QString m_currentGame;
+    QString m_logDir;
     qint64 m_startEpoch = 0;
+    qint64 m_logFilePos = 0;
     double m_dlProgress = -1.0;
+    QTimer *m_logTimer = nullptr;
     class QNetworkAccessManager *m_nam = nullptr;
 };

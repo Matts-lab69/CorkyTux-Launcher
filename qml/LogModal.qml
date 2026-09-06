@@ -10,10 +10,18 @@ CModal {
     boxWidth: 640
 
     property alias logText: area.text
+    property bool gameRunning: false
 
     Column {
         width: parent.width
         spacing: 10
+        Text {
+            text: root.gameRunning ? "Running..." : "Game stopped"
+            color: root.gameRunning ? "#00E639" : Theme.textSec
+            font.bold: true
+            font.pixelSize: 13
+            width: parent.width
+        }
         Text {
             text: "If there are errors in it, you can figure it out yourself or send the log to the community and they will help you"
             color: Theme.textSec
@@ -63,11 +71,13 @@ CModal {
                 text: "Close"
                 kind: "danger"
                 width: 112
+                visible: !root.gameRunning
                 onClicked: root.close()
             }
             CButton {
                 text: "Save"
                 width: 112
+                visible: !root.gameRunning
                 onClicked: {
                     var dir = config.dataDirPath() + "/logs";
                     config.ensureDir(dir);

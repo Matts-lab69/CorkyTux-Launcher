@@ -52,6 +52,7 @@ ApplicationWindow {
         target: proton
         function onRunningChanged() {
             details.gameRunning = proton.running && proton.currentGame === root.currentGameName;
+            logModal.gameRunning = proton.running;
         }
         function onGameLogOutput(text) {
             logModal.logText += text;
@@ -355,6 +356,7 @@ ApplicationWindow {
             else if (action === "Remove") removeModal.openFor(root.currentGameName, !!(root.currentGame.executor || ""));
             else if (action === "Debug") {
                 logModal.logText = "";
+                logModal.gameRunning = true;
                 logModal.open();
                 proton.runGameDebug(root.currentGameName);
             }

@@ -26,6 +26,12 @@ ProtonManager *ProtonManager::instance() {
 
 ProtonManager::ProtonManager(QObject *parent) : QObject(parent) {
     m_nam = new QNetworkAccessManager(this);
+    m_logDir = ConfigManager::expectedHome()
+               + "/.local/share/CorkyTux/logs";
+    QDir().mkpath(m_logDir);
+    m_logTimer = new QTimer(this);
+    m_logTimer->setInterval(500);
+    connect(m_logTimer, &QTimer::timeout, this, &ProtonManager::emitNewLogLines);
 }
 
 bool ProtonManager::isUmuAvailable() const {
@@ -266,6 +272,7 @@ void ProtonManager::runCustomExe(const QString &gameName, const QString &exePath
 void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     if (m_running || gameName.isEmpty())
         return;
+    m_debug = debug;
     ConfigManager *cfg = ConfigManager::instance();
     const QString exec = cfg->gameValue(gameName, "executable");
     const QString executor = cfg->gameValue(gameName, "executor");
@@ -482,45 +489,6 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     const bool useMangoHud = enabledValue("mangoHud", "gamesUsesMangoHud");
     if (useMangoHud)
         env.insert("MANGOHUD", "1");
-    args << "waitforexitandrun" << exec;
-    const QString argsAfter = cfg->gameValue(gameName, "argsAfter");
-    if (!argsAfter.isEmpty())
-        args += argsAfter.split(' ', Qt::SkipEmptyParts);
-    // Steam runtime wrapper (findSteamRuntime equivalent)
-    const QString rtFlag = cfg->gameValue(gameName, "steamRuntime");
-    if (truthy(rtFlag)) {
-        const QString rt = findSteamRuntime(protonName);
-        if (rt.isEmpty()) {
-            cfg->setGameValue(gameName, "steamRuntime", "false");
-        } else {
-            args.prepend("--");
-            args.prepend(rt);
-        }
-    }
-    const QString argsBefore = cfg->gameValue(gameName, "argsBefore");
-    if (!argsBefore.isEmpty()) {
-        // Shell-like split: handles quoted strings with spaces
-        QStringList parsed;
-        QString current;
-        bool inQuote = false;
-        QChar quoteChar;
-        for (int i = 0; i < argsBefore.size(); ++i) {
-            QChar c = argsBefore[i];
-            if (inQuote) {
-                if (c == quoteChar) { inQuote = false; continue; }
-                current += c;
-            } else if (c == '"' || c == '\'') {
-                inQuote = true;
-                quoteChar = c;
-            } else if (c == ' ') {
-                if (!current.isEmpty()) { parsed << current; current.clear(); }
-            } else {
-                current += c;
-            }
-        }
-        if (!current.isEmpty()) parsed << current;
-        args = parsed + args;
-    }
     // Working dir = exe parent (mirrors Java)
     const QFileInfo fi(exec);
     workDir = fi.dir().path();
@@ -532,7 +500,6 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
         const QStringList all = installedProtons();
         QStringList sorted = all;
         std::sort(sorted.begin(), sorted.end(), [](const QString &a, const QString &b) {
-            // Extract last number for version comparison (e.g. GE-Proton9-20 → 20)
             const QRegularExpression re("(\\d+)(?:\\D*)$");
             const auto ma = re.match(a), mb = re.match(b);
             const int va = ma.hasMatch() ? ma.captured(1).toInt() : 0;
@@ -568,6 +535,55 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     } else if (program.isEmpty()) {
         emit toast("No Proton executable found");
         return;
+    } else {
+        // Standard Proton command: proton waitforexitandrun game.exe
+        args << "waitforexitandrun" << exec;
+        const QString argsAfter = cfg->gameValue(gameName, "argsAfter");
+        if (!argsAfter.isEmpty())
+            args += argsAfter.split(' ', Qt::SkipEmptyParts);
+        // Steam runtime wrapper — must come AFTER proton is resolved.
+        // Steam Runtime provides 32-bit libs (pulse, alsa) missing on
+        // pure 64-bit systems. Command becomes:
+        //   run.sh -- /path/to/proton waitforexitandrun game.exe
+        QString rtFlag = cfg->gameValue(gameName, "steamRuntime");
+        if (rtFlag.isEmpty())
+            rtFlag = cfg->launcherValue("gamesUsesSteamRuntime", "User Settings");
+        if (rtFlag.isEmpty())
+            rtFlag = "true";
+        if (truthy(rtFlag)) {
+            const QString rt = findSteamRuntime(protonName);
+            if (rt.isEmpty()) {
+                cfg->setGameValue(gameName, "steamRuntime", "false");
+            } else {
+                // run.sh does exec "$@" — no -- separator needed.
+                // Command: run.sh /path/to/proton waitforexitandrun game.exe
+                args.prepend(program);
+                program = rt;
+            }
+        }
+        const QString argsBefore = cfg->gameValue(gameName, "argsBefore");
+        if (!argsBefore.isEmpty()) {
+            QStringList parsed;
+            QString current;
+            bool inQuote = false;
+            QChar quoteChar;
+            for (int i = 0; i < argsBefore.size(); ++i) {
+                QChar c = argsBefore[i];
+                if (inQuote) {
+                    if (c == quoteChar) { inQuote = false; continue; }
+                    current += c;
+                } else if (c == '"' || c == '\'') {
+                    inQuote = true;
+                    quoteChar = c;
+                } else if (c == ' ') {
+                    if (!current.isEmpty()) { parsed << current; current.clear(); }
+                } else {
+                    current += c;
+                }
+            }
+            if (!current.isEmpty()) parsed << current;
+            args = parsed + args;
+        }
     }
 
     if (useGameMode) {
@@ -615,11 +631,14 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
         emit runningChanged();
     } else {
         m_startEpoch = QDateTime::currentSecsSinceEpoch();
+        if (m_debug)
+            startLogMonitor();
     }
 }
 
 void ProtonManager::onGameFinished(int exitCode, QProcess::ExitStatus status) {
     const QString game = m_currentGame;
+    stopLogMonitor();
     // Accumulate playtime (mirrors Java updateTimeSpent flow)
     if (!game.isEmpty() && m_startEpoch > 0) {
         const qint64 elapsed = QDateTime::currentSecsSinceEpoch() - m_startEpoch;
@@ -642,6 +661,46 @@ void ProtonManager::onGameFinished(int exitCode, QProcess::ExitStatus status) {
     emit runningChanged();
     emit currentGameChanged();
     emit gameFinished(game, exitCode);
+}
+
+void ProtonManager::startLogMonitor() {
+    m_logFilePos = 0;
+    // Find the most recent log file to start reading from the end
+    QDir dir(m_logDir);
+    const QStringList entries = dir.entryList({"log-*.txt"}, QDir::Files, QDir::Time);
+    if (!entries.isEmpty()) {
+        QFile f(dir.filePath(entries.first()));
+        if (f.open(QIODevice::ReadOnly | QIODevice::Text))
+            m_logFilePos = f.size();
+    }
+    m_logTimer->start();
+}
+
+void ProtonManager::stopLogMonitor() {
+    m_logTimer->stop();
+    // Emit any remaining lines
+    if (m_debug)
+        emitNewLogLines();
+}
+
+void ProtonManager::emitNewLogLines() {
+    QDir dir(m_logDir);
+    const QStringList entries = dir.entryList({"log-*.txt"}, QDir::Files, QDir::Time);
+    if (entries.isEmpty())
+        return;
+    const QString latest = dir.filePath(entries.first());
+    QFile f(latest);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+        return;
+    const qint64 fileSize = f.size();
+    if (fileSize <= m_logFilePos)
+        return;
+    f.seek(m_logFilePos);
+    const QByteArray data = f.readAll();
+    m_logFilePos = f.size();
+    f.close();
+    if (!data.isEmpty())
+        emit gameLogOutput(QString::fromLocal8Bit(data));
 }
 
 void ProtonManager::runWineTool(const QString &gameName, const QString &tool) {
@@ -686,6 +745,7 @@ void ProtonManager::runWineTool(const QString &gameName, const QString &tool) {
 void ProtonManager::stopGame() {
     if (!m_running)
         return;
+    stopLogMonitor();
     const QString game = m_currentGame;
     const QString prefix = ensurePrefixPath(game);
     if (m_proc) {

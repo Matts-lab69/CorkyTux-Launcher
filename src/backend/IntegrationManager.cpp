@@ -491,14 +491,6 @@ void IntegrationManager::resolveArtwork(const QString &gameName, const QString &
                                 banner = d;
                         }
                     }
-                    if (icon.isEmpty()) {
-                        const QString u = grab("capsule_image");
-                        if (!u.isEmpty()) {
-                            const QString d = home + "/.config/CorkyTux/icons/" + id + "-store.jpg";
-                            if (downloadTo(&nam, u, d))
-                                icon = d;
-                        }
-                    }
                 }
                 rep->deleteLater();
             }
@@ -570,11 +562,8 @@ void IntegrationManager::resolveArtwork(const QString &gameName, const QString &
                 }
                 if (!best.isEmpty()) {
                     const QString d = home + "/.config/CorkyTux/banners/" + slugify(gameName) + "-lutris.jpg";
-                    if (downloadTo(&nam, best, d)) {
+                    if (downloadTo(&nam, best, d))
                         banner = d;
-                        if (icon.isEmpty())
-                            icon = d;
-                    }
                 }
             }
             rep->deleteLater();

@@ -456,6 +456,16 @@ CModal {
                     onToggled: config.setLauncherValue("gamesUsesWayland", checked ? "1" : "0", "User Settings")
                 }
                 CSwitch {
+                    objectName: "Use Steam Runtime for Proton games"
+                    Component.onCompleted: setSilent(config.launcherValue("gamesUsesSteamRuntime", "User Settings") !== "0")
+                    onToggled: config.setLauncherValue("gamesUsesSteamRuntime", checked ? "1" : "0", "User Settings")
+                }
+                Text {
+                    text: "Provides 32-bit audio/video libs on pure 64-bit systems"
+                    color: Theme.textSec
+                    font.pixelSize: 11
+                }
+                CSwitch {
                     objectName: "Use umu-launcher (unified Proton runner)"
                     Component.onCompleted: setSilent(proton.useUmu)
                     onToggled: proton.useUmu = checked
