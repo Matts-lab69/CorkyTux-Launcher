@@ -167,6 +167,21 @@ ApplicationWindow {
             }
             toastLabel.text = "Lutris scan: " + scanGames.length + " found, " + imported + " added.";
             toastPopup.open();
+            // Check for games with missing prefix paths
+            var missing = [];
+            for (var j = 0; j < scanGames.length; j++) {
+                var sg = scanGames[j];
+                if (!sg.name || /^\d+$/.test(sg.name))
+                    continue;
+                var gd = games.getGame(sg.name);
+                if (!gd || (gd.executor || "") !== "")
+                    continue;
+                var pp = gd.prefixPath || "";
+                if (pp !== "" && !integrations.pathExists(pp))
+                    missing.push({ "name": sg.name, "prefixPath": pp });
+            }
+            if (missing.length > 0)
+                prefixWarningModal.openFor(missing);
         }
         function onSteamScanReady(scanGames) {
             var imported = 0;
@@ -522,6 +537,7 @@ ApplicationWindow {
     }
     LogModal { id: logModal }
     ProtonModal { id: protonModal }
+    PrefixWarningModal { id: prefixWarningModal }
 
     Popup {
         id: toastPopup

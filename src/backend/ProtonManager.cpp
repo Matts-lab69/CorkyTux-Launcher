@@ -224,8 +224,16 @@ QString ProtonManager::findSteamRuntime(const QString &protonName) const {
 QString ProtonManager::prefixPath(const QString &gameName) const {
     if (gameName.isEmpty())
         return {};
+    ConfigManager *cfg = ConfigManager::instance();
+    // 0) Shared prefix mode: all games share one prefix
+    if (cfg->launcherValue("useSharedPrefix", "User Settings") == "1") {
+        QString shared = cfg->launcherValue("sharedPrefixPath", "User Settings");
+        if (shared.isEmpty())
+            shared = ConfigManager::prefixesDir() + "/shared";
+        return shared;
+    }
     // 1) explicit per-game prefix
-    const QString explicit_ = ConfigManager::instance()->gameValue(gameName, "prefixPath");
+    const QString explicit_ = cfg->gameValue(gameName, "prefixPath");
     if (!explicit_.isEmpty())
         return explicit_;
     // 2) default managed prefix
@@ -369,6 +377,17 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
 
     // For Steam games, use Steam's own prefix (don't create a new one)
     QString prefix;
+    // Shared prefix validation: all games must use the same Proton
+    const bool useSharedPrefix = cfg->launcherValue("useSharedPrefix", "User Settings") == "1";
+    bool forcePerGamePrefix = false;
+    if (useSharedPrefix && !isSteamGame) {
+        const QString defaultProton = cfg->launcherValue("defaultProton", "User Settings");
+        if (!defaultProton.isEmpty() && protonName != defaultProton) {
+            emit toast("Shared prefix requires all games to use the same Proton. "
+                       "This game uses " + protonName + ", expected " + defaultProton);
+            forcePerGamePrefix = true;
+        }
+    }
     if (isSteamGame) {
         prefix = cfg->gameValue(gameName, "prefixPath");
         if (prefix.isEmpty()) {
@@ -390,7 +409,20 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
         if (!QDir(prefix).exists())
             QDir().mkpath(prefix);
     } else {
-        prefix = ensurePrefixPath(gameName);
+        if (forcePerGamePrefix) {
+            // Mismatched Proton: use per-game prefix instead of shared
+            const QString explicit_ = cfg->gameValue(gameName, "prefixPath");
+            if (!explicit_.isEmpty())
+                prefix = explicit_;
+            else
+                prefix = ConfigManager::prefixesDir() + "/" + gameName + "/pfx";
+            if (!prefix.endsWith("/pfx"))
+                prefix += "/pfx";
+            if (!QDir(prefix).exists())
+                QDir().mkpath(prefix);
+        } else {
+            prefix = ensurePrefixPath(gameName);
+        }
         if (prefix.isEmpty()) {
             emit toast("Cannot create prefix dir");
             return;

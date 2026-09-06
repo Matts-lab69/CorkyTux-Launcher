@@ -212,9 +212,51 @@ CModal {
                         }
                     }
                 }
+                // Shared prefix section
+                Text {
+                    text: "Shared Prefix"
+                    color: Theme.textMain
+                    font.bold: true
+                    font.pixelSize: 14
+                    horizontalAlignment: Text.AlignHCenter
+                    width: parent.width
+                    anchors.horizontalCenter: parent.horizontalCenter
+                }
+                Text {
+                    text: "Use a single Wine/Proton prefix for all games (like Heroic Launcher). All games must use the same Proton version."
+                    color: Theme.textSec
+                    font.pixelSize: 11
+                    wrapMode: Text.Wrap
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                CCard {
+                    width: parent.width
+                    outlineColor: Theme.border
+                    outlineWidth: 1
+                    CSwitch {
+                        objectName: "Use shared prefix for all games"
+                        Component.onCompleted: setSilent(config.launcherValue("useSharedPrefix", "User Settings") === "1")
+                        onToggled: config.setLauncherValue("useSharedPrefix", checked ? "1" : "0", "User Settings")
+                    }
+                    Column {
+                        width: parent.width
+                        spacing: 4
+                        visible: config.launcherValue("useSharedPrefix", "User Settings") === "1"
+                        Text { text: "Shared prefix path"; color: Theme.textSec; font.pixelSize: 12 }
+                        CTextField {
+                            width: parent.width
+                            text: {
+                                var custom = config.launcherValue("sharedPrefixPath", "User Settings");
+                                if (custom !== "")
+                                    return custom;
+                                return config.basePathFor("prefixes") + "/shared";
+                            }
+                            onEditingFinished: config.setLauncherValue("sharedPrefixPath", text.trim(), "User Settings")
+                        }
+                    }
+                }
             }
-
-            // PROTONS
             Column {
                 id: protonsPage
                 width: parent.width
