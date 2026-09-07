@@ -2,28 +2,7 @@
     "configurations": [
         {
             "name": "Linux",
-            "includePath": [
-                "${workspaceFolder}/**",
-                "/usr/include/qt6",
-                "/usr/include/qt6/QtCore",
-                "/usr/include/qt6/QtGui",
-                "/usr/include/qt6/QtQuick",
-                "/usr/include/qt6/QtQml",
-                "/usr/include/qt6/QtNetwork",
-                "/usr/include/qt6/QtConcurrent",
-                "/usr/include/qt6/QtSvg",
-                "/usr/include/qt6/QtOpenGL"
-            ],
-            "defines": [
-                "PROJECT_VERSION=\"2.12.1\"",
-                "QT_QUICK_LIB",
-                "QT_QML_LIB",
-                "QT_NETWORK_LIB",
-                "QT_CONCURRENT_LIB",
-                "QT_SVG_LIB",
-                "QT_CORE_LIB",
-                "QT_GUI_LIB"
-            ],
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
             "compilerPath": "/usr/bin/g++",
             "cStandard": "c17",
             "cppStandard": "c++20",
