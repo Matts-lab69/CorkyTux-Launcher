@@ -28,6 +28,8 @@ public:
     Q_INVOKABLE QStringList installedProtons() const;
     /** Installed builds with their base path: [{name, path}]. */
     Q_INVOKABLE QVariantList installedProtonDetails() const;
+    /** All configured proton paths (main + optional 2 & 3). */
+    Q_INVOKABLE QStringList protonPaths() const;
     Q_INVOKABLE QString protonExecutable(const QString &protonName,
                                         const QString &tool = QStringLiteral("proton")) const;
     Q_INVOKABLE QString prefixPath(const QString &gameName) const;
@@ -63,8 +65,9 @@ public:
 
     /** Async: fetch GE-Proton releases {tag -> {url, date}}. */
     Q_INVOKABLE void fetchReleases();
-    /** Async download+extract of a release tarball. */
-    Q_INVOKABLE void downloadProton(const QString &tag, const QString &url);
+    /** Async download+extract of a release tarball to destPath. */
+    Q_INVOKABLE void downloadProton(const QString &tag, const QString &url,
+                                    const QString &destPath = {});
     /** Deletes a proton build dir from every configured path. */
     Q_INVOKABLE void removeProton(const QString &name);
     double downloadProgress() const { return m_dlProgress; }

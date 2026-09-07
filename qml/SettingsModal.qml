@@ -264,7 +264,6 @@ CModal {
                 visible: root.page === "protons"
                 property string filter: "all"
                 property var releases: []
-                property string pathFilter: ""
                 property var installedDetails: []
                 property var defaultProtonModel: proton.installedProtons()
                 Text { text: "Protons"; color: Theme.textMain; font.bold: true; font.pixelSize: 18
@@ -317,33 +316,12 @@ CModal {
                     wrapMode: Text.Wrap
                     visible: text !== ""
                 }
-                // Installed builds (path filter like Java protonPathsCombo)
+                // Installed builds
                 Text {
                     text: "Installed builds"
                     color: Theme.textMain
                     font.bold: true
                     font.pixelSize: 13
-                }
-                Row {
-                    width: parent.width
-                    spacing: 8
-                    Text {
-                        text: "Path:"
-                        color: Theme.textSec
-                        font.pixelSize: 12
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                    CComboBox {
-                        id: protonPathBox
-                        width: 400
-                        height: 28
-                        model: ["All paths"].concat(config.allProtonPaths())
-                        onActivated: {
-                            protonsPage.pathFilter = currentIndex <= 0 ? "" : currentText;
-                            protonsPage.installedDetails = proton.installedProtonDetails();
-                        }
-                        Component.onCompleted: protonsPage.installedDetails = proton.installedProtonDetails()
-                    }
                 }
                 ListView {
                     id: protonInstalledList
@@ -355,9 +333,7 @@ CModal {
                     ScrollBar.vertical: ScrollBar {
                         policy: ScrollBar.AlwaysOff
                     }
-                    model: protonsPage.installedDetails.filter(function(d) {
-                        return protonsPage.pathFilter === "" || d.path === protonsPage.pathFilter;
-                    })
+                    model: protonsPage.installedDetails
                     delegate: Rectangle {
                         required property var modelData
                         width: parent ? parent.width - 8 : 0

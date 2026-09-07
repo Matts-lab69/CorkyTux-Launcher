@@ -47,6 +47,8 @@ public:
 
     /** Writes text to a file: URL (file://) or plain path. Returns success. */
     Q_INVOKABLE bool saveTextFile(const QString &urlOrPath, const QString &text);
+    /** Reads text from a file. Returns empty string on error. */
+    Q_INVOKABLE QString readFile(const QString &path);
     /** Creates directory (and parents) if it doesn't exist. */
     Q_INVOKABLE void ensureDir(const QString &path);
 

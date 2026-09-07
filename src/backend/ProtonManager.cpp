@@ -160,7 +160,11 @@ QStringList ProtonManager::installedProtons() const {
     return out;
 }
 
-QVariantList ProtonManager::installedProtonDetails() const {
+QStringList ProtonManager::protonPaths() const {
+    return ConfigManager::instance()->allProtonPaths();
+}
+
+    QVariantList ProtonManager::installedProtonDetails() const {
     QVariantList out;
     for (const QString &protonsPath : ConfigManager::instance()->allProtonPaths()) {
         const QDir dir(protonsPath);
@@ -171,19 +175,6 @@ QVariantList ProtonManager::installedProtonDetails() const {
             if (QFile::exists(dir.filePath(e + "/proton"))
                 || QFile::exists(dir.filePath(e + "/proton.sh")))
                 out << QVariantMap({{"name", e}, {"path", protonsPath}});
-        }
-    }
-    // Steam compat tools (read-only extras)
-    for (const QString &root :
-         {ConfigManager::expectedHome() + "/.local/share/Steam",
-          ConfigManager::expectedHome() + "/.steam/steam"}) {
-        const QDir compat(root + "/compatibilitytools.d");
-        if (!compat.exists())
-            continue;
-        for (const QString &e :
-             compat.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
-            if (QFile::exists(compat.filePath(e + "/proton")))
-                out << QVariantMap({{"name", e}, {"path", compat.path()}});
         }
     }
     return out;
@@ -199,11 +190,6 @@ QString ProtonManager::protonExecutable(const QString &protonName,
         all << base + tool << base + tool + ".sh"
             << base + "files/bin/wine64" << base + "files/bin/wine";
     }
-    // Steam compat fallback
-    for (const QString &root :
-         {ConfigManager::expectedHome() + "/.local/share/Steam/compatibilitytools.d",
-          ConfigManager::expectedHome() + "/.steam/steam/compatibilitytools.d"})
-        all << root + "/" + protonName + "/" + tool;
     for (const QString &c : all) {
         if (QFile::exists(c))
             return c;
@@ -443,7 +429,50 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
         return;
     }
 
-    // For Steam games, use Steam's own prefix (don't create a new one)
+    // --- Steam games: launch via Steam client (like Lutris) ---
+    if (isSteamGame) {
+        const QString sid = cfg->gameValue(gameName, "steamID");
+        if (sid.isEmpty()) {
+            emit toast("No Steam AppID for this game");
+            return;
+        }
+        // Find Steam binary
+        const QString steamBin = QStandardPaths::findExecutable("steam");
+        if (steamBin.isEmpty()) {
+            emit toast("Steam client not found");
+            return;
+        }
+        // Launch via steam://rungameid protocol (Steam handles Proton/prefix)
+        args << "steam://rungameid/" + sid;
+        m_proc = new QProcess(this);
+        m_proc->setProgram(steamBin);
+        m_proc->setArguments(args);
+        connect(m_proc, &QProcess::finished, this, &ProtonManager::onGameFinished);
+        connect(m_proc, &QProcess::readyReadStandardOutput, this, [this] {
+            emit gameLogOutput(QString::fromLocal8Bit(m_proc->readAllStandardOutput()));
+        });
+        connect(m_proc, &QProcess::readyReadStandardError, this, [this] {
+            emit gameLogOutput(QString::fromLocal8Bit(m_proc->readAllStandardError()));
+        });
+        m_currentGame = gameName;
+        m_running = true;
+        emit runningChanged();
+        emit currentGameChanged();
+        cfg->setGameValue(gameName, "lastPlayed",
+                          QString::number(QDateTime::currentSecsSinceEpoch()));
+        m_proc->start();
+        if (!m_proc->waitForStarted(10000)) {
+            emit toast("Failed to start Steam");
+            m_proc->deleteLater();
+            m_proc = nullptr;
+            m_running = false;
+            emit runningChanged();
+        } else {
+            m_startEpoch = QDateTime::currentSecsSinceEpoch();
+        }
+        return;
+    }
+    // --- Non-Steam games ---
     QString prefix;
     // Shared prefix validation: all games must use the same Proton
     const bool useSharedPrefix = cfg->launcherValue("useSharedPrefix", "User Settings") == "1"
@@ -458,45 +487,23 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
             forcePerGamePrefix = true;
         }
     }
-    if (isSteamGame) {
-        prefix = cfg->gameValue(gameName, "prefixPath");
-        if (prefix.isEmpty()) {
-            // Fallback: construct from steamapps/compatdata/<appid>/pfx
-            const QString mainPath = cfg->gameValue(gameName, "mainPath");
-            const QString sid = cfg->gameValue(gameName, "steamID");
-            if (!mainPath.isEmpty() && !sid.isEmpty()) {
-                // mainPath = .../steamapps/common/GameName → go up to .../steamapps
-                const QString commonDir = QFileInfo(mainPath).absolutePath();
-                const QString steamapps = QFileInfo(commonDir).absolutePath();
-                prefix = steamapps + "/compatdata/" + sid + "/pfx";
-            }
-        }
-        if (prefix.isEmpty()) {
-            emit toast("Cannot determine Steam prefix for this game");
-            return;
-        }
-        // Create prefix dir if it doesn't exist yet (first run through CorkyTux)
+    if (forcePerGamePrefix) {
+        // Mismatched Proton: use per-game prefix instead of shared
+        const QString explicit_ = cfg->gameValue(gameName, "prefixPath");
+        if (!explicit_.isEmpty())
+            prefix = explicit_;
+        else
+            prefix = ConfigManager::prefixesDir() + "/" + gameName + "/pfx";
+        if (!prefix.endsWith("/pfx"))
+            prefix += "/pfx";
         if (!QDir(prefix).exists())
             QDir().mkpath(prefix);
     } else {
-        if (forcePerGamePrefix) {
-            // Mismatched Proton: use per-game prefix instead of shared
-            const QString explicit_ = cfg->gameValue(gameName, "prefixPath");
-            if (!explicit_.isEmpty())
-                prefix = explicit_;
-            else
-                prefix = ConfigManager::prefixesDir() + "/" + gameName + "/pfx";
-            if (!prefix.endsWith("/pfx"))
-                prefix += "/pfx";
-            if (!QDir(prefix).exists())
-                QDir().mkpath(prefix);
-        } else {
-            prefix = ensurePrefixPath(gameName);
-        }
-        if (prefix.isEmpty()) {
-            emit toast("Cannot create prefix dir");
-            return;
-        }
+        prefix = ensurePrefixPath(gameName);
+    }
+    if (prefix.isEmpty()) {
+        emit toast("Cannot create prefix dir");
+        return;
     }
 
     // --- DXVK vs wined3d (mirrors FilesWorker.generateProcess) ---
@@ -935,7 +942,8 @@ void ProtonManager::fetchReleases() {
     }
 }
 
-void ProtonManager::downloadProton(const QString &tag, const QString &url) {
+void ProtonManager::downloadProton(const QString &tag, const QString &url,
+                                   const QString &destPath) {
     m_dlProgress = 0.0;
     emit downloadProgressChanged();
     QNetworkRequest req{QUrl(url)};
@@ -943,7 +951,9 @@ void ProtonManager::downloadProton(const QString &tag, const QString &url) {
     QNetworkReply *rep = m_nam->get(req);
     // Use the actual file extension from the URL
     const QString ext = url.endsWith(".tar.xz") ? ".tar.xz" : ".tar.gz";
-    const QString dest = protonsDir() + "/" + tag + ext;
+    // If destPath is provided, use it; otherwise fall back to primary protons dir
+    const QString targetDir = destPath.isEmpty() ? protonsDir() : destPath;
+    const QString dest = targetDir + "/" + tag + ext;
     // Snapshot dirs BEFORE download so we can identify the extracted folder later
     // (birthTime is unreliable on ext4 – never guess by date).
     const QStringList before =
@@ -960,7 +970,7 @@ void ProtonManager::downloadProton(const QString &tag, const QString &url) {
                 m_dlProgress = total > 0 ? double(rx) / double(total) : 0.0;
                 emit downloadProgressChanged();
             });
-    connect(rep, &QNetworkReply::finished, this, [this, rep, file, dest, tag, before] {
+    connect(rep, &QNetworkReply::finished, this, [this, rep, file, dest, tag, before, targetDir] {
         file->write(rep->readAll());
         file->close();
         const bool ok = rep->error() == QNetworkReply::NoError;
@@ -972,10 +982,10 @@ void ProtonManager::downloadProton(const QString &tag, const QString &url) {
             return;
         }
         // Heavy extraction OFF the GUI thread (tar can take minutes).
-        QtConcurrent::run([this, dest, tag, before] {
+        QtConcurrent::run([this, dest, tag, before, targetDir] {
             QString err;
             QProcess tar;
-            tar.setWorkingDirectory(protonsDir());
+            tar.setWorkingDirectory(targetDir);
             tar.start("tar", {"xf", dest});
             if (!tar.waitForFinished(1000 * 60 * 20) || tar.exitCode() != 0)
                 err = "Extraction failed: " + QString::fromLocal8Bit(tar.readAllStandardError()).trimmed();
@@ -985,7 +995,7 @@ void ProtonManager::downloadProton(const QString &tag, const QString &url) {
                 // Normalize: rename the NEWLY extracted top folder to the tag.
                 // New = present now but absent before; fallback to known prefixes.
                 QStringList after =
-                    QDir(protonsDir()).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+                    QDir(targetDir).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
                 QStringList fresh;
                 for (const QString &e : after) {
                     if (!before.contains(e) && e != tag)
@@ -999,7 +1009,7 @@ void ProtonManager::downloadProton(const QString &tag, const QString &url) {
                             fresh << e;
                     }
                 }
-                QDir dir(protonsDir());
+                QDir dir(targetDir);
                 if (!QDir(dir.filePath(tag)).exists() && !fresh.isEmpty())
                     QDir().rename(dir.filePath(fresh.first()), dir.filePath(tag));
                 // Root-owned guard: hand files back to the real user

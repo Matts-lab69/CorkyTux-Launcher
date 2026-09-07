@@ -372,10 +372,30 @@ ApplicationWindow {
             if (action === "Settings") gameSettingsModal.openFor(root.currentGameName);
             else if (action === "Remove") removeModal.openFor(root.currentGameName, !!(root.currentGame.executor || ""));
             else if (action === "Debug") {
+                // Show latest log file (like Lutris)
                 logModal.logText = "";
-                logModal.gameRunning = true;
+                logModal.gameRunning = false;
+                var logDir = config.dataDirPath() + "/logs";
+                var logFiles = integrations.scanDirSync(logDir);
+                var latestLog = "";
+                var latestTime = 0;
+                for (var i = 0; i < logFiles.length; i++) {
+                    var f = logFiles[i];
+                    if (f.indexOf("log-") >= 0 && f.endsWith(".txt")) {
+                        // Use filename as timestamp for sorting
+                        var base = f.split("/").pop().replace("log-", "").replace(".txt", "");
+                        if (base > latestTime) {
+                            latestTime = base;
+                            latestLog = f;
+                        }
+                    }
+                }
+                if (latestLog !== "") {
+                    logModal.logText = config.readFile(latestLog);
+                } else {
+                    logModal.logText = "No logs found. Run the game first.";
+                }
                 logModal.open();
-                proton.runGameDebug(root.currentGameName);
             }
             else if (action === "Wine") wineMenu.open();
             else if (action === "Run exe") {

@@ -210,6 +210,15 @@ bool ConfigManager::saveTextFile(const QString &urlOrPath, const QString &text) 
     return true;
 }
 
+QString ConfigManager::readFile(const QString &path) {
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+    QTextStream in(&f);
+    in.setEncoding(QStringConverter::Utf8);
+    return in.readAll();
+}
+
 void ConfigManager::ensureDir(const QString &path) {
     QDir().mkpath(path);
 }
