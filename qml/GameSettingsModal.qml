@@ -71,6 +71,8 @@ CModal {
         argsAfterField.text = g.argsAfter || "";
         overlaySwitch.setSilent(g.steamOverlay === "true" || g.steamOverlay === "1");
         runtimeSwitch.setSilent(g.steamRuntime === "true" || g.steamRuntime === "1");
+        umuSwitch.setSilent(g.useUmu === "true" || g.useUmu === "1");
+        sharedPrefixSwitch.setSilent(g.useSharedPrefix === "true" || g.useSharedPrefix === "1");
         graphicsWined3d.setSilent(g.wined3d === "true" || g.wined3d === "1");
         graphicsWayland.setSilent(g.nativeWayland === "true" || g.nativeWayland === "1");
         gameModeStatus = proton.graphicsComponentStatus("gamemode");
@@ -277,6 +279,20 @@ CModal {
                             id: runtimeSwitch
                             objectName: "Steam runtime"
                             onToggled: games.addGame(root.gameName, {"steamRuntime": checked ? "true" : "false"})
+                        }
+                    }
+                    Row {
+                        spacing: 10
+                        CSwitch {
+                            id: umuSwitch
+                            objectName: "umu-launcher"
+                            enabled: proton.isUmuAvailable()
+                            onToggled: games.addGame(root.gameName, {"useUmu": checked ? "true" : "false"})
+                        }
+                        CSwitch {
+                            id: sharedPrefixSwitch
+                            objectName: "Use shared prefix"
+                            onToggled: games.addGame(root.gameName, {"useSharedPrefix": checked ? "true" : "false"})
                         }
                     }
                 }

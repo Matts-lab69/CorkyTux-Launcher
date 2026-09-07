@@ -49,6 +49,8 @@ public:
 
     // ---- umu-launcher ----
     Q_INVOKABLE bool isUmuAvailable() const;
+    /** Full path to umu-run binary (searches PATH + known locations). */
+    QString umuExecutable() const;
     /** Reports executable and 32/64-bit runtime availability for graphics tools. */
     Q_INVOKABLE QVariantMap graphicsComponentStatus(const QString &component) const;
     Q_PROPERTY(bool useUmu READ useUmu WRITE setUseUmu NOTIFY useUmuChanged)

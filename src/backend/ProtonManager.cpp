@@ -35,7 +35,39 @@ ProtonManager::ProtonManager(QObject *parent) : QObject(parent) {
 }
 
 bool ProtonManager::isUmuAvailable() const {
-    return !QStandardPaths::findExecutable("umu-run").isEmpty();
+    // Check PATH first
+    if (!QStandardPaths::findExecutable("umu-run").isEmpty())
+        return true;
+    // Check known install locations
+    const QString home = QDir::homePath();
+    for (const QString &rel : {
+             "/.local/share/lutris/runtime/umu/umu-run",
+             "/.config/heroic/tools/runtimes/umu/umu-run",
+             "/.local/share/umu/umu-run"
+         }) {
+        if (QFile::exists(home + rel))
+            return true;
+    }
+    return false;
+}
+
+QString ProtonManager::umuExecutable() const {
+    // Check PATH first
+    const QString pathExec = QStandardPaths::findExecutable("umu-run");
+    if (!pathExec.isEmpty())
+        return pathExec;
+    // Check known install locations
+    const QString home = QDir::homePath();
+    for (const QString &rel : {
+             "/.local/share/lutris/runtime/umu/umu-run",
+             "/.config/heroic/tools/runtimes/umu/umu-run",
+             "/.local/share/umu/umu-run"
+         }) {
+        const QString full = home + rel;
+        if (QFile::exists(full))
+            return full;
+    }
+    return {};
 }
 
 QVariantMap ProtonManager::graphicsComponentStatus(const QString &component) const {
@@ -225,8 +257,11 @@ QString ProtonManager::prefixPath(const QString &gameName) const {
     if (gameName.isEmpty())
         return {};
     ConfigManager *cfg = ConfigManager::instance();
-    // 0) Shared prefix mode: all games share one prefix
-    if (cfg->launcherValue("useSharedPrefix", "User Settings") == "1") {
+    // 0) Shared prefix mode: global or per-game toggle
+    const bool globalShared = cfg->launcherValue("useSharedPrefix", "User Settings") == "1";
+    const bool perGameShared = cfg->gameValue(gameName, "useSharedPrefix") == "true"
+                               || cfg->gameValue(gameName, "useSharedPrefix") == "1";
+    if (globalShared || perGameShared) {
         QString shared = cfg->launcherValue("sharedPrefixPath", "User Settings");
         if (shared.isEmpty())
             shared = ConfigManager::prefixesDir() + "/shared";
@@ -378,7 +413,9 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     // For Steam games, use Steam's own prefix (don't create a new one)
     QString prefix;
     // Shared prefix validation: all games must use the same Proton
-    const bool useSharedPrefix = cfg->launcherValue("useSharedPrefix", "User Settings") == "1";
+    const bool useSharedPrefix = cfg->launcherValue("useSharedPrefix", "User Settings") == "1"
+                                 || cfg->gameValue(gameName, "useSharedPrefix") == "true"
+                                 || cfg->gameValue(gameName, "useSharedPrefix") == "1";
     bool forcePerGamePrefix = false;
     if (useSharedPrefix && !isSteamGame) {
         const QString defaultProton = cfg->launcherValue("defaultProton", "User Settings");
@@ -545,9 +582,10 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
         }
     }
 
-    // Use umu-launcher if enabled and available
-    if (m_useUmu && isUmuAvailable()) {
-        program = "umu-run";
+    // Use umu-launcher if enabled (global or per-game) and available
+    const bool perGameUmu = truthy(cfg->gameValue(gameName, "useUmu"));
+    if ((m_useUmu || perGameUmu) && isUmuAvailable()) {
+        program = umuExecutable();
         args.clear();
         const QString sid = cfg->gameValue(gameName, "steamID");
         if (!sid.isEmpty()) {
