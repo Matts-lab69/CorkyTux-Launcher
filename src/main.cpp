@@ -20,7 +20,7 @@ int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     app.setOrganizationName("CorkyTux");
     app.setApplicationName("corkytux");
-    app.setApplicationVersion("2.10.0");
+    app.setApplicationVersion(PROJECT_VERSION);
     app.setWindowIcon(QIcon(":/CorkyTux/qml/assets/corkytux.png"));
 
     // Touch singletons (loads INIs, resolves XDG home with root guard).

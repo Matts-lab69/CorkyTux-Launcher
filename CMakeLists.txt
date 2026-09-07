@@ -30,6 +30,7 @@ set(BACKEND_HEADERS
 )
 
 qt_add_executable(corkytux ${BACKEND_SOURCES} ${BACKEND_HEADERS})
+target_compile_definitions(corkytux PRIVATE PROJECT_VERSION="${PROJECT_VERSION}")
 
 qt_add_qml_module(corkytux
     URI CorkyTux
