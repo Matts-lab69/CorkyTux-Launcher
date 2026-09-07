@@ -2,10 +2,13 @@
 // no secondary forms auto-opened. Singletons exposed to QML as context props.
 
 #include <QGuiApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QStringLiteral>
+#include <unistd.h>
 
 using namespace Qt::Literals::StringLiterals;
 
@@ -16,6 +19,31 @@ using namespace Qt::Literals::StringLiterals;
 #include "backend/ProtonManager.h"
 #include "backend/ThemeManager.h"
 
+static void checkRootPermissions() {
+    if (::getuid() == 0) {
+        qWarning() << "CorkyTux is running as ROOT. This will cause permission issues.";
+        qWarning() << "Run without sudo: ./corkytux  (not sudo ./corkytux)";
+        qWarning() << "If folders are already root-owned, fix with:";
+        qWarning() << "  sudo chown -R $(whoami):$(whoami) ~/.local/share/CorkyTux/ ~/.config/CorkyTux/ ~/.cache/CorkyTux/";
+    }
+    // Check if data dirs exist and are owned by root
+    const QStringList checkDirs = {
+        QDir::homePath() + "/.local/share/CorkyTux",
+        QDir::homePath() + "/.config/CorkyTux",
+        QDir::homePath() + "/.cache/CorkyTux"
+    };
+    const QString realUser = QString::fromLocal8Bit(qgetenv("SUDO_USER"));
+    if (realUser.isEmpty() || realUser == "root")
+        return;
+    for (const QString &dir : checkDirs) {
+        QFileInfo fi(dir);
+        if (fi.exists() && fi.owner() == "root") {
+            qWarning() << "WARNING: " << dir << " is owned by root.";
+            qWarning() << "Fix with: sudo chown -R" << realUser << ":" << realUser << dir;
+        }
+    }
+}
+
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     app.setOrganizationName("CorkyTux");
@@ -25,6 +53,7 @@ int main(int argc, char *argv[]) {
 
     // Touch singletons (loads INIs, resolves XDG home with root guard).
     ConfigManager *cfg = ConfigManager::instance();
+    checkRootPermissions();
     GameModel *games = new GameModel(&app);
     GameFilterProxy *library = new GameFilterProxy(&app);
     library->setSourceModel(games);

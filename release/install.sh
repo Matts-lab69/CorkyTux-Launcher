@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ─── CorkyTux Installer v2.10.0 ──────────────────────────────────
+# ─── CorkyTux Installer v2.12.1 ──────────────────────────────────
 # Supports: Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE
 # Checks Qt6 runtime deps, installs binary, icon, desktop entry.
 
@@ -10,7 +10,7 @@ INSTALL_DIR="${HOME}/.local/share/corkytux"
 BIN_DIR="${HOME}/.local/bin"
 ICON_DIR="${HOME}/.local/share/icons"
 DESKTOP_DIR="${HOME}/.local/share/applications"
-VERSION="2.12.0"
+VERSION="2.12.1"
 
 # ─── Colors ──────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -31,6 +31,16 @@ echo -e "${BOLD}╔════════════════════�
 echo -e "${BOLD}║       CorkyTux Installer v${VERSION}            ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════╝${NC}"
 echo ""
+
+# ─── Reject sudo ────────────────────────────────────────────────
+if [[ "${EUID}" -eq 0 ]]; then
+  err "Do NOT run this installer with sudo!"
+  echo "  CorkyTux installs to your user directory (~/.local/)"
+  echo "  Running as root will break permissions."
+  echo ""
+  echo "  Run instead:  ./install.sh"
+  exit 1
+fi
 
 # ─── Uninstall mode ──────────────────────────────────────────────
 if [[ "${1:-}" == "--uninstall" || "${1:-}" == "-u" ]]; then
@@ -157,10 +167,10 @@ if [[ ${#missing_qt[@]} -gt 0 ]]; then
       echo "  sudo emerge --ask=n dev-qt/qtbase dev-qt/qtdeclarative dev-qt/qtsvg"
       ;;
     *debian*|*ubuntu*)
-      echo "  sudo apt install qt6-base-dev qt6-declarative-dev libqt6svg6-dev"
-      echo "  # Or for runtime only:"
       echo "  sudo apt install libqt6core6t64 libqt6gui6t64 libqt6quick6 libqt6network6 \\"
-      echo "    libqt6concurrent6t64 libqt6svg6 libqt6opengl6t64 libqt6qml6 libqt6dbus6t64"
+      echo "    libqt6concurrent6t64 libqt6svg6 libqt6opengl6t64 libqt6qml6 libqt6dbus6t64 \\"
+      echo "    libxcb-cursor0 libxcb-xinerama0 libxcb-keysyms1 libxcb-render-util0 \\"
+      echo "    libxcb-icccm4 libxcb-image0 libxcb-shape0"
       ;;
     *fedora*|*rhel*|*centos*)
       echo "  sudo dnf install qt6-qtbase qt6-qtdeclarative qt6-qtsvg qt6-qt5compat"
@@ -224,6 +234,22 @@ if ! echo "$PATH" | tr ':' '\n' | grep -qxF "$BIN_DIR"; then
   echo ""
   warn "Add to your shell profile (~/.bashrc, ~/.zshrc, etc.):"
   echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+fi
+
+# ─── Verify permissions ─────────────────────────────────────────
+echo ""
+info "Verifying installation permissions..."
+root_files=0
+for f in "${INSTALL_DIR}/corkytux" "${BIN_DIR}/corkytux" "${ICON_DIR}/corkytux.png" "${DESKTOP_DIR}/corkytux.desktop"; do
+  if [[ -f "$f" ]] && stat -c '%U' "$f" 2>/dev/null | grep -q 'root'; then
+    warn "Root-owned: $f"
+    root_files=$((root_files + 1))
+  fi
+done
+if [[ $root_files -gt 0 ]]; then
+  echo ""
+  err "Some files are owned by root. Fix with:"
+  echo "  sudo chown -R $(id -u):$(id -g) ${INSTALL_DIR} ${BIN_DIR} ${ICON_DIR} ${DESKTOP_DIR}"
 fi
 
 # ─── Done ────────────────────────────────────────────────────────

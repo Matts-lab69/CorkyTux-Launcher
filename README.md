@@ -103,15 +103,18 @@ Built with **C++20** and **Qt6 QML**, CorkyTux delivers a GPU-composited interfa
 
 ## Installation
 
+> **Do NOT use `sudo`** — CorkyTux installs to your user directory (`~/.local/`). Running with sudo breaks permissions.
+
 ### Pre-built Release
 
 Download the latest release from the [Releases page](https://github.com/Matts-lab69/CorkyTux-Launcher/releases).
 
 ```bash
-# Extract and run
+# Extract and install
 tar -xzf corkytux-*.tar.gz
 cd corkytux
-./corkytux
+chmod +x install.sh
+./install.sh
 ```
 
 ### Package Managers
@@ -144,7 +147,10 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 # Build
 cmake --build build -j$(nproc)
 
-# Run
+# Install (NO sudo needed!)
+./release/install.sh
+
+# Or run directly without installing
 ./build/corkytux
 ```
 
@@ -238,8 +244,11 @@ corkytux-qt/
 | Launcher settings | `~/.config/CorkyTux/Launcher.ini` |
 | Game banners | `~/.config/CorkyTux/banners/` |
 | Game icons | `~/.config/CorkyTux/icons/` |
-| Wine prefixes | `~/.config/CorkyTux/prefixes/` |
-| Proton builds | `~/.config/CorkyTux/protons/` |
+| Wine prefixes | `~/.local/share/CorkyTux/prefixes/` |
+| Proton builds | `~/.local/share/CorkyTux/protons/` |
+| Downloads | `~/.local/share/CorkyTux/downloads/` |
+| Installs | `~/.local/share/CorkyTux/installs/` |
+| Temporary | `~/.cache/CorkyTux/` |
 
 ---
 
