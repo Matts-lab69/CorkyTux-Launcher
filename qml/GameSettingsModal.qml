@@ -75,8 +75,8 @@ CModal {
         sharedPrefixSwitch.setSilent(g.useSharedPrefix === "true" || g.useSharedPrefix === "1");
         graphicsWined3d.setSilent(g.wined3d === "true" || g.wined3d === "1");
         graphicsWayland.setSilent(g.nativeWayland === "true" || g.nativeWayland === "1");
-        gameModeStatus = proton.graphicsComponentStatus("gamemode");
-        mangoHudStatus = proton.graphicsComponentStatus("mangohud");
+        gameModeStatus = proton.graphicsComponentStatus("gamemode", g.executable || "");
+        mangoHudStatus = proton.graphicsComponentStatus("mangohud", g.executable || "");
         // Load emulator settings
         var executor = g.executor || "";
         isEmulatorGame = executor !== "";
@@ -442,10 +442,18 @@ CModal {
                 onToggled: games.addGame(root.gameName, {"gameMode": checked ? "true" : "false"})
             }
             Text {
-                text: "GameMode: " + (gameModeStatus.available === true ? "32-bit and 64-bit ready"
-                    : gameModeStatus.installed32 === true ? "32-bit installed; 64-bit missing"
-                    : gameModeStatus.installed64 === true ? "64-bit installed; 32-bit missing"
-                    : "not installed")
+                text: {
+                    var s = gameModeStatus;
+                    var arch = s.gameArch || "";
+                    var label = arch === "32" ? "32-bit" : arch === "64" ? "64-bit" : "all";
+                    if (s.available === true)
+                        return "GameMode: ready (" + label + ")";
+                    if (s.installed64 === true)
+                        return "GameMode: 64-bit only (needs " + (arch === "32" ? "32-bit" : "64-bit") + ")";
+                    if (s.installed32 === true)
+                        return "GameMode: 32-bit only (needs " + (arch === "64" ? "64-bit" : "32-bit") + ")";
+                    return "GameMode: not installed";
+                }
                 color: Theme.textSec
                 font.pixelSize: 11
             }
@@ -456,10 +464,18 @@ CModal {
                 onToggled: games.addGame(root.gameName, {"mangoHud": checked ? "true" : "false"})
             }
             Text {
-                text: "MangoHud: " + (mangoHudStatus.available === true ? "32-bit and 64-bit ready"
-                    : mangoHudStatus.installed32 === true ? "32-bit installed; 64-bit missing"
-                    : mangoHudStatus.installed64 === true ? "64-bit installed; 32-bit missing"
-                    : "not installed")
+                text: {
+                    var s = mangoHudStatus;
+                    var arch = s.gameArch || "";
+                    var label = arch === "32" ? "32-bit" : arch === "64" ? "64-bit" : "all";
+                    if (s.available === true)
+                        return "MangoHud: ready (" + label + ")";
+                    if (s.installed64 === true)
+                        return "MangoHud: 64-bit only (needs " + (arch === "32" ? "32-bit" : "64-bit") + ")";
+                    if (s.installed32 === true)
+                        return "MangoHud: 32-bit only (needs " + (arch === "64" ? "64-bit" : "32-bit") + ")";
+                    return "MangoHud: not installed";
+                }
                 color: Theme.textSec
                 font.pixelSize: 11
             }

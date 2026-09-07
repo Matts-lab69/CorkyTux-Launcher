@@ -70,7 +70,31 @@ QString ProtonManager::umuExecutable() const {
     return {};
 }
 
-QVariantMap ProtonManager::graphicsComponentStatus(const QString &component) const {
+QString ProtonManager::detectGameArch(const QString &exePath) const {
+    if (exePath.isEmpty())
+        return {};
+    QProcess proc;
+    proc.setProgram("file");
+    proc.setArguments({"-b", exePath});
+    proc.start();
+    if (!proc.waitForFinished(3000))
+        return {};
+    const QString out = QString::fromLocal8Bit(proc.readAllStandardOutput());
+    // PE32+ = 64-bit Windows; PE32 (no +) = 32-bit Windows
+    if (out.contains("PE32+"))
+        return "64";
+    if (out.contains("PE32"))
+        return "32";
+    // ELF
+    if (out.contains("ELF 64-bit"))
+        return "64";
+    if (out.contains("ELF 32-bit"))
+        return "32";
+    return {};
+}
+
+QVariantMap ProtonManager::graphicsComponentStatus(const QString &component,
+                                                    const QString &gameExe) const {
     const bool gameMode = component.compare("gamemode", Qt::CaseInsensitive) == 0;
     const QString executable = gameMode ? "gamemoderun" : "mangohud";
     const QString library = gameMode ? "libgamemode.so" : "libMangoHud.so";
@@ -97,11 +121,20 @@ QVariantMap ProtonManager::graphicsComponentStatus(const QString &component) con
         }
     }
     const QString exePath = QStandardPaths::findExecutable(executable);
-    // Some distros expose only a versioned library; the executable is still a
-    // useful positive signal, while the architecture flags remain explicit.
+    // Detect game architecture if exe provided
+    const QString arch = detectGameArch(gameExe);
+    bool available = !exePath.isEmpty();
+    if (available) {
+        if (arch == "32")
+            available = has32;
+        else if (arch == "64")
+            available = has64;
+        else
+            available = has32 || has64;
+    }
     return {{"name", component}, {"executable", exePath},
             {"installed32", has32}, {"installed64", has64},
-            {"available", !exePath.isEmpty() && has32 && has64}};
+            {"gameArch", arch}, {"available", available}};
 }
 
 void ProtonManager::setUseUmu(bool on) {
@@ -587,14 +620,14 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     if ((m_useUmu || perGameUmu) && isUmuAvailable()) {
         program = umuExecutable();
         args.clear();
+        // umu-launcher uses environment variables, not CLI args for proton/prefix
+        const QString protonDir = QFileInfo(protonExecutable(protonName, "proton")).absolutePath();
+        env.insert("PROTONPATH", protonDir);
+        env.insert("WINEPREFIX", prefix);
         const QString sid = cfg->gameValue(gameName, "steamID");
-        if (!sid.isEmpty()) {
-            args << "--gameid" << ("umu-" + sid)
-                 << "--store" << "steam";
-        }
-        if (!protonName.isEmpty() && protonName != "GE-Proton Latest") {
-            args << "--protonpath" << protonExecutable(protonName, "proton");
-        }
+        env.insert("GAMEID", sid.isEmpty() ? "0" : sid);
+        env.insert("EXE", exec);
+        env.insert("STORE", "steam");
         args << exec;
         const QString argsAfter = cfg->gameValue(gameName, "argsAfter");
         if (!argsAfter.isEmpty())

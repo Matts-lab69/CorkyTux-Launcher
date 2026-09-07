@@ -519,10 +519,16 @@ CModal {
                     onToggled: config.setLauncherValue("gamesUsesGameMode", checked ? "1" : "0", "User Settings")
                 }
                 Text {
-                    text: "GameMode: " + (root.gameModeStatus.available === true ? "32-bit and 64-bit ready"
-                        : root.gameModeStatus.installed32 === true ? "32-bit installed; 64-bit missing"
-                        : root.gameModeStatus.installed64 === true ? "64-bit installed; 32-bit missing"
-                        : "not installed")
+                    text: {
+                        var s = root.gameModeStatus;
+                        if (s.available === true) {
+                            var parts = [];
+                            if (s.installed64) parts.push("64-bit");
+                            if (s.installed32) parts.push("32-bit");
+                            return "GameMode: ready (" + parts.join(" + ") + ")";
+                        }
+                        return "GameMode: not installed";
+                    }
                     color: Theme.textSec
                     font.pixelSize: 11
                 }
@@ -533,10 +539,16 @@ CModal {
                     onToggled: config.setLauncherValue("gamesUsesMangoHud", checked ? "1" : "0", "User Settings")
                 }
                 Text {
-                    text: "MangoHud: " + (root.mangoHudStatus.available === true ? "32-bit and 64-bit ready"
-                        : root.mangoHudStatus.installed32 === true ? "32-bit installed; 64-bit missing"
-                        : root.mangoHudStatus.installed64 === true ? "64-bit installed; 32-bit missing"
-                        : "not installed")
+                    text: {
+                        var s = root.mangoHudStatus;
+                        if (s.available === true) {
+                            var parts = [];
+                            if (s.installed64) parts.push("64-bit");
+                            if (s.installed32) parts.push("32-bit");
+                            return "MangoHud: ready (" + parts.join(" + ") + ")";
+                        }
+                        return "MangoHud: not installed";
+                    }
                     color: Theme.textSec
                     font.pixelSize: 11
                 }

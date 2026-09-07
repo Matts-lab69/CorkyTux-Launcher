@@ -51,8 +51,12 @@ public:
     Q_INVOKABLE bool isUmuAvailable() const;
     /** Full path to umu-run binary (searches PATH + known locations). */
     QString umuExecutable() const;
-    /** Reports executable and 32/64-bit runtime availability for graphics tools. */
-    Q_INVOKABLE QVariantMap graphicsComponentStatus(const QString &component) const;
+    /** Reports executable and 32/64-bit runtime availability for graphics tools.
+     *  If gameExe is provided, only the architecture needed by the game is required. */
+    Q_INVOKABLE QVariantMap graphicsComponentStatus(const QString &component,
+                                                    const QString &gameExe = {}) const;
+    /** Detect whether an executable is 32-bit or 64-bit. Returns "32", "64", or "". */
+    Q_INVOKABLE QString detectGameArch(const QString &exePath) const;
     Q_PROPERTY(bool useUmu READ useUmu WRITE setUseUmu NOTIFY useUmuChanged)
     bool useUmu() const { return m_useUmu; }
     void setUseUmu(bool on);
