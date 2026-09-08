@@ -307,6 +307,9 @@ CModal {
                 property var releases: []
                 property var installedDetails: []
                 property var defaultProtonModel: proton.installedProtons()
+                property bool showPathPicker: false
+                property string pendingTag: ""
+                property string pendingUrl: ""
                 Text { text: "Protons"; color: Theme.textMain; font.bold: true; font.pixelSize: 18
                 horizontalAlignment: Text.AlignHCenter
                 width: parent.width }
@@ -357,6 +360,69 @@ CModal {
                     wrapMode: Text.Wrap
                     visible: text !== ""
                 }
+                // Path picker (shown before download when 2+ paths)
+                Column {
+                    width: parent.width
+                    spacing: 6
+                    visible: protonsPage.showPathPicker
+                    Text {
+                        text: "Install " + protonsPage.pendingTag + " to:"
+                        color: Theme.textMain
+                        font.bold: true
+                        font.pixelSize: 12
+                        width: parent.width
+                    }
+                    Repeater {
+                        model: proton.protonPaths()
+                        delegate: Rectangle {
+                            required property string modelData
+                            required property int index
+                            width: protonsPage.width - 8
+                            height: 36
+                            radius: 6
+                            color: pathArea.containsMouse ? Theme.hover : Theme.well
+                            border.color: Theme.border
+                            border.width: 1
+                            Row {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 10
+                                spacing: 6
+                                CIcon {
+                                    iconName: "folder"
+                                    iconSize: 14
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                                Text {
+                                    text: "Path " + (index + 1) + " — " + (modelData.split("/").pop() || modelData)
+                                    color: Theme.textMain
+                                    font.pixelSize: 11
+                                    width: parent.width - 20
+                                    elide: Text.ElideMiddle
+                                    anchors.verticalCenter: parent.verticalCenter
+                                }
+                            }
+                            MouseArea {
+                                id: pathArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    protonsPage.showPathPicker = false;
+                                    protonStatus.text = "Downloading " + protonsPage.pendingTag + "…";
+                                    proton.downloadProton(protonsPage.pendingTag, protonsPage.pendingUrl, modelData);
+                                }
+                            }
+                        }
+                    }
+                    CButton {
+                        text: "Cancel"
+                        kind: "outline"
+                        width: parent.width
+                        height: 28
+                        onClicked: protonsPage.showPathPicker = false
+                    }
+                }
                 // Installed builds
                 Text {
                     text: "Installed builds"
@@ -387,13 +453,34 @@ CModal {
                             anchors.rightMargin: 8
                             spacing: 8
                             Text {
-                                width: parent.width - 60
+                                width: parent.width - 100
                                 text: modelData.name
                                 color: Theme.textMain
                                 font.pixelSize: 12
                                 verticalAlignment: Text.AlignVCenter
                                 anchors.verticalCenter: parent.verticalCenter
                                 elide: Text.ElideMiddle
+                            }
+                            Rectangle {
+                                width: pathLabel.width + 10
+                                height: 18
+                                radius: 4
+                                color: Theme.accent
+                                opacity: 0.8
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: proton.protonPaths().length > 1
+                                Text {
+                                    id: pathLabel
+                                    anchors.centerIn: parent
+                                    text: {
+                                        var paths = proton.protonPaths();
+                                        var idx = paths.indexOf(modelData.path);
+                                        return idx >= 0 ? "Path " + (idx + 1) : "";
+                                    }
+                                    color: "#FFFFFF"
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                }
                             }
                             CButton {
                                 width: 36
@@ -464,8 +551,15 @@ CModal {
                                         proton.removeProton(modelData.tag);
                                         protonStatus.text = "Removed " + modelData.tag;
                                     } else {
-                                        protonStatus.text = "Downloading " + modelData.tag + "…";
-                                        proton.downloadProton(modelData.tag, modelData.url);
+                                        var paths = proton.protonPaths();
+                                        if (paths.length > 1) {
+                                            protonsPage.pendingTag = modelData.tag;
+                                            protonsPage.pendingUrl = modelData.url;
+                                            protonsPage.showPathPicker = true;
+                                        } else {
+                                            protonStatus.text = "Downloading " + modelData.tag + "…";
+                                            proton.downloadProton(modelData.tag, modelData.url);
+                                        }
                                     }
                                 }
                             }
