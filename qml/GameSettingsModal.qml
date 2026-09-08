@@ -56,12 +56,19 @@ CModal {
         if (isEmulatorGame && plugins.emulators.length === 0)
             plugins.listEmulators();
     }
+    property var protonEntries: []
     function loadFields() {
         var g = games.getGame(gameName);
         if (!g || !g.name) return;
         nameField.text = g.name || gameName;
-        protonBox.model = ["GE-Proton Latest"].concat(proton.installedProtons());
-        protonBox.currentIndex = Math.max(0, protonBox.find(g.proton || "GE-Proton Latest"));
+        var entries = [{"name": "GE-Proton Latest", "label": "GE-Proton Latest"}].concat(proton.installedProtonEntries());
+        protonEntries = entries;
+        protonBox.model = entries.map(function(e) { return e.label; });
+        var saved = g.proton || "GE-Proton Latest";
+        for (var i = 0; i < entries.length; i++) {
+            if (entries[i].name === saved) { protonBox.currentIndex = i; break; }
+        }
+        if (protonBox.currentIndex < 0) protonBox.currentIndex = 0;
         bannerField.text = g.banner || "";
         iconField.text = g.icon || "";
         prefixField.text = g.prefixPath || "";
@@ -101,7 +108,7 @@ CModal {
     }
     function save() {
         var fields = {
-            "proton": protonBox.currentText,
+            "proton": (protonEntries.length > 0 && protonBox.currentIndex >= 0 && protonBox.currentIndex < protonEntries.length) ? protonEntries[protonBox.currentIndex].name : protonBox.currentText,
             "prefixPath": prefixField.text.trim(),
             "overrides": overridesField.text.trim(),
             "environment": envField.text.trim(),
@@ -799,6 +806,12 @@ CModal {
         Connections {
             target: plugins
             function onEmulatorsChanged() { root.reloadEmuFields(); }
+        }
+        Connections {
+            target: proton
+            function onProtonsChanged() {
+                if (root.visible) root.loadFields();
+            }
         }
         FileDialog {
             id: emuPathDialog

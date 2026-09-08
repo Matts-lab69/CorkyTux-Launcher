@@ -306,7 +306,8 @@ CModal {
                 property string filter: "all"
                 property var releases: []
                 property var installedDetails: []
-                property var defaultProtonModel: proton.installedProtons()
+                property var defaultProtonEntries: proton.installedProtonEntries()
+                property var defaultProtonModel: defaultProtonEntries.map(function(e) { return e.label; })
                 property bool showPathPicker: false
                 property string pendingTag: ""
                 property string pendingUrl: ""
@@ -327,9 +328,21 @@ CModal {
                         id: defaultProtonBox
                         width: 260
                         height: 28
-                        model: protonsPage.defaultProtonModel
-                        Component.onCompleted: currentIndex = Math.max(0, find(config.launcherValue("defaultProton", "User Settings")))
-                        onActivated: config.setLauncherValue("defaultProton", currentText, "User Settings")
+                        model: protonsPage.defaultProtonEntries
+                        textRole: "label"
+                        Component.onCompleted: {
+                            var saved = config.launcherValue("defaultProton", "User Settings");
+                            var entries = protonsPage.defaultProtonEntries;
+                            for (var i = 0; i < entries.length; i++) {
+                                if (entries[i].name === saved) { currentIndex = i; return; }
+                            }
+                            currentIndex = 0;
+                        }
+                        onActivated: {
+                            var entries = protonsPage.defaultProtonEntries;
+                            if (currentIndex >= 0 && currentIndex < entries.length)
+                                config.setLauncherValue("defaultProton", entries[currentIndex].name, "User Settings");
+                        }
                     }
                 }
                 // source filter: All | CachyOS | Proton-GE (mirrors Java protonFilter)
@@ -492,7 +505,8 @@ CModal {
                                 onClicked: {
                                     proton.removeProton(modelData.name);
                                     protonsPage.installedDetails = proton.installedProtonDetails();
-                                    protonsPage.defaultProtonModel = proton.installedProtons();
+                                    protonsPage.defaultProtonEntries = proton.installedProtonEntries();
+                                    protonsPage.defaultProtonModel = protonsPage.defaultProtonEntries.map(function(e) { return e.label; });
                                 }
                             }
                         }
@@ -572,7 +586,13 @@ CModal {
                     function onDownloadFinished(ok, message) {
                         protonStatus.text = ok ? ("Installed " + message) : ("Failed: " + message);
                         protonsPage.installedDetails = proton.installedProtonDetails();
-                        protonsPage.defaultProtonModel = proton.installedProtons();
+                        protonsPage.defaultProtonEntries = proton.installedProtonEntries();
+                        protonsPage.defaultProtonModel = protonsPage.defaultProtonEntries.map(function(e) { return e.label; });
+                    }
+                    function onProtonsChanged() {
+                        protonsPage.installedDetails = proton.installedProtonDetails();
+                        protonsPage.defaultProtonEntries = proton.installedProtonEntries();
+                        protonsPage.defaultProtonModel = protonsPage.defaultProtonEntries.map(function(e) { return e.label; });
                     }
                 }
             }

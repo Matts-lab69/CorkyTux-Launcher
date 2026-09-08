@@ -28,6 +28,8 @@ public:
     Q_INVOKABLE QStringList installedProtons() const;
     /** Installed builds with their base path: [{name, path}]. */
     Q_INVOKABLE QVariantList installedProtonDetails() const;
+    /** Installed builds with display labels: [{name, label}] where label includes path info. */
+    Q_INVOKABLE QVariantList installedProtonEntries() const;
     /** All configured proton paths (main + optional 2 & 3). */
     Q_INVOKABLE QStringList protonPaths() const;
     Q_INVOKABLE QString protonExecutable(const QString &protonName,
@@ -86,6 +88,7 @@ signals:
     void gameFinished(const QString &game, int exitCode);
     void gameLogOutput(const QString &text);
     void toast(const QString &message);
+    void protonsChanged();
 
 private slots:
     void onGameFinished(int exitCode, QProcess::ExitStatus status);

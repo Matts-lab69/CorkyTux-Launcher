@@ -160,6 +160,22 @@ QStringList ProtonManager::installedProtons() const {
     return out;
 }
 
+QVariantList ProtonManager::installedProtonEntries() const {
+    QVariantList out;
+    const QStringList paths = ConfigManager::instance()->allProtonPaths();
+    for (const QVariant &v : installedProtonDetails()) {
+        const QVariantMap m = v.toMap();
+        const QString name = m.value("name").toString();
+        const QString path = m.value("path").toString();
+        int pathIdx = paths.indexOf(path) + 1;
+        QString label = name;
+        if (paths.size() > 1 && pathIdx > 0)
+            label += " [Path " + QString::number(pathIdx) + "]";
+        out << QVariantMap({{"name", name}, {"label", label}});
+    }
+    return out;
+}
+
 QStringList ProtonManager::protonPaths() const {
     return ConfigManager::instance()->allProtonPaths();
 }
@@ -1029,6 +1045,8 @@ void ProtonManager::downloadProton(const QString &tag, const QString &url,
                 m_dlProgress = err.isEmpty() ? 1.0 : 0.0;
                 emit downloadProgressChanged();
                 emit downloadFinished(err.isEmpty(), err.isEmpty() ? tag : err);
+                if (err.isEmpty())
+                    emit protonsChanged();
             });
         });
     });
@@ -1037,12 +1055,13 @@ void ProtonManager::downloadProton(const QString &tag, const QString &url,
 void ProtonManager::removeProton(const QString &name) {
     if (name.isEmpty())
         return;
-    QtConcurrent::run([name] {
+    QtConcurrent::run([this, name] {
         for (const QString &pp : ConfigManager::instance()->allProtonPaths()) {
             QDir d(pp + "/" + name);
             if (d.exists())
                 d.removeRecursively();
         }
+        QMetaObject::invokeMethod(this, [this] { emit protonsChanged(); });
     });
 }
 
