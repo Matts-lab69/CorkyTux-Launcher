@@ -1111,7 +1111,7 @@ CModal {
                             visible: root.page === modelData.id
                         }
                     }
-                    onClicked: root.setPage(modelData.id)
+                    onClicked: root.page = modelData.id
                 }
             }
         }
