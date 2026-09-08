@@ -19,6 +19,27 @@ CModal {
     property bool pendingLoad: false
     property var gameModeStatus: ({})
     property var mangoHudStatus: ({})
+    signal showToast(string message)
+    signal openSharedPrefixPicker()
+    property bool sharedPrefixActive: false
+    property string originalPrefixPath: ""
+
+    function selectSharedPrefix(protonName) {
+        var sp = config.sharedPrefixPath(protonName);
+        // Find proton in box
+        for (var i = 0; i < protonNames.length; i++) {
+            if (protonNames[i] === protonName) {
+                protonBox.currentIndex = i;
+                break;
+            }
+        }
+        prefixField.text = sp + "/pfx";
+        prefixField.readOnly = true;
+        sharedPrefixActive = true;
+        protonBox.enabled = false;
+        sharedPrefixSwitch.setSilent(true);
+        save();
+    }
 
     function reloadEmuFields() {
         console.log("[GS] reloadEmuFields called, pendingLoad:", pendingLoad, "isEmu:", isEmulatorGame);
@@ -74,6 +95,29 @@ CModal {
         bannerField.text = g.banner || "";
         iconField.text = g.icon || "";
         prefixField.text = g.prefixPath || "";
+        // Detect shared prefix
+        var sharedList = config.sharedPrefixes();
+        root.sharedPrefixActive = false;
+        for (var si = 0; si < sharedList.length; si++) {
+            var sp = config.sharedPrefixPath(sharedList[si]);
+            if (g.prefixPath === sp || g.prefixPath === sp + "/pfx") {
+                root.sharedPrefixActive = true;
+                break;
+            }
+        }
+        // If not using shared prefix, remember original path for revert
+        if (!root.sharedPrefixActive) {
+            originalPrefixPath = g.prefixPath || "";
+        }
+        // Update shared prefix switch state
+        sharedPrefixSwitch.setSilent(root.sharedPrefixActive);
+        if (root.sharedPrefixActive) {
+            protonBox.enabled = false;
+            prefixField.readOnly = true;
+        } else {
+            protonBox.enabled = true;
+            prefixField.readOnly = false;
+        }
         overridesField.text = g.overrides || "";
         envField.text = g.environment || "";
         argsBeforeField.text = g.argsBefore || "";
@@ -298,11 +342,6 @@ CModal {
                             enabled: proton.isUmuAvailable()
                             onToggled: games.addGame(root.gameName, {"useUmu": checked ? "true" : "false"})
                         }
-                        CSwitch {
-                            id: sharedPrefixSwitch
-                            objectName: "Use shared prefix"
-                            onToggled: games.addGame(root.gameName, {"useSharedPrefix": checked ? "true" : "false"})
-                        }
                     }
                 }
                 CCard {
@@ -316,11 +355,59 @@ CModal {
                         width: parent.width
                         height: 28
                         editable: true
+                        enabled: !root.sharedPrefixActive
                         onActivated: save()
                         onAccepted: save()
                     }
+                    Row {
+                        width: parent.width
+                        spacing: 8
+                        CSwitch {
+                            id: sharedPrefixSwitch
+                            objectName: "Shared prefix"
+                            onToggled: {
+                                if (checked) {
+                                    root.openSharedPrefixPicker();
+                                } else {
+                                    prefixField.text = root.originalPrefixPath || "";
+                                    prefixField.readOnly = false;
+                                    root.sharedPrefixActive = false;
+                                    protonBox.enabled = true;
+                                    save();
+                                }
+                            }
+                        }
+                        Text {
+                            text: "Shared prefix"
+                            color: Theme.textMain
+                            font.pixelSize: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
                     Text { text: "Prefix path"; color: Theme.textSec; font.pixelSize: 12 }
-                    CTextField { id: prefixField; width: parent.width; onEditingFinished: save() }
+                    CTextField {
+                        id: prefixField
+                        width: parent.width
+                        readOnly: root.sharedPrefixActive
+                        onEditingFinished: {
+                            if (!root.sharedPrefixActive) {
+                                var enteredPath = text.trim();
+                                var sharedList = config.sharedPrefixes();
+                                for (var i = 0; i < sharedList.length; i++) {
+                                    var sp = config.sharedPrefixPath(sharedList[i]);
+                                    if (enteredPath === sp || enteredPath === sp + "/pfx") {
+                                        var currentProton = (protonNames.length > 0 && protonBox.currentIndex >= 0 && protonBox.currentIndex < protonNames.length) ? protonNames[protonBox.currentIndex] : protonBox.currentText;
+                                        if (sharedList[i] !== currentProton) {
+                                            text = root.originalPrefixPath || "";
+                                            root.showToast("Cannot use this path — it belongs to shared prefix for " + sharedList[i] + ". Individual prefix restored.");
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                            save();
+                        }
+                    }
                 }
             }
         }

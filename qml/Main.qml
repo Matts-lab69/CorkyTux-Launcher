@@ -620,7 +620,77 @@ ApplicationWindow {
             }
         }
     }
-    GameSettingsModal { id: gameSettingsModal }
+    GameSettingsModal {
+        id: gameSettingsModal
+        onShowToast: function(msg) { toastLabel.text = msg; toastPopup.open(); }
+        onOpenSharedPrefixPicker: sharedPrefixPickerPopup.open()
+    }
+    Popup {
+        id: sharedPrefixPickerPopup
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        width: 360
+        padding: 16
+        background: Rectangle {
+            color: Theme.panel
+            radius: 12
+            border.color: Theme.border
+            border.width: 1
+        }
+        contentItem: Column {
+            spacing: 12
+            Text {
+                text: "Select proton for shared prefix"
+                color: Theme.textMain
+                font.bold: true
+                font.pixelSize: 14
+            }
+            Text {
+                text: "Each proton version gets its own shared prefix. Select which proton to use."
+                color: Theme.textSec
+                font.pixelSize: 11
+                wrapMode: Text.Wrap
+                width: parent.width
+            }
+            Repeater {
+                model: gameSettingsModal.protonNames
+                delegate: Rectangle {
+                    width: parent.width
+                    height: 36
+                    radius: 6
+                    color: sharedPrefixMouse.containsMouse ? Theme.hover : Theme.well
+                    border.color: Theme.border
+                    border.width: 1
+                    Text {
+                        anchors.centerIn: parent
+                        text: modelData
+                        color: Theme.textMain
+                        font.pixelSize: 12
+                    }
+                    MouseArea {
+                        id: sharedPrefixMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            gameSettingsModal.selectSharedPrefix(modelData);
+                            sharedPrefixPickerPopup.close();
+                        }
+                    }
+                }
+            }
+            CButton {
+                text: "Cancel"
+                width: parent.width
+                height: 32
+                onClicked: {
+                    gameSettingsModal.sharedPrefixSwitch.setSilent(false);
+                    sharedPrefixPickerPopup.close();
+                }
+            }
+        }
+    }
     Timer {
         id: emuReloadTimer
         interval: 300
