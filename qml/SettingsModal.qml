@@ -18,8 +18,10 @@ CModal {
 
     function setPage(p) {
         root.page = p;
-        root.gameModeStatus = proton.graphicsComponentStatus("gamemode");
-        root.mangoHudStatus = proton.graphicsComponentStatus("mangohud");
+        if (p === "misc") {
+            root.gameModeStatus = proton.graphicsComponentStatus("gamemode");
+            root.mangoHudStatus = proton.graphicsComponentStatus("mangohud");
+        }
         if (p === "integrations")
             integrationsPage.refresh();
         if (p === "protons")
@@ -263,6 +265,22 @@ CModal {
                         width: parent.width
                         spacing: 4
                         visible: config.launcherValue("useSharedPrefix", "User Settings") === "1"
+                        Text {
+                            text: {
+                                var dp = config.launcherValue("defaultProton", "User Settings");
+                                return "Shared prefix for: " + (dp || "none selected");
+                            }
+                            color: Theme.accent
+                            font.pixelSize: 12
+                            font.bold: true
+                        }
+                        Text {
+                            text: "All games will share this prefix. They must use the same Proton version."
+                            color: Theme.textSec
+                            font.pixelSize: 11
+                            wrapMode: Text.Wrap
+                            width: parent.width
+                        }
                         Text { text: "Shared prefix path"; color: Theme.textSec; font.pixelSize: 12 }
                         CTextField {
                             width: parent.width
@@ -270,7 +288,9 @@ CModal {
                                 var custom = config.launcherValue("sharedPrefixPath", "User Settings");
                                 if (custom !== "")
                                     return custom;
-                                return config.basePathFor("prefixes") + "/shared";
+                                var dp = config.launcherValue("defaultProton", "User Settings");
+                                var slug = dp ? dp.replace(/[^a-zA-Z0-9._-]/g, "_") : "default";
+                                return config.basePathFor("prefixes") + "/shared-" + slug;
                             }
                             onEditingFinished: config.setLauncherValue("sharedPrefixPath", text.trim(), "User Settings")
                         }

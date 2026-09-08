@@ -282,8 +282,12 @@ QString ProtonManager::prefixPath(const QString &gameName) const {
                                || cfg->gameValue(gameName, "useSharedPrefix") == "1";
     if (globalShared || perGameShared) {
         QString shared = cfg->launcherValue("sharedPrefixPath", "User Settings");
-        if (shared.isEmpty())
-            shared = ConfigManager::prefixesDir() + "/shared";
+        if (shared.isEmpty()) {
+            QString defaultProton = cfg->launcherValue("defaultProton", "User Settings");
+            const QString protonSlug = defaultProton.isEmpty() ? "default"
+                : defaultProton.replace(QRegularExpression("[^a-zA-Z0-9._-]"), "_");
+            shared = ConfigManager::prefixesDir() + "/shared-" + protonSlug;
+        }
         return shared;
     }
     // 1) explicit per-game prefix
