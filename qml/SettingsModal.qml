@@ -12,24 +12,11 @@ CModal {
     signal openProton
     property string page: "visuals"
     readonly property int tabCount: 7
+    property int pathRefresh: 0
+    property string _pendingPathKey: ""
+    property var _pendingPathField: null
     property var gameModeStatus: ({"available": false, "installed32": false, "installed64": false})
     property var mangoHudStatus: ({"available": false, "installed32": false, "installed64": false})
-
-    function setPage(p) {
-        root.page = p;
-        if (p === "misc") {
-            root.gameModeStatus = proton.graphicsComponentStatus("gamemode");
-            root.mangoHudStatus = proton.graphicsComponentStatus("mangohud");
-        }
-        if (p === "integrations")
-            integrationsPage.refresh();
-        if (p === "protons")
-            proton.fetchReleases();
-        if (p === "plugins") {
-            plugins.refresh();
-            plugins.fetchRegistry();
-        }
-    }
 
     Column {
         width: parent.width
@@ -225,11 +212,9 @@ CModal {
                                 height: 32
                                 anchors.verticalCenter: pathField.verticalCenter
                                 onClicked: {
-                                    var folder = config.pickFolder(modelData.label);
-                                    if (folder !== "") {
-                                        config.setLauncherValue(modelData.key, folder, "User Settings");
-                                        root.page = root.page;
-                                    }
+                                    root._pendingPathKey = modelData.key;
+                                    root._pendingPathField = pathField;
+                                    pickTimer.start();
                                 }
                             }
                         }
@@ -1130,6 +1115,21 @@ CModal {
                 }
             }
         }
+        }
+    }
+
+    Item {
+        Timer {
+            id: pickTimer
+            interval: 50
+            repeat: false
+            onTriggered: {
+                var folder = config.pickFolder("Select folder");
+                if (folder !== "" && root._pendingPathField) {
+                    config.setLauncherValue(root._pendingPathKey, folder, "User Settings");
+                    root._pendingPathField.text = folder;
+                }
+            }
         }
     }
 
