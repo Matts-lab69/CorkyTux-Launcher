@@ -13,7 +13,7 @@ Rectangle {
     Column {
         anchors.fill: parent
         anchors.margins: 8
-        anchors.topMargin: 36
+        anchors.topMargin: 24
         spacing: 8
 
         CCard {
@@ -112,7 +112,7 @@ Rectangle {
         Rectangle {
             id: gameListFrame
             width: parent.width
-            height: parent.height - headerCard.height - 40
+            height: parent.height - headerCard.height - 8
             radius: 10
             color: "transparent"
             border.color: Theme.accent
