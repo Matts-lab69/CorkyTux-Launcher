@@ -307,6 +307,7 @@ CModal {
                 property var releases: []
                 property var installedDetails: []
                 property var defaultProtonEntries: proton.installedProtonEntries()
+                property var defaultProtonNames: defaultProtonEntries.map(function(e) { return e.name; })
                 property var defaultProtonModel: defaultProtonEntries.map(function(e) { return e.label; })
                 property bool showPathPicker: false
                 property string pendingTag: ""
@@ -328,20 +329,19 @@ CModal {
                         id: defaultProtonBox
                         width: 260
                         height: 28
-                        model: protonsPage.defaultProtonEntries
-                        textRole: "label"
+                        model: protonsPage.defaultProtonModel
                         Component.onCompleted: {
                             var saved = config.launcherValue("defaultProton", "User Settings");
-                            var entries = protonsPage.defaultProtonEntries;
-                            for (var i = 0; i < entries.length; i++) {
-                                if (entries[i].name === saved) { currentIndex = i; return; }
+                            var names = protonsPage.defaultProtonNames;
+                            for (var i = 0; i < names.length; i++) {
+                                if (names[i] === saved) { currentIndex = i; return; }
                             }
                             currentIndex = 0;
                         }
                         onActivated: {
-                            var entries = protonsPage.defaultProtonEntries;
-                            if (currentIndex >= 0 && currentIndex < entries.length)
-                                config.setLauncherValue("defaultProton", entries[currentIndex].name, "User Settings");
+                            var names = protonsPage.defaultProtonNames;
+                            if (currentIndex >= 0 && currentIndex < names.length)
+                                config.setLauncherValue("defaultProton", names[currentIndex], "User Settings");
                         }
                     }
                 }
@@ -506,6 +506,7 @@ CModal {
                                     proton.removeProton(modelData.name);
                                     protonsPage.installedDetails = proton.installedProtonDetails();
                                     protonsPage.defaultProtonEntries = proton.installedProtonEntries();
+                                    protonsPage.defaultProtonNames = protonsPage.defaultProtonEntries.map(function(e) { return e.name; });
                                     protonsPage.defaultProtonModel = protonsPage.defaultProtonEntries.map(function(e) { return e.label; });
                                 }
                             }
@@ -587,11 +588,13 @@ CModal {
                         protonStatus.text = ok ? ("Installed " + message) : ("Failed: " + message);
                         protonsPage.installedDetails = proton.installedProtonDetails();
                         protonsPage.defaultProtonEntries = proton.installedProtonEntries();
+                        protonsPage.defaultProtonNames = protonsPage.defaultProtonEntries.map(function(e) { return e.name; });
                         protonsPage.defaultProtonModel = protonsPage.defaultProtonEntries.map(function(e) { return e.label; });
                     }
                     function onProtonsChanged() {
                         protonsPage.installedDetails = proton.installedProtonDetails();
                         protonsPage.defaultProtonEntries = proton.installedProtonEntries();
+                        protonsPage.defaultProtonNames = protonsPage.defaultProtonEntries.map(function(e) { return e.name; });
                         protonsPage.defaultProtonModel = protonsPage.defaultProtonEntries.map(function(e) { return e.label; });
                     }
                 }

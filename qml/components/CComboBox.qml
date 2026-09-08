@@ -44,7 +44,7 @@ ComboBox {
     delegate: ItemDelegate {
         width: root.width - 8
         contentItem: Text {
-            text: root.textRole ? model[root.textRole] : modelData
+            text: modelData
             color: Theme.textMain
             font.pixelSize: 12
             elide: Text.ElideRight

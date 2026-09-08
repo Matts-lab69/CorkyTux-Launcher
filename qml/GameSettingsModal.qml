@@ -57,12 +57,14 @@ CModal {
             plugins.listEmulators();
     }
     property var protonEntries: []
+    property var protonNames: []
     function loadFields() {
         var g = games.getGame(gameName);
         if (!g || !g.name) return;
         nameField.text = g.name || gameName;
         var entries = [{"name": "GE-Proton Latest", "label": "GE-Proton Latest"}].concat(proton.installedProtonEntries());
         protonEntries = entries;
+        protonNames = entries.map(function(e) { return e.name; });
         protonBox.model = entries.map(function(e) { return e.label; });
         var saved = g.proton || "GE-Proton Latest";
         for (var i = 0; i < entries.length; i++) {
@@ -108,7 +110,7 @@ CModal {
     }
     function save() {
         var fields = {
-            "proton": (protonEntries.length > 0 && protonBox.currentIndex >= 0 && protonBox.currentIndex < protonEntries.length) ? protonEntries[protonBox.currentIndex].name : protonBox.currentText,
+            "proton": (protonNames.length > 0 && protonBox.currentIndex >= 0 && protonBox.currentIndex < protonNames.length) ? protonNames[protonBox.currentIndex] : protonBox.currentText,
             "prefixPath": prefixField.text.trim(),
             "overrides": overridesField.text.trim(),
             "environment": envField.text.trim(),
