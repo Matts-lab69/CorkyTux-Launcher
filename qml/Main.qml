@@ -66,6 +66,7 @@ ApplicationWindow {
         target: proton
         function onRunningChanged() {
             details.gameRunning = proton.running && proton.currentGame === root.currentGameName;
+            if (proton.running) logModal.logText = "";
         }
         function onGameLogOutput(text) {
             logModal.logText += text;
