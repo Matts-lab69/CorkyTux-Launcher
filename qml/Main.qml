@@ -540,6 +540,7 @@ ApplicationWindow {
         anchors.centerIn: Overlay.overlay
         modal: true
         closePolicy: Popup.CloseOnEscape
+        width: 400
         padding: 0
         background: Rectangle {
             color: Theme.panel
@@ -547,8 +548,10 @@ ApplicationWindow {
             border.color: Theme.border
             border.width: 1
         }
+        property var protonModel: []
+        onOpened: protonModel = proton.installedProtonEntries()
         contentItem: Column {
-            width: 400
+            width: parent.width
             spacing: 12
             padding: 20
             Text {
@@ -566,7 +569,7 @@ ApplicationWindow {
                 width: parent.width - 40
             }
             Repeater {
-                model: proton.installedProtonEntries()
+                model: addSharedPrefixPopup.protonModel
                 delegate: Rectangle {
                     required property var modelData
                     required property int index

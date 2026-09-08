@@ -262,7 +262,7 @@ CModal {
                 // Add button
                 CButton {
                     text: "Add shared prefix"
-                    width: parent.width
+                    width: 160
                     height: 32
                     kind: "primary"
                     onClicked: root.openAddSharedPrefix()
