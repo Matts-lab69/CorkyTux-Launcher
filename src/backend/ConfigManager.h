@@ -63,6 +63,16 @@ public:
     /** All configured proton paths (main + optional 2 & 3). */
     Q_INVOKABLE QStringList allProtonPaths() const;
 
+    // ---- Shared prefixes ----
+    /** List of proton names that have shared prefixes. */
+    Q_INVOKABLE QStringList sharedPrefixes() const;
+    /** Add a shared prefix for a proton. Creates dir, returns path. */
+    Q_INVOKABLE QString addSharedPrefix(const QString &protonName);
+    /** Remove a shared prefix for a proton. Deletes dir. */
+    Q_INVOKABLE void removeSharedPrefix(const QString &protonName);
+    /** Get the prefix path for a proton's shared prefix. */
+    Q_INVOKABLE QString sharedPrefixPath(const QString &protonName) const;
+
 signals:
     void gamesChanged();
     void launcherChanged();

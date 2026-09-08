@@ -184,6 +184,7 @@ CModal {
 
             // PATHS
             Column {
+                id: pathsPage
                 width: parent.width
                 spacing: 10
                 visible: root.page === "paths"
@@ -236,8 +237,9 @@ CModal {
                     }
                 }
                 // Shared prefix section
+                property var sharedPrefixList: config.sharedPrefixes()
                 Text {
-                    text: "Shared Prefix"
+                    text: "Shared Prefixes"
                     color: Theme.textMain
                     font.bold: true
                     font.pixelSize: 14
@@ -246,56 +248,77 @@ CModal {
                     anchors.horizontalCenter: parent.horizontalCenter
                 }
                 Text {
-                    text: "Use a single Wine/Proton prefix for all games (like Heroic Launcher). All games must use the same Proton version."
+                    text: "Create shared Wine/Proton prefixes. Each is tied to a specific Proton version. Games using that Proton will share the same prefix."
                     color: Theme.textSec
                     font.pixelSize: 11
                     wrapMode: Text.Wrap
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                 }
-                CCard {
+                // Add button
+                CButton {
+                    text: "Add shared prefix"
                     width: parent.width
-                    outlineColor: Theme.border
-                    outlineWidth: 1
-                    CSwitch {
-                        objectName: "Use shared prefix for all games"
-                        Component.onCompleted: setSilent(config.launcherValue("useSharedPrefix", "User Settings") === "1")
-                        onToggled: config.setLauncherValue("useSharedPrefix", checked ? "1" : "0", "User Settings")
-                    }
-                    Column {
+                    height: 32
+                    kind: "primary"
+                    onClicked: addSharedPrefixDialog.open()
+                }
+                // List of shared prefixes
+                Repeater {
+                    model: pathsPage.sharedPrefixList
+                    CCard {
+                        required property string modelData
+                        required property int index
                         width: parent.width
-                        spacing: 4
-                        visible: config.launcherValue("useSharedPrefix", "User Settings") === "1"
-                        Text {
-                            text: {
-                                var dp = config.launcherValue("defaultProton", "User Settings");
-                                return "Shared prefix for: " + (dp || "none selected");
-                            }
-                            color: Theme.accent
-                            font.pixelSize: 12
-                            font.bold: true
-                        }
-                        Text {
-                            text: "All games will share this prefix. They must use the same Proton version."
-                            color: Theme.textSec
-                            font.pixelSize: 11
-                            wrapMode: Text.Wrap
+                        outlineColor: Theme.border
+                        outlineWidth: 1
+                        Row {
                             width: parent.width
-                        }
-                        Text { text: "Shared prefix path"; color: Theme.textSec; font.pixelSize: 12 }
-                        CTextField {
-                            width: parent.width
-                            text: {
-                                var custom = config.launcherValue("sharedPrefixPath", "User Settings");
-                                if (custom !== "")
-                                    return custom;
-                                var dp = config.launcherValue("defaultProton", "User Settings");
-                                var slug = dp ? dp.replace(/[^a-zA-Z0-9._-]/g, "_") : "default";
-                                return config.basePathFor("prefixes") + "/shared-" + slug;
+                            spacing: 8
+                            CIcon {
+                                iconName: "folder"
+                                iconSize: 16
+                                anchors.verticalCenter: parent.verticalCenter
                             }
-                            onEditingFinished: config.setLauncherValue("sharedPrefixPath", text.trim(), "User Settings")
+                            Column {
+                                width: parent.width - 50
+                                anchors.verticalCenter: parent.verticalCenter
+                                Text {
+                                    text: modelData
+                                    color: Theme.textMain
+                                    font.bold: true
+                                    font.pixelSize: 12
+                                    elide: Text.ElideMiddle
+                                    width: parent.width
+                                }
+                                Text {
+                                    text: config.sharedPrefixPath(modelData)
+                                    color: Theme.textSec
+                                    font.pixelSize: 10
+                                    elide: Text.ElideMiddle
+                                    width: parent.width
+                                }
+                            }
+                            CButton {
+                                width: 32
+                                height: 28
+                                anchors.verticalCenter: parent.verticalCenter
+                                iconSource: "remove"
+                                iconSize: 14
+                                text: ""
+                                onClicked: {
+                                    config.removeSharedPrefix(modelData);
+                                    pathsPage.sharedPrefixList = config.sharedPrefixes();
+                                }
+                            }
                         }
                     }
+                }
+                Text {
+                    text: pathsPage.sharedPrefixList.length === 0 ? "No shared prefixes created yet." : ""
+                    color: Theme.textSec
+                    font.pixelSize: 12
+                    visible: pathsPage.sharedPrefixList.length === 0
                 }
             }
             Column {
@@ -1263,6 +1286,74 @@ CModal {
                     config.setLauncherValue(root._pendingPathKey, folder, "User Settings");
                     root._pendingPathField.text = folder;
                 }
+            }
+        }
+    }
+
+    // Add shared prefix dialog
+    CModal {
+        id: addSharedPrefixDialog
+        title: "New Shared Prefix"
+        boxWidth: 440
+        Column {
+            width: parent.width
+            spacing: 10
+            Text {
+                text: "Select the Proton/Wine version for this shared prefix:"
+                color: Theme.textMain
+                font.pixelSize: 13
+                wrapMode: Text.Wrap
+                width: parent.width
+            }
+            Repeater {
+                model: proton.installedProtonEntries()
+                delegate: Rectangle {
+                    required property var modelData
+                    required property int index
+                    width: addSharedPrefixDialog.width - 8
+                    height: 36
+                    radius: 6
+                    color: addArea.containsMouse ? Theme.hover : Theme.well
+                    border.color: Theme.border
+                    border.width: 1
+                    Row {
+                        anchors.fill: parent
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 10
+                        spacing: 6
+                        CIcon {
+                            iconName: "proton17"
+                            iconSize: 14
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Text {
+                            text: modelData.label
+                            color: Theme.textMain
+                            font.pixelSize: 12
+                            width: parent.width - 20
+                            elide: Text.ElideMiddle
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                    MouseArea {
+                        id: addArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            config.addSharedPrefix(modelData.name);
+                            pathsPage.sharedPrefixList = config.sharedPrefixes();
+                            addSharedPrefixDialog.close();
+                        }
+                    }
+                }
+            }
+            CButton {
+                text: "Cancel"
+                kind: "outline"
+                width: parent.width
+                height: 28
+                onClicked: addSharedPrefixDialog.close()
             }
         }
     }

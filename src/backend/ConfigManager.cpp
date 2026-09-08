@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFile>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QUrl>
@@ -267,4 +268,38 @@ QStringList ConfigManager::allProtonPaths() const {
             paths << extra;
     }
     return paths;
+}
+
+QStringList ConfigManager::sharedPrefixes() const {
+    const QString val = launcherValue("sharedPrefixes", "User Settings");
+    if (val.trimmed().isEmpty()) return {};
+    return val.split(",", Qt::SkipEmptyParts);
+}
+
+QString ConfigManager::sharedPrefixPath(const QString &protonName) const {
+    const QStringList list = sharedPrefixes();
+    if (!list.contains(protonName)) return {};
+    const QString slug = protonName.isEmpty() ? "default"
+        : protonName.section("/", -1).replace(QRegularExpression("[^a-zA-Z0-9._-]"), "_");
+    return prefixesDir() + "/shared-" + slug;
+}
+
+QString ConfigManager::addSharedPrefix(const QString &protonName) {
+    QStringList list = sharedPrefixes();
+    if (!list.contains(protonName)) {
+        list << protonName;
+        setLauncherValue("sharedPrefixes", list.join(","), "User Settings");
+    }
+    const QString path = sharedPrefixPath(protonName);
+    ensureDir(path);
+    return path;
+}
+
+void ConfigManager::removeSharedPrefix(const QString &protonName) {
+    QStringList list = sharedPrefixes();
+    list.removeAll(protonName);
+    setLauncherValue("sharedPrefixes", list.join(","), "User Settings");
+    const QString path = sharedPrefixPath(protonName);
+    if (!path.isEmpty() && QDir(path).exists())
+        QDir(path).removeRecursively();
 }

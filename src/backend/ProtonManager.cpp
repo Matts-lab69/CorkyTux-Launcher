@@ -292,19 +292,23 @@ QString ProtonManager::prefixPath(const QString &gameName) const {
     if (gameName.isEmpty())
         return {};
     ConfigManager *cfg = ConfigManager::instance();
-    // 0) Shared prefix mode: global or per-game toggle
-    const bool globalShared = cfg->launcherValue("useSharedPrefix", "User Settings") == "1";
+    // 0) Shared prefix: per-game toggle or global legacy
     const bool perGameShared = cfg->gameValue(gameName, "useSharedPrefix") == "true"
                                || cfg->gameValue(gameName, "useSharedPrefix") == "1";
-    if (globalShared || perGameShared) {
-        QString shared = cfg->launcherValue("sharedPrefixPath", "User Settings");
-        if (shared.isEmpty()) {
-            QString defaultProton = cfg->launcherValue("defaultProton", "User Settings");
-            const QString protonSlug = defaultProton.isEmpty() ? "default"
-                : defaultProton.replace(QRegularExpression("[^a-zA-Z0-9._-]"), "_");
-            shared = ConfigManager::prefixesDir() + "/shared-" + protonSlug;
-        }
-        return shared;
+    const bool globalShared = cfg->launcherValue("useSharedPrefix", "User Settings") == "1";
+    if (perGameShared || globalShared) {
+        // Find the proton for this game
+        QString proton = cfg->gameValue(gameName, "proton");
+        if (proton.isEmpty() || proton == "GE-Proton Latest")
+            proton = cfg->launcherValue("defaultProton", "User Settings");
+        // Check if a shared prefix exists for this proton
+        QString shared = cfg->sharedPrefixPath(proton);
+        if (!shared.isEmpty())
+            return shared;
+        // Fallback: legacy sharedPrefixPath key
+        shared = cfg->launcherValue("sharedPrefixPath", "User Settings");
+        if (!shared.isEmpty())
+            return shared;
     }
     // 1) explicit per-game prefix
     const QString explicit_ = cfg->gameValue(gameName, "prefixPath");
@@ -494,33 +498,7 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
     }
     // --- Non-Steam games ---
     QString prefix;
-    // Shared prefix validation: all games must use the same Proton
-    const bool useSharedPrefix = cfg->launcherValue("useSharedPrefix", "User Settings") == "1"
-                                 || cfg->gameValue(gameName, "useSharedPrefix") == "true"
-                                 || cfg->gameValue(gameName, "useSharedPrefix") == "1";
-    bool forcePerGamePrefix = false;
-    if (useSharedPrefix && !isSteamGame) {
-        const QString defaultProton = cfg->launcherValue("defaultProton", "User Settings");
-        if (!defaultProton.isEmpty() && protonName != defaultProton) {
-            emit toast("Shared prefix requires all games to use the same Proton. "
-                       "This game uses " + protonName + ", expected " + defaultProton);
-            forcePerGamePrefix = true;
-        }
-    }
-    if (forcePerGamePrefix) {
-        // Mismatched Proton: use per-game prefix instead of shared
-        const QString explicit_ = cfg->gameValue(gameName, "prefixPath");
-        if (!explicit_.isEmpty())
-            prefix = explicit_;
-        else
-            prefix = ConfigManager::prefixesDir() + "/" + gameName + "/pfx";
-        if (!prefix.endsWith("/pfx"))
-            prefix += "/pfx";
-        if (!QDir(prefix).exists())
-            QDir().mkpath(prefix);
-    } else {
-        prefix = ensurePrefixPath(gameName);
-    }
+    prefix = ensurePrefixPath(gameName);
     if (prefix.isEmpty()) {
         emit toast("Cannot create prefix dir");
         return;
