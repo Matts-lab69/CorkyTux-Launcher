@@ -32,3 +32,5 @@ push-commands.txt
 release/*.tar.gz
 release/*.AppImage
 corkytux-*.tar.gz
+build/
+build-release/

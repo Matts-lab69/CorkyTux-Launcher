@@ -1,6 +1,0 @@
-<RCC>
-  <qresource prefix="/">
-    <file alias="/CorkyTux">/tmp/CorkyTux-Launcher/build-release/CorkyTux</file>
-
-  </qresource>
-</RCC>
