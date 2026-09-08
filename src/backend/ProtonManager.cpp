@@ -904,7 +904,7 @@ void ProtonManager::fetchReleases() {
     struct Feed { QString url; QString source; };
     const QList<Feed> feeds = {
         {"https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page=20", "ge"},
-        {"https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=10", "cachy"},
+        {"https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=30", "cachy"},
     };
     auto pending = std::make_shared<int>(feeds.size());
     auto all = std::make_shared<QVariantList>();
@@ -919,16 +919,19 @@ void ProtonManager::fetchReleases() {
                 for (const QJsonValue &v : arr) {
                     const QJsonObject o = v.toObject();
                     QString url;
+                    // Pick best asset: prefer x86_64_v3, then x86_64, then any
+                    QString bestUrl;
                     for (const QJsonValue &a : o.value("assets").toArray()) {
                         const QString n = a.toObject().value("name").toString();
-                        // GE-Proton ships .tar.gz, CachyOS ships .tar.xz (x86_64 preferred)
                         if ((n.endsWith(".tar.gz") || n.endsWith(".tar.xz"))
                             && !n.contains("arm64") && !n.endsWith(".sha512sum")) {
-                            url = a.toObject().value("browser_download_url").toString();
-                            if (n.contains("x86_64"))
-                                break;
+                            const QString u = a.toObject().value("browser_download_url").toString();
+                            if (n.contains("x86_64_v3")) { url = u; break; }
+                            if (n.contains("x86_64") && bestUrl.isEmpty()) bestUrl = u;
+                            if (url.isEmpty()) url = u;
                         }
                     }
+                    if (url.isEmpty() && !bestUrl.isEmpty()) url = bestUrl;
                     if (!url.isEmpty())
                         all->append(QVariantMap({{"tag", o.value("tag_name").toString()},
                                                 {"url", url},

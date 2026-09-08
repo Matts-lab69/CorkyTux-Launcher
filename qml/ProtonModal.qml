@@ -161,16 +161,10 @@ CModal {
                             anchors.verticalCenter: parent.verticalCenter
                             onClicked: {
                                 var paths = proton.protonPaths();
-                                if (paths.length <= 1) {
-                                    // Only one path — download directly
-                                    statusLabel.text = "Downloading " + modelData.tag;
-                                    proton.downloadProton(modelData.tag, modelData.url);
-                                } else {
-                                    // Multiple paths — ask which one
-                                    root.pendingTag = modelData.tag;
-                                    root.pendingUrl = modelData.url;
-                                    root.showPathPicker = true;
-                                }
+                                // Always show path picker
+                                root.pendingTag = modelData.tag;
+                                root.pendingUrl = modelData.url;
+                                root.showPathPicker = true;
                             }
                         }
                     }

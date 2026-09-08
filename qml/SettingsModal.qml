@@ -187,6 +187,7 @@ CModal {
                 horizontalAlignment: Text.AlignHCenter
                 width: parent.width }
                 Repeater {
+                    id: pathRepeater
                     model: [
                         { "label": "Installs path", "key": "installsPath", "base": "installs" },
                         { "label": "Downloads path", "key": "downloadsPath", "base": "downloads" },
@@ -197,18 +198,36 @@ CModal {
                     ]
                     Column {
                         required property var modelData
+                        required property int index
                         width: parent.width
                         spacing: 4
                         Text { text: modelData.label; color: Theme.textSec; font.pixelSize: 12 }
-                        CTextField {
+                        Row {
                             width: parent.width
-                            text: {
-                                var custom = config.launcherValue(modelData.key, "User Settings");
-                                if (custom !== "")
-                                    return custom;
-                                return modelData.base !== "" ? config.basePathFor(modelData.base) : "";
+                            spacing: 6
+                            CTextField {
+                                id: pathField
+                                width: parent.width - 42
+                                text: {
+                                    var custom = config.launcherValue(modelData.key, "User Settings");
+                                    if (custom !== "")
+                                        return custom;
+                                    return modelData.base !== "" ? config.basePathFor(modelData.base) : "";
+                                }
+                                onEditingFinished: config.setLauncherValue(modelData.key, text.trim(), "User Settings")
                             }
-                            onEditingFinished: config.setLauncherValue(modelData.key, text.trim(), "User Settings")
+                            CButton {
+                                text: ""
+                                iconSource: "folder"
+                                iconSize: 16
+                                width: 36
+                                height: 32
+                                anchors.verticalCenter: pathField.verticalCenter
+                                onClicked: {
+                                    pathRepeater.currentIndex = index;
+                                    folderDialog.open();
+                                }
+                            }
                         }
                     }
                 }
@@ -440,7 +459,6 @@ CModal {
                         protonsPage.defaultProtonModel = proton.installedProtons();
                     }
                 }
-                Component.onCompleted: proton.fetchReleases()
             }
 
             // MISC
@@ -501,7 +519,8 @@ CModal {
                             var parts = [];
                             if (s.installed64) parts.push("64-bit");
                             if (s.installed32) parts.push("32-bit");
-                            return "GameMode: ready (" + parts.join(" + ") + ")";
+                            var note = parts.length < 2 ? " (new games only)" : "";
+                            return "GameMode: ready (" + parts.join(" + ") + ")" + note;
                         }
                         return "GameMode: not installed";
                     }
@@ -521,7 +540,8 @@ CModal {
                             var parts = [];
                             if (s.installed64) parts.push("64-bit");
                             if (s.installed32) parts.push("32-bit");
-                            return "MangoHud: ready (" + parts.join(" + ") + ")";
+                            var note = parts.length < 2 ? " (new games only)" : "";
+                            return "MangoHud: ready (" + parts.join(" + ") + ")" + note;
                         }
                         return "MangoHud: not installed";
                     }
@@ -1088,6 +1108,23 @@ CModal {
                 }
             }
         }
+        }
+    }
+
+    FolderDialog {
+        id: folderDialog
+        title: "Select folder"
+        onAccepted: {
+            var path = selectedFolder.toString();
+            if (path.indexOf("file://") === 0)
+                path = path.substring(7);
+            path = decodeURIComponent(path);
+            var item = pathRepeater.itemAt(pathRepeater.currentIndex);
+            if (item) {
+                config.setLauncherValue(item.modelData.key, path, "User Settings");
+                // Force refresh by re-setting page
+                root.page = root.page;
+            }
         }
     }
 

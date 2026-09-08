@@ -48,8 +48,9 @@ CModal {
                     spacing: 6
                     Repeater {
                         model: root.missingGames
-                        Row {
+                        delegate: Row {
                             required property var modelData
+                            width: missingGamesCol.width
                             spacing: 8
                             Rectangle {
                                 width: 6
@@ -62,7 +63,7 @@ CModal {
                                 width: parent.width - 14
                                 spacing: 2
                                 Text {
-                                    text: modelData.name
+                                    text: modelData.name || "Unknown game"
                                     color: Theme.textMain
                                     font.bold: true
                                     font.pixelSize: 12

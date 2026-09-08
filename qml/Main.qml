@@ -43,8 +43,22 @@ ApplicationWindow {
     function refreshAll() {
         recent.refresh(games);
         if (root.currentGameName !== "") {
+            var prevSize = root.currentGame.sizeText || "";
             root.currentGame = games.getGame(root.currentGameName);
+            // Preserve sizeText from previous refresh
+            if (prevSize !== "" && (!root.currentGame.sizeText || root.currentGame.sizeText === ""))
+                root.currentGame.sizeText = prevSize;
             details.game = root.currentGame;
+            // Re-query folder size if it was lost
+            if (!root.currentGame.sizeText || root.currentGame.sizeText === "") {
+                var mp = root.currentGame.mainPath || "";
+                var ex = root.currentGame.executable || "";
+                var dir = mp;
+                if (!dir && ex)
+                    dir = ex.substring(0, ex.lastIndexOf("/"));
+                if (dir)
+                    proton.queryFolderSize(dir);
+            }
         }
     }
 
@@ -150,7 +164,7 @@ ApplicationWindow {
                     "lutrisRunner": g.runner,
                     "mainPath": mainDir,
                     "executable": exePath || mainDir,
-                    "prefixPath": g.prefix || "",
+                    "prefixPath": (g.prefix && integrations.pathExists(g.prefix)) ? g.prefix : "",
                     "timeSpent": g.playtimeHours > 0 ? Math.round(g.playtimeHours * 3600) : "",
                     "source": "lutris"
                 };
