@@ -305,6 +305,7 @@ CModal {
                 visible: root.page === "protons"
                 property string filter: "all"
                 property var releases: []
+                property var filteredReleases: []
                 property var installedDetails: []
                 property var defaultProtonEntries: proton.installedProtonEntries()
                 property var defaultProtonNames: defaultProtonEntries.map(function(e) { return e.name; })
@@ -312,6 +313,15 @@ CModal {
                 property bool showPathPicker: false
                 property string pendingTag: ""
                 property string pendingUrl: ""
+                onFilterChanged: updateFiltered()
+                onReleasesChanged: updateFiltered()
+                function updateFiltered() {
+                    filteredReleases = releases.filter(function(r) {
+                        if (filter === "cachy") return r.source === "cachy";
+                        if (filter === "ge") return r.source === "ge";
+                        return true;
+                    });
+                }
                 Text { text: "Protons"; color: Theme.textMain; font.bold: true; font.pixelSize: 18
                 horizontalAlignment: Text.AlignHCenter
                 width: parent.width }
@@ -529,11 +539,7 @@ CModal {
                     ScrollBar.vertical: ScrollBar {
                         policy: ScrollBar.AlwaysOff
                     }
-                    model: protonsPage.releases.filter(function(r) {
-                        if (protonsPage.filter === "cachy") return r.source === "cachy";
-                        if (protonsPage.filter === "ge") return r.source === "ge";
-                        return true;
-                    })
+                    model: protonsPage.filteredReleases
                     delegate: Rectangle {
                         required property var modelData
                         width: protonAvailList.width - 8
