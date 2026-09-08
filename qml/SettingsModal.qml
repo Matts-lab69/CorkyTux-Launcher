@@ -154,6 +154,7 @@ CModal {
                     Flow {
                         width: parent.width
                         spacing: 8
+                        anchors.horizontalCenter: parent.horizontalCenter
                         Repeater {
                             model: Theme.accentIds()
                             Button {
@@ -263,6 +264,7 @@ CModal {
                     width: 160
                     height: 32
                     kind: "primary"
+                    anchors.horizontalCenter: parent.horizontalCenter
                     onClicked: root.openAddSharedPrefix()
                 }
                 // List of shared prefixes
