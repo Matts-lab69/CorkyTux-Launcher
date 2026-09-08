@@ -938,21 +938,28 @@ void ProtonManager::fetchReleases() {
                 const QJsonArray arr = QJsonDocument::fromJson(rep->readAll()).array();
                 for (const QJsonValue &v : arr) {
                     const QJsonObject o = v.toObject();
-                    QString url;
+                    QString normalUrl, v3Url;
                     for (const QJsonValue &a : o.value("assets").toArray()) {
                         const QString n = a.toObject().value("name").toString();
                         if ((n.endsWith(".tar.gz") || n.endsWith(".tar.xz"))
                             && !n.contains("arm64") && !n.endsWith(".sha512sum")) {
-                            if (n.contains("x86_64_v3")) { url = a.toObject().value("browser_download_url").toString(); break; }
-                            if (url.isEmpty())
-                                url = a.toObject().value("browser_download_url").toString();
+                            const QString u = a.toObject().value("browser_download_url").toString();
+                            if (n.contains("x86_64_v3") && v3Url.isEmpty()) v3Url = u;
+                            else if (!n.contains("x86_64_v3") && n.contains("x86_64") && normalUrl.isEmpty()) normalUrl = u;
                         }
                     }
-                    if (!url.isEmpty())
-                        all->append(QVariantMap({{"tag", o.value("tag_name").toString()},
-                                                {"url", url},
-                                                {"date", o.value("published_at").toString()},
-                                                {"source", feed.source}}));
+                    QString tag = o.value("tag_name").toString();
+                    QString date = o.value("published_at").toString();
+                    if (feed.source == "cachy") {
+                        if (!normalUrl.isEmpty())
+                            all->append(QVariantMap({{"tag", tag}, {"url", normalUrl}, {"date", date}, {"source", "cachy"}}));
+                        if (!v3Url.isEmpty())
+                            all->append(QVariantMap({{"tag", tag + " v3"}, {"url", v3Url}, {"date", date}, {"source", "cachy"}}));
+                    } else {
+                        QString url = !v3Url.isEmpty() ? v3Url : normalUrl;
+                        if (!url.isEmpty())
+                            all->append(QVariantMap({{"tag", tag}, {"url", url}, {"date", date}, {"source", feed.source}}));
+                    }
                 }
             }
             if (--(*pending) == 0)
