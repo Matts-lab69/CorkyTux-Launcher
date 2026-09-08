@@ -630,7 +630,7 @@ ApplicationWindow {
         anchors.centerIn: Overlay.overlay
         modal: true
         closePolicy: Popup.CloseOnEscape
-        width: 360
+        width: 400
         padding: 16
         background: Rectangle {
             color: Theme.panel
@@ -638,43 +638,81 @@ ApplicationWindow {
             border.color: Theme.border
             border.width: 1
         }
+        property var sharedPrefixItems: []
+        onAboutToShow: {
+            // Build list of existing shared prefixes + available protons without one
+            var items = [];
+            var existing = config.sharedPrefixes();
+            var installed = gameSettingsModal.installedProtonNames;
+            // Existing shared prefixes
+            for (var i = 0; i < existing.length; i++) {
+                var path = config.sharedPrefixPath(existing[i]);
+                items.push({"proton": existing[i], "path": path, "exists": true});
+            }
+            // Installed protons that don't have a shared prefix yet
+            for (var j = 0; j < installed.length; j++) {
+                var hasExisting = false;
+                for (var k = 0; k < existing.length; k++) {
+                    if (existing[k] === installed[j]) { hasExisting = true; break; }
+                }
+                if (!hasExisting) {
+                    var newPath = config.sharedPrefixPath(installed[j]);
+                    items.push({"proton": installed[j], "path": newPath, "exists": false});
+                }
+            }
+            sharedPrefixItems = items;
+        }
         contentItem: Column {
             spacing: 12
             Text {
-                text: "Select proton for shared prefix"
+                text: "Shared Prefix"
                 color: Theme.textMain
                 font.bold: true
                 font.pixelSize: 14
             }
             Text {
-                text: "Each proton version gets its own shared prefix. Select which proton to use."
+                text: "Select an existing shared prefix or create a new one."
                 color: Theme.textSec
                 font.pixelSize: 11
                 wrapMode: Text.Wrap
                 width: parent.width
             }
             Repeater {
-                model: gameSettingsModal.installedProtonNames
+                model: sharedPrefixPickerPopup.sharedPrefixItems
                 delegate: Rectangle {
                     width: parent.width
-                    height: 36
+                    height: 48
                     radius: 6
-                    color: sharedPrefixMouse.containsMouse ? Theme.hover : Theme.well
+                    color: spkMouse.containsMouse ? Theme.hover : Theme.well
                     border.color: Theme.border
                     border.width: 1
-                    Text {
-                        anchors.centerIn: parent
-                        text: modelData
-                        color: Theme.textMain
-                        font.pixelSize: 12
+                    Column {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 10
+                        spacing: 2
+                        Text {
+                            text: modelData.path
+                            color: Theme.textMain
+                            font.pixelSize: 12
+                            elide: Text.ElideMiddle
+                            width: parent.width
+                        }
+                        Text {
+                            text: modelData.exists ? modelData.proton : modelData.proton + " (new)"
+                            color: modelData.exists ? Theme.textSec : Theme.accent
+                            font.pixelSize: 10
+                        }
                     }
                     MouseArea {
-                        id: sharedPrefixMouse
+                        id: spkMouse
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
-                            gameSettingsModal.selectSharedPrefix(modelData);
+                            gameSettingsModal.selectSharedPrefix(modelData.proton);
                             sharedPrefixPickerPopup.close();
                         }
                     }
