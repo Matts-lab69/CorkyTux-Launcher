@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 import "components"
 
 // SettingsModal – Visuals / Paths / Protons / Misc / Plugins / Integrations / About.
@@ -151,16 +152,18 @@ CModal {
                     width: parent.width
                     outlineColor: Theme.border
                     outlineWidth: 1
-                    Flow {
-                        spacing: 8
+                    GridLayout {
+                        columns: 5
                         anchors.horizontalCenter: parent.horizontalCenter
+                        rowSpacing: 8
+                        columnSpacing: 8
                         Repeater {
                             model: Theme.accentIds()
                             Button {
                                 required property string modelData
                                 text: Theme.accentInfo(modelData).name
-                                width: 100
-                                height: 34
+                                Layout.preferredWidth: 100
+                                Layout.preferredHeight: 34
                                 checkable: true
                                 checked: Theme.accentId === modelData
                                 background: Rectangle {
