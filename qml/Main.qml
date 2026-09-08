@@ -533,6 +533,89 @@ ApplicationWindow {
         id: settingsModal
         onNotice: function(msg) { toastLabel.text = msg; toastPopup.open(); }
         onOpenProton: protonModal.open()
+        onOpenAddSharedPrefix: addSharedPrefixPopup.open()
+    }
+    Popup {
+        id: addSharedPrefixPopup
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        padding: 0
+        background: Rectangle {
+            color: Theme.panel
+            radius: 12
+            border.color: Theme.border
+            border.width: 1
+        }
+        contentItem: Column {
+            width: 400
+            spacing: 12
+            padding: 20
+            Text {
+                text: "New Shared Prefix"
+                color: Theme.textMain
+                font.bold: true
+                font.pixelSize: 16
+                width: parent.width - 40
+            }
+            Text {
+                text: "Select the Proton/Wine version for this shared prefix:"
+                color: Theme.textSec
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+                width: parent.width - 40
+            }
+            Repeater {
+                model: proton.installedProtonEntries()
+                delegate: Rectangle {
+                    required property var modelData
+                    required property int index
+                    width: parent.width - 40
+                    height: 36
+                    radius: 6
+                    color: addPathArea.containsMouse ? Theme.hover : Theme.well
+                    border.color: Theme.border
+                    border.width: 1
+                    Row {
+                        anchors.fill: parent
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 10
+                        spacing: 6
+                        CIcon {
+                            iconName: "proton17"
+                            iconSize: 14
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Text {
+                            text: modelData.label
+                            color: Theme.textMain
+                            font.pixelSize: 12
+                            width: parent.width - 20
+                            elide: Text.ElideMiddle
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                    MouseArea {
+                        id: addPathArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            config.addSharedPrefix(modelData.name);
+                            settingsModal.refreshSharedPrefixes();
+                            addSharedPrefixPopup.close();
+                        }
+                    }
+                }
+            }
+            CButton {
+                text: "Cancel"
+                kind: "outline"
+                width: parent.width - 40
+                height: 28
+                onClicked: addSharedPrefixPopup.close()
+            }
+        }
     }
     GameSettingsModal { id: gameSettingsModal }
     Timer {

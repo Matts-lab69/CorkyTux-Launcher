@@ -10,6 +10,10 @@ CModal {
     boxWidth: 720
 
     signal openProton
+    signal openAddSharedPrefix()
+    function refreshSharedPrefixes() {
+        pathsPage.sharedPrefixList = config.sharedPrefixes();
+    }
     property string page: "visuals"
     readonly property int tabCount: 7
     property int pathRefresh: 0
@@ -261,7 +265,7 @@ CModal {
                     width: parent.width
                     height: 32
                     kind: "primary"
-                    onClicked: addSharedPrefixDialog.open()
+                    onClicked: root.openAddSharedPrefix()
                 }
                 // List of shared prefixes
                 Repeater {
@@ -1286,74 +1290,6 @@ CModal {
                     config.setLauncherValue(root._pendingPathKey, folder, "User Settings");
                     root._pendingPathField.text = folder;
                 }
-            }
-        }
-    }
-
-    // Add shared prefix dialog
-    CModal {
-        id: addSharedPrefixDialog
-        title: "New Shared Prefix"
-        boxWidth: 440
-        Column {
-            width: parent.width
-            spacing: 10
-            Text {
-                text: "Select the Proton/Wine version for this shared prefix:"
-                color: Theme.textMain
-                font.pixelSize: 13
-                wrapMode: Text.Wrap
-                width: parent.width
-            }
-            Repeater {
-                model: proton.installedProtonEntries()
-                delegate: Rectangle {
-                    required property var modelData
-                    required property int index
-                    width: addSharedPrefixDialog.width - 8
-                    height: 36
-                    radius: 6
-                    color: addArea.containsMouse ? Theme.hover : Theme.well
-                    border.color: Theme.border
-                    border.width: 1
-                    Row {
-                        anchors.fill: parent
-                        anchors.leftMargin: 10
-                        anchors.rightMargin: 10
-                        spacing: 6
-                        CIcon {
-                            iconName: "proton17"
-                            iconSize: 14
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                        Text {
-                            text: modelData.label
-                            color: Theme.textMain
-                            font.pixelSize: 12
-                            width: parent.width - 20
-                            elide: Text.ElideMiddle
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                    }
-                    MouseArea {
-                        id: addArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            config.addSharedPrefix(modelData.name);
-                            pathsPage.sharedPrefixList = config.sharedPrefixes();
-                            addSharedPrefixDialog.close();
-                        }
-                    }
-                }
-            }
-            CButton {
-                text: "Cancel"
-                kind: "outline"
-                width: parent.width
-                height: 28
-                onClicked: addSharedPrefixDialog.close()
             }
         }
     }
