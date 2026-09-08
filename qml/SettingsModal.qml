@@ -35,6 +35,7 @@ CModal {
     onOpened: {
         root.gameModeStatus = proton.graphicsComponentStatus("gamemode");
         root.mangoHudStatus = proton.graphicsComponentStatus("mangohud");
+        root.refreshSharedPrefixes();
     }
 
     Column {
