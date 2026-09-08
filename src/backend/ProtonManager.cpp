@@ -924,7 +924,7 @@ void ProtonManager::fetchReleases() {
     struct Feed { QString url; QString source; };
     const QList<Feed> feeds = {
         {"https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page=20", "ge"},
-        {"https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=3", "cachy"},
+        {"https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=10", "cachy"},
     };
     auto pending = std::make_shared<int>(feeds.size());
     auto all = std::make_shared<QVariantList>();
@@ -936,7 +936,6 @@ void ProtonManager::fetchReleases() {
             rep->deleteLater();
             if (rep->error() == QNetworkReply::NoError) {
                 const QJsonArray arr = QJsonDocument::fromJson(rep->readAll()).array();
-                bool cachyAdded = false;
                 for (const QJsonValue &v : arr) {
                     const QJsonObject o = v.toObject();
                     QString url;
@@ -955,11 +954,8 @@ void ProtonManager::fetchReleases() {
                         }
                     }
                     if (!url.isEmpty()) {
-                        // CachyOS: only show latest with v3 label
-                        if (feed.source == "cachy") {
-                            if (cachyAdded) continue;
-                            cachyAdded = true;
-                        }
+                        // CachyOS: only show v3 builds
+                        if (feed.source == "cachy" && !hasV3) continue;
                         QString tag = o.value("tag_name").toString();
                         if (feed.source == "cachy" && hasV3)
                             tag += " v3";
