@@ -939,37 +939,24 @@ void ProtonManager::fetchReleases() {
                 for (const QJsonValue &v : arr) {
                     const QJsonObject o = v.toObject();
                     QString url;
-                    bool hasV3 = false;
                     for (const QJsonValue &a : o.value("assets").toArray()) {
                         const QString n = a.toObject().value("name").toString();
                         if ((n.endsWith(".tar.gz") || n.endsWith(".tar.xz"))
                             && !n.contains("arm64") && !n.endsWith(".sha512sum")) {
-                            if (n.contains("x86_64_v3")) {
-                                url = a.toObject().value("browser_download_url").toString();
-                                hasV3 = true;
-                                break;
-                            }
+                            if (n.contains("x86_64_v3")) { url = a.toObject().value("browser_download_url").toString(); break; }
                             if (url.isEmpty())
                                 url = a.toObject().value("browser_download_url").toString();
                         }
                     }
-                    if (!url.isEmpty()) {
-                        // CachyOS: only show v3 builds
-                        if (feed.source == "cachy" && !hasV3) continue;
-                        QString tag = o.value("tag_name").toString();
-                        if (feed.source == "cachy" && hasV3)
-                            tag += " v3";
-                        all->append(QVariantMap({{"tag", tag},
+                    if (!url.isEmpty())
+                        all->append(QVariantMap({{"tag", o.value("tag_name").toString()},
                                                 {"url", url},
                                                 {"date", o.value("published_at").toString()},
                                                 {"source", feed.source}}));
-                    }
                 }
             }
-            if (--(*pending) == 0) {
-                qDebug() << "[fetchReleases] total releases:" << all->size();
+            if (--(*pending) == 0)
                 emit releasesReady(*all);
-            }
         });
     }
 }
