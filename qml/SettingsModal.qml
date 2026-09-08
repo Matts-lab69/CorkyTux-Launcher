@@ -1112,19 +1112,21 @@ CModal {
         }
     }
 
-    FolderDialog {
-        id: folderDialog
-        title: "Select folder"
-        onAccepted: {
-            var path = selectedFolder.toString();
-            if (path.indexOf("file://") === 0)
-                path = path.substring(7);
-            path = decodeURIComponent(path);
-            var item = pathRepeater.itemAt(pathRepeater.currentIndex);
-            if (item) {
-                config.setLauncherValue(item.modelData.key, path, "User Settings");
-                // Force refresh by re-setting page
-                root.page = root.page;
+    Item {
+        // Non-visual container for FolderDialog (must be outside layout)
+        FolderDialog {
+            id: folderDialog
+            title: "Select folder"
+            onAccepted: {
+                var path = selectedFolder.toString();
+                if (path.indexOf("file://") === 0)
+                    path = path.substring(7);
+                path = decodeURIComponent(path);
+                var item = pathRepeater.itemAt(pathRepeater.currentIndex);
+                if (item) {
+                    config.setLauncherValue(item.modelData.key, path, "User Settings");
+                    root.page = root.page;
+                }
             }
         }
     }
