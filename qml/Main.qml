@@ -387,8 +387,7 @@ ApplicationWindow {
             else if (action === "Remove") removeModal.openFor(root.currentGameName, !!(root.currentGame.executor || ""));
             else if (action === "Debug") {
                 // Show latest log file (like Lutris)
-                logModal.logText = "";
-                logModal.gameRunning = false;
+                logModal.gameRunning = proton.running && proton.currentGame === root.currentGameName;
                 var logDir = config.dataDirPath() + "/logs";
                 var logFiles = integrations.scanDirSync(logDir);
                 var latestLog = "";
@@ -406,7 +405,7 @@ ApplicationWindow {
                 }
                 if (latestLog !== "") {
                     logModal.logText = config.readFile(latestLog);
-                } else {
+                } else if (logModal.logText === "") {
                     logModal.logText = "No logs found. Run the game first.";
                 }
                 logModal.open();
