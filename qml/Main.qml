@@ -654,7 +654,7 @@ ApplicationWindow {
                 width: parent.width
             }
             Repeater {
-                model: gameSettingsModal.protonNames
+                model: gameSettingsModal.installedProtonNames
                 delegate: Rectangle {
                     width: parent.width
                     height: 36

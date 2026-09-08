@@ -79,13 +79,16 @@ CModal {
     }
     property var protonEntries: []
     property var protonNames: []
+    property var installedProtonNames: []
     function loadFields() {
         var g = games.getGame(gameName);
         if (!g || !g.name) return;
         nameField.text = g.name || gameName;
-        var entries = [{"name": "GE-Proton Latest", "label": "GE-Proton Latest"}].concat(proton.installedProtonEntries());
+        var installed = proton.installedProtonEntries();
+        var entries = [{"name": "GE-Proton Latest", "label": "GE-Proton Latest"}].concat(installed);
         protonEntries = entries;
         protonNames = entries.map(function(e) { return e.name; });
+        installedProtonNames = installed.map(function(e) { return e.name; });
         protonBox.model = entries.map(function(e) { return e.label; });
         var saved = g.proton || "GE-Proton Latest";
         for (var i = 0; i < entries.length; i++) {
