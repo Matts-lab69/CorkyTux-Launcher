@@ -1119,6 +1119,8 @@ CModal {
     }
 
     Item {
+        width: 0
+        height: 0
         Timer {
             id: pickTimer
             interval: 50
