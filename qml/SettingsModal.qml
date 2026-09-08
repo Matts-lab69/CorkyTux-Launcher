@@ -152,7 +152,6 @@ CModal {
                     outlineColor: Theme.border
                     outlineWidth: 1
                     Flow {
-                        width: parent.width
                         spacing: 8
                         anchors.horizontalCenter: parent.horizontalCenter
                         Repeater {
