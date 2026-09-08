@@ -7,7 +7,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Network Concurrent Svg QuickDialogs2)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Network Concurrent Svg)
 
 qt_standard_project_setup(REQUIRES 6.4)
 
@@ -57,7 +57,7 @@ qt_add_qml_module(corkytux
         qml/components/CTextField.qml
 )
 
-target_link_libraries(corkytux PRIVATE Qt6::Core Qt6::Gui Qt6::Quick Qt6::Network Qt6::Concurrent Qt6::Svg Qt6::QuickDialogs2)
+target_link_libraries(corkytux PRIVATE Qt6::Core Qt6::Gui Qt6::Quick Qt6::Network Qt6::Concurrent Qt6::Svg)
 
 # UI artwork (icons, logo) served as qrc:/assets/...
 file(GLOB ASSET_FILES RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" CONFIGURE_DEPENDS "qml/assets/*.png")

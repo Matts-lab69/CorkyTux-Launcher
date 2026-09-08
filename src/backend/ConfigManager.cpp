@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QProcess>
 #include <QStandardPaths>
 #include <QTextStream>
 #include <QUrl>
@@ -217,6 +218,27 @@ QString ConfigManager::readFile(const QString &path) {
     QTextStream in(&f);
     in.setEncoding(QStringConverter::Utf8);
     return in.readAll();
+}
+
+QString ConfigManager::pickFolder(const QString &title) {
+    // Try zenity (GTK), then kdialog (KDE), then fallback
+    for (const QString &cmd : {"zenity", "kdialog"}) {
+        const QString bin = QStandardPaths::findExecutable(cmd);
+        if (!bin.isEmpty()) {
+            QProcess proc;
+            if (cmd == "zenity") {
+                proc.start(bin, {"--file-selection", "--directory", "--title", title});
+            } else {
+                proc.start(bin, {"--getexistingdirectory", "--title", title});
+            }
+            if (proc.waitForFinished(30000) && proc.exitCode() == 0) {
+                QString path = QString::fromLocal8Bit(proc.readAllStandardOutput()).trimmed();
+                if (!path.isEmpty())
+                    return path;
+            }
+        }
+    }
+    return {};
 }
 
 void ConfigManager::ensureDir(const QString &path) {

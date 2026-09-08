@@ -49,6 +49,8 @@ public:
     Q_INVOKABLE bool saveTextFile(const QString &urlOrPath, const QString &text);
     /** Reads text from a file. Returns empty string on error. */
     Q_INVOKABLE QString readFile(const QString &path);
+    /** Opens a native folder picker dialog. Returns selected path or empty. */
+    Q_INVOKABLE QString pickFolder(const QString &title = "Select folder");
     /** Creates directory (and parents) if it doesn't exist. */
     Q_INVOKABLE void ensureDir(const QString &path);
 

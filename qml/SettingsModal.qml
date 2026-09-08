@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Dialogs
 import "components"
 
 // SettingsModal – Visuals / Paths / Protons / Misc / Plugins / Integrations / About.
@@ -201,7 +200,6 @@ CModal {
                     ]
                     Column {
                         required property var modelData
-                        required property int index
                         width: parent.width
                         spacing: 4
                         Text { text: modelData.label; color: Theme.textSec; font.pixelSize: 12 }
@@ -227,8 +225,11 @@ CModal {
                                 height: 32
                                 anchors.verticalCenter: pathField.verticalCenter
                                 onClicked: {
-                                    pathRepeater.currentIndex = index;
-                                    folderDialog.open();
+                                    var folder = config.pickFolder(modelData.label);
+                                    if (folder !== "") {
+                                        config.setLauncherValue(modelData.key, folder, "User Settings");
+                                        root.page = root.page;
+                                    }
                                 }
                             }
                         }
@@ -1129,25 +1130,6 @@ CModal {
                 }
             }
         }
-        }
-    }
-
-    Item {
-        // Non-visual container for FolderDialog (must be outside layout)
-        FolderDialog {
-            id: folderDialog
-            title: "Select folder"
-            onAccepted: {
-                var path = selectedFolder.toString();
-                if (path.indexOf("file://") === 0)
-                    path = path.substring(7);
-                path = decodeURIComponent(path);
-                var item = pathRepeater.itemAt(pathRepeater.currentIndex);
-                if (item) {
-                    config.setLauncherValue(item.modelData.key, path, "User Settings");
-                    root.page = root.page;
-                }
-            }
         }
     }
 
