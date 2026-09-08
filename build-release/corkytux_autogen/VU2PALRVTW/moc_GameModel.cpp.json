@@ -1,0 +1,345 @@
+{
+    "classes": [
+        {
+            "className": "GameModel",
+            "enums": [
+                {
+                    "isClass": false,
+                    "isFlag": false,
+                    "lineNumber": 38,
+                    "name": "Roles",
+                    "values": [
+                        "NameRole",
+                        "ExecutableRole",
+                        "MainPathRole",
+                        "PrefixPathRole",
+                        "ProtonRole",
+                        "SteamIdRole",
+                        "BannerRole",
+                        "IconRole",
+                        "TimeSpentRole",
+                        "LastPlayedRole",
+                        "FavoriteRole",
+                        "SourceRole",
+                        "ExecutorRole",
+                        "EmuSettingsRole"
+                    ]
+                }
+            ],
+            "lineNumber": 35,
+            "methods": [
+                {
+                    "access": "public",
+                    "index": 1,
+                    "lineNumber": 62,
+                    "name": "reload",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "name",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "fields",
+                            "type": "QVariantMap"
+                        }
+                    ],
+                    "index": 2,
+                    "lineNumber": 64,
+                    "name": "addGame",
+                    "returnType": "bool"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "name",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "fields",
+                            "type": "QVariantMap"
+                        }
+                    ],
+                    "index": 3,
+                    "lineNumber": 65,
+                    "name": "importExternalGame",
+                    "returnType": "bool"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "oldName",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "newName",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 4,
+                    "lineNumber": 66,
+                    "name": "renameGame",
+                    "returnType": "bool"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "name",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 5,
+                    "lineNumber": 67,
+                    "name": "removeGame",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "name",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "removePrefix",
+                            "type": "bool"
+                        },
+                        {
+                            "name": "removeFiles",
+                            "type": "bool"
+                        }
+                    ],
+                    "index": 6,
+                    "lineNumber": 69,
+                    "name": "removeGameFull",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "name",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 7,
+                    "isConst": true,
+                    "lineNumber": 70,
+                    "name": "getGame",
+                    "returnType": "QVariantMap"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "name",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "fav",
+                            "type": "bool"
+                        }
+                    ],
+                    "index": 8,
+                    "lineNumber": 71,
+                    "name": "setFavorite",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "name",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 9,
+                    "lineNumber": 72,
+                    "name": "touchLastPlayed",
+                    "returnType": "void"
+                }
+            ],
+            "object": true,
+            "qualifiedClassName": "GameModel",
+            "signals": [
+                {
+                    "access": "public",
+                    "index": 0,
+                    "lineNumber": 75,
+                    "name": "countChanged",
+                    "returnType": "void"
+                }
+            ],
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QAbstractListModel"
+                }
+            ]
+        },
+        {
+            "className": "GameFilterProxy",
+            "lineNumber": 91,
+            "methods": [
+                {
+                    "access": "public",
+                    "index": 2,
+                    "isConst": true,
+                    "lineNumber": 103,
+                    "name": "orderedNames",
+                    "returnType": "QStringList"
+                }
+            ],
+            "object": true,
+            "properties": [
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 0,
+                    "lineNumber": 93,
+                    "name": "mode",
+                    "notify": "modeChanged",
+                    "override": false,
+                    "read": "mode",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "QString",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setMode"
+                },
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 1,
+                    "lineNumber": 94,
+                    "name": "search",
+                    "notify": "searchChanged",
+                    "override": false,
+                    "read": "search",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "QString",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setSearch"
+                }
+            ],
+            "qualifiedClassName": "GameFilterProxy",
+            "signals": [
+                {
+                    "access": "public",
+                    "index": 0,
+                    "lineNumber": 106,
+                    "name": "modeChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 1,
+                    "lineNumber": 107,
+                    "name": "searchChanged",
+                    "returnType": "void"
+                }
+            ],
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QSortFilterProxyModel"
+                }
+            ]
+        },
+        {
+            "className": "RecentModel",
+            "lineNumber": 119,
+            "methods": [
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "source",
+                            "type": "GameModel*"
+                        }
+                    ],
+                    "index": 2,
+                    "lineNumber": 133,
+                    "name": "refresh",
+                    "returnType": "void"
+                }
+            ],
+            "object": true,
+            "properties": [
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 0,
+                    "lineNumber": 121,
+                    "name": "limit",
+                    "notify": "limitChanged",
+                    "override": false,
+                    "read": "limit",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "int",
+                    "user": false,
+                    "virtual": false,
+                    "write": "setLimit"
+                },
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 1,
+                    "lineNumber": 122,
+                    "name": "count",
+                    "notify": "countChanged",
+                    "override": false,
+                    "read": "count",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "int",
+                    "user": false,
+                    "virtual": false
+                }
+            ],
+            "qualifiedClassName": "RecentModel",
+            "signals": [
+                {
+                    "access": "public",
+                    "index": 0,
+                    "lineNumber": 136,
+                    "name": "limitChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 1,
+                    "lineNumber": 137,
+                    "name": "countChanged",
+                    "returnType": "void"
+                }
+            ],
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QAbstractListModel"
+                }
+            ]
+        }
+    ],
+    "inputFile": "GameModel.h",
+    "outputRevision": 69
+}

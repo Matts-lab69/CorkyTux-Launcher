@@ -1,0 +1,6 @@
+/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include/../VU2PALRVTW/moc_ConfigManager.cpp.json
+/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include/../VU2PALRVTW/moc_GameModel.cpp.json
+/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include/../VU2PALRVTW/moc_IntegrationManager.cpp.json
+/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include/../VU2PALRVTW/moc_PluginManager.cpp.json
+/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include/../VU2PALRVTW/moc_ProtonManager.cpp.json
+/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include/../VU2PALRVTW/moc_ThemeManager.cpp.json

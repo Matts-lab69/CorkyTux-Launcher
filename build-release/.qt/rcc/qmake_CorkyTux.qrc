@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/CorkyTux">
+    <file alias="qmldir">/tmp/CorkyTux-Launcher/build-release/CorkyTux/qmldir</file>
+  </qresource>
+</RCC>
+

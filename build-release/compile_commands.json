@@ -1,0 +1,188 @@
+[
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/corkytux_autogen/mocs_compilation.cpp.o -c /tmp/CorkyTux-Launcher/build-release/corkytux_autogen/mocs_compilation.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/mocs_compilation.cpp",
+  "output": "CMakeFiles/corkytux.dir/corkytux_autogen/mocs_compilation.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/src/main.cpp.o -c /tmp/CorkyTux-Launcher/src/main.cpp",
+  "file": "/tmp/CorkyTux-Launcher/src/main.cpp",
+  "output": "CMakeFiles/corkytux.dir/src/main.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/src/backend/ConfigManager.cpp.o -c /tmp/CorkyTux-Launcher/src/backend/ConfigManager.cpp",
+  "file": "/tmp/CorkyTux-Launcher/src/backend/ConfigManager.cpp",
+  "output": "CMakeFiles/corkytux.dir/src/backend/ConfigManager.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/src/backend/GameModel.cpp.o -c /tmp/CorkyTux-Launcher/src/backend/GameModel.cpp",
+  "file": "/tmp/CorkyTux-Launcher/src/backend/GameModel.cpp",
+  "output": "CMakeFiles/corkytux.dir/src/backend/GameModel.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/src/backend/ProtonManager.cpp.o -c /tmp/CorkyTux-Launcher/src/backend/ProtonManager.cpp",
+  "file": "/tmp/CorkyTux-Launcher/src/backend/ProtonManager.cpp",
+  "output": "CMakeFiles/corkytux.dir/src/backend/ProtonManager.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/src/backend/IntegrationManager.cpp.o -c /tmp/CorkyTux-Launcher/src/backend/IntegrationManager.cpp",
+  "file": "/tmp/CorkyTux-Launcher/src/backend/IntegrationManager.cpp",
+  "output": "CMakeFiles/corkytux.dir/src/backend/IntegrationManager.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/src/backend/PluginManager.cpp.o -c /tmp/CorkyTux-Launcher/src/backend/PluginManager.cpp",
+  "file": "/tmp/CorkyTux-Launcher/src/backend/PluginManager.cpp",
+  "output": "CMakeFiles/corkytux.dir/src/backend/PluginManager.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/src/backend/ThemeManager.cpp.o -c /tmp/CorkyTux-Launcher/src/backend/ThemeManager.cpp",
+  "file": "/tmp/CorkyTux-Launcher/src/backend/ThemeManager.cpp",
+  "output": "CMakeFiles/corkytux.dir/src/backend/ThemeManager.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/corkytux_qmltyperegistrations.cpp.o -c /tmp/CorkyTux-Launcher/build-release/corkytux_qmltyperegistrations.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/corkytux_qmltyperegistrations.cpp",
+  "output": "CMakeFiles/corkytux.dir/corkytux_qmltyperegistrations.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.qt/rcc/qrc_qmake_CorkyTux.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.qt/rcc/qrc_qmake_CorkyTux.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.qt/rcc/qrc_qmake_CorkyTux.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.qt/rcc/qrc_qmake_CorkyTux.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qmlcache_loader.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qmlcache_loader.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qmlcache_loader.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qmlcache_loader.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/Main_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/Main_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/Main_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/Main_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/Sidebar_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/Sidebar_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/Sidebar_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/Sidebar_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/GameCard_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/GameCard_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/GameCard_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/GameCard_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/DetailsPanel_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/DetailsPanel_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/DetailsPanel_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/DetailsPanel_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/AddGameModal_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/AddGameModal_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/AddGameModal_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/AddGameModal_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/SettingsModal_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/SettingsModal_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/SettingsModal_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/SettingsModal_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/GameSettingsModal_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/GameSettingsModal_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/GameSettingsModal_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/GameSettingsModal_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/RemoveModal_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/RemoveModal_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/RemoveModal_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/RemoveModal_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/LogModal_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/LogModal_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/LogModal_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/LogModal_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/ProtonModal_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/ProtonModal_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/ProtonModal_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/ProtonModal_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/PrefixWarningModal_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/PrefixWarningModal_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/PrefixWarningModal_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/PrefixWarningModal_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CButton_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CButton_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CButton_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CButton_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CCard_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CCard_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CCard_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CCard_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CComboBox_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CComboBox_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CComboBox_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CComboBox_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CIcon_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CIcon_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CIcon_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CIcon_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CModal_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CModal_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CModal_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CModal_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CSwitch_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CSwitch_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CSwitch_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CSwitch_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CTextField_qml.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CTextField_qml.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.rcc/qmlcache/corkytux_qml/components/CTextField_qml.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.rcc/qmlcache/corkytux_qml/components/CTextField_qml.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.qt/rcc/qrc_corkytux_raw_qml_0.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.qt/rcc/qrc_corkytux_raw_qml_0.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.qt/rcc/qrc_corkytux_raw_qml_0.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.qt/rcc/qrc_corkytux_raw_qml_0.cpp.o"
+},
+{
+  "directory": "/tmp/CorkyTux-Launcher/build-release",
+  "command": "/usr/sbin/c++ -DPROJECT_VERSION=\\\"2.13.0\\\" -DQT_CONCURRENT_LIB -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICK_LIB -DQT_SVG_LIB -I/tmp/CorkyTux-Launcher/build-release/corkytux_autogen/include -I/tmp/CorkyTux-Launcher -isystem /usr/include/qt6/QtQml -isystem /usr/include/qt6 -isystem /usr/include/qt6/QtCore -isystem /usr/lib64/qt6/mkspecs/linux-g++ -isystem /usr/include/qt6/QtQmlIntegration -isystem /usr/include/qt6/QtNetwork -isystem /usr/include/qt6/QtGui -isystem /usr/include/qt6/QtQuick -isystem /usr/include/qt6/QtOpenGL -isystem /usr/include/qt6/QtConcurrent -isystem /usr/include/qt6/QtSvg -O3 -DNDEBUG -std=gnu++20 -mno-direct-extern-access -o CMakeFiles/corkytux.dir/build-release/.qt/rcc/qrc_corkytux_assets.cpp.o -c /tmp/CorkyTux-Launcher/build-release/.qt/rcc/qrc_corkytux_assets.cpp",
+  "file": "/tmp/CorkyTux-Launcher/build-release/.qt/rcc/qrc_corkytux_assets.cpp",
+  "output": "CMakeFiles/corkytux.dir/build-release/.qt/rcc/qrc_corkytux_assets.cpp.o"
+}
+]

@@ -1,0 +1,23 @@
+module CorkyTux
+typeinfo corkytux.qmltypes
+prefer :/CorkyTux/
+Main 1.0 qml/Main.qml
+Sidebar 1.0 qml/Sidebar.qml
+GameCard 1.0 qml/GameCard.qml
+DetailsPanel 1.0 qml/DetailsPanel.qml
+AddGameModal 1.0 qml/AddGameModal.qml
+SettingsModal 1.0 qml/SettingsModal.qml
+GameSettingsModal 1.0 qml/GameSettingsModal.qml
+RemoveModal 1.0 qml/RemoveModal.qml
+LogModal 1.0 qml/LogModal.qml
+ProtonModal 1.0 qml/ProtonModal.qml
+PrefixWarningModal 1.0 qml/PrefixWarningModal.qml
+CButton 1.0 qml/components/CButton.qml
+CCard 1.0 qml/components/CCard.qml
+CComboBox 1.0 qml/components/CComboBox.qml
+CIcon 1.0 qml/components/CIcon.qml
+CModal 1.0 qml/components/CModal.qml
+CSwitch 1.0 qml/components/CSwitch.qml
+CTextField 1.0 qml/components/CTextField.qml
+depends QtQuick
+

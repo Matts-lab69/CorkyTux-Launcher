@@ -1,0 +1,390 @@
+{
+    "classes": [
+        {
+            "className": "PluginManager",
+            "lineNumber": 20,
+            "methods": [
+                {
+                    "access": "public",
+                    "index": 7,
+                    "lineNumber": 33,
+                    "name": "refresh",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "id",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 8,
+                    "isConst": true,
+                    "lineNumber": 34,
+                    "name": "isEnabled",
+                    "returnType": "bool"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "id",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "enabled",
+                            "type": "bool"
+                        }
+                    ],
+                    "index": 9,
+                    "lineNumber": 35,
+                    "name": "setEnabled",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 10,
+                    "isConst": true,
+                    "lineNumber": 37,
+                    "name": "enabledIds",
+                    "returnType": "QStringList"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "gameName",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "gameDir",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 11,
+                    "lineNumber": 46,
+                    "name": "applyScanPlugins",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 12,
+                    "lineNumber": 49,
+                    "name": "fetchRegistry",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "tag",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "url",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 13,
+                    "lineNumber": 51,
+                    "name": "downloadPlugin",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "id",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 14,
+                    "lineNumber": 53,
+                    "name": "removePlugin",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 15,
+                    "isConst": true,
+                    "lineNumber": 57,
+                    "name": "isEmulatorManagerInstalled",
+                    "returnType": "bool"
+                },
+                {
+                    "access": "public",
+                    "index": 16,
+                    "isConst": true,
+                    "lineNumber": 59,
+                    "name": "emulatorManagerPath",
+                    "returnType": "QString"
+                },
+                {
+                    "access": "public",
+                    "index": 17,
+                    "lineNumber": 61,
+                    "name": "listEmulators",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "name",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 18,
+                    "lineNumber": 63,
+                    "name": "installEmulator",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "name",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 19,
+                    "lineNumber": 65,
+                    "name": "removeEmulator",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "name",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 20,
+                    "isConst": true,
+                    "lineNumber": 67,
+                    "name": "emulatorPath",
+                    "returnType": "QString"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "name",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 21,
+                    "isConst": true,
+                    "lineNumber": 69,
+                    "name": "emulatorLaunchArgs",
+                    "returnType": "QString"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "name",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 22,
+                    "isConst": true,
+                    "lineNumber": 71,
+                    "name": "emulatorSettings",
+                    "returnType": "QVariantList"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "name",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "romPath",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "settings",
+                            "type": "QVariantMap"
+                        }
+                    ],
+                    "index": 23,
+                    "isConst": true,
+                    "lineNumber": 73,
+                    "name": "buildEmulatorCommand",
+                    "returnType": "QStringList"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "emulatorName",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "gameDir",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 24,
+                    "lineNumber": 75,
+                    "name": "registerGameWithEmulator",
+                    "returnType": "void"
+                }
+            ],
+            "object": true,
+            "properties": [
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 0,
+                    "lineNumber": 22,
+                    "name": "plugins",
+                    "notify": "pluginsChanged",
+                    "override": false,
+                    "read": "plugins",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "QVariantList",
+                    "user": false,
+                    "virtual": false
+                },
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 1,
+                    "lineNumber": 23,
+                    "name": "downloadProgress",
+                    "notify": "downloadProgressChanged",
+                    "override": false,
+                    "read": "downloadProgress",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "double",
+                    "user": false,
+                    "virtual": false
+                },
+                {
+                    "constant": false,
+                    "designable": true,
+                    "final": false,
+                    "index": 2,
+                    "lineNumber": 24,
+                    "name": "emulators",
+                    "notify": "emulatorsChanged",
+                    "override": false,
+                    "read": "emulators",
+                    "required": false,
+                    "scriptable": true,
+                    "stored": true,
+                    "type": "QVariantList",
+                    "user": false,
+                    "virtual": false
+                }
+            ],
+            "qualifiedClassName": "PluginManager",
+            "signals": [
+                {
+                    "access": "public",
+                    "index": 0,
+                    "lineNumber": 79,
+                    "name": "pluginsChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "gameName",
+                            "type": "QString"
+                        },
+                        {
+                            "name": "steamId",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 1,
+                    "lineNumber": 80,
+                    "name": "scanApplied",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "releases",
+                            "type": "QVariantList"
+                        }
+                    ],
+                    "index": 2,
+                    "lineNumber": 81,
+                    "name": "registryReady",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 3,
+                    "lineNumber": 82,
+                    "name": "downloadProgressChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "ok",
+                            "type": "bool"
+                        },
+                        {
+                            "name": "message",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 4,
+                    "lineNumber": 83,
+                    "name": "downloadFinished",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "index": 5,
+                    "lineNumber": 84,
+                    "name": "emulatorsChanged",
+                    "returnType": "void"
+                },
+                {
+                    "access": "public",
+                    "arguments": [
+                        {
+                            "name": "ok",
+                            "type": "bool"
+                        },
+                        {
+                            "name": "message",
+                            "type": "QString"
+                        }
+                    ],
+                    "index": 6,
+                    "lineNumber": 85,
+                    "name": "emulatorInstallFinished",
+                    "returnType": "void"
+                }
+            ],
+            "superClasses": [
+                {
+                    "access": "public",
+                    "name": "QObject"
+                }
+            ]
+        }
+    ],
+    "inputFile": "PluginManager.h",
+    "outputRevision": 69
+}

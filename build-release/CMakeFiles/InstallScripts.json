@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/tmp/CorkyTux-Launcher/build-release/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
