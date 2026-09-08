@@ -93,36 +93,57 @@ QString ProtonManager::detectGameArch(const QString &exePath) const {
     return {};
 }
 
-QVariantMap ProtonManager::graphicsComponentStatus(const QString &component,
-                                                    const QString &gameExe) const {
-    const bool gameMode = component.compare("gamemode", Qt::CaseInsensitive) == 0;
-    const QString executable = gameMode ? "gamemoderun" : "mangohud";
-    const QString library = gameMode ? "libgamemode.so" : "libMangoHud.so";
+void ProtonManager::ensureGraphicsCache() const {
+    if (m_graphicsCacheReady)
+        return;
+    m_graphicsCacheReady = true;
+
     const QStringList roots = {
         "/usr/lib", "/usr/lib64", "/usr/lib32", "/usr/lib/i386-linux-gnu",
         "/usr/lib/x86_64-linux-gnu", "/usr/libexec", "/lib", "/lib64"
     };
-    bool has32 = false;
-    bool has64 = false;
-    for (const QString &root : roots) {
-        if (!QDir(root).exists())
-            continue;
-        QDirIterator it(root, {library + "*"}, QDir::Files,
-                        QDirIterator::Subdirectories);
-        while (it.hasNext()) {
-            const QString path = it.next();
-            const QString lower = path.toLower();
-            const bool is32 = lower.contains("/lib32/") || lower.contains("/i386/")
-                || lower.contains("/i686/") || lower.contains("/x86/");
-            const bool is64 = lower.contains("/lib64/") || lower.contains("/x86_64/")
-                || lower.contains("/amd64/");
-            has32 = has32 || is32;
-            has64 = has64 || is64;
+
+    auto scanLibrary = [&](const QString &library) -> QPair<bool,bool> {
+        bool has32 = false, has64 = false;
+        for (const QString &root : roots) {
+            if (!QDir(root).exists())
+                continue;
+            QDirIterator it(root, {library + "*"}, QDir::Files,
+                            QDirIterator::Subdirectories);
+            while (it.hasNext()) {
+                const QString path = it.next().toLower();
+                if (path.contains("/lib32/") || path.contains("/i386/")
+                    || path.contains("/i686/") || path.contains("/x86/"))
+                    has32 = true;
+                if (path.contains("/lib64/") || path.contains("/x86_64/")
+                    || path.contains("/amd64/"))
+                    has64 = true;
+            }
         }
-    }
-    const QString exePath = QStandardPaths::findExecutable(executable);
-    // Detect game architecture if exe provided
-    const QString arch = detectGameArch(gameExe);
+        return {has32, has64};
+    };
+
+    auto [gm32, gm64] = scanLibrary("libgamemode.so");
+    m_gamemodeCache = {{"executable", QStandardPaths::findExecutable("gamemoderun")},
+                       {"installed32", gm32}, {"installed64", gm64}};
+
+    auto [mh32, mh64] = scanLibrary("libMangoHud.so");
+    m_mangohudCache = {{"executable", QStandardPaths::findExecutable("mangohud")},
+                       {"installed32", mh32}, {"installed64", mh64}};
+}
+
+QVariantMap ProtonManager::graphicsComponentStatus(const QString &component,
+                                                    const QString &gameExe) const {
+    ensureGraphicsCache();
+
+    const bool gameMode = component.compare("gamemode", Qt::CaseInsensitive) == 0;
+    const QVariantMap &cache = gameMode ? m_gamemodeCache : m_mangohudCache;
+
+    const bool has32 = cache["installed32"].toBool();
+    const bool has64 = cache["installed64"].toBool();
+    const QString exePath = cache["executable"].toString();
+
+    const QString arch = gameExe.isEmpty() ? QString() : detectGameArch(gameExe);
     bool available = !exePath.isEmpty();
     if (available) {
         if (arch == "32")

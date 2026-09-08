@@ -113,4 +113,10 @@ private:
     double m_dlProgress = -1.0;
     QTimer *m_logTimer = nullptr;
     class QNetworkAccessManager *m_nam = nullptr;
+
+    // Cache for graphicsComponentStatus (computed once, reused everywhere)
+    mutable bool m_graphicsCacheReady = false;
+    mutable QVariantMap m_gamemodeCache;
+    mutable QVariantMap m_mangohudCache;
+    void ensureGraphicsCache() const;
 };
