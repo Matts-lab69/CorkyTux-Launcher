@@ -924,7 +924,7 @@ void ProtonManager::fetchReleases() {
     struct Feed { QString url; QString source; };
     const QList<Feed> feeds = {
         {"https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page=20", "ge"},
-        {"https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=30", "cachy"},
+        {"https://api.github.com/repos/CachyOS/proton-cachyos/releases?per_page=3", "cachy"},
     };
     auto pending = std::make_shared<int>(feeds.size());
     auto all = std::make_shared<QVariantList>();
@@ -936,31 +936,44 @@ void ProtonManager::fetchReleases() {
             rep->deleteLater();
             if (rep->error() == QNetworkReply::NoError) {
                 const QJsonArray arr = QJsonDocument::fromJson(rep->readAll()).array();
+                bool cachyAdded = false;
                 for (const QJsonValue &v : arr) {
                     const QJsonObject o = v.toObject();
                     QString url;
-                    // Pick best asset: prefer x86_64_v3, then x86_64, then any
-                    QString bestUrl;
+                    bool hasV3 = false;
                     for (const QJsonValue &a : o.value("assets").toArray()) {
                         const QString n = a.toObject().value("name").toString();
                         if ((n.endsWith(".tar.gz") || n.endsWith(".tar.xz"))
                             && !n.contains("arm64") && !n.endsWith(".sha512sum")) {
-                            const QString u = a.toObject().value("browser_download_url").toString();
-                            if (n.contains("x86_64_v3")) { url = u; break; }
-                            if (n.contains("x86_64") && bestUrl.isEmpty()) bestUrl = u;
-                            if (url.isEmpty()) url = u;
+                            if (n.contains("x86_64_v3")) {
+                                url = a.toObject().value("browser_download_url").toString();
+                                hasV3 = true;
+                                break;
+                            }
+                            if (url.isEmpty())
+                                url = a.toObject().value("browser_download_url").toString();
                         }
                     }
-                    if (url.isEmpty() && !bestUrl.isEmpty()) url = bestUrl;
-                    if (!url.isEmpty())
-                        all->append(QVariantMap({{"tag", o.value("tag_name").toString()},
+                    if (!url.isEmpty()) {
+                        // CachyOS: only show latest with v3 label
+                        if (feed.source == "cachy") {
+                            if (cachyAdded) continue;
+                            cachyAdded = true;
+                        }
+                        QString tag = o.value("tag_name").toString();
+                        if (feed.source == "cachy" && hasV3)
+                            tag += " v3";
+                        all->append(QVariantMap({{"tag", tag},
                                                 {"url", url},
                                                 {"date", o.value("published_at").toString()},
                                                 {"source", feed.source}}));
+                    }
                 }
             }
-            if (--(*pending) == 0)
+            if (--(*pending) == 0) {
+                qDebug() << "[fetchReleases] total releases:" << all->size();
                 emit releasesReady(*all);
+            }
         });
     }
 }
