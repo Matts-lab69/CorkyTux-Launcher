@@ -25,6 +25,8 @@ CModal {
     property string originalPrefixPath: ""
 
     function selectSharedPrefix(protonName) {
+        // Register the shared prefix first (creates dir + adds to list)
+        config.addSharedPrefix(protonName);
         var sp = config.sharedPrefixPath(protonName);
         // Find proton in box
         for (var i = 0; i < protonNames.length; i++) {
@@ -39,6 +41,10 @@ CModal {
         protonBox.enabled = false;
         sharedPrefixSwitch.setSilent(true);
         save();
+    }
+
+    function cancelSharedPrefix() {
+        sharedPrefixSwitch.setSilent(false);
     }
 
     function reloadEmuFields() {

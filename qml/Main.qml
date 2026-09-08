@@ -723,7 +723,7 @@ ApplicationWindow {
                 width: parent.width
                 height: 32
                 onClicked: {
-                    gameSettingsModal.sharedPrefixSwitch.setSilent(false);
+                    gameSettingsModal.cancelSharedPrefix();
                     sharedPrefixPickerPopup.close();
                 }
             }
