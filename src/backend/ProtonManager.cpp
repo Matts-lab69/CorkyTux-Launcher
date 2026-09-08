@@ -707,6 +707,7 @@ void ProtonManager::runGameImpl(const QString &gameName, bool debug) {
                     quoteChar = c;
                 } else if (c == ' ') {
                     if (!current.isEmpty()) { parsed << current; current.clear(); }
+                } else {
                     current += c;
                 }
             }
@@ -935,7 +936,6 @@ void ProtonManager::fetchReleases() {
             rep->deleteLater();
             if (rep->error() == QNetworkReply::NoError) {
                 const QJsonArray arr = QJsonDocument::fromJson(rep->readAll()).array();
-                qDebug() << "[fetchReleases]" << feed.source << "got" << arr.size() << "releases";
                 for (const QJsonValue &v : arr) {
                     const QJsonObject o = v.toObject();
                     QString url;
@@ -958,13 +958,9 @@ void ProtonManager::fetchReleases() {
                                                 {"date", o.value("published_at").toString()},
                                                 {"source", feed.source}}));
                 }
-            } else {
-                qDebug() << "[fetchReleases]" << feed.source << "ERROR:" << rep->errorString();
             }
-            if (--(*pending) == 0) {
-                qDebug() << "[fetchReleases] total releases:" << all->size();
+            if (--(*pending) == 0)
                 emit releasesReady(*all);
-            }
         });
     }
 }
