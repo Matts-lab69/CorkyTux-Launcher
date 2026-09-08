@@ -18,6 +18,21 @@ CModal {
     property var gameModeStatus: ({"available": false, "installed32": false, "installed64": false})
     property var mangoHudStatus: ({"available": false, "installed32": false, "installed64": false})
 
+    function setPage(p) {
+        root.page = p;
+        if (p === "protons")
+            proton.fetchReleases();
+        if (p === "plugins") {
+            plugins.refresh();
+            plugins.fetchRegistry();
+        }
+    }
+
+    onOpened: {
+        root.gameModeStatus = proton.graphicsComponentStatus("gamemode");
+        root.mangoHudStatus = proton.graphicsComponentStatus("mangohud");
+    }
+
     Column {
         width: parent.width
         spacing: 12
@@ -1111,7 +1126,7 @@ CModal {
                             visible: root.page === modelData.id
                         }
                     }
-                    onClicked: root.page = modelData.id
+                    onClicked: root.setPage(modelData.id)
                 }
             }
         }
