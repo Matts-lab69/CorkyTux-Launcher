@@ -112,7 +112,7 @@ Rectangle {
         Rectangle {
             id: gameListFrame
             width: parent.width
-            height: parent.height - headerCard.height - 8
+            height: parent.height - headerCard.height - 24
             radius: 10
             color: "transparent"
             border.color: Theme.accent
