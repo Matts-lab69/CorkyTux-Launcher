@@ -766,7 +766,6 @@ CModal {
                     height: 52
                     checkable: true
                     checked: root.tab === modelData.id
-                    autoExclusive: true
                     background: Rectangle {
                         radius: 12
                         color: parent.checked ? Theme.hover : "transparent"

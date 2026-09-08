@@ -54,7 +54,6 @@ Rectangle {
                             Layout.columnSpan: modelData.span === true ? 2 : 1
                             checkable: true
                             checked: library.mode === modelData.id
-                            autoExclusive: true
                             font.pixelSize: 12
                             background: Rectangle {
                                 radius: 8

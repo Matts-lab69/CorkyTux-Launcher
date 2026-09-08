@@ -85,7 +85,6 @@ CModal {
                         height: 36
                         checkable: true
                         checked: Theme.theme === "dark"
-                        autoExclusive: true
                         background: Rectangle {
                             radius: 8
                             color: "#000000"
@@ -113,7 +112,6 @@ CModal {
                         height: 36
                         checkable: true
                         checked: Theme.theme === "light"
-                        autoExclusive: true
                         background: Rectangle {
                             radius: 8
                             color: "#FFFFFF"
@@ -164,7 +162,6 @@ CModal {
                                 height: 34
                                 checkable: true
                                 checked: Theme.accentId === modelData
-                                autoExclusive: true
                                 background: Rectangle {
                                     radius: 8
                                     color: Theme.accentInfo(modelData).primary
@@ -1243,7 +1240,6 @@ CModal {
                     height: 52
                     checkable: true
                     checked: root.page === modelData.id
-                    autoExclusive: true
                     background: null
                     icon.name: ""
                     contentItem: Column {
