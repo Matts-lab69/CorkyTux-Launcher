@@ -151,11 +151,14 @@ CModal {
                     width: parent.width
                     outlineColor: Theme.border
                     outlineWidth: 1
-                    Flow {
+                    Item {
                         width: parent.width
-                        spacing: 8
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        Repeater {
+                        height: accentFlow.implicitHeight
+                        Flow {
+                            id: accentFlow
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            spacing: 8
+                            Repeater {
                             model: Theme.accentIds()
                             Button {
                                 required property string modelData
@@ -181,6 +184,7 @@ CModal {
                                 onClicked: Theme.accentId = modelData
                             }
                         }
+                    }
                     }
                 }
             }
