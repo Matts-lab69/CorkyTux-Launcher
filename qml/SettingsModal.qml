@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import "components"
 
 // SettingsModal – Visuals / Paths / Protons / Misc / Plugins / Integrations / About.
