@@ -21,11 +21,57 @@ struct StoreGame {
 
 pub struct StoresView {
     pub widget: gtk::ScrolledWindow,
+    handles: Rc<RefCell<Vec<StorePageHandle>>>,
+    deals: Rc<RefCell<std::collections::HashMap<String, DealsState>>>,
 }
 
 impl Clone for StoresView {
     fn clone(&self) -> Self {
-        Self { widget: self.widget.clone() }
+        Self {
+            widget: self.widget.clone(),
+            handles: self.handles.clone(),
+            deals: self.deals.clone(),
+        }
+    }
+}
+
+impl StoresView {
+    /// Entering the page: reload anything unload() dropped.
+    pub fn page_shown(&self) {
+        for h in self.handles.borrow().iter() {
+            h.ensure_loaded();
+        }
+        if let Some(ds) = self.deals.borrow().get("epic") {
+            if ds.list.first_child().is_none() {
+                ds.next.set(0);
+                ds.total.set(u64::MAX);
+                ds.shown.set(0);
+                ds.seen.borrow_mut().clear();
+                ds.lbl.set_text("Loading…");
+                if let Some(f) = ds.loader.borrow().as_ref() {
+                    f(0);
+                }
+            }
+        }
+    }
+
+    /// Leaving the page: drop tiles/rows/covers so no RAM is held
+    /// while the store isn't visible. Next visit reloads via page_shown().
+    pub fn unload(&self) {
+        for h in self.handles.borrow().iter() {
+            h.unload();
+        }
+        if let Some(ds) = self.deals.borrow().get("epic") {
+            ds.epoch.set(ds.epoch.get().wrapping_add(1));
+            ds.next.set(0);
+            ds.total.set(u64::MAX);
+            ds.shown.set(0);
+            ds.seen.borrow_mut().clear();
+            while let Some(c) = ds.list.first_child() {
+                ds.list.remove(&c);
+            }
+            ds.lbl.set_text("Loading…");
+        }
     }
 }
 
@@ -187,9 +233,11 @@ impl StoresView {
         let ids = ["epic", "gog"];
         col.append(&tabbar);
 
+        let deals_map: Rc<RefCell<std::collections::HashMap<String, DealsState>>> =
+            Rc::new(RefCell::new(std::collections::HashMap::new()));
         let mut handles: Vec<StorePageHandle> = Vec::new();
         for store in ["epic", "gog"] {
-            let (page, handle) = Self::store_page(state, parent, sidebar, center, details, store);
+            let (page, handle) = Self::store_page(state, parent, sidebar, center, details, store, &deals_map);
             stack.add_named(&page, Some(store));
             handles.push(handle);
         }
@@ -220,7 +268,11 @@ impl StoresView {
             first.ensure_loaded();
         }
         *handles_slot.borrow_mut() = handles;
-        Self { widget: scroll }
+        Self {
+            widget: scroll,
+            handles: handles_slot.clone(),
+            deals: deals_map.clone(),
+        }
     }
 
     fn store_page(
@@ -230,6 +282,7 @@ impl StoresView {
         center: &Rc<RefCell<Option<crate::ui::center::CenterHandle>>>,
         details: &Rc<RefCell<Option<crate::ui::details_panel::DetailsPanel>>>,
         store: &str,
+        deals_map: &Rc<RefCell<std::collections::HashMap<String, DealsState>>>,
     ) -> (gtk::Box, StorePageHandle) {
         let page = gtk::Box::new(gtk::Orientation::Vertical, 8);
         let s = store.to_string();
@@ -382,8 +435,10 @@ impl StoresView {
                 let loading: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(false));
                 let shown: Rc<std::cell::Cell<usize>> = Rc::new(std::cell::Cell::new(0));
                 let loader: Rc<RefCell<Option<Rc<dyn Fn(u64)>>>> = Rc::new(RefCell::new(None));
+                let epoch: Rc<std::cell::Cell<u64>> = Rc::new(std::cell::Cell::new(0));
                 {
                     let list_c = deals_list.clone();
+                    let epoch_c = epoch.clone();
                     let lbl_c = deals_lbl.clone();
                     let seen_c = seen.clone();
                     let next_c = next.clone();
@@ -408,8 +463,14 @@ impl StoresView {
                         let loading_cc = loading_c.clone();
                         let shown_cc = shown_c.clone();
                         let st_cc = st_c.clone();
+                        let epoch_cc = epoch_c.clone();
+                        let my_epoch = epoch_c.get();
                         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
                             Ok(doc) => {
+                                if epoch_cc.get() != my_epoch {
+                                    loading_cc.set(false);
+                                    return glib::ControlFlow::Break;
+                                }
                                 let arr = doc.get("deals").and_then(|v| v.as_array()).cloned().unwrap_or_default();
                                 if doc.get("deals").is_none() {
                                     // Backend error: stop paging.
@@ -505,6 +566,17 @@ impl StoresView {
                 if let Some(f) = loader.borrow().as_ref() {
                     f(0);
                 }
+                // Register pager state so leaving the page can drop rows/covers.
+                deals_map.borrow_mut().insert(store.to_string(), DealsState {
+                    list: deals_list.clone(),
+                    lbl: deals_lbl.clone(),
+                    next: next.clone(),
+                    total: total.clone(),
+                    shown: shown.clone(),
+                    seen: seen.clone(),
+                    loader: loader.clone(),
+                    epoch: epoch.clone(),
+                });
                 {
                     let adj = deals_scroll.vadjustment();
                     let load_c = loader.clone();
@@ -755,6 +827,20 @@ impl StoresView {
     }
 }
 
+/// Deals pager state (Epic page only) so leaving the Stores page can
+/// drop rows/covers and coming back reloads from page 0.
+#[derive(Clone)]
+struct DealsState {
+    list: gtk::Box,
+    lbl: gtk::Label,
+    next: Rc<std::cell::Cell<u64>>,
+    total: Rc<std::cell::Cell<u64>>,
+    shown: Rc<std::cell::Cell<usize>>,
+    seen: Rc<RefCell<std::collections::HashSet<String>>>,
+    loader: Rc<RefCell<Option<Rc<dyn Fn(u64)>>>>,
+    epoch: Rc<std::cell::Cell<u64>>,
+}
+
 #[derive(Clone)]
 struct StorePageHandle {
     state: AppState,
@@ -833,6 +919,16 @@ impl StorePageHandle {
         }
         self.loaded.set(true);
         self.refresh_library(false);
+    }
+
+    /// Drop library tiles/covers so no RAM is held while the store
+    /// page isn't visible. Next visit reloads via ensure_loaded().
+    fn unload(&self) {
+        self.loaded.set(false);
+        while let Some(c) = self.flow.first_child() {
+            self.flow.remove(&c);
+        }
+        self.lib_status.set_text("");
     }
 
     fn show_embedded_login(&self) {

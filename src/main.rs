@@ -382,11 +382,18 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     {
         let stack_c = content_stack.clone();
         let det_c = details_ref.clone();
+        let sv_c = stores_view.clone();
         *page_cb.borrow_mut() = Some(Box::new(move |page: String| {
             if page == "minecraft" || page == "stores" {
                 if let Some(ref d) = *det_c.borrow() {
                     d.hide();
                 }
+            }
+            if page == "stores" {
+                sv_c.page_shown();
+            } else {
+                // Free store RAM (tiles, covers, deal rows) while elsewhere.
+                sv_c.unload();
             }
             stack_c.set_visible_child_name(&page);
         }));
