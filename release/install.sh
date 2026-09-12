@@ -150,6 +150,23 @@ log "Binary: ${INSTALL_DIR}/corkytux"
 ln -sf "${INSTALL_DIR}/corkytux" "${BIN_DIR}/corkytux"
 log "Symlink: ${BIN_DIR}/corkytux"
 
+# UI assets (the launcher loads themed icons from INSTALL_DIR/assets)
+ASSETS=""
+for candidate in "${SCRIPT_DIR}/assets" "${SCRIPT_DIR}/release/assets"; do
+  if [[ -d "$candidate" ]]; then
+    ASSETS="$candidate"
+    break
+  fi
+done
+if [[ -n "$ASSETS" ]]; then
+  mkdir -p "${INSTALL_DIR}/assets"
+  cp -r "${ASSETS}/." "${INSTALL_DIR}/assets/"
+  chmod 0644 "${INSTALL_DIR}"/assets/* 2>/dev/null || true
+  log "Assets: ${INSTALL_DIR}/assets ($(ls "$ASSETS" | wc -l) files)"
+else
+  warn "assets/ not found, UI icons will be missing"
+fi
+
 if [[ -f "${SCRIPT_DIR}/corkytux.png" ]]; then
   install -m 0644 "${SCRIPT_DIR}/corkytux.png" "${ICON_DIR}/corkytux.png"
   log "Icon installed"

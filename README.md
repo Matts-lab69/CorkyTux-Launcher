@@ -70,13 +70,26 @@ Epic/GOG stores, AppImages, RPG Maker, dependencies, DLLs and more
   (%/price/end verified), GOG store search + buy with prices
 - Installs go to native library (`~/Games/Heroic`) with launcher Proton/prefix
 
-### Plugins
+### Emulators & tools (plugins)
+- **Emulator manager** (`emulator-manager`) — 12+ retro emulators
+  (Dolphin, PCSX2, PPSSPP, RPCS3, Ryujinx, melonDS, Mupen64Plus, DuckStation,
+  Cemu, Vita3K, Azahar…): AppImage install or link existing (native/Flatpak),
+  ROM auto-detect, per-emulator executors in Add Game
+- **AppImage launcher** (`appimage-launcher`) — [guide](https://github.com/Matts-lab69/CorkyTux-Plugins/blob/main/appimage-launcher/README.md):
+  scan, integrate into `~/Applications`, detached launch
+- **RPG Maker runtime** (`rpgmaker-runtime`) — [guide](https://github.com/Matts-lab69/CorkyTux-Plugins/blob/main/rpgmaker-runtime/README.md):
+  MV/MZ (NW.js) and 2000/2003 (EasyRPG) via bundled box-rpg
+- **Dependency installer** (`dependency-installer`) — smart detection of missing
+  Windows components (VC++, DirectX, .NET…): DLL-import scan, only what Wine/Proton lacks
+- **DLL overrides automator** (`dll-overrides-automator`) — scans game folders,
+  generates `WINEDLLOVERRIDES`, patch/unpatch with undo
+
+### Plugin system
 - Streaming JSON-lines protocol, 50ms pump (fixes 100% CPU idle busy-loop)
-- Settings > Plugins manager. Plugins install **separately** — see
-  [CorkyTux-Plugins](https://github.com/Matts-lab69/CorkyTux-Plugins):
-  `minecraft-launcher`, `heroic-store`, `appimage-launcher`,
-  `rpgmaker-runtime`, `dependency-installer`, `dll-overrides-automator`,
-  `emulator-manager`
+- Settings > Plugins manager. Entry points (Minecraft/Store buttons,
+  AppImage/RPG Maker cards) only appear when the plugin is installed.
+  Plugins install **separately** — see
+  [CorkyTux-Plugins](https://github.com/Matts-lab69/CorkyTux-Plugins)
 
 ---
 

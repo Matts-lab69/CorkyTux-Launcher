@@ -24,6 +24,7 @@ cp release/install.sh release/uninstall.sh "$PKGDIR/"
 chmod +x "$PKGDIR/corkytux" "$PKGDIR/install.sh" "$PKGDIR/uninstall.sh"
 cp release/corkytux.png "$PKGDIR/" 2>/dev/null || cp assets/corkytux.png "$PKGDIR/corkytux.png"
 cp release/corkytux.desktop.in "$PKGDIR/" 2>/dev/null || true
+cp -r assets "$PKGDIR/assets"
 tar czf "$TARBALL" -C "$STAGE" "corkytux-${VERSION}"
 rm -rf "$STAGE"
 
