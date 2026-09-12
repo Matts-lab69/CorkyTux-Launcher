@@ -372,89 +372,156 @@ impl StoresView {
             deals_inner.append(&deals_scroll);
             page.append(&deals_frame);
             {
-                let (tx, rx) = std::sync::mpsc::channel::<Vec<(String, String, String, i64, String, String, String, String)>>();
-                std::thread::spawn(move || {
-                    let _ = tx.send(StoreManager::epic_deals().ok()
-                        .and_then(|d| d.get("deals").cloned())
-                        .and_then(|v| v.as_array().cloned()).unwrap_or_default()
-                        .into_iter().filter_map(|p| {
-                            Some((p.get("title")?.as_str()?.to_string(),
-                                  p.get("description")?.as_str().unwrap_or("").to_string(),
-                                  p.get("cover")?.as_str().unwrap_or("").to_string(),
-                                  p.get("discount")?.as_i64().unwrap_or(0),
-                                  p.get("price")?.as_str().unwrap_or("").to_string(),
-                                  p.get("base_price")?.as_str().unwrap_or("").to_string(),
-                                  p.get("ends")?.as_str().unwrap_or("").to_string(),
-                                  p.get("store_url")?.as_str().unwrap_or("").to_string()))
-                        }).collect::<Vec<_>>());
-                });
-                let st = state.clone();
-                crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
-                    Ok(list) => {
-                        while let Some(c) = deals_list.first_child() {
-                            deals_list.remove(&c);
+                // Paged deals + infinite scroll: 40 per page over the full
+                // on-sale catalog (~2000). Titles deduped across pages
+                // (verified promos repeat inside catalog pages).
+                let seen: Rc<RefCell<std::collections::HashSet<String>>> =
+                    Rc::new(RefCell::new(std::collections::HashSet::new()));
+                let next: Rc<std::cell::Cell<u64>> = Rc::new(std::cell::Cell::new(0));
+                let total: Rc<std::cell::Cell<u64>> = Rc::new(std::cell::Cell::new(u64::MAX));
+                let loading: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(false));
+                let shown: Rc<std::cell::Cell<usize>> = Rc::new(std::cell::Cell::new(0));
+                let loader: Rc<RefCell<Option<Rc<dyn Fn(u64)>>>> = Rc::new(RefCell::new(None));
+                {
+                    let list_c = deals_list.clone();
+                    let lbl_c = deals_lbl.clone();
+                    let seen_c = seen.clone();
+                    let next_c = next.clone();
+                    let total_c = total.clone();
+                    let loading_c = loading.clone();
+                    let shown_c = shown.clone();
+                    let st_c = state.clone();
+                    *loader.borrow_mut() = Some(Rc::new(move |start: u64| {
+                        if loading_c.get() {
+                            return;
                         }
-                        if list.is_empty() {
-                            deals_lbl.set_text("No offers right now.");
-                        } else {
-                            deals_lbl.set_text("");
-                            for (t, d, cover, pct, price, base, ends, u) in list {
-                                let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                                if !cover.is_empty() {
-                                    let img = gtk::Image::new();
-                                    img.set_pixel_size(52);
-                                    img.set_valign(gtk::Align::Center);
-                                    crate::ui::minecraft_view::load_mod_icon(&cover, &format!("deal-{}", t), &img, 52);
-                                    row.append(&img);
-                                }
-                                let mid = gtk::Box::new(gtk::Orientation::Vertical, 2);
-                                mid.set_hexpand(true);
-                                let top = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-                                let lbl = gtk::Label::new(Some(&t));
-                                lbl.set_halign(gtk::Align::Start);
-                                lbl.add_css_class("details-title");
-                                top.append(&lbl);
-                                let badge = gtk::Label::new(Some(&format!("-{}%", pct)));
-                                badge.add_css_class("proton-path-badge");
-                                top.append(&badge);
-                                mid.append(&top);
-                                if !d.is_empty() {
-                                    let dl = gtk::Label::new(Some(&d));
-                                    dl.set_halign(gtk::Align::Start);
-                                    dl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                                    dl.set_max_width_chars(60);
-                                    dl.set_opacity(0.6);
-                                    dl.add_css_class("time-label");
-                                    mid.append(&dl);
-                                }
-                                let subtext = if ends.is_empty() {
-                                    format!("{} (was {})", price, base)
+                        loading_c.set(true);
+                        let (tx, rx) = std::sync::mpsc::channel::<serde_json::Value>();
+                        std::thread::spawn(move || {
+                            let _ = tx.send(StoreManager::epic_deals(start, 40).unwrap_or_default());
+                        });
+                        let list_cc = list_c.clone();
+                        let lbl_cc = lbl_c.clone();
+                        let seen_cc = seen_c.clone();
+                        let next_cc = next_c.clone();
+                        let total_cc = total_c.clone();
+                        let loading_cc = loading_c.clone();
+                        let shown_cc = shown_c.clone();
+                        let st_cc = st_c.clone();
+                        crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
+                            Ok(doc) => {
+                                let arr = doc.get("deals").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                                if doc.get("deals").is_none() {
+                                    // Backend error: stop paging.
+                                    total_cc.set(next_cc.get());
                                 } else {
-                                    format!("{} (was {}) • ends {}", price, base, ends)
-                                };
-                                let sub = gtk::Label::new(Some(&subtext));
-                                sub.set_halign(gtk::Align::Start);
-                                sub.set_opacity(0.6);
-                                sub.add_css_class("time-label");
-                                mid.append(&sub);
-                                row.append(&mid);
-                                if !u.is_empty() {
-                                    let buy = gtk::Button::with_label("View deal");
-                                    buy.add_css_class("add-btn");
-                                    buy.set_valign(gtk::Align::Center);
-                                    let stc = st.clone();
-                                    let uc = u.clone();
-                                    buy.connect_clicked(move |_| { stc.integration.open_url(&uc); });
-                                    row.append(&buy);
+                                    next_cc.set(doc.get("next").and_then(|v| v.as_u64()).unwrap_or(start));
+                                    total_cc.set(doc.get("total").and_then(|v| v.as_u64()).unwrap_or(next_cc.get()));
                                 }
-                                deals_list.append(&row);
+                                let mut added = 0usize;
+                                for p in arr {
+                                    let t = match p.get("title").and_then(|x| x.as_str()) {
+                                        Some(s) if !s.is_empty() => s.to_string(),
+                                        _ => continue,
+                                    };
+                                    if !seen_cc.borrow_mut().insert(t.clone()) {
+                                        continue;
+                                    }
+                                    let d = p.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    let cover = p.get("cover").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    let pct = p.get("discount").and_then(|x| x.as_i64()).unwrap_or(0);
+                                    let price = p.get("price").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    let base = p.get("base_price").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    let ends = p.get("ends").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    let u = p.get("store_url").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                                    if !cover.is_empty() {
+                                        let img = gtk::Image::new();
+                                        img.set_pixel_size(52);
+                                        img.set_valign(gtk::Align::Center);
+                                        crate::ui::minecraft_view::load_mod_icon(&cover, &format!("deal-{}", t), &img, 52);
+                                        row.append(&img);
+                                    }
+                                    let mid = gtk::Box::new(gtk::Orientation::Vertical, 2);
+                                    mid.set_hexpand(true);
+                                    let top = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+                                    let lbl = gtk::Label::new(Some(&t));
+                                    lbl.set_halign(gtk::Align::Start);
+                                    lbl.add_css_class("details-title");
+                                    top.append(&lbl);
+                                    let badge = gtk::Label::new(Some(&format!("-{}%", pct)));
+                                    badge.add_css_class("proton-path-badge");
+                                    top.append(&badge);
+                                    mid.append(&top);
+                                    if !d.is_empty() {
+                                        let dl = gtk::Label::new(Some(&d));
+                                        dl.set_halign(gtk::Align::Start);
+                                        dl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                                        dl.set_max_width_chars(60);
+                                        dl.set_opacity(0.6);
+                                        dl.add_css_class("time-label");
+                                        mid.append(&dl);
+                                    }
+                                    let subtext = if ends.is_empty() {
+                                        format!("{} (was {})", price, base)
+                                    } else {
+                                        format!("{} (was {}) • ends {}", price, base, ends)
+                                    };
+                                    let sub = gtk::Label::new(Some(&subtext));
+                                    sub.set_halign(gtk::Align::Start);
+                                    sub.set_opacity(0.6);
+                                    sub.add_css_class("time-label");
+                                    mid.append(&sub);
+                                    row.append(&mid);
+                                    if !u.is_empty() {
+                                        let buy = gtk::Button::with_label("View deal");
+                                        buy.add_css_class("add-btn");
+                                        buy.set_valign(gtk::Align::Center);
+                                        let stc = st_cc.clone();
+                                        let uc = u.clone();
+                                        buy.connect_clicked(move |_| { stc.integration.open_url(&uc); });
+                                        row.append(&buy);
+                                    }
+                                    list_cc.append(&row);
+                                    added += 1;
+                                }
+                                shown_cc.set(shown_cc.get() + added);
+                                loading_cc.set(false);
+                                let s = shown_cc.get();
+                                if s == 0 {
+                                    lbl_cc.set_text("No offers right now.");
+                                } else if next_cc.get() < total_cc.get() {
+                                    lbl_cc.set_text(&format!("Showing {} of ~{} — scroll for more", s, total_cc.get()));
+                                } else {
+                                    lbl_cc.set_text(&format!("Showing all {} offers", s));
+                                }
+                                glib::ControlFlow::Break
+                            }
+                            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                            Err(_) => glib::ControlFlow::Break,
+                        });
+                    }) as Rc<dyn Fn(u64)>);
+                }
+                if let Some(f) = loader.borrow().as_ref() {
+                    f(0);
+                }
+                {
+                    let adj = deals_scroll.vadjustment();
+                    let load_c = loader.clone();
+                    let next_c = next.clone();
+                    let total_c = total.clone();
+                    let loading_c = loading.clone();
+                    adj.connect_value_changed(move |a| {
+                        if loading_c.get() || next_c.get() >= total_c.get() {
+                            return;
+                        }
+                        if a.value() + a.page_size() >= a.upper() - 300.0 {
+                            if let Some(f) = load_c.borrow().as_ref() {
+                                f(next_c.get());
                             }
                         }
-                        glib::ControlFlow::Break
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-                    Err(_) => glib::ControlFlow::Break,
-                });
+                    });
+                }
             }
             // Epic has no public search API: browser search with the query.
             let (shop_frame, shop_inner) = card("Buy on Epic");

@@ -98,9 +98,9 @@ Epic/GOG stores, AppImages, RPG Maker, dependencies, DLLs and more
 > **Do NOT use `sudo`** — installs to `~/.local/`.
 
 ```bash
-# 1. Download corkytux-3.0.6-linux-x86_64.tar.gz from Releases
-tar -xzf corkytux-3.0.6-linux-x86_64.tar.gz
-cd corkytux-3.0.6 && ./install.sh
+# 1. Download corkytux-3.0.7-linux-x86_64.tar.gz from Releases
+tar -xzf corkytux-3.0.7-linux-x86_64.tar.gz
+cd corkytux-3.0.7 && ./install.sh
 # Run: corkytux  (or app menu > CorkyTux)
 # Uninstall: ./uninstall.sh
 ```

@@ -189,8 +189,11 @@ impl StoreManager {
         plugin_process::run_single_json(&Self::exe(), &["free-promos"])
     }
 
-    pub fn epic_deals() -> Result<serde_json::Value, String> {
-        plugin_process::run_single_json(&Self::exe(), &["epic-deals"])
+    pub fn epic_deals(start: u64, count: u64) -> Result<serde_json::Value, String> {
+        plugin_process::run_single_json(
+            &Self::exe(),
+            &["epic-deals", "--start", &start.to_string(), "--count", &count.to_string()],
+        )
     }
 
     pub fn gog_store_search(query: &str, limit: u32) -> Result<serde_json::Value, String> {
