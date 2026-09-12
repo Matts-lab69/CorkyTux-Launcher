@@ -1858,8 +1858,17 @@ impl ProtonManager {
         let mut cmd = Command::new(&proton_bin);
         cmd.env("STEAM_COMPAT_DATA_PATH", &prefix_path);
         cmd.env("WINEPREFIX", &real_prefix);
+        // Modern Proton (like run_game) requires the Steam client path and
+        // an app id; exes also need their own dir as cwd for local DLLs.
+        cmd.env("STEAM_COMPAT_CLIENT_INSTALL_PATH", self.steam_client_path());
+        cmd.env("SteamAppId", "0");
         cmd.arg("waitforexitandrun");
         cmd.arg(executable);
+        if let Some(parent) = Path::new(executable).parent() {
+            if !parent.as_os_str().is_empty() {
+                cmd.current_dir(parent);
+            }
+        }
 
         let child = cmd
             .spawn()
@@ -1933,8 +1942,64 @@ impl ProtonManager {
         }
     }
 
+    fn releases_cache_path(source: &str) -> PathBuf {
+        home_dir()
+            .unwrap_or_default()
+            .join(".cache")
+            .join("CorkyTux")
+            .join(format!("proton-releases-{}.json", source))
+    }
+
+    /// Cached release list: (entries, fresh?). GitHub allows 60 API
+    /// calls/hour unauthenticated, so fresh cache (< 1h) wins and any
+    /// cache at all is used as fallback when rate-limited.
+    fn read_releases_cache(source: &str, max_age_secs: u64) -> Option<Vec<(String, String)>> {
+        let path = Self::releases_cache_path(source);
+        let meta = fs::metadata(&path).ok()?;
+        let age = std::time::SystemTime::now()
+            .duration_since(meta.modified().ok()?)
+            .ok()?
+            .as_secs();
+        if age > max_age_secs {
+            return None;
+        }
+        let content = fs::read_to_string(&path).ok()?;
+        let v: serde_json::Value = serde_json::from_str(&content).ok()?;
+        let list: Vec<(String, String)> = v
+            .as_array()?
+            .iter()
+            .filter_map(|e| {
+                Some((
+                    e.get(0)?.as_str()?.to_string(),
+                    e.get(1)?.as_str()?.to_string(),
+                ))
+            })
+            .collect();
+        if list.is_empty() {
+            return None;
+        }
+        Some(list)
+    }
+
+    fn write_releases_cache(source: &str, releases: &[(String, String)]) {
+        let path = Self::releases_cache_path(source);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).ok();
+        }
+        let arr: Vec<Vec<&str>> = releases
+            .iter()
+            .map(|(t, u)| vec![t.as_str(), u.as_str()])
+            .collect();
+        if let Ok(s) = serde_json::to_string(&arr) {
+            fs::write(&path, s).ok();
+        }
+    }
+
     pub fn fetch_releases(source: &str) -> Result<Vec<(String, String)>, String> {
         let url = Self::release_source_url(source)?;
+        if let Some(cached) = Self::read_releases_cache(source, 3600) {
+            return Ok(cached);
+        }
         let client = reqwest::blocking::Client::builder()
             .user_agent("CorkyTux")
             .timeout(std::time::Duration::from_secs(30))
@@ -1945,6 +2010,27 @@ impl ProtonManager {
             .header("Accept", "application/vnd.github.v3+json")
             .send()
             .map_err(|e| format!("Request failed: {}", e))?;
+        if resp.status().as_u16() == 403 {
+            // Rate-limited: serve any cache, however stale, before failing.
+            if let Some(cached) = Self::read_releases_cache(source, u64::MAX) {
+                return Ok(cached);
+            }
+            let reset = resp
+                .headers()
+                .get("x-ratelimit-reset")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<i64>().ok())
+                .map(|ts| {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0);
+                    let wait = (ts - now).max(0);
+                    format!(" — retry in ~{} min", (wait + 59) / 60)
+                })
+                .unwrap_or_default();
+            return Err(format!("GitHub API rate limit exceeded (60/hour){}.", reset));
+        }
         if !resp.status().is_success() {
             return Err(format!("GitHub API error: {}", resp.status()));
         }
@@ -1991,6 +2077,7 @@ impl ProtonManager {
         if releases.is_empty() {
             return Err("No downloadable releases found".into());
         }
+        Self::write_releases_cache(source, &releases);
         Ok(releases)
     }
 
@@ -2185,20 +2272,38 @@ impl ProtonManager {
             return Vec::new();
         }
         let mut results = Vec::new();
-        if let Ok(entries) = fs::read_dir(path) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.is_file() {
-                    let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
-                    let lower = name.to_lowercase();
-                    if lower.ends_with(".exe") || lower.ends_with(".bat") || lower.ends_with(".msi") {
-                        results.push(p.display().to_string());
-                    }
-                }
-            }
-        }
+        Self::collect_exes(path, &mut results, 3);
         results.sort();
         results
+    }
+
+    fn collect_exes(dir: &Path, out: &mut Vec<String>, depth: u8) {
+        let entries = match fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_file() {
+                let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let lower = name.to_lowercase();
+                if lower.ends_with(".exe") || lower.ends_with(".bat") || lower.ends_with(".msi") {
+                    // Skip crash handlers/uninstallers noise? No: show all,
+                    // the user picks. Skip Wine/Proton internals just in case.
+                    let s = p.display().to_string();
+                    if !s.contains("/drive_c/") {
+                        out.push(s);
+                    }
+                }
+            } else if p.is_dir() && depth > 0 {
+                if let Some(n) = p.file_name().and_then(|n| n.to_str()) {
+                    if n.starts_with('.') {
+                        continue;
+                    }
+                }
+                Self::collect_exes(&p, out, depth - 1);
+            }
+        }
     }
 
     pub fn find_wine_tools(&self, game_name: &str) -> Vec<(String, String)> {
