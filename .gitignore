@@ -1,24 +1,17 @@
-# Build output
-build/
-cmake-build-*/
-*.o
-*.moc
-moc_*.cpp
-qrc_*.cpp
-ui_*.h
+# Rust
+/target/
+**/*.rs.bk
 
-# Qt Creator
-*.pro.user
-*.pro.user.*
+# Build / release artifacts
+*.tar.gz
+build/
+build-release/
 
 # IDE
 .idea/
-*.iml
 .vscode/*
-!.vscode/c_cpp_properties.json
-.settings/
-.project
-.classpath
+!.vscode/extensions.json
+*.iml
 
 # OS
 .DS_Store
@@ -26,11 +19,3 @@ Thumbs.db
 
 # Logs
 *.log
-push-commands.txt
-
-# Release artifacts
-release/*.tar.gz
-release/*.AppImage
-corkytux-*.tar.gz
-build/
-build-release/

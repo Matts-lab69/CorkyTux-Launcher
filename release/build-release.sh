@@ -1,50 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-# ─── CorkyTux Release Builder ────────────────────────────────────
-# Builds the Qt binary, packages a release tarball.
-
+# ─── CorkyTux Release Builder v3.0.0 (Rust) ─────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
-VERSION=$(grep -oP 'project\(corkytux VERSION \K[0-9.]+' CMakeLists.txt)
+VERSION=$(grep -m1 '^version' Cargo.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 ARCH=$(uname -m)
 TARBALL="corkytux-${VERSION}-linux-${ARCH}.tar.gz"
 
-echo ""
-echo "=== Building CorkyTux v${VERSION} ==="
-echo ""
+echo "=== Building CorkyTux v${VERSION} (release) ==="
+cargo build --release
 
-# Build
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release 2>&1
-cmake --build build -j"$(nproc)" 2>&1
+BIN="target/release/corkytux"
+[[ -f "$BIN" ]] || { echo "Build failed: $BIN not found" >&2; exit 1; }
+ls -lh "$BIN"
 
-if [[ ! -f build/corkytux ]]; then
-  echo "Build failed: build/corkytux not found" >&2
-  exit 1
-fi
+echo "=== Packaging ${TARBALL} ==="
+STAGE="$(mktemp -d)"
+cp "$BIN" "$STAGE/corkytux"
+cp release/install.sh release/uninstall.sh "$STAGE/"
+chmod +x "$STAGE/corkytux" "$STAGE/install.sh" "$STAGE/uninstall.sh"
+cp release/corkytux.png "$STAGE/" 2>/dev/null || cp assets/corkytux.png "$STAGE/corkytux.png"
+cp release/corkytux.desktop.in "$STAGE/" 2>/dev/null || true
+tar czf "$TARBALL" -C "$STAGE" .
+rm -rf "$STAGE"
 
-echo ""
-echo "=== Packaging release tarball ==="
-echo ""
-
-# Prepare release dir
-rm -rf release/corkytux release/corkytux.jar
-cp build/corkytux release/corkytux
-chmod +x release/corkytux
-
-# Create tarball
-tar czf "$TARBALL" -C release \
-  corkytux \
-  install.sh \
-  uninstall.sh \
-  corkytux.png
-
-echo "Created: ${TARBALL}"
-echo "Size: $(du -h "$TARBALL" | cut -f1)"
-echo ""
-echo "Contents:"
+echo "Created: ${TARBALL} ($(du -h "$TARBALL" | cut -f1))"
 tar tzf "$TARBALL"
 echo ""
-echo "Install: tar xzf ${TARBALL} && cd corkytux-* && ./install.sh"
-echo ""
+echo "Install: tar xzf ${TARBALL} && ./install.sh"

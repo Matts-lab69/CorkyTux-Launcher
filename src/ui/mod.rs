@@ -1,0 +1,15 @@
+pub mod helpers;
+pub mod sidebar;
+pub mod details_panel;
+pub mod game_card;
+pub mod add_game;
+pub mod remove_modal;
+pub mod settings;
+pub mod center;
+pub mod log_modal;
+pub mod prefix_warning;
+pub mod proton_modal;
+pub mod game_settings;
+pub mod apps_settings;
+pub mod minecraft_view;
+pub mod stores_view;

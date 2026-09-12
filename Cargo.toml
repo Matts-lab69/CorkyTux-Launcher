@@ -1,0 +1,23 @@
+[package]
+name = "corkytux"
+version = "3.0.0"
+edition = "2021"
+
+[dependencies]
+gtk = { package = "gtk4", version = "0.9", features = ["v4_12"] }
+adw = { package = "libadwaita", version = "0.7", features = ["v1_5"] }
+glib = { version = "0.20", features = ["v2_80"] }
+gio = { version = "0.20" }
+gdk-pixbuf = { version = "0.20" }
+gdk = { package = "gdk4", version = "0.9" }
+pango = { version = "0.20" }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1

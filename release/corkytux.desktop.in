@@ -1,8 +1,8 @@
 [Desktop Entry]
 Version=1.0
 Name=CorkyTux
-Comment=Native Linux game launcher
-Exec=@CMAKE_INSTALL_PREFIX@/bin/corkytux
+Comment=Linux game launcher (Rust + GTK4) — Proton/Wine, Minecraft, Epic/GOG
+Exec=corkytux
 Icon=corkytux
 Terminal=false
 Type=Application

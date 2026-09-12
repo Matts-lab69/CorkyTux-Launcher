@@ -9,49 +9,35 @@ ICON_DIR="${HOME}/.local/share/icons"
 DESKTOP_DIR="${HOME}/.local/share/applications"
 
 echo ""
-echo "=== CorkyTux Uninstaller ==="
+echo "=== CorkyTux Uninstaller v3.0.0 ==="
 echo ""
 
-removed=0
-
-if [[ -d "$INSTALL_DIR" ]]; then
-  rm -rf "$INSTALL_DIR"
-  echo "  Removed ${INSTALL_DIR}"
-  ((removed++))
+if [[ "${EUID}" -eq 0 ]]; then
+  echo "Do NOT run with sudo. Run as your user: ./uninstall.sh"
+  exit 1
 fi
 
+removed=0
+[[ -d "$INSTALL_DIR" ]] && { rm -rf "$INSTALL_DIR"; echo "  Removed ${INSTALL_DIR}"; removed=$((removed+1)); }
+
 if [[ -d "$DATA_DIR" ]]; then
-  echo -n "  Remove game data (${DATA_DIR})? [y/N]: "
-  read -r ans
-  if [[ "$ans" =~ ^[Yy]$ ]]; then
-    rm -rf "$DATA_DIR"
-    echo "  Removed game data"
-    ((removed++))
-  else
-    echo "  Skipped game data"
-  fi
+  read -rp "  Remove plugin/game data (${DATA_DIR})? [y/N]: " ans
+  if [[ "$ans" =~ ^[Yy]$ ]]; then rm -rf "$DATA_DIR"; echo "  Removed data"; removed=$((removed+1));
+  else echo "  Skipped data"; fi
 fi
 
 if [[ -d "$CONFIG_DIR" ]]; then
-  echo -n "  Remove config (${CONFIG_DIR})? [y/N]: "
-  read -r ans
-  if [[ "$ans" =~ ^[Yy]$ ]]; then
-    rm -rf "$CONFIG_DIR"
-    echo "  Removed config"
-    ((removed++))
-  else
-    echo "  Skipped config"
-  fi
+  read -rp "  Remove config (${CONFIG_DIR})? [y/N]: " ans
+  if [[ "$ans" =~ ^[Yy]$ ]]; then rm -rf "$CONFIG_DIR"; echo "  Removed config"; removed=$((removed+1));
+  else echo "  Skipped config"; fi
 fi
 
-rm -f "${BIN_DIR}/corkytux" 2>/dev/null && echo "  Removed symlink" && ((removed++))
-rm -f "${DESKTOP_DIR}/corkytux.desktop" 2>/dev/null && echo "  Removed desktop entry" && ((removed++))
-rm -f "${ICON_DIR}/corkytux.png" 2>/dev/null && echo "  Removed icon" && ((removed++))
+rm -f "${BIN_DIR}/corkytux" && echo "  Removed symlink" && removed=$((removed+1))
+rm -f "${DESKTOP_DIR}/corkytux.desktop" && echo "  Removed desktop entry" && removed=$((removed+1))
+rm -f "${ICON_DIR}/corkytux.png" && echo "  Removed icon" && removed=$((removed+1))
+
+command -v update-desktop-database &>/dev/null && update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 
 echo ""
-if [[ $removed -gt 0 ]]; then
-  echo "=== CorkyTux uninstalled ==="
-else
-  echo "=== Nothing to remove ==="
-fi
+[[ $removed -gt 0 ]] && echo "=== CorkyTux uninstalled ===" || echo "=== Nothing to remove ==="
 echo ""
