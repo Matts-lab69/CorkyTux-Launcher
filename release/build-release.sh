@@ -17,15 +17,17 @@ ls -lh "$BIN"
 
 echo "=== Packaging ${TARBALL} ==="
 STAGE="$(mktemp -d)"
-cp "$BIN" "$STAGE/corkytux"
-cp release/install.sh release/uninstall.sh "$STAGE/"
-chmod +x "$STAGE/corkytux" "$STAGE/install.sh" "$STAGE/uninstall.sh"
-cp release/corkytux.png "$STAGE/" 2>/dev/null || cp assets/corkytux.png "$STAGE/corkytux.png"
-cp release/corkytux.desktop.in "$STAGE/" 2>/dev/null || true
-tar czf "$TARBALL" -C "$STAGE" .
+PKGDIR="$STAGE/corkytux-${VERSION}"
+mkdir -p "$PKGDIR"
+cp "$BIN" "$PKGDIR/corkytux"
+cp release/install.sh release/uninstall.sh "$PKGDIR/"
+chmod +x "$PKGDIR/corkytux" "$PKGDIR/install.sh" "$PKGDIR/uninstall.sh"
+cp release/corkytux.png "$PKGDIR/" 2>/dev/null || cp assets/corkytux.png "$PKGDIR/corkytux.png"
+cp release/corkytux.desktop.in "$PKGDIR/" 2>/dev/null || true
+tar czf "$TARBALL" -C "$STAGE" "corkytux-${VERSION}"
 rm -rf "$STAGE"
 
 echo "Created: ${TARBALL} ($(du -h "$TARBALL" | cut -f1))"
 tar tzf "$TARBALL"
 echo ""
-echo "Install: tar xzf ${TARBALL} && ./install.sh"
+echo "Install: tar xzf ${TARBALL} && cd corkytux-${VERSION} && ./install.sh"

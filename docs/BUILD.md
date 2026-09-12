@@ -35,7 +35,7 @@ The release binary lands in `target/release/corkytux` (~6 MB, LTO + strip).
 chmod +x release/build-release.sh
 ./release/build-release.sh
 # generates: corkytux-3.0.0-linux-x86_64.tar.gz
-# contains: corkytux, install.sh, uninstall.sh, corkytux.png
+# contains a corkytux-VERSION/ folder with: corkytux, install.sh, uninstall.sh, corkytux.png
 tar tzf corkytux-*-linux-*.tar.gz
 ```
 
@@ -43,7 +43,7 @@ tar tzf corkytux-*-linux-*.tar.gz
 
 ```bash
 tar -xzf corkytux-3.0.0-linux-x86_64.tar.gz
-./install.sh
+cd corkytux-3.0.0 && ./install.sh
 ```
 
 No `sudo`. It installs to `~/.local/share/corkytux/`, symlinks
