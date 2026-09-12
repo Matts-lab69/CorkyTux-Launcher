@@ -281,6 +281,14 @@ impl StoresView {
             let (promo_frame, promo_inner) = card("Free games now");
             let promo_lbl = note("Loading…");
             promo_inner.append(&promo_lbl);
+            // Scrollable list so long catalogs don't stretch the page.
+            let promo_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
+            let promo_scroll = gtk::ScrolledWindow::new();
+            promo_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+            promo_scroll.set_max_content_height(360);
+            promo_scroll.set_propagate_natural_height(true);
+            promo_scroll.set_child(Some(&promo_list));
+            promo_inner.append(&promo_scroll);
             page.append(&promo_frame);
             let (tx, rx) = std::sync::mpsc::channel::<Vec<(String, String, String, String)>>();
             std::thread::spawn(move || {
@@ -297,13 +305,8 @@ impl StoresView {
             let st = state.clone();
             crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
                 Ok(list) => {
-                    let mut next = promo_inner.first_child();
-                    while let Some(c) = next {
-                        next = c.next_sibling();
-                        if c.downcast_ref::<gtk::Label>().map(|l| l.text().as_str() == "Free games now").unwrap_or(false) {
-                            continue;
-                        }
-                        promo_inner.remove(&c);
+                    while let Some(c) = promo_list.first_child() {
+                        promo_list.remove(&c);
                     }
                     if list.is_empty() {
                         promo_lbl.set_text("Nothing free right now.");
@@ -343,7 +346,7 @@ impl StoresView {
                                 claim.connect_clicked(move |_| { stc.integration.open_url(&uc); });
                                 row.append(&claim);
                             }
-                            promo_inner.append(&row);
+                            promo_list.append(&row);
                         }
                     }
                     glib::ControlFlow::Break
@@ -355,6 +358,14 @@ impl StoresView {
             let (deals_frame, deals_inner) = card("Deals");
             let deals_lbl = note("Loading…");
             deals_inner.append(&deals_lbl);
+            // Scrollable list so 80 deals don't stretch the page.
+            let deals_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
+            let deals_scroll = gtk::ScrolledWindow::new();
+            deals_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+            deals_scroll.set_max_content_height(420);
+            deals_scroll.set_propagate_natural_height(true);
+            deals_scroll.set_child(Some(&deals_list));
+            deals_inner.append(&deals_scroll);
             page.append(&deals_frame);
             {
                 let (tx, rx) = std::sync::mpsc::channel::<Vec<(String, String, String, i64, String, String, String, String)>>();
@@ -376,13 +387,8 @@ impl StoresView {
                 let st = state.clone();
                 crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
                     Ok(list) => {
-                        let mut next = deals_inner.first_child();
-                        while let Some(c) = next {
-                            next = c.next_sibling();
-                            if c.downcast_ref::<gtk::Label>().map(|l| l.text().as_str() == "Deals").unwrap_or(false) {
-                                continue;
-                            }
-                            deals_inner.remove(&c);
+                        while let Some(c) = deals_list.first_child() {
+                            deals_list.remove(&c);
                         }
                         if list.is_empty() {
                             deals_lbl.set_text("No offers right now.");
@@ -417,7 +423,12 @@ impl StoresView {
                                     dl.add_css_class("time-label");
                                     mid.append(&dl);
                                 }
-                                let sub = gtk::Label::new(Some(&format!("{} (was {}) • ends {}", price, base, ends)));
+                                let subtext = if ends.is_empty() {
+                                    format!("{} (was {})", price, base)
+                                } else {
+                                    format!("{} (was {}) • ends {}", price, base, ends)
+                                };
+                                let sub = gtk::Label::new(Some(&subtext));
                                 sub.set_halign(gtk::Align::Start);
                                 sub.set_opacity(0.6);
                                 sub.add_css_class("time-label");
@@ -432,7 +443,7 @@ impl StoresView {
                                     buy.connect_clicked(move |_| { stc.integration.open_url(&uc); });
                                     row.append(&buy);
                                 }
-                                deals_inner.append(&row);
+                                deals_list.append(&row);
                             }
                         }
                         glib::ControlFlow::Break
