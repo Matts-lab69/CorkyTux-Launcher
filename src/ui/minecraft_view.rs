@@ -456,33 +456,54 @@ pub(crate) fn load_mod_icon(url: &str, project_id: &str, img: &gtk::Image, size:
     if url.is_empty() || project_id.is_empty() {
         return;
     }
+    // Thumbnails are decoded bounded (tiny RAM) instead of full-res.
+    let max_px = (size * 2).max(64);
     // Modrinth serves webp; gdk-pixbuf here has no webp loader, so the
     // worker normalizes to PNG (PIL, ffmpeg fallback) before GTK loads it.
     let png = icon_cache_path(&format!("{}-icon.png", project_id));
-    let imgc = img.clone();
-    if png.exists() && helpers::load_texture(&png.display().to_string()).is_none() {
-        std::fs::remove_file(&png).ok();
-    }
     if png.exists() {
         let path = png.display().to_string();
-        if let Some(tex) = helpers::texture_if_cached(&path) {
+        if let Some(tex) = helpers::load_thumb(&path, max_px) {
             img.set_paintable(Some(&tex));
             img.set_pixel_size(size);
-            return;
+        } else {
+            // Corrupt cache entry: drop it and fetch fresh below.
+            std::fs::remove_file(&png).ok();
+            load_mod_icon_uncached(url, project_id, img, size, max_px);
         }
-        glib::idle_add_local(move || {
-            if let Some(tex) = helpers::load_texture(&path) {
-                imgc.set_paintable(Some(&tex));
-                imgc.set_pixel_size(size);
+        return;
+    }
+    load_mod_icon_uncached(url, project_id, img, size, max_px);
+}
+
+fn load_mod_icon_uncached(url: &str, project_id: &str, img: &gtk::Image, size: i32, max_px: i32) {
+    // Cap concurrent downloads: when scrolling fast, extra rows retry
+    // shortly instead of spawning hundreds of threads/curl processes.
+    // Weak refs everywhere: rows removed while loading stop cleanly.
+    if !helpers::img_slot_try_acquire() {
+        let url_c = url.to_string();
+        let pid_c = project_id.to_string();
+        let imgw = img.downgrade();
+        glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+            if let Some(im) = imgw.upgrade() {
+                load_mod_icon(&url_c, &pid_c, &im, size);
             }
-            glib::ControlFlow::Break
         });
         return;
     }
+    let png = icon_cache_path(&format!("{}-icon.png", project_id));
     let url = url.to_string();
     let pid = project_id.to_string();
+    let imgw = img.downgrade();
     let (tx, rx) = std::sync::mpsc::channel::<String>();
     std::thread::spawn(move || {
+        struct Release;
+        impl Drop for Release {
+            fn drop(&mut self) {
+                helpers::img_slot_release();
+            }
+        }
+        let _guard = Release;
         let raw = icon_cache_path(&format!("{}-raw.bin", pid));
         if let Some(parent) = raw.parent() {
             std::fs::create_dir_all(parent).ok();
@@ -524,13 +545,22 @@ pub(crate) fn load_mod_icon(url: &str, project_id: &str, img: &gtk::Image, size:
     });
     glib::idle_add_local(move || match rx.try_recv() {
         Ok(path) => {
-            if let Some(tex) = helpers::load_texture(&path) {
-                imgc.set_paintable(Some(&tex));
-                imgc.set_pixel_size(size);
+            if let Some(im) = imgw.upgrade() {
+                if let Some(tex) = helpers::load_thumb(&path, max_px) {
+                    im.set_paintable(Some(&tex));
+                    im.set_pixel_size(size);
+                }
             }
             glib::ControlFlow::Break
         }
-        Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+        Err(std::sync::mpsc::TryRecvError::Empty) => {
+            // Row scrolled away: stop polling instead of spinning forever.
+            if imgw.upgrade().is_none() {
+                glib::ControlFlow::Break
+            } else {
+                glib::ControlFlow::Continue
+            }
+        }
         Err(_) => glib::ControlFlow::Break,
     });
 }

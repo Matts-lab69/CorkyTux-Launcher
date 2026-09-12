@@ -3,8 +3,11 @@ use gtk::gdk;
 use gtk::glib;
 use gtk::prelude::*;
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::backend::theme::ThemeManager;
+
+static IMG_INFLIGHT: AtomicU32 = AtomicU32::new(0);
 
 thread_local! {
     static MAIN_CSS_PROVIDER: RefCell<Option<gtk::CssProvider>> = RefCell::new(None);
@@ -28,11 +31,50 @@ fn tex_cache_get(key: &str) -> Option<gdk::Texture> {
     TEX_CACHE.with(|c| c.borrow().0.get(key).cloned())
 }
 
-/// Already-decoded texture without touching disk decoders again.
-/// Returns None when not cached (caller falls back to load_texture).
-pub fn texture_if_cached(path: &str) -> Option<gdk::Texture> {
-    let key = tex_cache_key(path)?;
-    tex_cache_get(&key)
+/// Download-slot gate: at most a handful of concurrent cover fetches,
+/// so fast scrolling never spawns hundreds of threads/curl processes.
+/// Always pair a successful acquire with img_slot_release (a drop guard
+/// in the worker thread is the safest way).
+pub fn img_slot_try_acquire() -> bool {
+    const MAX: u32 = 8;
+    let mut cur = IMG_INFLIGHT.load(Ordering::Relaxed);
+    loop {
+        if cur >= MAX {
+            return false;
+        }
+        match IMG_INFLIGHT.compare_exchange_weak(cur, cur + 1, Ordering::SeqCst, Ordering::Relaxed) {
+            Ok(_) => return true,
+            Err(v) => cur = v,
+        }
+    }
+}
+
+/// Release a slot previously acquired with img_slot_try_acquire.
+pub fn img_slot_release() {
+    IMG_INFLIGHT.fetch_sub(1, Ordering::SeqCst);
+}
+
+/// Small cached thumbnail: decode bounded to max_px (RAM-friendly for long
+/// scrolling lists). Cache key includes the size, shares the 64-entry cap.
+pub fn load_thumb(path: &str, max_px: i32) -> Option<gdk::Texture> {
+    let m = std::fs::metadata(path).ok()?;
+    let mt = m.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+    let key = format!("thumb:{}:{}:{}:{}", path, mt, m.len(), max_px);
+    if let Some(tex) = tex_cache_get(&key) {
+        return Some(tex);
+    }
+    let pb = load_pixbuf(path)?;
+    let (w, h) = (pb.width(), pb.height());
+    let tex = if w <= max_px && h <= max_px {
+        gdk::Texture::for_pixbuf(&pb)
+    } else {
+        let scale = max_px as f32 / w.max(h) as f32;
+        let nw = ((w as f32 * scale) as i32).max(1);
+        let nh = ((h as f32 * scale) as i32).max(1);
+        gdk::Texture::for_pixbuf(&pb.scale_simple(nw, nh, gdk_pixbuf::InterpType::Bilinear)?)
+    };
+    tex_cache_put(key, &tex);
+    Some(tex)
 }
 
 fn tex_cache_put(key: String, tex: &gdk::Texture) {

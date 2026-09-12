@@ -1800,7 +1800,7 @@ pub fn show_settings_modal(
     let about_name = gtk::Label::new(Some("CorkyTux"));
     about_name.add_css_class("details-title");
     about_page.append(&about_name);
-    let about_ver = gtk::Label::new(Some("v3.0.7"));
+    let about_ver = gtk::Label::new(Some("v3.0.8"));
     about_ver.set_opacity(0.6);
     about_page.append(&about_ver);
     let about_author = gtk::Label::new(Some("by Matts-lab69"));

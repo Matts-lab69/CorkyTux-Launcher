@@ -1,4 +1,4 @@
-# Build CorkyTux v3.0.7 from source
+# Build CorkyTux v3.0.8 from source
 
 Short guide (Gentoo / Debian-Ubuntu / Fedora / Arch / openSUSE).
 
@@ -34,7 +34,7 @@ The release binary lands in `target/release/corkytux` (~6 MB, LTO + strip).
 ```bash
 chmod +x release/build-release.sh
 ./release/build-release.sh
-# generates: corkytux-3.0.7-linux-x86_64.tar.gz
+# generates: corkytux-3.0.8-linux-x86_64.tar.gz
 # contains a corkytux-VERSION/ folder with: corkytux, install.sh, uninstall.sh, corkytux.png
 tar tzf corkytux-*-linux-*.tar.gz
 ```
@@ -42,8 +42,8 @@ tar tzf corkytux-*-linux-*.tar.gz
 ## 4. Install
 
 ```bash
-tar -xzf corkytux-3.0.7-linux-x86_64.tar.gz
-cd corkytux-3.0.7 && ./install.sh
+tar -xzf corkytux-3.0.8-linux-x86_64.tar.gz
+cd corkytux-3.0.8 && ./install.sh
 ```
 
 No `sudo`. It installs to `~/.local/share/corkytux/`, symlinks
