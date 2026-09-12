@@ -6,8 +6,11 @@
 
 <p align="center">
   <strong>Linux Game Launcher (Rust + GTK4/libadwaita)</strong><br>
-  Proton/Wine, Minecraft, Epic/GOG stores, emulators & plugins — one place.
+  Preserva tus videojuegos: biblioteca unificada + plugins con multi funciones.
 </p>
+
+> **Alpha** — CorkyTux está en desarrollo activo. Si algo falla,
+> repórtalo en [Issues](https://github.com/Matts-lab69/CorkyTux-Launcher/issues).
 
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-1.70%2B-orange?logo=rust&logoColor=white" alt="Rust">
@@ -24,6 +27,7 @@
   <a href="docs/BUILD.md">Build from source</a> •
   <a href="#plugins">Plugins</a> •
   <a href="#architecture">Architecture</a> •
+  <a href="#credits">Credits</a> •
   <a href="#license">License</a>
 </p>
 
@@ -31,13 +35,12 @@
 
 ## What is CorkyTux?
 
-CorkyTux v3 is a full rewrite of the old Qt/QML launcher (v2.x) in **Rust + GTK4/libadwaita**.
-Native library for Windows games (Proton/Wine + umu), integrated **Minecraft Java**
-manager, **Epic/GOG stores** (via legendary/gogdl), emulator support and an
-extensible **plugin system** (streaming JSON-lines).
-
-> **v2.x (Qt) → v3.0 (Rust):** same idea, new stack. Old Qt releases stay tagged
-> (`v2.13.0` and earlier). `main` is now Rust.
+CorkyTux es un launcher Linux en **Rust + GTK4/libadwaita** para
+**preservar videojuegos**: tu biblioteca unificada en un solo lugar
+(juegos Windows con Proton/Wine + umu, escaneos de Steam/Lutris/Heroic,
+emuladores) y **plugins que le dan multi funciones** — Minecraft Java,
+tiendas Epic/GOG, AppImages, RPG Maker, dependencias, DLLs y más
+(vía protocolo streaming JSON-lines).
 
 ---
 
@@ -53,14 +56,13 @@ extensible **plugin system** (streaming JSON-lines).
 - EAC / BattlEye runtimes (Heroic), EOS auth (Epic), Wine virtual desktop (`user.reg`)
 - Custom env vars, launch args, DLL overrides, Steam/Lutris/Heroic scan + import
 
-### Minecraft (plugin)
+### Minecraft (plugin) — [guía](https://github.com/Matts-lab69/CorkyTux-Plugins/blob/main/minecraft-launcher/README.md)
 - Offline / Microsoft / Ely.by accounts, Java 8/17/21/25 auto-detect
   (`~/jdk`, `/opt/jvm`, `/usr/lib/jvm`, `update-alternatives`), isolated instances
 - Fabric/Forge/Quilt/NeoForge loaders, Modrinth (search/install/update + sidecars),
   `.mrpack` install/import, CurseForge (integrated public key)
-- 120s request timeouts (no more silent 30min hangs)
 
-### Stores (plugin)
+### Stores (plugin) — [guía](https://github.com/Matts-lab69/CorkyTux-Plugins/blob/main/heroic-store/README.md)
 - Epic + GOG via own `legendary`/`gogdl` binaries (`setup` downloads to
   `plugins/heroic-store/bin/`), own session
 - Embedded WebKit Epic login with auto-capture, GOG token auth
@@ -144,6 +146,17 @@ src/backend/plugin_process.rs  JSON-lines spawn + 50ms pump
 src/backend/game_model.rs GameEntry <-> Games.ini
 src/backend/config.rs   Launcher.ini + Games.ini
 ```
+
+---
+
+## Credits
+
+- [@Cristioro](https://github.com/Cristioro) — ideas para la UI y sugerencias
+  para hacer más eficiente el código.
+- [christvh / box-rpg](https://gitlab.com/christvh/box-rpg) — usé la lógica de
+  este repositorio para adaptarla a una UI (runtime RPG Maker).
+- [@ZzEdovec](https://github.com/ZzEdovec) — en algunas interfaces o iconos
+  usé o me basé en los repositorios de esta persona.
 
 ---
 
