@@ -126,6 +126,8 @@ pub fn show_add_game_modal(
         });
     }
     let (app_card, _) = mk_card("AppImage", "Run portable .AppImage apps natively");
+    // Only offered when the plugin is installed (requires appimage-launcher).
+    app_card.set_visible(state.plugins.is_available("appimage-launcher"));
     cards_box.append(&app_card);
     {
         let wiz_c = wiz.clone();
@@ -143,6 +145,8 @@ pub fn show_add_game_modal(
         });
     }
     let (rpg_card, _) = mk_card("RPG Maker", "Run RPG Maker MV/MZ/2k3 games via box-rpg");
+    // Only offered when the plugin is installed (requires rpgmaker-runtime).
+    rpg_card.set_visible(state.plugins.is_available("rpgmaker-runtime"));
     cards_box.append(&rpg_card);
     {
         let wiz_c = wiz.clone();

@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::backend::config::ConfigManager;
+use crate::backend::plugins::PluginManager;
 use crate::backend::theme::ThemeManager;
 use crate::ui::helpers;
 
@@ -22,6 +23,9 @@ pub struct Sidebar {
     pub on_filter_changed: FilterCallback,
     config: ConfigManager,
     theme: ThemeManager,
+    mc_btn: gtk::Button,
+    store_btn: gtk::Button,
+    plugins: Rc<RefCell<Option<PluginManager>>>,
 }
 
 impl Sidebar {
@@ -75,6 +79,9 @@ impl Sidebar {
                 }
             });
         }
+        // Entry buttons stay hidden until a plugin manager confirms the
+        // matching plugin is installed (see refresh_plugin_buttons).
+        mc_btn.set_visible(false);
         header_row.append(&mc_btn);
         let store_btn = gtk::Button::new();
         store_btn.set_tooltip_text(Some("Stores (Epic / GOG)"));
@@ -94,6 +101,7 @@ impl Sidebar {
                 }
             });
         }
+        store_btn.set_visible(false);
         header_row.append(&store_btn);
         header_card_inner.append(&header_row);
         let title_sep = gtk::Separator::new(gtk::Orientation::Horizontal);
@@ -241,6 +249,33 @@ impl Sidebar {
             on_filter_changed,
             config: cfg.clone(),
             theme: theme.clone(),
+            mc_btn: mc_btn.clone(),
+            store_btn: store_btn.clone(),
+            plugins: Rc::new(RefCell::new(None)),
+        }
+    }
+
+    /// Attach the plugin manager and show/hide the Minecraft + Stores
+    /// entry buttons depending on installed plugins.
+    pub fn set_plugin_manager(&self, pm: &PluginManager) {
+        *self.plugins.borrow_mut() = Some(pm.clone());
+        self.refresh_plugin_buttons();
+    }
+
+    /// Show each entry button only when its plugin is installed
+    /// (minecraft-launcher / heroic-store) and enabled.
+    pub fn refresh_plugin_buttons(&self) {
+        let pm = self.plugins.borrow().clone();
+        match pm {
+            Some(p) => {
+                p.refresh();
+                self.mc_btn.set_visible(p.is_available("minecraft-launcher"));
+                self.store_btn.set_visible(p.is_available("heroic-store"));
+            }
+            None => {
+                self.mc_btn.set_visible(false);
+                self.store_btn.set_visible(false);
+            }
         }
     }
 
@@ -294,6 +329,7 @@ impl Sidebar {
     }
 
     pub fn refresh_list(&self, names: &[String]) {
+        self.refresh_plugin_buttons();
         self.list_box.remove_all();
         self.game_names.borrow_mut().clear();
         for name in names {

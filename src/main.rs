@@ -350,6 +350,8 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     // Build sidebar
     let page_cb: ui::sidebar::PageCallback = Rc::new(RefCell::new(None));
     let sidebar = Sidebar::new_with_callbacks(&state.config, &state.theme, &game_cb, &filter_cb, &page_cb);
+    // Gate Minecraft/Stores entry buttons on installed plugins.
+    sidebar.set_plugin_manager(&state.plugins);
     let sidebar_ref: Rc<RefCell<Option<Sidebar>>> = Rc::new(RefCell::new(Some(sidebar.clone())));
     *sidebar_ref_for_filter.borrow_mut() = Some(sidebar_ref.clone());
 

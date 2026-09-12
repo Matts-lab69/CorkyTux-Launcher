@@ -262,6 +262,23 @@ impl PluginManager {
         Some(info)
     }
 
+    /// UI gating: true when the plugin is installed (listed under this id
+    /// or manifest dir present) and not explicitly disabled.
+    /// Sidebar buttons (Minecraft/Stores) and AddGame cards (AppImage/RPG
+    /// Maker) are only shown when this returns true.
+    pub fn is_available(&self, plugin_id: &str) -> bool {
+        if let Some(p) = self.imp().plugins.borrow().iter().find(|p| p.id == plugin_id) {
+            return p.enabled;
+        }
+        if self.plugins_dir().join(plugin_id).join("plugin.json").exists() {
+            return super::ConfigManager::new()
+                .launcher_value_in("Plugins", &format!("{}.enabled", plugin_id))
+                .map(|v| v != "0")
+                .unwrap_or(true);
+        }
+        false
+    }
+
     pub fn is_enabled(&self, plugin_id: &str) -> bool {
         self.imp()
             .plugins

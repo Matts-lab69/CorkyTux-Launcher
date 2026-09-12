@@ -52,7 +52,17 @@ pub fn show_settings_modal(
     let dlg_alive: Rc<Cell<bool>> = Rc::new(Cell::new(true));
     {
         let alive = dlg_alive.clone();
-        dialog.connect_closed(move |_| { alive.set(false); });
+        let closed_state = state.clone();
+        let closed_sb = sidebar.clone();
+        dialog.connect_closed(move |_| {
+            alive.set(false);
+            // Plugins may have been installed/removed/toggled: rescan and
+            // update gated UI (sidebar Minecraft/Stores buttons).
+            closed_state.plugins.refresh();
+            if let Some(ref sb) = *closed_sb.borrow() {
+                sb.refresh_plugin_buttons();
+            }
+        });
     }
     outer.append(&header_row);
 
