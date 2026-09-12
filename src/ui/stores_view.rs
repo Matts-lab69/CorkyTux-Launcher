@@ -109,8 +109,12 @@ impl StoresView {
         let setup_status = note("");
         setup_status.set_visible(false);
         col.append(&setup_status);
+        // Filled with the per-store handles below; setup success refreshes
+        // both account badges (no more stale "Tools missing").
+        let handles_slot: Rc<RefCell<Vec<StorePageHandle>>> = Rc::new(RefCell::new(Vec::new()));
         {
             let st = setup_status.clone();
+            let slot_c = handles_slot.clone();
             setup_btn.connect_clicked(move |_| {
                 st.set_visible(true);
                 st.set_text("Downloading legendary + gogdl…");
@@ -122,9 +126,14 @@ impl StoresView {
                     }).map_err(|e| e.to_string()));
                 });
                 let sc = st.clone();
+                let slot_cc = slot_c.clone();
                 crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
                     Ok(Ok(msg)) => {
                         sc.set_text(&msg);
+                        for h in slot_cc.borrow().iter() {
+                            h.refresh_auth();
+                            h.refresh_library(true);
+                        }
                         glib::ControlFlow::Break
                     }
                     Ok(Err(e)) => {
@@ -210,6 +219,7 @@ impl StoresView {
         if let Some(first) = handles.first() {
             first.ensure_loaded();
         }
+        *handles_slot.borrow_mut() = handles;
         Self { widget: scroll }
     }
 
