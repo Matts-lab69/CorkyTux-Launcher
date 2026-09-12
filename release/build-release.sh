@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# ─── CorkyTux Release Builder v3.0.5 (Rust) ─────────────────────
+# ─── CorkyTux Release Builder v3.0.6 (Rust) ─────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/.."
 

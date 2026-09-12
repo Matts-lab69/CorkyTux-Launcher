@@ -285,8 +285,10 @@ impl StoresView {
             let promo_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
             let promo_scroll = gtk::ScrolledWindow::new();
             promo_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-            promo_scroll.set_max_content_height(360);
+            promo_scroll.set_min_content_height(180);
+            promo_scroll.set_max_content_height(480);
             promo_scroll.set_propagate_natural_height(true);
+            promo_scroll.set_vexpand(false);
             promo_scroll.set_child(Some(&promo_list));
             promo_inner.append(&promo_scroll);
             page.append(&promo_frame);
@@ -316,9 +318,9 @@ impl StoresView {
                             let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                             if !cover.is_empty() {
                                 let img = gtk::Image::new();
-                                img.set_pixel_size(64);
+                                img.set_pixel_size(52);
                                 img.set_valign(gtk::Align::Center);
-                                crate::ui::minecraft_view::load_mod_icon(&cover, &format!("promo-{}", t), &img, 64);
+                                crate::ui::minecraft_view::load_mod_icon(&cover, &format!("promo-{}", t), &img, 52);
                                 row.append(&img);
                             }
                             let mid = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -362,8 +364,10 @@ impl StoresView {
             let deals_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
             let deals_scroll = gtk::ScrolledWindow::new();
             deals_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-            deals_scroll.set_max_content_height(420);
+            deals_scroll.set_min_content_height(300);
+            deals_scroll.set_max_content_height(640);
             deals_scroll.set_propagate_natural_height(true);
+            deals_scroll.set_vexpand(false);
             deals_scroll.set_child(Some(&deals_list));
             deals_inner.append(&deals_scroll);
             page.append(&deals_frame);
@@ -398,9 +402,9 @@ impl StoresView {
                                 let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                                 if !cover.is_empty() {
                                     let img = gtk::Image::new();
-                                    img.set_pixel_size(64);
+                                    img.set_pixel_size(52);
                                     img.set_valign(gtk::Align::Center);
-                                    crate::ui::minecraft_view::load_mod_icon(&cover, &format!("deal-{}", t), &img, 64);
+                                    crate::ui::minecraft_view::load_mod_icon(&cover, &format!("deal-{}", t), &img, 52);
                                     row.append(&img);
                                 }
                                 let mid = gtk::Box::new(gtk::Orientation::Vertical, 2);
