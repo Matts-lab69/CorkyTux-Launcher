@@ -930,9 +930,8 @@ impl StorePageHandle {
         let dlg = adw::Dialog::new();
         dlg.set_title(&game.title);
         dlg.set_content_width(560);
-        // Compact: cover (160) + buttons fit ~360; long descs use the
-        // "Read more" scroller instead of dead empty space.
-        dlg.set_content_height(380);
+        // No fixed height: the dialog sizes itself to the content
+        // (cover + description + buttons); long descs use "Read more".
         let (header, x_btn) = helpers::modal_header(&game.title);
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
         content.add_css_class("modal-bg");
