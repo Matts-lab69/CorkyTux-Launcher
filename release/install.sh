@@ -188,8 +188,8 @@ if ! echo "$PATH" | tr ':' '\n' | grep -qxF "$BIN_DIR"; then
 fi
 
 echo ""
-echo -e "${BOLD}Plugins se instalan por separado desde el launcher${NC}"
-echo "  Settings > Plugins, o repo: https://github.com/Matts-lab69/CorkyTux-Plugins"
+echo -e "${BOLD}Plugins install separately from the launcher${NC}"
+echo "  Settings > Plugins, or repo: https://github.com/Matts-lab69/CorkyTux-Plugins"
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║           Installation complete!             ║${NC}"
