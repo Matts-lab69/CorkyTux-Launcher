@@ -56,13 +56,13 @@ Epic/GOG stores, AppImages, RPG Maker, dependencies, DLLs and more
 - EAC / BattlEye runtimes (Heroic), EOS auth (Epic), Wine virtual desktop (`user.reg`)
 - Custom env vars, launch args, DLL overrides, Steam/Lutris/Heroic scan + import
 
-### Minecraft (plugin) — [guide](https://github.com/Matts-lab69/CorkyTux-Plugins/blob/main/minecraft-launcher/README.md)
+### Minecraft (plugin) — [Guide](https://github.com/Matts-lab69/CorkyTux-Plugins/blob/main/minecraft-launcher/README.md)
 - Offline / Microsoft / Ely.by accounts, Java 8/17/21/25 auto-detect
   (`~/jdk`, `/opt/jvm`, `/usr/lib/jvm`, `update-alternatives`), isolated instances
 - Fabric/Forge/Quilt/NeoForge loaders, Modrinth (search/install/update + sidecars),
   `.mrpack` install/import, CurseForge (integrated public key)
 
-### Stores (plugin) — [guide](https://github.com/Matts-lab69/CorkyTux-Plugins/blob/main/heroic-store/README.md)
+### Stores (plugin) — [Guide](https://github.com/Matts-lab69/CorkyTux-Plugins/blob/main/heroic-store/README.md)
 - Epic + GOG via own `legendary`/`gogdl` binaries (`setup` downloads to
   `plugins/heroic-store/bin/`), own session
 - Embedded WebKit Epic login with auto-capture, GOG token auth
@@ -70,14 +70,14 @@ Epic/GOG stores, AppImages, RPG Maker, dependencies, DLLs and more
   (%/price/end verified), GOG store search + buy with prices
 - Installs go to native library (`~/Games/Heroic`) with launcher Proton/prefix
 
-### Emulators & tools (plugins)
+### Emulators & tools (Plugins)
 - **Emulator manager** (`emulator-manager`) — 12+ retro emulators
   (Dolphin, PCSX2, PPSSPP, RPCS3, Ryujinx, melonDS, Mupen64Plus, DuckStation,
   Cemu, Vita3K, Azahar…): AppImage install or link existing (native/Flatpak),
   ROM auto-detect, per-emulator executors in Add Game
-- **AppImage launcher** (`appimage-launcher`) — [guide](https://github.com/Matts-lab69/CorkyTux-Plugins/blob/main/appimage-launcher/README.md):
+- **AppImage launcher** (`appimage-launcher`) — [Guide](https://github.com/Matts-lab69/CorkyTux-Plugins/blob/main/appimage-launcher/README.md):
   scan, integrate into `~/Applications`, detached launch
-- **RPG Maker runtime** (`rpgmaker-runtime`) — [guide](https://github.com/Matts-lab69/CorkyTux-Plugins/blob/main/rpgmaker-runtime/README.md):
+- **RPG Maker runtime** (`rpgmaker-runtime`) — [Guide](https://github.com/Matts-lab69/CorkyTux-Plugins/blob/main/rpgmaker-runtime/README.md):
   MV/MZ (NW.js) and 2000/2003 (EasyRPG) via bundled box-rpg
 - **Dependency installer** (`dependency-installer`) — smart detection of missing
   Windows components (VC++, DirectX, .NET…): DLL-import scan, only what Wine/Proton lacks
