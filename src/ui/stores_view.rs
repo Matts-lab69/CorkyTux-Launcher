@@ -43,13 +43,10 @@ impl StoresView {
         }
         if let Some(ds) = self.deals.borrow().get("epic") {
             if ds.list.first_child().is_none() {
-                ds.next.set(0);
-                ds.total.set(u64::MAX);
-                ds.shown.set(0);
-                ds.seen.borrow_mut().clear();
+                ds.page.set(1);
                 ds.lbl.set_text("Loading…");
-                if let Some(f) = ds.loader.borrow().as_ref() {
-                    f(0);
+                if let Some(g) = ds.goto.borrow().as_ref() {
+                    g(1);
                 }
             }
         }
@@ -63,10 +60,7 @@ impl StoresView {
         }
         if let Some(ds) = self.deals.borrow().get("epic") {
             ds.epoch.set(ds.epoch.get().wrapping_add(1));
-            ds.next.set(0);
-            ds.total.set(u64::MAX);
-            ds.shown.set(0);
-            ds.seen.borrow_mut().clear();
+            ds.page.set(1);
             while let Some(c) = ds.list.first_child() {
                 ds.list.remove(&c);
             }
@@ -423,19 +417,30 @@ impl StoresView {
             deals_scroll.set_vexpand(false);
             deals_scroll.set_child(Some(&deals_list));
             deals_inner.append(&deals_scroll);
+            // Numbered pager: 10 deals per page, switching pages drops
+            // the previous rows (RAM-friendly no matter how many offers).
+            let pager_bar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+            pager_bar.set_halign(gtk::Align::Center);
+            pager_bar.set_margin_top(4);
+            deals_inner.append(&pager_bar);
             page.append(&deals_frame);
             {
-                // Paged deals + infinite scroll: 40 per page over the full
-                // on-sale catalog (~2000). Titles deduped across pages
-                // (verified promos repeat inside catalog pages).
+                // Paged deals: 10 per page over the full on-sale catalog
+                // (~2000). Titles deduped across pages (verified promos
+                // repeat inside catalog pages).
+                const PER_PAGE: u64 = 10;
                 let seen: Rc<RefCell<std::collections::HashSet<String>>> =
                     Rc::new(RefCell::new(std::collections::HashSet::new()));
                 let next: Rc<std::cell::Cell<u64>> = Rc::new(std::cell::Cell::new(0));
                 let total: Rc<std::cell::Cell<u64>> = Rc::new(std::cell::Cell::new(u64::MAX));
                 let loading: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(false));
                 let shown: Rc<std::cell::Cell<usize>> = Rc::new(std::cell::Cell::new(0));
+                let page: Rc<std::cell::Cell<usize>> = Rc::new(std::cell::Cell::new(1));
+                let pages: Rc<std::cell::Cell<usize>> = Rc::new(std::cell::Cell::new(1));
                 let loader: Rc<RefCell<Option<Rc<dyn Fn(u64)>>>> = Rc::new(RefCell::new(None));
                 let epoch: Rc<std::cell::Cell<u64>> = Rc::new(std::cell::Cell::new(0));
+                let goto_slot: Rc<RefCell<Option<Rc<dyn Fn(usize)>>>> = Rc::new(RefCell::new(None));
+                let rebuild_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
                 {
                     let list_c = deals_list.clone();
                     let epoch_c = epoch.clone();
@@ -446,6 +451,9 @@ impl StoresView {
                     let loading_c = loading.clone();
                     let shown_c = shown.clone();
                     let st_c = state.clone();
+                    let page_c = page.clone();
+                    let pages_c = pages.clone();
+                    let rebuild_c = rebuild_slot.clone();
                     *loader.borrow_mut() = Some(Rc::new(move |start: u64| {
                         if loading_c.get() {
                             return;
@@ -453,7 +461,7 @@ impl StoresView {
                         loading_c.set(true);
                         let (tx, rx) = std::sync::mpsc::channel::<serde_json::Value>();
                         std::thread::spawn(move || {
-                            let _ = tx.send(StoreManager::epic_deals(start, 40).unwrap_or_default());
+                            let _ = tx.send(StoreManager::epic_deals(start, PER_PAGE).unwrap_or_default());
                         });
                         let list_cc = list_c.clone();
                         let lbl_cc = lbl_c.clone();
@@ -465,6 +473,9 @@ impl StoresView {
                         let st_cc = st_c.clone();
                         let epoch_cc = epoch_c.clone();
                         let my_epoch = epoch_c.get();
+                        let page_cc = page_c.clone();
+                        let pages_cc = pages_c.clone();
+                        let rebuild_cc = rebuild_c.clone();
                         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
                             Ok(doc) => {
                                 if epoch_cc.get() != my_epoch {
@@ -549,12 +560,15 @@ impl StoresView {
                                 shown_cc.set(shown_cc.get() + added);
                                 loading_cc.set(false);
                                 let s = shown_cc.get();
+                                let npages = ((total_cc.get() + PER_PAGE - 1) / PER_PAGE).max(1) as usize;
+                                pages_cc.set(npages);
                                 if s == 0 {
                                     lbl_cc.set_text("No offers right now.");
-                                } else if next_cc.get() < total_cc.get() {
-                                    lbl_cc.set_text(&format!("Showing {} of ~{} — scroll for more", s, total_cc.get()));
                                 } else {
-                                    lbl_cc.set_text(&format!("Showing all {} offers", s));
+                                    lbl_cc.set_text(&format!("Page {} of ~{}", page_cc.get().max(1), npages));
+                                }
+                                if let Some(r) = rebuild_cc.borrow().as_ref() {
+                                    r();
                                 }
                                 glib::ControlFlow::Break
                             }
@@ -563,36 +577,100 @@ impl StoresView {
                         });
                     }) as Rc<dyn Fn(u64)>);
                 }
-                if let Some(f) = loader.borrow().as_ref() {
-                    f(0);
+                // Goto page: drop current rows (frees RAM), bump the epoch
+                // so late loads can't repopulate, then fetch the page.
+                {
+                    let list_c = deals_list.clone();
+                    let lbl_c = deals_lbl.clone();
+                    let page_c = page.clone();
+                    let pages_c = pages.clone();
+                    let seen_c = seen.clone();
+                    let loader_c = loader.clone();
+                    let epoch_c = epoch.clone();
+                    *goto_slot.borrow_mut() = Some(Rc::new(move |p: usize| {
+                        let n = pages_c.get().max(1);
+                        let p = p.clamp(1, n);
+                        epoch_c.set(epoch_c.get().wrapping_add(1));
+                        while let Some(c) = list_c.first_child() {
+                            list_c.remove(&c);
+                        }
+                        seen_c.borrow_mut().clear();
+                        page_c.set(p);
+                        lbl_c.set_text("Loading…");
+                        if let Some(f) = loader_c.borrow().as_ref() {
+                            f(((p - 1) as u64) * PER_PAGE);
+                        }
+                    }) as Rc<dyn Fn(usize)>);
+                }
+                // Pager buttons: « 1 … c-1 c c+1 … N ».
+                {
+                    let bar_c = pager_bar.clone();
+                    let page_c = page.clone();
+                    let pages_c = pages.clone();
+                    let goto_c = goto_slot.clone();
+                    *rebuild_slot.borrow_mut() = Some(Rc::new(move || {
+                        while let Some(c) = bar_c.first_child() {
+                            bar_c.remove(&c);
+                        }
+                        let cur = page_c.get().max(1);
+                        let n = pages_c.get().max(1);
+                        let nav = |label: &str, target: usize, sensitive: bool| {
+                            let b = gtk::Button::with_label(label);
+                            b.add_css_class("settings-btn");
+                            b.set_sensitive(sensitive);
+                            let goto_cc = goto_c.clone();
+                            b.connect_clicked(move |_| {
+                                if let Some(g) = goto_cc.borrow().as_ref() {
+                                    g(target);
+                                }
+                            });
+                            bar_c.append(&b);
+                        };
+                        nav("«", cur.saturating_sub(1).max(1), cur > 1);
+                        let mut nums = vec![1usize, n];
+                        for d in -2i32..=2 {
+                            let t = cur as i32 + d;
+                            if t >= 1 && (t as usize) <= n {
+                                nums.push(t as usize);
+                            }
+                        }
+                        nums.sort_unstable();
+                        nums.dedup();
+                        let mut last = 0usize;
+                        for t in nums {
+                            if t > last + 1 {
+                                let e = gtk::Label::new(Some("…"));
+                                e.set_opacity(0.6);
+                                bar_c.append(&e);
+                            }
+                            let b = gtk::Button::with_label(&t.to_string());
+                            b.add_css_class(if t == cur { "add-btn" } else { "settings-btn" });
+                            b.set_sensitive(t != cur);
+                            let goto_cc = goto_c.clone();
+                            b.connect_clicked(move |_| {
+                                if let Some(g) = goto_cc.borrow().as_ref() {
+                                    g(t);
+                                }
+                            });
+                            bar_c.append(&b);
+                            last = t;
+                        }
+                        nav("»", (cur + 1).min(n), cur < n);
+                    }) as Rc<dyn Fn()>);
                 }
                 // Register pager state so leaving the page can drop rows/covers.
                 deals_map.borrow_mut().insert(store.to_string(), DealsState {
                     list: deals_list.clone(),
                     lbl: deals_lbl.clone(),
-                    next: next.clone(),
-                    total: total.clone(),
-                    shown: shown.clone(),
-                    seen: seen.clone(),
+                    page: page.clone(),
+                    pages: pages.clone(),
                     loader: loader.clone(),
+                    goto: goto_slot.clone(),
                     epoch: epoch.clone(),
                 });
-                {
-                    let adj = deals_scroll.vadjustment();
-                    let load_c = loader.clone();
-                    let next_c = next.clone();
-                    let total_c = total.clone();
-                    let loading_c = loading.clone();
-                    adj.connect_value_changed(move |a| {
-                        if loading_c.get() || next_c.get() >= total_c.get() {
-                            return;
-                        }
-                        if a.value() + a.page_size() >= a.upper() - 300.0 {
-                            if let Some(f) = load_c.borrow().as_ref() {
-                                f(next_c.get());
-                            }
-                        }
-                    });
+                let first = goto_slot.borrow().as_ref().cloned();
+                if let Some(g) = first {
+                    g(1);
                 }
             }
             // Epic has no public search API: browser search with the query.
@@ -833,11 +911,10 @@ impl StoresView {
 struct DealsState {
     list: gtk::Box,
     lbl: gtk::Label,
-    next: Rc<std::cell::Cell<u64>>,
-    total: Rc<std::cell::Cell<u64>>,
-    shown: Rc<std::cell::Cell<usize>>,
-    seen: Rc<RefCell<std::collections::HashSet<String>>>,
+    page: Rc<std::cell::Cell<usize>>,
+    pages: Rc<std::cell::Cell<usize>>,
     loader: Rc<RefCell<Option<Rc<dyn Fn(u64)>>>>,
+    goto: Rc<RefCell<Option<Rc<dyn Fn(usize)>>>>,
     epoch: Rc<std::cell::Cell<u64>>,
 }
 

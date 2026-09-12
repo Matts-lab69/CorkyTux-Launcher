@@ -98,9 +98,9 @@ Epic/GOG stores, AppImages, RPG Maker, dependencies, DLLs and more
 > **Do NOT use `sudo`** — installs to `~/.local/`.
 
 ```bash
-# 1. Download corkytux-3.0.9-linux-x86_64.tar.gz from Releases
-tar -xzf corkytux-3.0.9-linux-x86_64.tar.gz
-cd corkytux-3.0.9 && ./install.sh
+# 1. Download corkytux-3.0.10-linux-x86_64.tar.gz from Releases
+tar -xzf corkytux-3.0.10-linux-x86_64.tar.gz
+cd corkytux-3.0.10 && ./install.sh
 # Run: corkytux  (or app menu > CorkyTux)
 # Uninstall: ./uninstall.sh
 ```
@@ -166,8 +166,6 @@ src/backend/config.rs   Launcher.ini + Games.ini
 
 - [@Cristioro](https://github.com/Cristioro) — UI ideas and suggestions
   to make the code more efficient.
-- [christvh / box-rpg](https://gitlab.com/christvh/box-rpg) — I used the logic
-  from this repository and adapted it to a UI (RPG Maker runtime).
 - [@ZzEdovec](https://github.com/ZzEdovec) — for some interfaces and icons
   I used or took inspiration from this person's repositories.
 

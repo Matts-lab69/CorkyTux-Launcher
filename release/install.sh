@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ─── CorkyTux Installer v3.0.9 (Rust + GTK4/libadwaita) ──────────
+# ─── CorkyTux Installer v3.0.10 (Rust + GTK4/libadwaita) ──────────
 # Installs prebuilt binary to user dir. NO sudo.
 # Supports: Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE
 
@@ -10,7 +10,7 @@ INSTALL_DIR="${HOME}/.local/share/corkytux"
 BIN_DIR="${HOME}/.local/bin"
 ICON_DIR="${HOME}/.local/share/icons"
 DESKTOP_DIR="${HOME}/.local/share/applications"
-VERSION="3.0.9"
+VERSION="3.0.10"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

@@ -9,7 +9,7 @@ ICON_DIR="${HOME}/.local/share/icons"
 DESKTOP_DIR="${HOME}/.local/share/applications"
 
 echo ""
-echo "=== CorkyTux Uninstaller v3.0.9 ==="
+echo "=== CorkyTux Uninstaller v3.0.10 ==="
 echo ""
 
 if [[ "${EUID}" -eq 0 ]]; then
