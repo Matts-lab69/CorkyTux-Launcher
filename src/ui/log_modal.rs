@@ -12,6 +12,7 @@ pub struct LogModal {
     game_name: String,
     search_mark: gtk::TextMark,
     parent: gtk::Widget,
+    scroll: gtk::ScrolledWindow,
 }
 
 impl LogModal {
@@ -215,13 +216,15 @@ impl LogModal {
 
         dialog.set_child(Some(&content));
 
-        Self { dialog, log_buffer, status_label, game_name: game_name.to_string(), search_mark, parent: parent.upcast_ref::<gtk::Widget>().clone() }
+        Self { dialog, log_buffer, status_label, game_name: game_name.to_string(), search_mark, parent: parent.upcast_ref::<gtk::Widget>().clone(), scroll }
     }
 
     pub fn set_log(&self, text: &str) {
+        let saved = self.scroll.vadjustment().value();
         self.log_buffer.set_text(text);
         Self::paint_levels(&self.log_buffer);
         self.search_mark_reset();
+        self.scroll.vadjustment().set_value(saved);
     }
 
     fn search_mark_reset(&self) {
@@ -288,12 +291,15 @@ impl LogModal {
         let game = game_name.to_string();
         let p = proton.clone();
         let head = header.to_string();
+        let adj = self.scroll.vadjustment();
         buf.set_text(&format!("{}\nStarting...\n", head));
         glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
             let text = crate::backend::proton::ProtonManager::read_log(&game);
             if !text.is_empty() {
+                let saved = adj.value();
                 buf.set_text(&format!("{}\n{}", head, text));
                 Self::paint_levels(&buf);
+                adj.set_value(saved);
             }
             if p.is_game_running() {
                 glib::ControlFlow::Continue

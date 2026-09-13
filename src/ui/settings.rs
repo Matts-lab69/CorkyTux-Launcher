@@ -389,17 +389,22 @@ pub fn show_settings_modal(
             .unwrap_or(0),
     );
     default_proton.set_hexpand(true);
+    let rebuilding: Rc<Cell<bool>> = Rc::new(Cell::new(false));
     {
         let state_c = state.clone();
         // Ignore the build-time set_selected emission so opening Settings
         // with an empty scan never wipes a stored default.
+        // Also block the callback during rebuild_installed (line 601)
+        // which calls set_selected and would overwrite the saved default.
         let ready = Rc::new(Cell::new(false));
         let ready_c = ready.clone();
+        let rebuilding_c = rebuilding.clone();
         let saved_names: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(installed_names.clone()));
         {
             let sn = saved_names.clone();
-            default_proton.connect_selected_notify(move |d| {
-                if !ready_c.get() {
+            let rebuilding_c2 = rebuilding_c.clone();
+            let h = default_proton.connect_selected_notify(move |d| {
+                if !ready_c.get() || rebuilding_c2.get() {
                     return;
                 }
                 let names = sn.borrow();
@@ -508,6 +513,7 @@ pub fn show_settings_modal(
         let def_drop = default_proton.clone();
         let status_c = proton_status.clone();
         let win_c = parent.clone();
+        let rebuilding_c = rebuilding.clone();
         move || {
             // Default dropdown follows the fresh scan (new paths appear).
             let fresh_names = proton_c.installed_protons();
@@ -517,6 +523,7 @@ pub fn show_settings_modal(
             }
             def_drop.set_model(Some(&def_sl.clone().upcast::<gio::ListModel>()));
             let cur_def = state_c.config.launcher_value("defaultProton").unwrap_or_default();
+            rebuilding_c.set(true);
             def_drop.set_selected(
                 fresh_names
                     .iter()
@@ -524,6 +531,7 @@ pub fn show_settings_modal(
                     .map(|i| (i + 1) as u32)
                     .unwrap_or(0),
             );
+            rebuilding_c.set(false);
             while let Some(child) = ibox.first_child() {
                 ibox.remove(&child);
             }
@@ -1807,7 +1815,7 @@ pub fn show_settings_modal(
     let about_name = gtk::Label::new(Some("CorkyTux"));
     about_name.add_css_class("details-title");
     about_page.append(&about_name);
-    let about_ver = gtk::Label::new(Some("v3.0.12"));
+    let about_ver = gtk::Label::new(Some("v3.0.13"));
     about_ver.set_opacity(0.6);
     about_page.append(&about_ver);
     let about_author = gtk::Label::new(Some("by Matts-lab69"));
