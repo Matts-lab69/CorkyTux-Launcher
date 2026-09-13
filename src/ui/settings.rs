@@ -395,19 +395,26 @@ pub fn show_settings_modal(
         // with an empty scan never wipes a stored default.
         let ready = Rc::new(Cell::new(false));
         let ready_c = ready.clone();
-        default_proton.connect_selected_notify(move |d| {
-            if !ready_c.get() {
-                return;
-            }
-            let names = state_c.proton.installed_protons();
-            let idx = d.selected() as usize;
-            let val = if idx == 0 || idx > names.len() {
-                String::new()
-            } else {
-                names[idx - 1].clone()
-            };
-            state_c.config.set_launcher_value("defaultProton", &val);
-        });
+        let saved_names: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(installed_names.clone()));
+        {
+            let sn = saved_names.clone();
+            default_proton.connect_selected_notify(move |d| {
+                if !ready_c.get() {
+                    return;
+                }
+                let names = sn.borrow();
+                let idx = d.selected() as usize;
+                if names.is_empty() {
+                    return;
+                }
+                let val = if idx == 0 || idx > names.len() {
+                    String::new()
+                } else {
+                    names[idx - 1].clone()
+                };
+                state_c.config.set_launcher_value("defaultProton", &val);
+            });
+        }
         ready.set(true);
     }
     def_row.append(&default_lbl);
@@ -1800,7 +1807,7 @@ pub fn show_settings_modal(
     let about_name = gtk::Label::new(Some("CorkyTux"));
     about_name.add_css_class("details-title");
     about_page.append(&about_name);
-    let about_ver = gtk::Label::new(Some("v3.0.11"));
+    let about_ver = gtk::Label::new(Some("v3.0.12"));
     about_ver.set_opacity(0.6);
     about_page.append(&about_ver);
     let about_author = gtk::Label::new(Some("by Matts-lab69"));
