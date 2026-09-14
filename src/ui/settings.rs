@@ -394,30 +394,41 @@ pub fn show_settings_modal(
         let state_c = state.clone();
         // Ignore the build-time set_selected emission so opening Settings
         // with an empty scan never wipes a stored default.
-        // Also block the callback during rebuild_installed (line 601)
-        // which calls set_selected and would overwrite the saved default.
+        // Also block the callback during rebuild_installed which calls
+        // set_model()/set_selected(). rebuilding MUST be raised BEFORE
+        // set_model(): GTK4 resets the selection to 0 and emits
+        // notify::selected synchronously there (verified empirically),
+        // so any guard placed after set_model is too late and wipes
+        // defaultProton="" on every open. This was the "3 releases" bug.
         let ready = Rc::new(Cell::new(false));
         let ready_c = ready.clone();
         let rebuilding_c = rebuilding.clone();
-        let saved_names: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(installed_names.clone()));
         {
-            let sn = saved_names.clone();
             let rebuilding_c2 = rebuilding_c.clone();
-            let h = default_proton.connect_selected_notify(move |d| {
+            let state_c2 = state_c.clone();
+            let _h = default_proton.connect_selected_notify(move |d| {
                 if !ready_c.get() || rebuilding_c2.get() {
                     return;
                 }
-                let names = sn.borrow();
-                let idx = d.selected() as usize;
-                if names.is_empty() {
+                // Read the live model so indices stay correct even after
+                // protons were installed while Settings was open.
+                let idx = d.selected();
+                // Reject spurious, non-user emissions: during teardown GTK
+                // resets selected to GTK_INVALID_LIST_POSITION (u32::MAX).
+                // A real click can never have an out-of-model index.
+                let model = d.model();
+                let n = model.as_ref().map(|m| m.n_items()).unwrap_or(0);
+                if idx >= n {
                     return;
                 }
-                let val = if idx == 0 || idx > names.len() {
-                    String::new()
-                } else {
-                    names[idx - 1].clone()
-                };
-                state_c.config.set_launcher_value("defaultProton", &val);
+                let val = model
+                    .and_then(|m| m.item(idx))
+                    .map(|o| o.property::<String>("string"))
+                    .filter(|v| v != "(none)")
+                    .unwrap_or_default();
+                if state_c2.config.launcher_value("defaultProton").as_deref() != Some(val.as_str()) {
+                    state_c2.config.set_launcher_value("defaultProton", &val);
+                }
             });
         }
         ready.set(true);
@@ -521,9 +532,15 @@ pub fn show_settings_modal(
             for p in &fresh_names {
                 def_sl.append(p);
             }
+            // CRITICAL: set_model() resets the DropDown selection to 0 and
+            // emits notify::selected SYNCHRONOUSLY (GTK4, verified with a
+            // probe). The guard MUST be raised before building the model;
+            // the old order (set_model outside the guard) let the handler
+            // see rebuilding=false and wiped defaultProton="" on every
+            // Settings open — the "3 releases" bug.
+            rebuilding_c.set(true);
             def_drop.set_model(Some(&def_sl.clone().upcast::<gio::ListModel>()));
             let cur_def = state_c.config.launcher_value("defaultProton").unwrap_or_default();
-            rebuilding_c.set(true);
             def_drop.set_selected(
                 fresh_names
                     .iter()
