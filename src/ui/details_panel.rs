@@ -25,6 +25,7 @@ pub struct DetailsPanel {
     current_game: std::rc::Rc<std::cell::RefCell<Option<String>>>,
     pub action_buttons: std::rc::Rc<std::cell::RefCell<Vec<(String, gtk::Button, u8)>>>,
     actions_grid: gtk::Grid,
+    size_gen: std::rc::Rc<std::cell::RefCell<u64>>,
 }
 
 impl DetailsPanel {
@@ -128,14 +129,26 @@ impl DetailsPanel {
         let op = on_play.clone();
         let cg_play = current_game_rc.clone();
         let btn_parent = play_btn.clone();
+        let busy_flag: std::rc::Rc<std::cell::RefCell<bool>> = std::rc::Rc::new(std::cell::RefCell::new(false));
+        let busy_c = busy_flag.clone();
+        let btn_c = btn_parent.clone();
         play_btn.connect_clicked(move |_| {
+            if *busy_c.borrow() {
+                return;
+            }
+            *busy_c.borrow_mut() = true;
+            btn_c.set_sensitive(false);
             if let Some(ref name) = *cg_play.borrow() {
-                // Launches used to fail silently (let _ = ...): surface the
-                // reason (e.g. Proton not found) instead.
                 if let Err(e) = op(name.clone()) {
                     helpers::present_msg(&btn_parent, "Failed to launch", &e);
                 }
             }
+            let busy_r = busy_c.clone();
+            let btn_r = btn_c.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(800), move || {
+                *busy_r.borrow_mut() = false;
+                btn_r.set_sensitive(true);
+            });
         });
         content.append(&play_btn);
 
@@ -267,6 +280,7 @@ impl DetailsPanel {
             current_game: current_game_rc,
             action_buttons,
             actions_grid,
+            size_gen: std::rc::Rc::new(std::cell::RefCell::new(0)),
         };
 
         panel.revealer.set_child(Some(&panel.root));
@@ -331,18 +345,29 @@ impl DetailsPanel {
             .game_value(game_name, "InstallSize")
             .unwrap_or_default();
         let main_path = cfg.game_value(game_name, "MainPath").unwrap_or_default();
-        if size.is_empty() && !main_path.is_empty() {
-            // Big installs take seconds to walk: compute off-thread, cache it.
+        let gen = {
+            let mut g = self.size_gen.borrow_mut();
+            *g = g.wrapping_add(1);
+            *g
+        };
+        let expanded_main = shellexpand_tilde(&main_path);
+        let main_exists = !main_path.is_empty() && std::path::Path::new(&expanded_main).exists();
+        if !main_exists && !size.is_empty() {
+            crate::backend::config::ConfigManager::new().set_game_value(game_name, "InstallSize", "");
+        }
+        if size.is_empty() && main_exists {
             self.install_size_label.set_text("Size: …");
             let lbl = self.install_size_label.clone();
             let gname = game_name.to_string();
             let mpath = main_path.clone();
+            let gen_c = self.size_gen.clone();
+            let cur_c = self.current_game.clone();
             let (tx, rx) = std::sync::mpsc::channel::<String>();
             std::thread::spawn(move || {
                 let expanded = shellexpand_tilde(&mpath);
                 let path = std::path::Path::new(&expanded);
                 let text = if path.exists() {
-                    format!("Size: {}", format_size(query_folder_size(path)))
+                    format!("Size: {}", format_size(query_path_size(path)))
                 } else {
                     "Size: --".to_string()
                 };
@@ -350,9 +375,15 @@ impl DetailsPanel {
             });
             glib::timeout_add_local(std::time::Duration::from_millis(100), move || match rx.try_recv() {
                 Ok(text) => {
+                    if *gen_c.borrow() != gen {
+                        return glib::ControlFlow::Break;
+                    }
+                    if cur_c.borrow().as_deref() != Some(gname.as_str()) {
+                        return glib::ControlFlow::Break;
+                    }
                     lbl.set_text(&text);
                     if let Some(val) = text.strip_prefix("Size: ") {
-                        if val != "--" {
+                        if val != "--" && val != "…" {
                             crate::backend::config::ConfigManager::new()
                                 .set_game_value(&gname, "InstallSize", val);
                         }
@@ -363,6 +394,8 @@ impl DetailsPanel {
                 Err(_) => glib::ControlFlow::Break,
             });
         } else if size.is_empty() {
+            self.install_size_label.set_text("Size: --");
+        } else if !main_exists {
             self.install_size_label.set_text("Size: --");
         } else {
             self.install_size_label.set_text(&format!("Size: {}", size));
@@ -442,8 +475,9 @@ impl DetailsPanel {
     ) {
         let mut pos = 0;
         for (_, btn, _) in buttons.borrow().iter() {
-            // Detach first (no-op if not attached) then re-attach in order.
-            grid.remove(btn);
+            if btn.parent() == Some(grid.clone().upcast::<gtk::Widget>()) {
+                grid.remove(btn);
+            }
             if btn.is_visible() {
                 grid.attach(btn, (pos % 3) as i32, (pos / 3) as i32, 1, 1);
                 pos += 1;
@@ -526,15 +560,35 @@ fn shellexpand_tilde(s: &str) -> String {
     s.to_string()
 }
 
-fn query_folder_size(path: &std::path::Path) -> u64 {
+fn query_path_size(path: &std::path::Path) -> u64 {
+    if let Ok(md) = std::fs::symlink_metadata(path) {
+        if md.file_type().is_symlink() {
+            return 0;
+        }
+        if md.is_file() {
+            return md.len();
+        }
+    }
+    query_folder_size(path, 0)
+}
+
+fn query_folder_size(path: &std::path::Path, depth: u32) -> u64 {
+    if depth > 32 {
+        return 0;
+    }
     let mut total = 0;
     if let Ok(entries) = std::fs::read_dir(path) {
         for entry in entries.flatten() {
             let p = entry.path();
-            if p.is_file() {
-                total += std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
-            } else if p.is_dir() {
-                total += query_folder_size(&p);
+            if let Ok(md) = std::fs::symlink_metadata(&p) {
+                if md.file_type().is_symlink() {
+                    continue;
+                }
+                if md.is_file() {
+                    total += md.len();
+                } else if md.is_dir() {
+                    total += query_folder_size(&p, depth + 1);
+                }
             }
         }
     }

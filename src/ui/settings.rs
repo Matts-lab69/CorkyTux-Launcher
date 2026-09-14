@@ -1982,10 +1982,20 @@ fn rebuild_emu_rows(
             dot.add_css_class("emu-dot-off");
         }
         row.append(&dot);
+        let badge = if emu.source.is_empty() {
+            if emu.native { " (native)" } else { "" }
+        } else {
+            match emu.source.as_str() {
+                "linked" => " (linked)",
+                "system" => " (system)",
+                "appimage" => " (appimage)",
+                _ => "",
+            }
+        };
         let name_lbl = gtk::Label::new(Some(&format!(
             "{}{} — {}",
             emu.name,
-            if emu.native { " (native)" } else { "" },
+            badge,
             emu.description
         )));
         name_lbl.set_halign(gtk::Align::Start);
@@ -1998,20 +2008,36 @@ fn rebuild_emu_rows(
             st.set_width_chars(12);
             row.append(&st);
         }
-        let btn = gtk::Button::with_label(if emu.native {
-            "Linked"
-        } else if emu.installed {
-            "Remove"
+        // Button label and sensitivity based on source.
+        let is_appimage = emu.source == "appimage";
+        let is_none = emu.source == "none" || emu.source.is_empty();
+        let btn = if emu.source.is_empty() {
+            // Legacy backend fallback: honour native / installed directly.
+            gtk::Button::with_label(if emu.native {
+                "Linked"
+            } else if emu.installed {
+                "Remove"
+            } else {
+                "Install"
+            })
         } else {
-            "Install"
-        });
-        if !emu.native && !emu.installed {
+            gtk::Button::with_label(match emu.source.as_str() {
+                "linked" => "Linked",
+                "system" => "System",
+                "appimage" => "Remove",
+                _ => "Install",
+            })
+        };
+        if is_none && !emu.native {
             btn.add_css_class("add-btn");
         }
-        btn.set_sensitive(!emu.native);
+        // linked, system → disabled; appimage and none → enabled.
+        btn.set_sensitive(is_none || is_appimage);
         btn.set_width_request(80);
         let name_c = emu.name.clone();
-        let installed_c = emu.installed;
+        // For legacy backend fall back to installed; otherwise use source to
+        // decide the action (only appimage can be removed; none can be installed).
+        let remove_c = if emu.source.is_empty() { emu.installed } else { is_appimage };
         let state_c = state.clone();
         let status_c = emu_status.clone();
         let tx_c = tx.clone();
@@ -2021,7 +2047,7 @@ fn rebuild_emu_rows(
             let dir = state_c.plugins.plugins_dir();
             let name2 = name_c.clone();
             std::thread::spawn(move || {
-                let res = if installed_c {
+                let res = if remove_c {
                     crate::backend::plugins::PluginManager::remove_emulator_in(&dir, &name2)
                 } else {
                     crate::backend::plugins::PluginManager::install_emulator_in(&dir, &name2)

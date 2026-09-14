@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: local-hotfix <local-hotfix@localhost>
+Date: Sat, 14 Sep 2026 00:00:00 -0500
+Subject: [PATCH] Fix false-positive .NET installs for Unity/Mono games
+
+The dependency-installer only gated Mono detection for dotnet48 and
+dotnet35sp1. That allowed dotnet472 / dotnet40 / dotnet20 to be
+requested for games that already ship their own Mono runtime, which
+later caused winetricks to fail or leave the prefix in a broken state.
+
+Include all .NET Framework verbs in the Mono gate so Unity/Mono games
+stop triggering unnecessary .NET installations.
+---
+ dependency-installer/dependency-installer | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/dependency-installer/dependency-installer b/dependency-installer/dependency-installer
+index 2d85afa..9a99b9d 100755
+--- a/dependency-installer/dependency-installer
++++ b/dependency-installer/dependency-installer
+@@ -559,7 +559,7 @@
+         if dep.get("skip_if_wine"):
+             continue
+ 
+-        # If game ships with Mono, skip .NET detection (Mono handles it)
+-        if dep["id"] in ("dotnet48", "dotnet35sp1"):
++        # If game ships with Mono, skip .NET detection (Mono handles it).
++        # All .NET Framework verbs must be gated here, not only a subset,
++        # otherwise Unity/Mono games trigger false-positive dotnet installs
++        # that later fail or corrupt the prefix.
++        if dep["id"] in ("dotnet48", "dotnet472", "dotnet40", "dotnet35sp1", "dotnet20"):
+             has_mono = False
+             has_dotnet = False

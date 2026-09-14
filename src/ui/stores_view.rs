@@ -171,7 +171,7 @@ impl StoresView {
                     Ok(Ok(msg)) => {
                         sc.set_text(&msg);
                         for h in slot_cc.borrow().iter() {
-                            h.refresh_auth();
+                            h.refresh_auth(false);
                             h.refresh_library(true);
                         }
                         glib::ControlFlow::Break
@@ -483,12 +483,18 @@ impl StoresView {
                                     return glib::ControlFlow::Break;
                                 }
                                 let arr = doc.get("deals").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                                let fetched = doc.get("fetched").and_then(|v| v.as_u64()).unwrap_or(arr.len() as u64);
+                                let has_more = doc.get("has_more").and_then(|v| v.as_bool()).unwrap_or(false);
+                                let start = doc.get("start").and_then(|v| v.as_u64()).unwrap_or(start);
                                 if doc.get("deals").is_none() {
                                     // Backend error: stop paging.
                                     total_cc.set(next_cc.get());
                                 } else {
-                                    next_cc.set(doc.get("next").and_then(|v| v.as_u64()).unwrap_or(start));
-                                    total_cc.set(doc.get("total").and_then(|v| v.as_u64()).unwrap_or(next_cc.get()));
+                                    // The catalog total is huge and filtered (promos only);
+                                    // page by the real (start, fetched) cursor so the pager
+                                    // stays finite and grows only as you navigate.
+                                    next_cc.set(start + fetched);
+                                    total_cc.set(start + fetched);
                                 }
                                 let mut added = 0usize;
                                 for p in arr {
@@ -564,8 +570,10 @@ impl StoresView {
                                 pages_cc.set(npages);
                                 if s == 0 {
                                     lbl_cc.set_text("No offers right now.");
-                                } else {
+                                } else if has_more {
                                     lbl_cc.set_text(&format!("Page {} of ~{}", page_cc.get().max(1), npages));
+                                } else {
+                                    lbl_cc.set_text(&format!("Page {} of {}", page_cc.get().max(1), npages));
                                 }
                                 if let Some(r) = rebuild_cc.borrow().as_ref() {
                                     r();
@@ -874,7 +882,7 @@ impl StoresView {
                 let vv = vh.clone();
                 crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
                     Ok(_) => {
-                        vv.refresh_auth();
+                        vv.refresh_auth(false);
                         vv.refresh_library(false);
                         glib::ControlFlow::Break
                     }
@@ -900,7 +908,7 @@ impl StoresView {
             let vh = view.clone();
             refresh_btn.connect_clicked(move |_| vh.refresh_library(false));
         }
-        view.refresh_auth();
+        view.refresh_auth(true);
         (page, view)
     }
 }
@@ -942,12 +950,12 @@ impl StorePageHandle {
         helpers::present_msg(&self.parent, heading, body);
     }
 
-    fn refresh_auth(&self) {
+    fn refresh_auth(&self, quick: bool) {
         self.auth_badge.set_text("Checking login…");
         let (tx, rx) = std::sync::mpsc::channel::<(bool, bool, String)>();
         let store = self.store.clone();
         std::thread::spawn(move || {
-            let st = StoreManager::status().unwrap_or_default();
+            let st = StoreManager::status(quick).unwrap_or_default();
             let logged = st.get("logged").cloned().unwrap_or_default();
             let bins = st.get("bins").cloned().unwrap_or_default();
             let accs = st.get("accounts").cloned().unwrap_or_default();
@@ -1066,7 +1074,7 @@ impl StorePageHandle {
                     vh.login_btn.set_sensitive(true);
                     let who = val.get("account").and_then(|x| x.as_str()).unwrap_or("").to_string();
                     vh.state_toast("Logged in", if who.is_empty() { &vh.store } else { &who });
-                    vh.refresh_auth();
+                    vh.refresh_auth(false);
                     vh.refresh_library(true);
                     false
                 }

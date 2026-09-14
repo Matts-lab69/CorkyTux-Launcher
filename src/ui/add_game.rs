@@ -316,7 +316,9 @@ pub fn show_add_game_modal(
         let state_c = state.clone();
         let wiz_c = wiz.clone();
         let refresh_c = refresh_candidates.clone();
+        let choose_btn_c = choose_btn.clone();
         choose_btn.connect_clicked(move |_| {
+            choose_btn_c.set_sensitive(false);
             if let Some(dir) = state_c.config.pick_folder("Select game folder") {
                 let dir_str = dir.display().to_string();
                 let (emu, exec) = {
@@ -330,6 +332,7 @@ pub fn show_add_game_modal(
                     w.exe = dir_str;
                     drop(w);
                     refresh_c();
+                    choose_btn_c.set_sensitive(true);
                     return;
                 }
                 let found = scan_candidates(&dir_str, emu, &exec);
@@ -340,6 +343,7 @@ pub fn show_add_game_modal(
                 drop(w);
                 refresh_c();
             }
+            choose_btn_c.set_sensitive(true);
         });
     }
     // ================= Step 3: game info =================
@@ -575,16 +579,9 @@ pub fn show_add_game_modal(
                     .map(|v| v == "1")
                     .unwrap_or(fallback)
             };
-            // C++ parity: pull the real embedded icon out of the .exe
-            // when the user did not pick one (icoextract+ffmpeg).
             let mut icon = icon_e.text().to_string().trim().to_string();
-            if !is_emu && !is_appimage && !is_rpg && icon.is_empty() {
-                if executable.to_lowercase().ends_with(".exe") {
-                    if let Some(found) = state_c.integration.extract_exe_icon(&executable, &name) {
-                        icon = found;
-                    }
-                }
-            }
+            // .exe icon extraction is deferred to the background art thread
+            // (timeout 60 icoextract blocks the main thread for 60s).
             // AppImages never use online artwork: embedded .DirIcon only.
             if is_appimage && icon.is_empty() {
                 if let Some(found) = state_c.integration.extract_appimage_icon(&executable, &name) {
@@ -640,8 +637,7 @@ pub fn show_add_game_modal(
             state_c.game_model.add_game(entry);
             state_c.recent_model.refresh(30);
             if let Some(ref sb) = *sidebar_c.borrow() {
-                let names = state_c.game_model.ordered_names();
-                sb.refresh_list(&names);
+                sb.apply_current_filter();
             }
             if let Some(ref c) = *center_c.borrow() {
                 c.rebuild(&state_c, &details_c);
@@ -659,10 +655,15 @@ pub fn show_add_game_modal(
             }
             let (art_tx, art_rx) = std::sync::mpsc::channel::<(Option<String>, Option<String>)>();
             let art_name_send = art_name.clone();
+            let art_exe_send = state_c.game_model.get_game(&art_name).map(|g| g.executable).unwrap_or_default();
+            let art_sid_send = state_c.game_model.get_game(&art_name).map(|g| g.steam_id).unwrap_or_default();
+            let art_slug_send = state_c.game_model.get_game(&art_name).map(|g| g.lutris_slug).unwrap_or_default();
             std::thread::spawn(move || {
-                let fresh = crate::backend::integration::IntegrationManager::new();
-                let (i, b) = fresh.resolve_artwork(&art_name_send, "");
-                let _ = art_tx.send((i, b));
+                let mut out = crate::backend::integration::IntegrationManager::resolve_artwork_static(&art_name_send, &art_sid_send, &art_slug_send);
+                if out.0.is_none() && art_exe_send.to_lowercase().ends_with(".exe") {
+                    out.0 = crate::backend::integration::IntegrationManager::extract_exe_icon_static(&art_exe_send, &art_name_send);
+                }
+                let _ = art_tx.send(out);
             });
             let gm_c2 = state_c.game_model.clone();
             let state_c3 = state_c.clone();
@@ -674,13 +675,17 @@ pub fn show_add_game_modal(
                     Ok((i, b)) => {
                         let cur_icon = gm_c2.get_game(&art_name2)
                             .map(|g| g.icon).unwrap_or_default();
-                        // Never clobber a real exe-extracted icon (C++ onArtworkReady).
-                        let icon = if cur_icon.contains("-exe.png") {
-                            String::new()
-                        } else {
-                            i.unwrap_or_default()
-                        };
-                        let banner = b.unwrap_or_default();
+                        let mut icon = i.unwrap_or_default();
+                        if !icon.is_empty() && !std::path::Path::new(&icon).is_file() {
+                            icon.clear();
+                        }
+                        if cur_icon.contains("-exe.png") && std::path::Path::new(&cur_icon).is_file() {
+                            icon.clear();
+                        }
+                        let mut banner = b.unwrap_or_default();
+                        if !banner.is_empty() && !std::path::Path::new(&banner).is_file() {
+                            banner.clear();
+                        }
                         if !icon.is_empty() || !banner.is_empty() {
                             gm_c2.set_artwork(&art_name2, &banner, &icon);
                             if let Some(ref c) = *center_c3.borrow() {

@@ -45,6 +45,14 @@ fn tilde(s: &str) -> String {
     s.to_string()
 }
 
+fn banner_path_ok(p: &str) -> bool {
+    if p.trim().is_empty() {
+        return false;
+    }
+    let e = tilde(p);
+    std::path::Path::new(&e).is_file()
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub config: ConfigManager,
@@ -268,67 +276,85 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
         let state_c = state.clone();
         let det = details_ref.clone();
         let center_h_for_art = center_handle.clone();
-        let art_attempted: Rc<RefCell<std::collections::HashSet<String>>> =
+        let art_inflight: Rc<RefCell<std::collections::HashSet<String>>> =
             Rc::new(RefCell::new(std::collections::HashSet::new()));
         *game_cb.borrow_mut() = Some(Box::new(move |name: String| {
             *state_c.selected_game.borrow_mut() = name.clone();
             if let Some(ref d) = *det.borrow() {
                 d.set_game(&name, &state_c.config);
             }
-            // C++ artwork parity: games with no banner/icon resolve artwork
-            // in the background when selected (Steam CDN/Lutris/SGDB).
-            // AppImages use embedded .DirIcon extraction only, never online.
-            let (needs, needs_appimage, needs_rpg) = match state_c.game_model.get_game(&name) {
+            let (needs, needs_appimage, needs_rpg, send_exe, send_sid, send_slug) = match state_c.game_model.get_game(&name) {
                 Some(g) => {
                     let app = g.source == crate::backend::game_model::GameSource::AppImage
                         || g.executor == "appimage-launcher";
                     let rpg = g.source == crate::backend::game_model::GameSource::RpgMaker
                         || g.executor == "rpgmaker-runtime";
-                    (g.banner.is_empty() || g.icon.is_empty(), app, rpg)
+                    (g.banner.is_empty() || g.icon.is_empty(), app, rpg, g.executable.clone(), g.steam_id.clone(), g.lutris_slug.clone())
                 }
-                None => (false, false, false),
+                None => (false, false, false, String::new(), String::new(), String::new()),
             };
-            if needs && !art_attempted.borrow().contains(&name) {
-                art_attempted.borrow_mut().insert(name.clone());
+            if needs && !art_inflight.borrow().contains(&name) {
+                art_inflight.borrow_mut().insert(name.clone());
                 let art_name = name.clone();
                 let gm_c = state_c.game_model.clone();
                 let det_c = det.clone();
                 let center_c = center_h_for_art.clone();
+                let inflight_c = art_inflight.clone();
                 let (art_tx, art_rx) =
                     std::sync::mpsc::channel::<(Option<String>, Option<String>)>();
                 let send_name = art_name.clone();
-                let send_exe = state_c.game_model.get_game(&art_name)
-                    .map(|g| g.executable).unwrap_or_default();
                 std::thread::spawn(move || {
-                    if needs_appimage {
-                        let fresh = IntegrationManager::new();
-                        let i = fresh.extract_appimage_icon(&send_exe, &send_name);
-                        let _ = art_tx.send((i, None));
+                    let (i, b) = if needs_appimage {
+                        let i = IntegrationManager::extract_appimage_icon_static(&send_exe, &send_name);
+                        (i, None)
                     } else if needs_rpg {
-                        let fresh = IntegrationManager::new();
-                        let i = fresh.extract_rpg_icon(&send_exe, &send_name);
-                        let (_, b) = fresh.resolve_artwork(&send_name, "");
-                        let _ = art_tx.send((i, b));
+                        let i = IntegrationManager::extract_rpg_icon_static(&send_exe, &send_name);
+                        let (_, b) = IntegrationManager::resolve_artwork_static(&send_name, &send_sid, &send_slug);
+                        (i, b)
                     } else {
-                        let fresh = IntegrationManager::new();
-                        let (i, b) = fresh.resolve_artwork(&send_name, "");
-                        let _ = art_tx.send((i, b));
-                    }
+                        let mut out = IntegrationManager::resolve_artwork_static(&send_name, &send_sid, &send_slug);
+                        if out.0.is_none() {
+                            let exe_path = send_exe.clone();
+                            if exe_path.to_lowercase().ends_with(".exe") {
+                                out.0 = IntegrationManager::extract_exe_icon_static(&exe_path, &send_name);
+                            }
+                        }
+                        out
+                    };
+                    let _ = art_tx.send((i, b));
                 });
                 let art_name3 = art_name.clone();
                 let state_inner = state_c.clone();
                 glib::idle_add_local(move || match art_rx.try_recv() {
                     Ok((i, b)) => {
-                        let cur_icon = gm_c.get_game(&art_name3) .map(|g| g.icon).unwrap_or_default();
-                        let icon = if cur_icon.contains("-exe.png")
+                        inflight_c.borrow_mut().remove(&art_name3);
+                        let cur = gm_c.get_game(&art_name3);
+                        let cur_icon = cur.as_ref().map(|g| g.icon.clone()).unwrap_or_default();
+                        let cur_banner = cur.as_ref().map(|g| g.banner.clone()).unwrap_or_default();
+                        let icon_path_ok = |p: &str| !p.is_empty() && std::path::Path::new(p).is_file();
+                        let mut icon = i.unwrap_or_default();
+                        if !icon.is_empty() && !icon_path_ok(&icon) {
+                            icon.clear();
+                        }
+                        if cur_icon.contains("-exe.png")
                             || cur_icon.contains("-appimage.")
                             || cur_icon.contains("-rpg.png")
                         {
-                            String::new()
-                        } else {
-                            i.unwrap_or_default()
-                        };
-                        let banner = b.unwrap_or_default();
+                            if !icon_path_ok(&cur_icon) {
+                                // keep replacement
+                            } else {
+                                icon.clear();
+                            }
+                        }
+                        let mut banner = b.unwrap_or_default();
+                        if !banner.is_empty() && !banner_path_ok(&banner) {
+                            banner.clear();
+                        }
+                        if cur_banner.is_empty() || banner_path_ok(&cur_banner) == false {
+                            // replace missing/broken
+                        } else if !banner.is_empty() {
+                            // keep both paths, set_artwork merges non-empty
+                        }
                         if !icon.is_empty() || !banner.is_empty() {
                             gm_c.set_artwork(&art_name3, &banner, &icon);
                             if let Some(ref d2) = *det_c.borrow() {
@@ -341,7 +367,10 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                         glib::ControlFlow::Break
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-                    Err(_) => glib::ControlFlow::Break,
+                    Err(_) => {
+                        inflight_c.borrow_mut().remove(&art_name3);
+                        glib::ControlFlow::Break
+                    }
                 });
             }
         }));
@@ -603,7 +632,11 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                     let game_c = name.clone();
                     let exe_c = exe.clone();
                     let dlg_c = dialog.clone();
-                    row_btn.connect_clicked(move |_| {
+                    row_btn.connect_clicked(move |b| {
+                        if !b.is_sensitive() {
+                            return;
+                        }
+                        b.set_sensitive(false);
                         dlg_c.close();
                         match state_cc.proton.run_custom_exe(&game_c, &exe_c) {
                             Ok(_) => {}
@@ -723,9 +756,8 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                     .unwrap_or(false);
                 if is_app {
                     ui::apps_settings::show_apps_settings_modal(&state_c, &win, &name, move || {
-                        let names = state_cc.game_model.ordered_names();
                         if let Some(ref sidebar) = *sb_cc.borrow() {
-                            sidebar.refresh_list(&names);
+                            sidebar.apply_current_filter();
                         }
                         if let Some(ref ch) = *ch_cc.borrow() {
                             ch.rebuild(&state_cc, &det_cc);
@@ -739,9 +771,8 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                     });
                 } else {
                     ui::game_settings::show_game_settings_modal(&state_c, &win, &name, move || {
-                        let names = state_cc.game_model.ordered_names();
                         if let Some(ref sidebar) = *sb_cc.borrow() {
-                            sidebar.refresh_list(&names);
+                            sidebar.apply_current_filter();
                         }
                         if let Some(ref ch) = *ch_cc.borrow() {
                             ch.rebuild(&state_cc, &det_cc);
@@ -860,11 +891,8 @@ pub(crate) fn run_plugin_scans(
     let dir_c = plugins_dir.clone();
     let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<(String, String)>)>();
     std::thread::spawn(move || {
-        let overrides = PluginManager::dll_scan_in(&plugins_dir, &dir_s).unwrap_or_default();
-        let missing = PluginManager::dep_scan_in(&plugins_dir, &dir_s, &prefix_s, &proton_s)
-            .map(|(m, _)| m)
-            .unwrap_or_default();
-        let _ = tx.send((overrides, missing));
+        let s = PluginManager::scan_bundle_in(&plugins_dir, &dir_s, &prefix_s, &proton_s);
+        let _ = tx.send((s.overrides, s.missing));
     });
     let state_c = state.clone();
     let parent_c = parent.clone();
@@ -1121,11 +1149,8 @@ pub(crate) fn run_plugin_scans_batch(
     std::thread::spawn(move || {
         let mut out = Vec::new();
         for (name, dir, prefix, proton) in jobs {
-            let ov = PluginManager::dll_scan_in(&plugins_dir, &dir).unwrap_or_default();
-            let missing = PluginManager::dep_scan_in(&plugins_dir, &dir, &prefix, &proton)
-                .map(|(m, _)| m)
-                .unwrap_or_default();
-            out.push((name, ov, missing, prefix, proton));
+            let s = PluginManager::scan_bundle_in(&plugins_dir, &dir, &prefix, &proton);
+            out.push((name, s.overrides, s.missing, prefix, proton));
         }
         let _ = tx.send(out);
     });

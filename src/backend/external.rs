@@ -140,8 +140,13 @@ impl StoreManager {
         plugin_process::plugin_available(Self::ID, Self::ENTRY)
     }
 
-    pub fn status() -> Result<serde_json::Value, String> {
-        plugin_process::run_single_json(&Self::exe(), &["status"])
+    pub fn status(quick: bool) -> Result<serde_json::Value, String> {
+        let args: Vec<&str> = if quick {
+            vec!["status", "--quick"]
+        } else {
+            vec!["status"]
+        };
+        plugin_process::run_single_json(&Self::exe(), &args)
     }
 
     pub fn setup() -> Result<serde_json::Value, String> {
@@ -273,8 +278,15 @@ impl MinecraftManager {
         plugin_process::plugin_available(Self::ID, Self::ENTRY)
     }
 
-    pub fn status() -> Result<serde_json::Value, String> {
-        plugin_process::run_single_json(&Self::exe(), &["status"])
+    pub fn status(mc_dir: &str) -> Result<serde_json::Value, String> {
+        plugin_process::run_single_json(&Self::exe(), &["status", "--mc-dir", mc_dir])
+    }
+
+    pub fn instance_delete(version: &str, mc_dir: &str) -> Result<serde_json::Value, String> {
+        plugin_process::run_single_json(
+            &Self::exe(),
+            &["instance-delete", "--version", version, "--mc-dir", mc_dir],
+        )
     }
 
     pub fn setup() -> Result<serde_json::Value, String> {

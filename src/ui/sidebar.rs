@@ -171,7 +171,7 @@ impl Sidebar {
         // No default gray frame around the viewport (that was the stray bar).
         scrolled.set_has_frame(false);
         // Overlay slider instead of the classic gray scrollbar track.
-        scrolled.set_overlay_scrolling(true);
+        scrolled.set_overlay_scrolling(false);
 
         let list = Rc::new(gtk::ListBox::new());
         list.set_selection_mode(gtk::SelectionMode::Single);

@@ -139,6 +139,8 @@ mod imp {
         pub data_dir: RefCell<PathBuf>,
         pub games_ini: RefCell<IniFile>,
         pub launcher_ini: RefCell<IniFile>,
+        pub last_games_content: RefCell<Option<String>>,
+        pub last_launcher_content: RefCell<Option<String>>,
     }
 
     #[glib::object_subclass]
@@ -236,12 +238,22 @@ impl ConfigManager {
 
     pub fn save_games_ini(&self) {
         let data = self.imp().games_ini.borrow().to_string();
-        fs::write(self.games_ini_path(), data).ok();
+        let mut last = self.imp().last_games_content.borrow_mut();
+        if last.as_deref() == Some(data.as_str()) {
+            return;
+        }
+        fs::write(self.games_ini_path(), &data).ok();
+        *last = Some(data);
     }
 
     pub fn save_launcher_ini(&self) {
         let data = self.imp().launcher_ini.borrow().to_string();
-        fs::write(self.launcher_ini_path(), data).ok();
+        let mut last = self.imp().last_launcher_content.borrow_mut();
+        if last.as_deref() == Some(data.as_str()) {
+            return;
+        }
+        fs::write(self.launcher_ini_path(), &data).ok();
+        *last = Some(data);
     }
 
     pub fn game_names(&self) -> Vec<String> {

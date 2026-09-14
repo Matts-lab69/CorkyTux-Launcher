@@ -705,6 +705,9 @@ impl ProtonManager {
     }
 
     pub fn run_game(&self, game_name: &str) -> Result<(), String> {
+        if self.is_game_running() {
+            return Err("Ya hay un juego en ejecución".into());
+        }
         let config = super::ConfigManager::new();
         let game = config.game_section(game_name);
         let executable = game.get("executable")
@@ -1844,6 +1847,9 @@ impl ProtonManager {
 
     /// C++ runCustomExe parity: resolves the game's proton + prefix internally.
     pub fn run_custom_exe(&self, game_name: &str, executable: &str) -> Result<(), String> {
+        if self.is_game_running() {
+            return Err("Ya hay un juego en ejecución".into());
+        }
         let config = super::ConfigManager::new();
         let wanted = config.game_value(game_name, "Proton").unwrap_or_default();
         let (_, proton_path) = self.resolve_proton(&wanted)?;

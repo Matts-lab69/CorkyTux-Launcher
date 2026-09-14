@@ -48,7 +48,7 @@ pub fn build_center(
     let scroll = gtk::ScrolledWindow::new();
     scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
     scroll.set_has_frame(false);
-    scroll.set_overlay_scrolling(true);
+    scroll.set_overlay_scrolling(false);
     scroll.set_hexpand(true);
     scroll.set_vexpand(true);
 

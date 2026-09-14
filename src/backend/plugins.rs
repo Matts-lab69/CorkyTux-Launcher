@@ -82,6 +82,7 @@ pub struct EmuInfo {
     pub description: String,
     pub installed: bool,
     pub native: bool,
+    pub source: String,
     pub settings: Vec<EmuSettingDef>,
 }
 
@@ -137,6 +138,11 @@ mod imp {
 
 glib::wrapper! {
     pub struct PluginManager(ObjectSubclass<imp::PluginManager>);
+}
+
+pub struct ScanBundle {
+    pub overrides: String,
+    pub missing: Vec<(String, String)>,
 }
 
 impl PluginManager {
@@ -572,8 +578,26 @@ impl PluginManager {
         Ok((missing, msg))
     }
 
+    pub fn scan_bundle_in(
+        dir: &Path,
+        game_dir: &str,
+        prefix: &str,
+        proton: &str,
+    ) -> ScanBundle {
+        let (overrides, missing) = std::thread::scope(|s| {
+            let a = s.spawn(|| Self::dll_scan_in(dir, game_dir).unwrap_or_default());
+            let b = s.spawn(|| {
+                Self::dep_scan_in(dir, game_dir, prefix, proton)
+                    .map(|(m, _)| m)
+                    .unwrap_or_default()
+            });
+            (a.join().unwrap_or_default(), b.join().unwrap_or_default())
+        });
+        ScanBundle { overrides, missing }
+    }
+
     /// `dependency-installer install --prefix P [--proton PATH] dep...`
-    /// (winetricks into the prefix; slow, no timeout).
+    /// (winetricks into the prefix; slow for .NET, capped here for safety).
     pub fn dep_install_in(
         dir: &Path,
         prefix: &str,
@@ -587,8 +611,18 @@ impl PluginManager {
         if prefix.is_empty() || dep_ids.is_empty() {
             return Err("Nothing to install".into());
         }
-        let mut cmd = Command::new(&exe);
-        cmd.arg("install").arg("--prefix").arg(prefix);
+
+        let has_dotnet = dep_ids
+            .iter()
+            .any(|d| matches!(d.as_str(), "dotnet48" | "dotnet472" | "dotnet40" | "dotnet20" | "dotnet35sp1"));
+        let timeout_secs = if has_dotnet { 1800 } else { 300 };
+
+        let mut cmd = Command::new("timeout");
+        cmd.arg(timeout_secs.to_string())
+            .arg(&exe)
+            .arg("install")
+            .arg("--prefix")
+            .arg(prefix);
         if !proton.is_empty() {
             cmd.arg("--proton").arg(proton);
         }
@@ -596,10 +630,53 @@ impl PluginManager {
             cmd.arg(d);
         }
         let v = Self::run_json(&mut cmd)?;
+
         if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) != true {
-            let e = v.get("error").and_then(|x| x.as_str()).unwrap_or("install failed");
-            return Err(e.to_string());
+            if let Some(e) = v.get("error").and_then(|x| x.as_str()) {
+                return Err(e.to_string());
+            }
+            let failed: Vec<String> = v
+                .get("failed")
+                .and_then(|x| x.as_array())
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                .collect();
+            let details: Vec<String> = v
+                .get("results")
+                .and_then(|x| x.as_array())
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|r| {
+                    let ok = r.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
+                    if ok {
+                        return None;
+                    }
+                    let id = r.get("id").and_then(|x| x.as_str()).unwrap_or("");
+                    let desc = r.get("desc").and_then(|x| x.as_str()).unwrap_or(id);
+                    let reason = r
+                        .get("error")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("install failed");
+                    Some(format!("{} ({}): {}", id, desc, reason))
+                })
+                .collect();
+            let mut msg = if !details.is_empty() {
+                details.join("\n")
+            } else if !failed.is_empty() {
+                format!("Failed: {}", failed.join(", "))
+            } else {
+                "install failed".into()
+            };
+            if msg.len() > 400 {
+                msg.truncate(400);
+                msg.push_str("…");
+            }
+            return Err(msg);
         }
+
         Ok(v.get("message").and_then(|x| x.as_str()).unwrap_or("Installed").to_string())
     }
 
@@ -667,8 +744,24 @@ impl PluginManager {
         let mut out = Vec::new();
         for e in v.get("emulators").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
             let path = e.get("path").and_then(|x| x.as_str()).unwrap_or_default().to_string();
-            let linked = e.get("linked").and_then(|x| x.as_bool()).unwrap_or(false)
-                || (!path.is_empty() && !path.starts_with(&plugins_dir));
+            // Backend >=2.10 returns an explicit "source" field (linked/appimage/system/none).
+            // For older backends, infer from the "linked" flag + path heuristic.
+            let raw_source = e.get("source").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let source = if raw_source.is_empty() {
+                if e.get("linked").and_then(|x| x.as_bool()).unwrap_or(false)
+                    || (!path.is_empty() && !path.starts_with(&plugins_dir)) {
+                    "linked"
+                } else if e.get("installed").and_then(|x| x.as_bool()).unwrap_or(false) {
+                    "appimage"
+                } else {
+                    "none"
+                }
+            } else {
+                &raw_source
+            };
+            let installed = source != "none"
+                || e.get("installed").and_then(|x| x.as_bool()).unwrap_or(false);
+            let native = source == "linked";
             let mut defs = Vec::new();
             for s in e.get("settings").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
                 let id = s.get("id").and_then(|x| x.as_str()).unwrap_or_default();
@@ -685,8 +778,9 @@ impl PluginManager {
                 name: e.get("name").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
                 path,
                 description: e.get("description").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
-                installed: e.get("installed").and_then(|x| x.as_bool()).unwrap_or(false),
-                native: linked,
+                installed,
+                native,
+                source: source.to_string(),
                 settings: defs,
             });
         }

@@ -864,7 +864,7 @@ impl MinecraftView {
         scroll.set_vexpand(true);
         scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
         scroll.set_has_frame(false);
-        scroll.set_overlay_scrolling(true);
+        scroll.set_overlay_scrolling(false);
         let col = gtk::Box::new(gtk::Orientation::Vertical, 12);
         col.set_margin_top(24);
         col.set_margin_bottom(24);
@@ -1548,7 +1548,7 @@ impl MinecraftView {
             }
         }
         // legacy global installs (same base-copy rule in the shared dir)
-        let st = MinecraftManager::status().unwrap_or_default();
+        let st = MinecraftManager::status(&legacy_dir().display().to_string()).unwrap_or_default();
         let legacy: Vec<String> = st.get("installed_versions").and_then(|a| a.as_array()).cloned().unwrap_or_default()
             .into_iter().filter_map(|x| x.as_str().map(str::to_string)).collect();
         for id in drop_base_copies(&legacy) {
@@ -1582,7 +1582,7 @@ impl MinecraftView {
         self.lib_status.set_text("Loading…");
         let (tx, rx) = std::sync::mpsc::channel::<McData>();
         std::thread::spawn(move || {
-            let st = MinecraftManager::status().unwrap_or_default();
+            let st = MinecraftManager::status(&legacy_dir().display().to_string()).unwrap_or_default();
             let mut data = McData::default();
             data.deps_ok = st.get("deps").and_then(|d| d.get("minecraft_launcher_lib"))
                 .and_then(|x| x.as_bool()).unwrap_or(false);
@@ -1631,7 +1631,7 @@ impl MinecraftView {
         let (tx, rx) = std::sync::mpsc::channel::<(Vec<(String, String)>, serde_json::Value)>();
         std::thread::spawn(move || {
             let dirs = scan_instance_dirs();
-            let st = MinecraftManager::status().unwrap_or_default();
+            let st = MinecraftManager::status(&legacy_dir().display().to_string()).unwrap_or_default();
             let _ = tx.send((dirs, st));
         });
         let vv = self.clone();
@@ -1947,16 +1947,34 @@ impl MinecraftView {
         };
         let dir = inst_dir(&inst.id, inst.isolated);
         let mut errs = Vec::new();
-        if inst.isolated {
-            if dir.exists() {
-                if let Err(e) = std::fs::remove_dir_all(&dir) {
-                    errs.push(format!("{}: {}", dir.display(), e));
+        // Backend-validated delete (guards path traversal, reports failures).
+        let mc_dir = if inst.isolated {
+            instances_root().join(safe_id(&inst.id)).display().to_string()
+        } else {
+            legacy_dir().display().to_string()
+        };
+        match crate::backend::external::MinecraftManager::instance_delete(&inst.id, &mc_dir) {
+            Ok(doc) => {
+                let ok = doc.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
+                if !ok {
+                    let msg = doc.get("error").and_then(|x| x.as_str()).map(str::to_string)
+                        .unwrap_or_else(|| "backend refused".to_string());
+                    errs.push(msg);
                 }
+            }
+            Err(e) => errs.push(e),
+        }
+        // The backend only removes versions/<id>. Isolated instances keep their
+        // per-instance game dir (mods, saves, config) which the plugin does not
+        // manage — sweep the leftover container after a clean backend delete.
+        if inst.isolated && errs.is_empty() && dir.exists() {
+            if let Err(e) = std::fs::remove_dir_all(&dir) {
+                errs.push(format!("{}: {}", dir.display(), e));
             }
         }
         // legacy copy may exist alongside (stale duplicate installs)
         let legacy_ver = legacy_dir().join("versions").join(&inst.id);
-        if legacy_ver.exists() {
+        if legacy_ver.exists() && errs.is_empty() {
             if let Err(e) = std::fs::remove_dir_all(&legacy_ver) {
                 errs.push(format!("{}: {}", legacy_ver.display(), e));
             }
@@ -5129,7 +5147,7 @@ impl MinecraftView {
                     j.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                     j.get("origin").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                 )).collect();
-            let sel = MinecraftManager::status().ok()
+            let sel = MinecraftManager::status(&legacy_dir().display().to_string()).ok()
                 .and_then(|d| d.get("java").and_then(|j| j.get("selected")).and_then(|x| x.as_str()).map(str::to_string))
                 .unwrap_or_default();
             let _ = tx.send((found, sel));

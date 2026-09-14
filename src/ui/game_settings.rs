@@ -428,11 +428,8 @@ fn build_run_tab(
                 let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<(String, String)>)>();
                 let dir_t = dir.trim().to_string();
                 std::thread::spawn(move || {
-                    let ov = crate::backend::plugins::PluginManager::dll_scan_in(&plugins_dir, &dir_t).unwrap_or_default();
-                    let missing = crate::backend::plugins::PluginManager::dep_scan_in(&plugins_dir, &dir_t, &prefix, &proton)
-                        .map(|(m, _)| m)
-                        .unwrap_or_default();
-                    let _ = tx.send((ov, missing));
+                    let s = crate::backend::plugins::PluginManager::scan_bundle_in(&plugins_dir, &dir_t, &prefix, &proton);
+                    let _ = tx.send((s.overrides, s.missing));
                 });
                 let state_cc = state_c.clone();
                 let parent_cc = parent_c.clone();

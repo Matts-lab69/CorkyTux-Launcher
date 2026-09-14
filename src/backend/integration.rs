@@ -9,6 +9,30 @@ fn home_dir() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
 }
 
+fn cached_icon_valid(path: &Path) -> bool {
+    path.is_file()
+        && gdk_pixbuf::Pixbuf::from_file(path).map(|pb| {
+            pb.width() >= 16 && pb.height() >= 16
+        }).unwrap_or(false)
+}
+
+fn tool_available(tool: &str) -> bool {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<std::sync::Mutex<std::collections::HashMap<String, bool>>> =
+        OnceLock::new();
+    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    if let Some(v) = cache.lock().map(|c| c.get(tool).copied()).ok().flatten() {
+        return v;
+    }
+    let ok = Command::new("which").arg(tool).output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if let Ok(mut c) = cache.lock() {
+        c.insert(tool.to_string(), ok);
+    }
+    ok
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct IntegrationEntry {
     pub name: String,
@@ -208,11 +232,20 @@ impl IntegrationManager {
 
     const SGDB_KEY: &'static str = "0ab12f62e2d5e6b3717161be0c5e68fa";
 
-    /// Download helper: >1000 bytes required, Referer for steamgriddb CDN.
+    /// Download helper: min_bytes required, Referer for steamgriddb CDN.
     fn download_art(
         client: &reqwest::blocking::Client,
         url: &str,
         dest: &PathBuf,
+    ) -> bool {
+        Self::download_art_min(client, url, dest, 1000)
+    }
+
+    fn download_art_min(
+        client: &reqwest::blocking::Client,
+        url: &str,
+        dest: &PathBuf,
+        min_bytes: usize,
     ) -> bool {
         let mut req = client.get(url);
         if url.contains("steamgriddb") {
@@ -225,13 +258,17 @@ impl IntegrationManager {
             },
             Err(_) => return false,
         };
-        if body.len() <= 1000 {
+        if body.len() <= min_bytes {
             return false;
         }
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).ok();
         }
         fs::write(dest, &body).is_ok()
+    }
+
+    fn file_valid(path: &PathBuf, min_bytes: u64) -> bool {
+        fs::metadata(path).map(|m| m.len() > min_bytes).unwrap_or(false)
     }
 
     fn sgdb_get(
@@ -250,11 +287,19 @@ impl IntegrationManager {
             .map_err(|e| e.to_string())
     }
 
-    /// Full artwork resolver (C++ resolveArtwork parity):
-    /// 1) Steam CDN by AppID (+ Store API fallback),
-    /// 2) local Lutris art by slug, 3) Lutris.net API, 4) SteamGridDB.
+    /// Full artwork resolver, orden estricto por asset:
+    /// banner: Steam header -> Store API -> Lutris local -> Lutris API -> SGDB grid.
+    /// icon: Steam logo -> Lutris local -> SGDB icons. Extract es ultimo y lo hace el caller.
     /// Returns (icon, banner). Files land in ~/.config/CorkyTux/{icons,banners}/.
     pub fn resolve_artwork(&self, game_name: &str, steam_id: &str) -> (Option<String>, Option<String>) {
+        let slug = super::ConfigManager::new()
+            .game_value(game_name, "LutrisSlug")
+            .unwrap_or_default();
+        let slug = if slug.is_empty() { slugify(game_name) } else { slug };
+        Self::resolve_artwork_static(game_name, steam_id, &slug)
+    }
+
+    pub fn resolve_artwork_static(game_name: &str, steam_id: &str, slug: &str) -> (Option<String>, Option<String>) {
         let home = home_dir().unwrap_or_default();
         let banners_dir = home.join(".config").join("CorkyTux").join("banners");
         let icons_dir = home.join(".config").join("CorkyTux").join("icons");
@@ -270,9 +315,11 @@ impl IntegrationManager {
         };
         let mut banner: Option<String> = None;
         let mut icon: Option<String> = None;
+        // Steam CDN logo.png is a wide 460x215 logo that looks like a cover
+        // when used as a square icon. Track it so SGDB icons (real squares)
+        // replace it below instead of being skipped by icon.is_some().
+        let mut icon_is_wide = false;
 
-        // 1) Steam CDN by AppID. Manual games carry no AppID, so look it
-        // up by exact name first (e.g. "Machine Party" -> 4108000).
         let id = if !steam_id.trim().is_empty() {
             steam_id.trim().to_string()
         } else {
@@ -280,47 +327,24 @@ impl IntegrationManager {
         };
         if !id.is_empty() {
             let b = banners_dir.join(format!("{}.jpg", id));
-            let i = icons_dir.join(format!("{}.jpg", id));
-            if Self::download_art(&client,
+            if Self::file_valid(&b, 1000) {
+                banner = Some(b.display().to_string());
+            } else if Self::download_art(&client,
                 &format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{}/header.jpg", id),
                 &b)
             {
                 banner = Some(b.display().to_string());
             }
-            // Square SGDB icon first: logo.png is a wide logo that reads
-            // as a cover when shown as an icon.
-            if !game_name.trim().is_empty() {
-                let search_url = format!(
-                    "https://www.steamgriddb.com/api/v2/search/autocomplete/{}",
-                    url_encode_query(game_name.trim())
-                );
-                if let Ok(body) = Self::sgdb_get(&client, &search_url) {
-                    let grid_id = find_grid_id(&body, game_name);
-                    if !grid_id.is_empty() {
-                        if let Some(found) =
-                            Self::sgdb_icon_for(&client, &grid_id, game_name, &icons_dir)
-                        {
-                            icon = Some(found);
-                        }
-                    }
-                }
-            }
-            if icon.is_none()
-                && Self::download_art(&client,
-                    &format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{}/logo.png", id),
-                    &i)
-            {
-                icon = Some(i.display().to_string());
-            }
-            // 1b) Store API fallback for the banner
             if banner.is_none() {
-                if let Ok(resp) = client
+                let d = banners_dir.join(format!("{}-store.jpg", id));
+                if Self::file_valid(&d, 1000) {
+                    banner = Some(d.display().to_string());
+                } else if let Ok(resp) = client
                     .get(&format!("https://store.steampowered.com/api/appdetails?appids={}", id))
                     .send()
                 {
                     if let Ok(body) = resp.text() {
                         if let Some(u) = json_field(&body, "header_image") {
-                            let d = banners_dir.join(format!("{}-store.jpg", id));
                             if Self::download_art(&client, &u.replace("\\/", "/"), &d) {
                                 banner = Some(d.display().to_string());
                             }
@@ -328,19 +352,18 @@ impl IntegrationManager {
                     }
                 }
             }
+            let i = icons_dir.join(format!("{}.jpg", id));
+            icon_is_wide = true;
+            if Self::file_valid(&i, 200) {
+                icon = Some(i.display().to_string());
+            } else if Self::download_art_min(&client,
+                &format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{}/logo.png", id),
+                &i, 200)
+            {
+                icon = Some(i.display().to_string());
+            }
         }
 
-        // Lutris slug for local/API tiers
-        let stored_slug = super::ConfigManager::new()
-            .game_value(game_name, "LutrisSlug")
-            .unwrap_or_default();
-        let slug = if stored_slug.is_empty() {
-            slugify(game_name)
-        } else {
-            stored_slug
-        };
-
-        // 2) Lutris local art by slug
         if (banner.is_none() || icon.is_none()) && !game_name.is_empty() {
             let xdg = std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
                 home.join(".local").join("share").display().to_string()
@@ -385,7 +408,6 @@ impl IntegrationManager {
             }
         }
 
-        // 3) Lutris.net public API (free, no key), strict name match
         if banner.is_none() && !game_name.is_empty() {
             let url = format!(
                 "https://lutris.net/api/games?search={}",
@@ -394,8 +416,6 @@ impl IntegrationManager {
             if let Ok(resp) = client.get(&url).send() {
                 if let Ok(body) = resp.text() {
                     let want = norm_name(game_name);
-                    // Split result objects, accept only normalized-equal names
-                    // ("R.E.P.O." matches "repo", never "Repository").
                     for chunk in body.split("{\"id\"") {
                         let nm = match json_field(chunk, "name") {
                             Some(n) => n,
@@ -404,8 +424,6 @@ impl IntegrationManager {
                         if norm_name(&nm) != want {
                             continue;
                         }
-                        // coverart first, then banner_url (one of them is
-                        // often null/404 while the other works).
                         let mut candidates: Vec<String> = Vec::new();
                         for field in ["coverart", "banner_url"] {
                             if let Some(u) = json_field(chunk, field) {
@@ -415,6 +433,10 @@ impl IntegrationManager {
                             }
                         }
                         let d = banners_dir.join(format!("{}-lutris.jpg", slugify(game_name)));
+                        if Self::file_valid(&d, 1000) {
+                            banner = Some(d.display().to_string());
+                            break;
+                        }
                         for u in candidates {
                             if Self::download_art(&client, &u, &d) {
                                 banner = Some(d.display().to_string());
@@ -429,36 +451,43 @@ impl IntegrationManager {
             }
         }
 
-        // 4) SteamGridDB (bundled key): grids for banner, icons endpoint
-        if (banner.is_none() || icon.is_none()) && !game_name.is_empty() {
+        let mut grid_id = String::new();
+        if (banner.is_none() || icon.is_none() || icon_is_wide) && !game_name.trim().is_empty() {
             let search_url = format!(
                 "https://www.steamgriddb.com/api/v2/search/autocomplete/{}",
                 url_encode_query(game_name.trim())
             );
             if let Ok(body) = Self::sgdb_get(&client, &search_url) {
-                let grid_id = find_grid_id(&body, game_name);
-                if !grid_id.is_empty() {
-                    if banner.is_none() {
-                        let url = format!(
-                            "https://www.steamgriddb.com/api/v2/grids/game/{}?dimensions=600x900&types=static",
-                            grid_id
-                        );
-                        if let Ok(gb) = Self::sgdb_get(&client, &url) {
-                            if let Some(u) = json_field(&gb, "url") {
-                                let d = banners_dir.join(format!("{}-sgdb.jpg", slugify(game_name)));
-                                if Self::download_art(&client, &u.replace("\\/", "/"), &d) {
-                                    banner = Some(d.display().to_string());
-                                }
+                grid_id = find_grid_id(&body, game_name);
+            }
+        }
+        if !grid_id.is_empty() {
+            if banner.is_none() {
+                let d = banners_dir.join(format!("{}-sgdb.jpg", slugify(game_name)));
+                if Self::file_valid(&d, 1000) {
+                    banner = Some(d.display().to_string());
+                } else {
+                    let url = format!(
+                        "https://www.steamgriddb.com/api/v2/grids/game/{}?dimensions=600x900&types=static",
+                        grid_id
+                    );
+                    if let Ok(gb) = Self::sgdb_get(&client, &url) {
+                        if let Some(u) = json_field(&gb, "url") {
+                            if Self::download_art(&client, &u.replace("\\/", "/"), &d) {
+                                banner = Some(d.display().to_string());
                             }
                         }
                     }
-                    if icon.is_none() {
-                        if let Some(found) =
-                            Self::sgdb_icon_for(&client, &grid_id, game_name, &icons_dir)
-                        {
-                            icon = Some(found);
-                        }
-                    }
+                }
+            }
+            if icon.is_none() || icon_is_wide {
+                let d = icons_dir.join(format!("{}-sgdb.png", slugify(game_name)));
+                if Self::file_valid(&d, 200) {
+                    icon = Some(d.display().to_string());
+                } else if let Some(found) =
+                    Self::sgdb_icon_for(&client, &grid_id, game_name, &icons_dir)
+                {
+                    icon = Some(found);
                 }
             }
         }
@@ -498,16 +527,21 @@ impl IntegrationManager {
         });
         for u in urls {
             let d = icons_dir.join(format!("{}-sgdb.png", slugify(game_name)));
-            if Self::download_art(client, &u, &d) {
+            if Self::file_valid(&d, 200) {
+                return Some(d.display().to_string());
+            }
+            if Self::download_art_min(client, &u, &d, 200) {
                 return Some(d.display().to_string());
             }
         }
         None
     }
 
-    /// Extract the embedded icon from a Windows .exe via icoextract+ffmpeg
-    /// (C++ extractExeIconAsync parity). Returns the stored PNG path.
     pub fn extract_exe_icon(&self, exe_path: &str, game_name: &str) -> Option<String> {
+        Self::extract_exe_icon_static(exe_path, game_name)
+    }
+
+    pub fn extract_exe_icon_static(exe_path: &str, game_name: &str) -> Option<String> {
         if !exe_path.to_lowercase().ends_with(".exe") {
             return None;
         }
@@ -515,22 +549,26 @@ impl IntegrationManager {
         if !Path::new(&expanded).is_file() {
             return None;
         }
+        let home = home_dir().unwrap_or_default();
+        let dest = home.join(".config").join("CorkyTux").join("icons")
+            .join(format!("{}-exe.png", slugify(game_name)));
+        if cached_icon_valid(&dest) {
+            return Some(dest.display().to_string());
+        }
         for tool in ["icoextract", "ffmpeg"] {
-            if Command::new("which").arg(tool).output()
-                .map(|o| !o.status.success()).unwrap_or(true)
-            {
+            if !tool_available(tool) {
                 return None;
             }
         }
         let tmp = std::env::temp_dir().join(format!(
             "corkytux-icon-{}-{}",
             std::process::id(),
-            game_name.len()
+            slugify(game_name)
         ));
         fs::create_dir_all(&tmp).ok();
         let ico = tmp.join("icon.ico");
         let st = Command::new("timeout")
-            .args(["60", "icoextract", &expanded, ico.to_str().unwrap_or("")])
+            .args(["15", "icoextract", &expanded, ico.to_str().unwrap_or("")])
             .status();
         if !matches!(st, Ok(s) if s.success() && ico.is_file()) {
             fs::remove_dir_all(&tmp).ok();
@@ -538,7 +576,7 @@ impl IntegrationManager {
         }
         let png = tmp.join("icon.png");
         let st = Command::new("timeout")
-            .args(["60", "ffmpeg", "-y", "-i", ico.to_str().unwrap_or(""), png.to_str().unwrap_or("")])
+            .args(["15", "ffmpeg", "-y", "-i", ico.to_str().unwrap_or(""), png.to_str().unwrap_or("")])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
@@ -546,24 +584,15 @@ impl IntegrationManager {
             fs::remove_dir_all(&tmp).ok();
             return None;
         }
-        // Validate: loadable and >= 16px (gdk-pixbuf is already a dep)
-        if let Ok(pb) = gdk_pixbuf::Pixbuf::from_file(&png) {
-            if pb.width() < 16 || pb.height() < 16 {
-                fs::remove_dir_all(&tmp).ok();
-                return None;
-            }
-        } else {
+        if !cached_icon_valid(&png) {
             fs::remove_dir_all(&tmp).ok();
             return None;
         }
-        let home = home_dir().unwrap_or_default();
-        let dest = home.join(".config").join("CorkyTux").join("icons")
-            .join(format!("{}-exe.png", slugify(game_name)));
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).ok();
         }
         fs::remove_file(&dest).ok();
-        let ok = fs::copy(&png, &dest).is_ok() && dest.is_file();
+        let ok = fs::copy(&png, &dest).is_ok() && cached_icon_valid(&dest);
         fs::remove_dir_all(&tmp).ok();
         if ok {
             Some(dest.display().to_string())
@@ -573,6 +602,10 @@ impl IntegrationManager {
     }
 
     pub fn extract_appimage_icon(&self, appimage_path: &str, game_name: &str) -> Option<String> {
+        Self::extract_appimage_icon_static(appimage_path, game_name)
+    }
+
+    pub fn extract_appimage_icon_static(appimage_path: &str, game_name: &str) -> Option<String> {
         let is_app = Path::new(&shellexpand_tilde(appimage_path))
             .extension().and_then(|e| e.to_str())
             .map(|e| e.eq_ignore_ascii_case("appimage"))
@@ -587,6 +620,9 @@ impl IntegrationManager {
         let home = home_dir().unwrap_or_default();
         let dest = home.join(".config").join("CorkyTux").join("icons")
             .join(format!("{}-appimage.png", slugify(game_name)));
+        if cached_icon_valid(&dest) {
+            return Some(dest.display().to_string());
+        }
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).ok();
         }
@@ -609,6 +645,10 @@ impl IntegrationManager {
     }
 
     pub fn extract_rpg_icon(&self, game_dir: &str, game_name: &str) -> Option<String> {
+        Self::extract_rpg_icon_static(game_dir, game_name)
+    }
+
+    pub fn extract_rpg_icon_static(game_dir: &str, game_name: &str) -> Option<String> {
         let dir = shellexpand_tilde(game_dir);
         let base = Path::new(&dir);
         if !base.is_dir() {
@@ -638,6 +678,9 @@ impl IntegrationManager {
         let home = home_dir().unwrap_or_default();
         let dest = home.join(".config").join("CorkyTux").join("icons")
             .join(format!("{}-rpg.png", slugify(game_name)));
+        if cached_icon_valid(&dest) {
+            return Some(dest.display().to_string());
+        }
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).ok();
         }
@@ -665,28 +708,49 @@ impl IntegrationManager {
     }
 
     pub fn query_folder_size(&self, path: &str) -> String {
+        Self::query_folder_size_static(path)
+    }
+
+    pub fn query_folder_size_static(path: &str) -> String {
         let expanded = shellexpand_tilde(path);
         let p = Path::new(&expanded);
         if !p.exists() {
             return "--".to_string();
         }
-        let size = self.query_folder_size_recursive(p);
+        if let Ok(md) = fs::symlink_metadata(&p) {
+            if md.is_file() {
+                return format_size_bytes(md.len());
+            }
+        }
+        let size = Self::query_folder_size_recursive_static(p, 0);
         format_size_bytes(size)
     }
 
-    fn query_folder_size_recursive(&self, path: &Path) -> u64 {
+    fn query_folder_size_recursive_static(path: &Path, depth: u32) -> u64 {
+        if depth > 32 {
+            return 0;
+        }
         let mut total = 0;
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
                 let p = entry.path();
-                if p.is_file() {
-                    total += fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
-                } else if p.is_dir() {
-                    total += self.query_folder_size_recursive(&p);
+                if let Ok(md) = fs::symlink_metadata(&p) {
+                    if md.file_type().is_symlink() {
+                        continue;
+                    }
+                    if md.is_file() {
+                        total += md.len();
+                    } else if md.is_dir() {
+                        total += Self::query_folder_size_recursive_static(&p, depth + 1);
+                    }
                 }
             }
         }
         total
+    }
+
+    fn query_folder_size_recursive(&self, path: &Path) -> u64 {
+        Self::query_folder_size_recursive_static(path, 0)
     }
 
     pub fn scan_lutris(&self) -> Vec<IntegrationEntry> {
