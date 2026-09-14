@@ -10,7 +10,7 @@ INSTALL_DIR="${HOME}/.local/share/corkytux"
 BIN_DIR="${HOME}/.local/bin"
 ICON_DIR="${HOME}/.local/share/icons"
 DESKTOP_DIR="${HOME}/.local/share/applications"
-VERSION="3.0.15"
+APP_VERSION="3.0.15"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -26,7 +26,7 @@ info() { echo -e "${CYAN}[i]${NC} $*"; }
 
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}║       CorkyTux Installer v${VERSION} (Rust)     ║${NC}"
+echo -e "${BOLD}║       CorkyTux Installer v${APP_VERSION} (Rust)     ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -143,7 +143,7 @@ fi
 
 # ─── Install ─────────────────────────────────────────────────────
 echo ""
-info "Installing CorkyTux v${VERSION}..."
+info "Installing CorkyTux v${APP_VERSION}..."
 mkdir -p "$INSTALL_DIR" "$BIN_DIR" "$ICON_DIR" "$DESKTOP_DIR"
 install -m 0755 "$APP" "${INSTALL_DIR}/corkytux"
 log "Binary: ${INSTALL_DIR}/corkytux"
