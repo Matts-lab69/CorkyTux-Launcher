@@ -691,11 +691,22 @@ fn inst_icon_image(id: &str, kind: &str, is_dark: bool, size: i32) -> gtk::Image
 }
 
 fn scan_instance_dirs() -> Vec<(String, String)> {
+    scan_instance_dirs_in(&instances_root())
+}
+
+fn scan_instance_dirs_in(root: &std::path::Path) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(instances_root()) {
+    if let Ok(entries) = std::fs::read_dir(root) {
         for e in entries.flatten() {
             let p = e.path();
             if !p.is_dir() {
+                continue;
+            }
+            // Never treat hidden/temp dirs as instance containers: an
+            // interrupted install leaves `.staging-<pid>-<ts>` trees (with
+            // versions/) behind, and each one would surface as a phantom,
+            // undeletable instance card.
+            if e.file_name().to_string_lossy().starts_with('.') {
                 continue;
             }
             let vers_dir = p.join("versions");
@@ -726,6 +737,31 @@ fn drop_base_copies(ids: &[String]) -> Vec<String> {
         let (mc, loader, _) = parse_inst_id(id);
         !(loader == "vanilla" && loader_mcs.iter().any(|m| m == &mc))
     }).cloned().collect()
+}
+
+/// Merge isolated containers + legacy global installs into (id, isolated).
+/// The same version id can show up under several container dirs (stale
+/// copies, re-imports); the UI keys everything by id, so a duplicate card
+/// could never be launched or deleted unambiguously — keep the first.
+fn collect_instance_ids(dirs: &[(String, String)], legacy: &[String]) -> Vec<(String, bool)> {
+    let mut out: Vec<(String, bool)> = Vec::new();
+    let mut by_dir: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    for (dir, id) in dirs {
+        by_dir.entry(dir.clone()).or_default().push(id.clone());
+    }
+    for ids in by_dir.values() {
+        for id in drop_base_copies(ids) {
+            if !out.iter().any(|(x, _)| x == &id) {
+                out.push((id, true));
+            }
+        }
+    }
+    for id in drop_base_copies(legacy) {
+        if !out.iter().any(|(x, _)| x == &id) {
+            out.push((id, false));
+        }
+    }
+    out
 }
 
 pub struct MinecraftView {
@@ -1537,26 +1573,12 @@ impl MinecraftView {
     }
 
     fn load_installed(&self) -> Vec<Inst> {
-        let mut out = Vec::new();
-        let mut by_dir: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-        for (dir, id) in scan_instance_dirs() {
-            by_dir.entry(dir).or_default().push(id);
-        }
-        for ids in by_dir.values() {
-            for id in drop_base_copies(ids) {
-                out.push(self.make_inst(&id, true));
-            }
-        }
         // legacy global installs (same base-copy rule in the shared dir)
         let st = MinecraftManager::status(&legacy_dir().display().to_string()).unwrap_or_default();
         let legacy: Vec<String> = st.get("installed_versions").and_then(|a| a.as_array()).cloned().unwrap_or_default()
             .into_iter().filter_map(|x| x.as_str().map(str::to_string)).collect();
-        for id in drop_base_copies(&legacy) {
-            if !out.iter().any(|i: &Inst| i.id == id) {
-                out.push(self.make_inst(&id, false));
-            }
-        }
-        out
+        collect_instance_ids(&scan_instance_dirs(), &legacy)
+            .into_iter().map(|(id, isolated)| self.make_inst(&id, isolated)).collect()
     }
 
     fn make_inst(&self, id: &str, isolated: bool) -> Inst {
@@ -1637,23 +1659,10 @@ impl MinecraftView {
         let vv = self.clone();
         glib::idle_add_local(move || match rx.try_recv() {
             Ok((dirs, st)) => {
-                let mut list = Vec::new();
-                let mut by_dir: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-                for (dir, id) in &dirs {
-                    by_dir.entry(dir.clone()).or_default().push(id.clone());
-                }
-                for ids in by_dir.values() {
-                    for id in drop_base_copies(ids) {
-                        list.push(vv.make_inst(&id, true));
-                    }
-                }
                 let legacy: Vec<String> = st.get("installed_versions").and_then(|a| a.as_array()).cloned().unwrap_or_default()
                     .into_iter().filter_map(|x| x.as_str().map(str::to_string)).collect();
-                for id in drop_base_copies(&legacy) {
-                    if !list.iter().any(|i: &Inst| i.id == id) {
-                        list.push(vv.make_inst(&id, false));
-                    }
-                }
+                let list: Vec<Inst> = collect_instance_ids(&dirs, &legacy)
+                    .into_iter().map(|(id, isolated)| vv.make_inst(&id, isolated)).collect();
                 vv.data.borrow_mut().installed = list;
                 vv.render_library();
                 if !vv.detail_id.borrow().is_empty() {
@@ -1947,22 +1956,29 @@ impl MinecraftView {
         };
         let dir = inst_dir(&inst.id, inst.isolated);
         let mut errs = Vec::new();
-        // Backend-validated delete (guards path traversal, reports failures).
         let mc_dir = if inst.isolated {
             instances_root().join(safe_id(&inst.id)).display().to_string()
         } else {
             legacy_dir().display().to_string()
         };
-        match crate::backend::external::MinecraftManager::instance_delete(&inst.id, &mc_dir) {
-            Ok(doc) => {
-                let ok = doc.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
-                if !ok {
-                    let msg = doc.get("error").and_then(|x| x.as_str()).map(str::to_string)
-                        .unwrap_or_else(|| "backend refused".to_string());
-                    errs.push(msg);
+        // Backend-validated delete (guards path traversal, reports failures).
+        // An isolated container without versions/<id> is an orphan of a
+        // partial/failed install: the backend has nothing to remove there,
+        // so skip it and sweep the container directly instead of failing
+        // with "instance not found" while files remain on disk.
+        let backend_ver = std::path::Path::new(&mc_dir).join("versions").join(&inst.id);
+        if !inst.isolated || backend_ver.is_dir() {
+            match crate::backend::external::MinecraftManager::instance_delete(&inst.id, &mc_dir) {
+                Ok(doc) => {
+                    let ok = doc.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
+                    if !ok {
+                        let msg = doc.get("error").and_then(|x| x.as_str()).map(str::to_string)
+                            .unwrap_or_else(|| "backend refused".to_string());
+                        errs.push(msg);
+                    }
                 }
+                Err(e) => errs.push(e),
             }
-            Err(e) => errs.push(e),
         }
         // The backend only removes versions/<id>. Isolated instances keep their
         // per-instance game dir (mods, saves, config) which the plugin does not
@@ -5905,4 +5921,57 @@ fn chrono_date(epoch: i64) -> String {
         rem -= dim;
     }
     format!("{:04}-{:02}-{:02}", y, m, d)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn mktree(root: &std::path::Path, dirs: &[&str]) {
+        for d in dirs {
+            fs::create_dir_all(root.join(d)).unwrap();
+        }
+    }
+
+    #[test]
+    fn scan_skips_hidden_staging_dirs() {
+        let root = std::env::temp_dir().join(format!("corkytux-mc-scan-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        // Two leaked `.staging-*` installs + one real container, all holding
+        // the same version id: only the real container may contribute it.
+        mktree(&root, &[
+            ".staging-1/versions/fabric-loader-0.19.3-26.2",
+            ".staging-1/versions/26.2",
+            ".staging-2/versions/fabric-loader-0.19.3-26.2",
+            ".staging-2/versions/26.2",
+            "fabric-loader-0.19.3-26.2/versions/fabric-loader-0.19.3-26.2",
+            "fabric-loader-0.19.3-26.2/versions/26.2",
+        ]);
+        let got = scan_instance_dirs_in(&root);
+        let _ = fs::remove_dir_all(&root);
+        assert!(got.iter().all(|(dir, _)| !dir.contains(".staging")),
+            "staging dirs must never surface as instances: {:?}", got);
+        let ids: Vec<&str> = got.iter().map(|(_, id)| id.as_str()).collect();
+        assert!(ids.contains(&"fabric-loader-0.19.3-26.2"));
+    }
+
+    #[test]
+    fn merge_dedupes_same_id_across_containers() {
+        // Same version id visible from two different containers (stale copy,
+        // re-import): only one card, isolated wins over legacy.
+        let dirs = vec![
+            ("/c/a".to_string(), "fabric-loader-0.19.3-26.2".to_string()),
+            ("/c/b".to_string(), "fabric-loader-0.19.3-26.2".to_string()),
+        ];
+        let merged = collect_instance_ids(&dirs, &["fabric-loader-0.19.3-26.2".to_string()]);
+        assert_eq!(merged, vec![("fabric-loader-0.19.3-26.2".to_string(), true)]);
+        // Base vanilla copy next to its loader is a dependency, not an instance.
+        let with_base = vec![
+            ("/c/a".to_string(), "26.2".to_string()),
+            ("/c/a".to_string(), "fabric-loader-0.19.3-26.2".to_string()),
+        ];
+        let merged = collect_instance_ids(&with_base, &[]);
+        assert_eq!(merged, vec![("fabric-loader-0.19.3-26.2".to_string(), true)]);
+    }
 }
