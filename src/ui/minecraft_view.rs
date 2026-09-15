@@ -2990,9 +2990,16 @@ impl MinecraftView {
             Some(p) => {
                 let text = std::fs::read_to_string(&p).unwrap_or_default();
                 let lines: Vec<&str> = text.lines().collect();
-                let tail = if lines.len() > 200 { &lines[lines.len() - 200..] } else { &lines[..] };
-                self.logs_view.buffer().set_text(&format!("{}:\n{}", p.display(), tail.join("\n")));
-                self.log_lbl.set_text(&format!("Showing: {}", p.display()));
+                let tail = if lines.len() > 400 { &lines[lines.len() - 400..] } else { &lines[..] };
+                let kept: Vec<&str> = tail.iter().copied().filter(|l| {
+                    let t = l.trim_start();
+                    !(t.starts_with("# cmd:") && l.len() > 300)
+                }).collect();
+                self.logs_view.buffer().set_text(&kept.join("\n"));
+                self.log_lbl.set_text(&format!("Showing: {}", p.file_name().and_then(|s| s.to_str()).unwrap_or("log")));
+                let buf = self.logs_view.buffer();
+                let mut end = buf.end_iter();
+                self.logs_view.scroll_to_iter(&mut end, 0.0, false, 0.0, 0.0);
             }
             None => {
                 self.logs_view.buffer().set_text("No Minecraft logs yet — launch an instance first.");

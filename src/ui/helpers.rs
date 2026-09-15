@@ -496,8 +496,13 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .recent-frame {{ border: 1px solid {accent}; border-radius: 10px; background-color: transparent; padding: 16px; }}\
              .recent-label {{ color: {text_main}; font-weight: bold; font-size: 24px; }}\
              .recent-empty {{ color: {text_sec}; font-size: 12px; }}\
-             scrollbar.vertical trough {{ background: none; background-color: transparent; background-image: none; border: none; box-shadow: none; outline: none; }}\
-             scrollbar.horizontal trough {{ background: none; background-color: transparent; background-image: none; border: none; box-shadow: none; outline: none; }}\
+             scrollbar.vertical {{ min-width: 6px; }}\
+             scrollbar.horizontal {{ min-height: 6px; }}\
+             scrollbar.vertical trough {{ background: none; background-color: transparent; background-image: none; border: none; box-shadow: none; outline: none; min-width: 6px; }}\
+             scrollbar.horizontal trough {{ background: none; background-color: transparent; background-image: none; border: none; box-shadow: none; outline: none; min-height: 6px; }}\
+             scrollbar.vertical slider {{ background-color: alpha({text_muted}, 0.45); border-radius: 3px; min-width: 6px; min-height: 24px; border: none; }}\
+             scrollbar.horizontal slider {{ background-color: alpha({text_muted}, 0.45); border-radius: 3px; min-height: 6px; min-width: 24px; border: none; }}\
+             scrollbar.vertical slider:hover {{ background-color: {accent}; }}\
              .game-card {{ background-color: {card}; border-radius: 22px; min-width: 200px; min-height: 140px; border: {game_border_width}px solid {game_border}; padding: 0; }}\
              .game-card:hover {{ background-color: {hover}; }}\
              .accent-strip {{ background-color: {strip_color}; border-radius: 0 0 20px 20px; padding: 6px 10px; }}\

@@ -95,11 +95,11 @@ fn url_encode(s: &str) -> String {
 fn card(title: &str) -> (gtk::Frame, gtk::Box) {
     let f = gtk::Frame::new(None);
     f.add_css_class("page-card");
-    let inner = gtk::Box::new(gtk::Orientation::Vertical, 6);
-    inner.set_margin_top(8);
-    inner.set_margin_bottom(8);
-    inner.set_margin_start(10);
-    inner.set_margin_end(10);
+    let inner = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    inner.set_margin_top(6);
+    inner.set_margin_bottom(6);
+    inner.set_margin_start(8);
+    inner.set_margin_end(8);
     let t = gtk::Label::new(Some(title));
     t.set_halign(gtk::Align::Start);
     t.add_css_class("frame-title");
@@ -121,11 +121,11 @@ impl StoresView {
         scroll.set_vexpand(true);
         scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
         scroll.set_has_frame(false);
-        let col = gtk::Box::new(gtk::Orientation::Vertical, 10);
-        col.set_margin_top(24);
-        col.set_margin_bottom(24);
-        col.set_margin_start(24);
-        col.set_margin_end(24);
+        let col = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        col.set_margin_top(12);
+        col.set_margin_bottom(12);
+        col.set_margin_start(12);
+        col.set_margin_end(12);
         col.set_hexpand(true);
         scroll.set_child(Some(&col));
 
@@ -487,14 +487,15 @@ impl StoresView {
                                 let has_more = doc.get("has_more").and_then(|v| v.as_bool()).unwrap_or(false);
                                 let start = doc.get("start").and_then(|v| v.as_u64()).unwrap_or(start);
                                 if doc.get("deals").is_none() {
-                                    // Backend error: stop paging.
                                     total_cc.set(next_cc.get());
                                 } else {
-                                    // The catalog total is huge and filtered (promos only);
-                                    // page by the real (start, fetched) cursor so the pager
-                                    // stays finite and grows only as you navigate.
+                                    let real_total = doc.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
                                     next_cc.set(start + fetched);
-                                    total_cc.set(start + fetched);
+                                    if real_total > 0 {
+                                        total_cc.set(real_total.max(start + fetched));
+                                    } else {
+                                        total_cc.set(start + fetched + if has_more { PER_PAGE } else { 0 });
+                                    }
                                 }
                                 let mut added = 0usize;
                                 for p in arr {
