@@ -767,6 +767,8 @@ impl ProtonManager {
         let args_before = game.get("argsbefore").cloned().unwrap_or_default();
         let args_after = game.get("argsafter").cloned().unwrap_or_default();
         let mut launch_args = game.get("launchargs").cloned().unwrap_or_default();
+        let steam_overlay = game.get("steamoverlay").map(|v| v == "true").unwrap_or(false);
+        let fake_steam_id = game.get("fakesteamid").cloned().unwrap_or_else(|| "480".to_string());
         // Epic Online Services auth (Fall Guys & co. abort with
         // "no se encontró un código de intercambio" without it).
         // Same as Heroic: fresh exchange code passed as launch args.
@@ -788,10 +790,31 @@ impl ProtonManager {
                 }
             }
         }
-        let _fake_steam_id = {
-            let v = game.get("fakesteamid").cloned().unwrap_or_default();
-            if v.is_empty() { "480".to_string() } else { v }
-        };
+
+        // Auto-start Steam client when the game needs the overlay or
+        // Steamworks multiplayer (invite friends, lobbies, etc.).
+        // Parity with OFLL FilesWorker::generateProcess.
+        // Launch Steam in background; the game connects via Steamworks
+        // when ready — no blocking wait needed.
+        if steam_overlay || !steam_id.trim().is_empty() {
+            if Command::new("which").arg("steam").stdout(Stdio::null()).stderr(Stdio::null()).status()
+                .map(|s| s.success()).unwrap_or(false)
+            {
+                let running = Command::new("sh")
+                    .args(["-c", "pidof steam >/dev/null 2>&1"])
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false);
+                if !running {
+                    let _ = Command::new("steam")
+                        .arg("-silent")
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn();
+                }
+            }
+        }
 
         // Resolve actual prefix (shared o por juego).
         // C++ parity: shared prefix se indexa por proton; SharedPrefix
@@ -888,6 +911,28 @@ impl ProtonManager {
             // Never inherit UMU_LOG=1 from the session: it makes umu dump
             // the whole environment (~100 DEBUG lines) into every log.
             final_cmd.env_remove("UMU_LOG");
+            // Steam Overlay: LD_PRELOAD injection for umu path too.
+            if steam_overlay {
+                let home = std::env::var("HOME").unwrap_or_default();
+                let overlay32 = std::path::PathBuf::from(&home)
+                    .join(".steam/steam/ubuntu12_32/gameoverlayrenderer.so");
+                let overlay64 = std::path::PathBuf::from(&home)
+                    .join(".steam/steam/ubuntu12_64/gameoverlayrenderer.so");
+                let mut preload = String::new();
+                if overlay32.exists() {
+                    preload.push_str(overlay32.to_str().unwrap_or(""));
+                }
+                if overlay64.exists() {
+                    if !preload.is_empty() { preload.push(':'); }
+                    preload.push_str(overlay64.to_str().unwrap_or(""));
+                }
+                if !preload.is_empty() {
+                    preload.insert(0, ':');
+                    final_cmd.env("LD_PRELOAD", &preload);
+                    final_cmd.env("ENABLE_VK_LAYER_VALVE_steam_overlay_1", "1");
+                    final_cmd.env("SteamOverlayGameId", &fake_steam_id);
+                }
+            }
             // args: [argsBefore...] EXE [argsAfter...]
             for arg in split_quoted_args(&args_before) { final_cmd.arg(arg); }
             final_cmd.arg(&executable);
@@ -956,6 +1001,32 @@ impl ProtonManager {
 
             if mango_hud {
                 final_cmd.env("MANGOHUD", "1");
+            }
+
+            // Steam Overlay: LD_PRELOAD injection (parity with OFLL
+            // FilesWorker::generateProcess). Without this, games that
+            // use Steamworks features (invite friends, lobbies, etc.)
+            // cannot show the Steam overlay or the invite dialog.
+            if steam_overlay {
+                let home = std::env::var("HOME").unwrap_or_default();
+                let overlay32 = PathBuf::from(&home)
+                    .join(".steam/steam/ubuntu12_32/gameoverlayrenderer.so");
+                let overlay64 = PathBuf::from(&home)
+                    .join(".steam/steam/ubuntu12_64/gameoverlayrenderer.so");
+                let mut preload = String::new();
+                if overlay32.exists() {
+                    preload.push_str(overlay32.to_str().unwrap_or(""));
+                }
+                if overlay64.exists() {
+                    if !preload.is_empty() { preload.push(':'); }
+                    preload.push_str(overlay64.to_str().unwrap_or(""));
+                }
+                if !preload.is_empty() {
+                    preload.insert(0, ':');
+                    final_cmd.env("LD_PRELOAD", &preload);
+                    final_cmd.env("ENABLE_VK_LAYER_VALVE_steam_overlay_1", "1");
+                    final_cmd.env("SteamOverlayGameId", &fake_steam_id);
+                }
             }
 
             // Comando estándar Proton: proton waitforexitandrun game.exe

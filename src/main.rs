@@ -289,6 +289,7 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                         || g.executor == "appimage-launcher";
                     let rpg = g.source == crate::backend::game_model::GameSource::RpgMaker
                         || g.executor == "rpgmaker-runtime";
+                    // Retry if either banner or icon is missing (not just both)
                     (g.banner.is_empty() || g.icon.is_empty(), app, rpg, g.executable.clone(), g.steam_id.clone(), g.lutris_slug.clone())
                 }
                 None => (false, false, false, String::new(), String::new(), String::new()),
@@ -304,7 +305,7 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                     std::sync::mpsc::channel::<(Option<String>, Option<String>)>();
                 let send_name = art_name.clone();
                 std::thread::spawn(move || {
-                    let (i, b) = if needs_appimage {
+                    let (mut i, mut b) = if needs_appimage {
                         let i = IntegrationManager::extract_appimage_icon_static(&send_exe, &send_name);
                         (i, None)
                     } else if needs_rpg {
@@ -321,6 +322,11 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                         }
                         out
                     };
+                    if b.is_none() {
+                        if let Some(ref ic) = i {
+                            b = IntegrationManager::banner_from_icon_static(ic, &send_name);
+                        }
+                    }
                     let _ = art_tx.send((i, b));
                 });
                 let art_name3 = art_name.clone();
@@ -1423,6 +1429,45 @@ pub(crate) fn maybe_autoinstall_proton(state: &AppState, parent: &adw::Applicati
 }
 
 fn main() {
+    // Desktop/app-menu shortcut entry: launch the game headless and exit.
+    // The child survives the parent exit, so the game keeps running while
+    // the launcher itself never opens a window.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(pos) = args.iter().position(|a| a == "--play") {
+        let name = args.get(pos + 1).map(|s| s.as_str()).unwrap_or("");
+        if !name.is_empty() {
+            let proton = ProtonManager::new();
+            match proton.run_game(name) {
+                Ok(()) => std::process::exit(0),
+                Err(e) => {
+                    eprintln!("[CorkyTux] Failed to launch {}: {}", name, e);
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+    // --set-artwork <game> <icon> <banner>  (set icon/banner paths in config)
+    if let Some(pos) = args.iter().position(|a| a == "--set-artwork") {
+        let game = args.get(pos + 1).map(|s| s.as_str()).unwrap_or("");
+        let icon = args.get(pos + 2).map(|s| s.as_str()).unwrap_or("");
+        let banner = args.get(pos + 3).map(|s| s.as_str()).unwrap_or("");
+        if !game.is_empty() {
+            let cfg = ConfigManager::new();
+            if cfg.has_game(game) {
+                if !icon.is_empty() {
+                    cfg.set_game_value(game, "Icon", icon);
+                }
+                if !banner.is_empty() {
+                    cfg.set_game_value(game, "Banner", banner);
+                }
+                eprintln!("[CorkyTux] Set artwork for \"{}\"", game);
+                std::process::exit(0);
+            } else {
+                eprintln!("[CorkyTux] Game \"{}\" not found", game);
+                std::process::exit(1);
+            }
+        }
+    }
     let app = adw::Application::builder()
         .application_id("com.corkytux.CorkyTux").build();
     app.connect_activate(|app| {

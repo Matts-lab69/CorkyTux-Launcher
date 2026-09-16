@@ -241,6 +241,16 @@ impl IntegrationManager {
         Self::download_art_min(client, url, dest, 1000)
     }
 
+    /// Icon-specific download: lower min_bytes threshold (small icons
+    /// can be valid at ~100 bytes).
+    fn download_art_icon(
+        client: &reqwest::blocking::Client,
+        url: &str,
+        dest: &PathBuf,
+    ) -> bool {
+        Self::download_art_min(client, url, dest, 100)
+    }
+
     fn download_art_min(
         client: &reqwest::blocking::Client,
         url: &str,
@@ -353,14 +363,15 @@ impl IntegrationManager {
                 }
             }
             let i = icons_dir.join(format!("{}.jpg", id));
-            icon_is_wide = true;
-            if Self::file_valid(&i, 200) {
+            if Self::file_valid(&i, 100) {
                 icon = Some(i.display().to_string());
-            } else if Self::download_art_min(&client,
+                icon_is_wide = true;
+            } else if Self::download_art_icon(&client,
                 &format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{}/logo.png", id),
-                &i, 200)
+                &i)
             {
                 icon = Some(i.display().to_string());
+                icon_is_wide = true;
             }
         }
 
@@ -482,7 +493,7 @@ impl IntegrationManager {
             }
             if icon.is_none() || icon_is_wide {
                 let d = icons_dir.join(format!("{}-sgdb.png", slugify(game_name)));
-                if Self::file_valid(&d, 200) {
+                if Self::file_valid(&d, 100) {
                     icon = Some(d.display().to_string());
                 } else if let Some(found) =
                     Self::sgdb_icon_for(&client, &grid_id, game_name, &icons_dir)
@@ -527,10 +538,14 @@ impl IntegrationManager {
         });
         for u in urls {
             let d = icons_dir.join(format!("{}-sgdb.png", slugify(game_name)));
-            if Self::file_valid(&d, 200) {
+            if Self::file_valid(&d, 100) {
                 return Some(d.display().to_string());
             }
-            if Self::download_art_min(client, &u, &d, 200) {
+            // Remove stale/partial file before retrying
+            if d.exists() {
+                fs::remove_file(&d).ok();
+            }
+            if Self::download_art_icon(client, &u, &d) {
                 return Some(d.display().to_string());
             }
         }
@@ -595,6 +610,69 @@ impl IntegrationManager {
         let ok = fs::copy(&png, &dest).is_ok() && cached_icon_valid(&dest);
         fs::remove_dir_all(&tmp).ok();
         if ok {
+            Some(dest.display().to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Last-resort banner: if every real artwork source (Steam, Store, Lutris,
+    /// SGDB) failed and even icoextract only produced a square icon, generate
+    /// a banner from that icon. Runs only AFTER the icon extraction work, and
+    /// only when no banner is present.
+    pub fn banner_from_icon(&self, icon_path: &str, game_name: &str) -> Option<String> {
+        Self::banner_from_icon_static(icon_path, game_name)
+    }
+
+    pub fn banner_from_icon_static(icon_path: &str, game_name: &str) -> Option<String> {
+        if icon_path.trim().is_empty() || !Path::new(&shellexpand_tilde(icon_path)).is_file() {
+            return None;
+        }
+        if !tool_available("ffmpeg") {
+            return None;
+        }
+        let home = home_dir().unwrap_or_default();
+        let dest = home.join(".config").join("CorkyTux").join("banners")
+            .join(format!("{}-iconbanner.jpg", slugify(game_name)));
+        if cached_icon_valid(&dest) {
+            return Some(dest.display().to_string());
+        }
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).ok();
+        }
+        let tmp = std::env::temp_dir().join(format!(
+            "corkytux-banner-{}-{}.jpg",
+            std::process::id(),
+            slugify(game_name)
+        ));
+        let icon_abs = shellexpand_tilde(icon_path);
+        let out_str = tmp.to_str().unwrap_or("").to_string();
+        let ok = Command::new("timeout")
+            .args(["30", "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#101014:s=1024x576"])
+            .arg("-i")
+            .arg(&icon_abs)
+            .args([
+                "-filter_complex",
+                "[1:v]scale=w=500:h=500:force_original_aspect_ratio=decrease[ic];\
+                     [0:v][ic]overlay=(W-w)/2:(H-h)/2",
+                "-frames:v", "1", "-q:v", "2",
+            ])
+            .arg(&out_str)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !ok {
+            std::fs::remove_file(&tmp).ok();
+            return None;
+        }
+        if !cached_icon_valid(&tmp) {
+            std::fs::remove_file(&tmp).ok();
+            return None;
+        }
+        std::fs::rename(&tmp, &dest).ok();
+        if cached_icon_valid(&dest) {
             Some(dest.display().to_string())
         } else {
             None
@@ -1317,6 +1395,11 @@ fn copy_if_missing(src: &PathBuf, dest: &PathBuf) -> bool {
 /// SteamGridDB autocomplete: id whose name matches normalized-equal.
 fn find_grid_id(body: &str, game_name: &str) -> String {
     let want = norm_name(game_name);
+    if want.is_empty() {
+        return String::new();
+    }
+    let mut best_id = String::new();
+    let mut best_score = 0u32;
     let mut rest = body;
     loop {
         let id_pos = match rest.find("\"id\"") {
@@ -1333,8 +1416,27 @@ fn find_grid_id(body: &str, game_name: &str) -> String {
         let window = &seg[..seg.len().min(600)];
         if let Some(npos) = window.find("\"name\"") {
             if let Some(nm) = json_field(&window[npos..], "name") {
-                if norm_name(&nm) == want && !id_num.is_empty() {
+                if id_num.is_empty() {
+                    rest = &seg[5.min(seg.len())..];
+                    if rest.len() < 10 { break; }
+                    continue;
+                }
+                let candidate = norm_name(&nm);
+                if candidate == want {
                     return id_num;
+                }
+                // Fuzzy: candidate contains want or vice versa
+                let score = if candidate.contains(&want) || want.contains(&candidate) {
+                    3
+                } else {
+                    // Prefix match: first 6+ chars identical
+                    let prefix_len = candidate.chars().zip(want.chars())
+                        .take_while(|(a, b)| a == b).count();
+                    if prefix_len >= 6 { 2 } else { 0 }
+                };
+                if score > best_score {
+                    best_score = score;
+                    best_id = id_num;
                 }
             }
         }
@@ -1343,7 +1445,7 @@ fn find_grid_id(body: &str, game_name: &str) -> String {
             break;
         }
     }
-    String::new()
+    best_id
 }
 
 fn shellexpand_tilde(s: &str) -> String {

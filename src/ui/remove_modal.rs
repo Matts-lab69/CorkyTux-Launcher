@@ -108,6 +108,7 @@ pub fn show_remove_modal(
         }
 
         state_clone.game_model.remove_game(&sel);
+        crate::backend::shortcuts::cleanup(&sel);
         state_clone.recent_model.refresh(30);
         *state_clone.selected_game.borrow_mut() = String::new();
 

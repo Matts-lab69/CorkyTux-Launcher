@@ -143,6 +143,7 @@ pub fn show_game_settings_modal(
             if !new_name.is_empty() && new_name != game {
                 if state_c.game_model.get_game(&new_name).is_none() {
                     state_c.game_model.rename_game(&game, &new_name);
+                    crate::backend::shortcuts::rename(&game, &new_name);
                     *state_c.selected_game.borrow_mut() = new_name;
                 }
             }
@@ -363,11 +364,12 @@ fn build_run_tab(
         }
         save_entry(state, game_name, key, &entry);
     }
-    // Steam runtime / umu switches (C++ Run tab parity).
+    // Steam runtime / umu / overlay switches (C++ Run tab parity).
     // umu stays toggleable even when umu-run is missing: the user may
     // install it later and the launcher errors gracefully at launch.
     for (label, key) in [
         ("Steam runtime", "SteamRuntime"),
+        ("Steam overlay", "SteamOverlay"),
         ("umu-launcher", "UseUmu"),
     ] {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -387,6 +389,7 @@ fn build_run_tab(
         opts_inner.append(&row);
         save_switch(state, game_name, key, &sw);
     }
+
     cols.append(&opts_frame);
 
     // ---- Dependencies & DLL overrides card ----

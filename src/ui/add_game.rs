@@ -663,6 +663,11 @@ pub fn show_add_game_modal(
                 if out.0.is_none() && art_exe_send.to_lowercase().ends_with(".exe") {
                     out.0 = crate::backend::integration::IntegrationManager::extract_exe_icon_static(&art_exe_send, &art_name_send);
                 }
+                if out.1.is_none() {
+                    if let Some(ref ic) = out.0 {
+                        out.1 = crate::backend::integration::IntegrationManager::banner_from_icon_static(ic, &art_name_send);
+                    }
+                }
                 let _ = art_tx.send(out);
             });
             let gm_c2 = state_c.game_model.clone();

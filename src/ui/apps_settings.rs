@@ -407,6 +407,7 @@ pub fn show_apps_settings_modal(
         if !new_name.is_empty() && new_name != orig_c {
             if state_c.game_model.get_game(&new_name).is_none() {
                 state_c.game_model.rename_game(&orig_c, &new_name);
+                crate::backend::shortcuts::rename(&orig_c, &new_name);
                 *state_c.selected_game.borrow_mut() = new_name;
             }
         }

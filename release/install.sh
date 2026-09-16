@@ -10,7 +10,7 @@ INSTALL_DIR="${HOME}/.local/share/corkytux"
 BIN_DIR="${HOME}/.local/bin"
 ICON_DIR="${HOME}/.local/share/icons"
 DESKTOP_DIR="${HOME}/.local/share/applications"
-APP_VERSION="3.0.16"
+APP_VERSION="3.0.18"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

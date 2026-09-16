@@ -26,6 +26,9 @@ pub struct DetailsPanel {
     pub action_buttons: std::rc::Rc<std::cell::RefCell<Vec<(String, gtk::Button, u8)>>>,
     actions_grid: gtk::Grid,
     size_gen: std::rc::Rc<std::cell::RefCell<u64>>,
+    menu_switch: gtk::Switch,
+    desktop_switch: gtk::Switch,
+    shortcut_guard: std::rc::Rc<std::cell::Cell<bool>>,
 }
 
 impl DetailsPanel {
@@ -245,6 +248,103 @@ impl DetailsPanel {
         actions_frame.set_child(Some(&actions_inner));
         content.append(&actions_frame);
 
+        // Shortcuts: optional app-menu / desktop .desktop entries. Switch
+        // state is user-driven; guard keeps set_game() from round-tripping
+        // through the handlers when it only refreshes state.
+        let shortcut_guard: std::rc::Rc<std::cell::Cell<bool>> =
+            std::rc::Rc::new(std::cell::Cell::new(false));
+        let shortcut_frame = gtk::Frame::new(None);
+        shortcut_frame.add_css_class("actions-frame");
+        let shortcut_inner = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        shortcut_inner.set_margin_top(4);
+        shortcut_inner.set_margin_bottom(4);
+        shortcut_inner.set_margin_start(4);
+        shortcut_inner.set_margin_end(4);
+        let shortcut_title = gtk::Label::new(Some("Shortcuts"));
+        shortcut_title.set_halign(gtk::Align::Start);
+        shortcut_title.add_css_class("frame-title");
+        shortcut_inner.append(&shortcut_title);
+
+        let make_switch_row = |title: &str, sub: &str| -> (gtk::Box, gtk::Switch) {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            row.set_hexpand(true);
+            let vbox = gtk::Box::new(gtk::Orientation::Vertical, 2);
+            vbox.set_hexpand(true);
+            let lbl = gtk::Label::new(Some(title));
+            lbl.set_halign(gtk::Align::Start);
+            lbl.set_wrap(true);
+            let s = gtk::Label::new(Some(sub));
+            s.set_halign(gtk::Align::Start);
+            s.set_opacity(0.6);
+            s.add_css_class("time-label");
+            vbox.append(&lbl);
+            vbox.append(&s);
+            let sw = gtk::Switch::new();
+            sw.set_valign(gtk::Align::Center);
+            row.append(&vbox);
+            row.append(&sw);
+            (row, sw)
+        };
+
+        let (menu_row, menu_switch) = make_switch_row(
+            "Add App menu",
+            "Add entry to the application menu",
+        );
+        let (desktop_row, desktop_switch) = make_switch_row(
+            "Add App desktop",
+            "Add shortcut to the desktop",
+        );
+        {
+            let cg = current_game_rc.clone();
+            let guard = shortcut_guard.clone();
+            menu_switch.connect_active_notify(move |s| {
+                if guard.get() {
+                    return;
+                }
+                if let Some(ref name) = *cg.borrow() {
+                    let active = s.is_active();
+                    let res = if active {
+                        crate::backend::shortcuts::enable_app_menu(name)
+                    } else {
+                        crate::backend::shortcuts::disable_app_menu(name)
+                    };
+                    if let Err(e) = res {
+                        s.set_active(!active);
+                        helpers::present_msg(s, "Failed to update app menu", &e);
+                        return;
+                    }
+                    ConfigManager::new().set_game_value(name, "MenuEntry", &active.to_string());
+                }
+            });
+        }
+        {
+            let cg = current_game_rc.clone();
+            let guard = shortcut_guard.clone();
+            desktop_switch.connect_active_notify(move |s| {
+                if guard.get() {
+                    return;
+                }
+                if let Some(ref name) = *cg.borrow() {
+                    let active = s.is_active();
+                    let res = if active {
+                        crate::backend::shortcuts::enable_desktop(name)
+                    } else {
+                        crate::backend::shortcuts::disable_desktop(name)
+                    };
+                    if let Err(e) = res {
+                        s.set_active(!active);
+                        helpers::present_msg(s, "Failed to update desktop shortcut", &e);
+                        return;
+                    }
+                    ConfigManager::new().set_game_value(name, "DesktopEntry", &active.to_string());
+                }
+            });
+        }
+        shortcut_inner.append(&menu_row);
+        shortcut_inner.append(&desktop_row);
+        shortcut_frame.set_child(Some(&shortcut_inner));
+        content.append(&shortcut_frame);
+
         scroll.set_child(Some(&content));
         root.append(&scroll);
 
@@ -281,6 +381,9 @@ impl DetailsPanel {
             action_buttons,
             actions_grid,
             size_gen: std::rc::Rc::new(std::cell::RefCell::new(0)),
+            menu_switch,
+            desktop_switch,
+            shortcut_guard,
         };
 
         panel.revealer.set_child(Some(&panel.root));
@@ -541,6 +644,20 @@ impl DetailsPanel {
         if let Some(ref id) = *self.star_handler_id.borrow() {
             self.star_button.unblock_signal(id);
         }
+
+        // Shortcuts — refresh state without round-tripping handlers.
+        self.shortcut_guard.set(true);
+        let menu_active = cfg
+            .game_value(name, "MenuEntry")
+            .map(|v| v.eq_ignore_ascii_case("true"))
+            .unwrap_or_else(|| crate::backend::shortcuts::app_menu_active(name));
+        self.menu_switch.set_active(menu_active);
+        let desktop_active = cfg
+            .game_value(name, "DesktopEntry")
+            .map(|v| v.eq_ignore_ascii_case("true"))
+            .unwrap_or_else(|| crate::backend::shortcuts::desktop_active(name));
+        self.desktop_switch.set_active(desktop_active);
+        self.shortcut_guard.set(false);
 
         // Install info
         self.set_install_info(name, cfg);

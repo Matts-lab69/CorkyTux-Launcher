@@ -170,7 +170,7 @@ impl Sidebar {
         scrolled.set_hscrollbar_policy(gtk::PolicyType::Never);
         // No default gray frame around the viewport (that was the stray bar).
         scrolled.set_has_frame(false);
-        scrolled.set_overlay_scrolling(true);
+        scrolled.set_overlay_scrolling(false);
 
         let list = Rc::new(gtk::ListBox::new());
         list.set_selection_mode(gtk::SelectionMode::Single);

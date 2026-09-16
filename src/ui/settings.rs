@@ -1537,10 +1537,16 @@ pub fn show_settings_modal(
                     let mut done = Vec::new();
                     for (gname, gid) in art_jobs {
                         let (i, b) = fresh_mgr.resolve_artwork(&gname, &gid);
+                        let mut banner = b;
+                        if banner.is_none() {
+                            if let Some(ref ic) = i {
+                                banner = fresh_mgr.banner_from_icon(ic, &gname);
+                            }
+                        }
                         done.push((
                             gname,
                             i.unwrap_or_default(),
-                            b.unwrap_or_default(),
+                            banner.unwrap_or_default(),
                         ));
                     }
                     let _ = atx.send(done);
