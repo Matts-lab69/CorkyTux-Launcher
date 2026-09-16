@@ -347,8 +347,11 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                             || cur_icon.contains("-rpg.png")
                         {
                             if !icon_path_ok(&cur_icon) {
-                                // keep replacement
+                                // Current extracted icon is broken, keep replacement
+                            } else if !icon.is_empty() && icon_path_ok(&icon) {
+                                // Online icon is valid and higher quality, keep it
                             } else {
+                                // Online icon failed, keep the existing extracted icon
                                 icon.clear();
                             }
                         }

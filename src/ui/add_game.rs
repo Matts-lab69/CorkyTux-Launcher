@@ -685,7 +685,11 @@ pub fn show_add_game_modal(
                             icon.clear();
                         }
                         if cur_icon.contains("-exe.png") && std::path::Path::new(&cur_icon).is_file() {
-                            icon.clear();
+                            if !icon.is_empty() && std::path::Path::new(&icon).is_file() {
+                                // Keep the higher-quality online icon
+                            } else {
+                                icon.clear();
+                            }
                         }
                         let mut banner = b.unwrap_or_default();
                         if !banner.is_empty() && !std::path::Path::new(&banner).is_file() {

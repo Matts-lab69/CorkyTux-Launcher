@@ -713,21 +713,43 @@ impl ProtonManager {
         let executable = game.get("executable")
             .cloned()
             .unwrap_or_default();
-        if executable.is_empty() {
-            // Steam shortcut (not installed locally): open via the client.
-            // No child to track, so no session/time banking.
-            let steam_id = game.get("steamid").cloned().unwrap_or_default();
-            let sid = steam_id.trim();
-            if !sid.is_empty() && sid.chars().all(|c| c.is_ascii_digit()) {
-                Command::new("xdg-open")
-                    .arg(format!("steam://rungameid/{}", sid))
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
-                    .map_err(|e| format!("Failed to open Steam: {}", e))?;
-                return Ok(());
+
+        // Steam-imported games always launch through the Steam client
+        // when they have a valid steamid — regardless of whether an
+        // executable path is stored. This ensures the Steam "Starting
+        // game" dialog appears and Steamworks features (overlay,
+        // friends, achievements) work correctly.
+        let steam_id = game.get("steamid").cloned().unwrap_or_default();
+        let sid = steam_id.trim();
+        if !sid.is_empty() && sid.chars().all(|c| c.is_ascii_digit()) {
+            // Auto-start Steam client so the protocol handler is ready.
+            if Command::new("which").arg("steam").stdout(Stdio::null()).stderr(Stdio::null()).status()
+                .map(|s| s.success()).unwrap_or(false)
+            {
+                let running = Command::new("sh")
+                    .args(["-c", "pidof steam >/dev/null 2>&1"])
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false);
+                if !running {
+                    let _ = Command::new("steam")
+                        .arg("-silent")
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn();
+                }
             }
+            Command::new("xdg-open")
+                .arg(format!("steam://rungameid/{}", sid))
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|e| format!("Failed to open Steam: {}", e))?;
+            return Ok(());
+        }
+        if executable.is_empty() {
             return Err("No executable set".into());
         }
         // Emulator games bypass Proton entirely (C++ parity: executor path)

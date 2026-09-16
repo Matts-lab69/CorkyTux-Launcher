@@ -278,7 +278,14 @@ impl IntegrationManager {
     }
 
     fn file_valid(path: &PathBuf, min_bytes: u64) -> bool {
-        fs::metadata(path).map(|m| m.len() > min_bytes).unwrap_or(false)
+        if !fs::metadata(path).map(|m| m.len() > min_bytes).unwrap_or(false) {
+            return false;
+        }
+        // Validate the image is actually loadable — prevents corrupted
+        // partial downloads from being treated as cached forever.
+        gdk_pixbuf::Pixbuf::from_file(path).map(|pb| {
+            pb.width() >= 16 && pb.height() >= 16
+        }).unwrap_or(false)
     }
 
     fn sgdb_get(
@@ -362,16 +369,25 @@ impl IntegrationManager {
                     }
                 }
             }
-            let i = icons_dir.join(format!("{}.jpg", id));
+            let i = icons_dir.join(format!("{}.png", id));
             if Self::file_valid(&i, 100) {
                 icon = Some(i.display().to_string());
                 icon_is_wide = true;
-            } else if Self::download_art_icon(&client,
-                &format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{}/logo.png", id),
-                &i)
-            {
-                icon = Some(i.display().to_string());
-                icon_is_wide = true;
+            } else {
+                // Migrate legacy .jpg icon saved by older versions (PNG
+                // content stored with wrong extension).
+                let legacy = icons_dir.join(format!("{}.jpg", id));
+                if Self::file_valid(&legacy, 100) {
+                    let _ = fs::rename(&legacy, &i);
+                    icon = Some(i.display().to_string());
+                    icon_is_wide = true;
+                } else if Self::download_art_icon(&client,
+                    &format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{}/logo.png", id),
+                    &i)
+                {
+                    icon = Some(i.display().to_string());
+                    icon_is_wide = true;
+                }
             }
         }
 
