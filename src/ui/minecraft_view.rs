@@ -482,6 +482,17 @@ fn clamp_wrap(page: &gtk::Box, max: i32) -> adw::Clamp {
     clamp
 }
 
+fn page_scroll(page: &gtk::Box, max: i32) -> gtk::ScrolledWindow {
+    let scroll = gtk::ScrolledWindow::new();
+    scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    scroll.set_vexpand(true);
+    scroll.set_valign(gtk::Align::Fill);
+    scroll.set_has_frame(false);
+    scroll.set_propagate_natural_height(false);
+    scroll.set_child(Some(&clamp_wrap(page, max)));
+    scroll
+}
+
 fn icon_cache_path(filename: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
         .join(".cache/CorkyTux/modicons")
@@ -992,7 +1003,7 @@ impl MinecraftView {
         let search_entry = gtk::SearchEntry::new();
         search_entry.set_placeholder_text(Some("Search instances…"));
         search_entry.set_hexpand(true);
-        search_entry.set_width_request(120);
+        search_entry.set_width_request(160);
         head.append(&search_entry);
         let sort_store = gtk::StringList::new(&["Name", "Most played", "Last played", "Game version"]);
         let sort_drop = gtk::DropDown::new(Some(sort_store), gtk::Expression::NONE);
@@ -1187,7 +1198,10 @@ impl MinecraftView {
         ov_name_save.add_css_class("settings-btn");
         ov_name_save.set_valign(gtk::Align::Center);
         ov_id_row.append(&ov_name_save);
-        ov_page.append(&ov_id_row);
+        let ov_panel = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        ov_panel.add_css_class("mcx-panel");
+        ov_panel.append(&ov_id_row);
+        ov_page.append(&ov_panel);
         ov_page.set_margin_top(24);
         ov_page.set_margin_bottom(24);
         ov_page.set_margin_start(24);
@@ -1208,8 +1222,8 @@ impl MinecraftView {
         for c in [&c1, &c2, &c3, &c4, &c5] {
             stats_flow.insert(c, -1);
         }
-        ov_page.append(&stats_flow);
-        detail_tabs.add_titled(&clamp_wrap(&ov_page, 1100), Some("overview"), "Overview");
+        ov_panel.append(&stats_flow);
+        detail_tabs.add_titled(&page_scroll(&ov_page, 1100), Some("overview"), "Overview");
 
         // Addons tab: Carbon AddonsPageLayout toolbar
         let ad_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -1253,7 +1267,10 @@ impl MinecraftView {
         addons_pop.set_child(Some(&addons_pop_box));
         addons_menu_btn.set_popover(Some(&addons_pop));
         ad_toolbar.append(&addons_menu_btn);
-        ad_page.append(&ad_toolbar);
+        let ad_panel = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        ad_panel.add_css_class("mcx-panel");
+        ad_panel.append(&ad_toolbar);
+        ad_page.append(&ad_panel);
         let chips_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let chip_mods = gtk::ToggleButton::with_label("Mods");
         let chip_shaders = gtk::ToggleButton::with_label("Shaders");
@@ -1265,18 +1282,18 @@ impl MinecraftView {
         chips_row.append(&chip_shaders);
         chips_row.append(&chip_res);
         chips_row.set_halign(gtk::Align::Center);
-        ad_page.append(&chips_row);
+        ad_panel.append(&chips_row);
         let addons_count = note("");
         addons_count.set_halign(gtk::Align::Center);
-        ad_page.append(&addons_count);
+        ad_panel.append(&addons_count);
         let addons_dir_lbl = note("");
         addons_dir_lbl.set_selectable(true);
         addons_dir_lbl.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
         addons_dir_lbl.set_max_width_chars(40);
         addons_pop_box.append(&addons_dir_lbl);
         let addons_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        ad_page.append(&addons_box);
-        detail_tabs.add_titled(&clamp_wrap(&ad_page, 1100), Some("addons"), "Addons");
+        ad_panel.append(&addons_box);
+        detail_tabs.add_titled(&page_scroll(&ad_page, 1100), Some("addons"), "Addons");
 
         // Logs tab
         let lg_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -1288,28 +1305,38 @@ impl MinecraftView {
         let log_lbl = note("");
         log_lbl.set_selectable(true);
         lg_inner.append(&log_lbl);
-        let lg_scroll = gtk::ScrolledWindow::new();
-        lg_scroll.set_min_content_height(220);
-        lg_scroll.set_max_content_height(320);
-        lg_scroll.set_vexpand(false);
         let logs_view = gtk::TextView::new();
         logs_view.set_editable(false);
         logs_view.set_cursor_visible(false);
         logs_view.set_monospace(true);
-        lg_scroll.set_child(Some(&logs_view));
-        lg_inner.append(&lg_scroll);
+        logs_view.set_vexpand(true);
+        logs_view.set_size_request(-1, 200);
+        lg_inner.append(&logs_view);
         let lg_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let lg_refresh = btn_with_icon("view-refresh-symbolic", "Refresh");
+        lg_row.set_halign(gtk::Align::End);
+        let lg_refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
         lg_refresh.add_css_class("settings-btn");
-        lg_refresh.set_hexpand(true);
-        let lg_folder = themed_btn("folder", "Open logs folder", state.theme.is_dark(), 16);
-        lg_folder.add_css_class("settings-btn");
-        lg_folder.set_hexpand(true);
+        lg_refresh.set_tooltip_text(Some("Refresh"));
         lg_row.append(&lg_refresh);
+        let logs_view_c = logs_view.clone();
+        let lg_copy = gtk::Button::from_icon_name("edit-copy-symbolic");
+        lg_copy.add_css_class("settings-btn");
+        lg_copy.set_tooltip_text(Some("Copy log"));
+        lg_copy.connect_clicked(move |_| {
+            let buf = logs_view_c.buffer();
+            let (s, e) = buf.bounds();
+            if let Some(d) = gtk::gdk::Display::default() {
+                d.clipboard().set_text(&buf.text(&s, &e, true));
+            }
+        });
+        lg_row.append(&lg_copy);
+        let lg_folder = gtk::Button::from_icon_name("folder-symbolic");
+        lg_folder.add_css_class("settings-btn");
+        lg_folder.set_tooltip_text(Some("Open logs folder"));
         lg_row.append(&lg_folder);
         lg_inner.append(&lg_row);
         lg_page.append(&lg_frame);
-        detail_tabs.add_titled(&clamp_wrap(&lg_page, 1100), Some("logs"), "Logs");
+        detail_tabs.add_titled(&page_scroll(&lg_page, 1100), Some("logs"), "Logs");
 
         // Per-instance Settings tab
         let st_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -1377,7 +1404,7 @@ impl MinecraftView {
         paint_accent(&set_save, &state.theme);
         st_inner.append(&set_save);
         st_page.append(&st_frame);
-        detail_tabs.add_titled(&clamp_wrap(&st_page, 720), Some("isettings"), "Settings");
+        detail_tabs.add_titled(&page_scroll(&st_page, 720), Some("isettings"), "Settings");
         if let Ok(c600) = adw::BreakpointCondition::parse("max-width: 600px") {
             let bp = adw::Breakpoint::new(c600);
             let f = gtk::glib::Value::from(false);
@@ -1397,15 +1424,9 @@ impl MinecraftView {
             }
             parent.add_breakpoint(bp);
         }
-        let det_body_scroll = gtk::ScrolledWindow::new();
-        det_body_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-        det_body_scroll.set_min_content_height(200);
-        det_body_scroll.set_vexpand(true);
-        det_body_scroll.set_valign(gtk::Align::Fill);
-        det_body_scroll.set_has_frame(false);
-        det_body_scroll.set_propagate_natural_height(false);
-        det_body_scroll.set_child(Some(&detail_tabs));
-        det_page.append(&det_body_scroll);
+        detail_tabs.set_vexpand(true);
+        detail_tabs.set_valign(gtk::Align::Fill);
+        det_page.append(&detail_tabs);
         det_page.set_vexpand(true);
         det_page.set_valign(gtk::Align::Fill);
         main_stack.add_named(&det_page, Some("detail"));
@@ -5458,7 +5479,7 @@ impl MinecraftView {
         setup_btn.set_visible(!self.data.borrow().deps_ok);
         setup_inner.append(&setup_btn);
         gen_page.append(&setup_frame);
-        gen_page.append(&note("Default memory for new instances (per-instance override in its Settings tab)"));
+        setup_inner.append(&note("Default memory for new instances (per-instance override in its Settings tab)"));
         let ram_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let ram_lbl = gtk::Label::new(Some(&format!("{} MB", self.cfg("McRam"))));
         let ram = gtk::Scale::with_range(gtk::Orientation::Horizontal, 512.0, 16384.0, 256.0);
@@ -5471,12 +5492,12 @@ impl MinecraftView {
         ram_row.append(&ram_lbl);
         ram_row.append(&ram);
         ram_row.append(&ram_entry);
-        gen_page.append(&ram_row);
-        gen_page.append(&note("Default extra JVM arguments"));
+        setup_inner.append(&ram_row);
+        setup_inner.append(&note("Default extra JVM arguments"));
         let gjvm = gtk::Entry::new();
         gjvm.set_text(&self.cfg("McJvmArgs"));
-        gen_page.append(&gjvm);
-        gen_page.append(&note("Default resolution (empty = game default)"));
+        setup_inner.append(&gjvm);
+        setup_inner.append(&note("Default resolution (empty = game default)"));
         let gres_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let gres_w = gtk::Entry::new();
         gres_w.set_placeholder_text(Some("width"));
@@ -5489,10 +5510,10 @@ impl MinecraftView {
         gres_row.append(&gres_w);
         gres_row.append(&gtk::Label::new(Some("×")));
         gres_row.append(&gres_h);
-        gen_page.append(&gres_row);
+        setup_inner.append(&gres_row);
         let gen_save = gtk::Button::with_label("Save defaults");
         gen_save.add_css_class("add-btn");
-        gen_page.append(&gen_save);
+        setup_inner.append(&gen_save);
         stack.add_titled(&gen_page, Some("general"), "General");
 
         // Accounts
@@ -5739,7 +5760,13 @@ impl MinecraftView {
         ap_inner.append(&prev_frame);
         ap_page.append(&ap_frame);
         stack.add_titled(&ap_page, Some("appearance"), "Appearance");
-        content.append(&stack);
+        let set_scroll = gtk::ScrolledWindow::new();
+        set_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        set_scroll.set_vexpand(true);
+        set_scroll.set_has_frame(false);
+        set_scroll.set_propagate_natural_height(false);
+        set_scroll.set_child(Some(&stack));
+        content.append(&set_scroll);
 
         // tab bar
         let tab_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);

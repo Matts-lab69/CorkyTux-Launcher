@@ -14,17 +14,21 @@ pub fn install(theme: &ThemeManager) {
         .mcx .mc-tile-sub {{ color: #A3A9B7; font-size: 11px; }}\
         .mcx .time-label {{ color: #A3A9B7; }}\
         .mcx .frame-title {{ color: #A3A9B7; font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; }}\
-        .mcx .add-btn {{ background-color: {accent}; color: #FFFFFF; border: none; border-radius: 999px; font-weight: 800; }}\
-        .mcx .settings-btn {{ background-color: #272727; color: #ECEEF3; border: 1px solid #242424; border-radius: 999px; font-weight: 700; }}\
+        .mcx .add-btn {{ background-color: #AA47BC; color: #FFFFFF; border: none; border-radius: 10px; font-size: 14px; font-weight: 800; }}\
+        .mcx .settings-btn {{ background-color: #181818; color: #ECEEF3; border: 1px solid #242424; border-radius: 10px; font-size: 14px; font-weight: 700; }}\
         .mcx .settings-btn:hover {{ border-color: {accent}; }}\
+        .mcx .mcx-bar {{ border: none; background: none; padding: 0; }}\
+        .mcx .mcx-bar > button, .mcx .mcx-bar > entry, .mcx .mcx-bar > dropdown, .mcx .mcx-bar > menubutton {{ min-height: 40px; padding-top: 0; padding-bottom: 0; border-radius: 10px; font-size: 14px; }}\
+        .mcx .mcx-bar > button {{ min-width: 40px; padding-left: 12px; padding-right: 12px; }}\
+        .mcx .mcx-bar entry {{ background-color: #181818; border: 1px solid #242424; color: #ECEEF3; min-width: 120px; }}\
+        .mcx .mcx-bar entry placeholder {{ color: #A3A9B7; }}\
+        .mcx .mcx-bar dropdown {{ min-width: 96px; background-color: #181818; border: 1px solid #242424; color: #ECEEF3; }}\
+        .mcx .mcx-panel {{ background-color: #121212; border: 1px solid #242424; border-radius: 16px; padding: 16px; }}\
         .mcx .mc-row {{ background-color: #181818; border: 1px solid #242424; border-radius: 12px; }}\
         .mcx .mc-row:hover {{ border-color: {accent}; }}\
         .mcx .mc-empty {{ background-color: #181818; border: 1px dashed #242424; border-radius: 16px; }}\
         .mcx .skeleton-tile {{ background-color: #181818; border: 1px solid #242424; }}\
         .mcx .store-row {{ background-color: #181818; border: 1px solid #242424; }}\
-        .mcx .search-entry {{ background-color: #272727; border: 1px solid #242424; border-radius: 999px; color: #ECEEF3; }}\
-        .mcx .mcx-bar button, .mcx .mcx-bar entry, .mcx .mcx-bar dropdown, .mcx .mcx-bar menubutton {{ min-height: 40px; }}\
-        .mcx .mcx-bar entry {{ min-width: 120px; }}\
         .mcx .settings-tab {{ min-height: 40px; }}\
         .mcx switch:checked {{ background-color: {accent}; border-color: {accent}; }}\
         .mcx switch:checked > slider {{ background-color: #FFFFFF; }}\
