@@ -23,9 +23,16 @@ pub fn install(theme: &ThemeManager) {
         .mcx .skeleton-tile {{ background-color: #181818; border: 1px solid #242424; }}\
         .mcx .store-row {{ background-color: #181818; border: 1px solid #242424; }}\
         .mcx .search-entry {{ background-color: #272727; border: 1px solid #242424; border-radius: 999px; color: #ECEEF3; }}\
-        .mcx .mcx-bar button, .mcx .mcx-bar entry, .mcx .mcx-bar dropdown {{ min-height: 40px; }}\
-        .mcx .mcx-bar entry {{ min-width: 160px; }}\
-        .mcx .settings-tab {{ min-height: 40px; }}"
+        .mcx .mcx-bar button, .mcx .mcx-bar entry, .mcx .mcx-bar dropdown, .mcx .mcx-bar menubutton {{ min-height: 40px; }}\
+        .mcx .mcx-bar entry {{ min-width: 120px; }}\
+        .mcx .settings-tab {{ min-height: 40px; }}\
+        .mcx switch:checked {{ background-color: {accent}; border-color: {accent}; }}\
+        .mcx switch:checked > slider {{ background-color: #FFFFFF; }}\
+        .mcx check:checked {{ background-color: {accent}; border-color: {accent}; color: #FFFFFF; -gtk-icon-source: -gtk-icontheme(\"object-select-symbolic\"); }}\
+        .mcx radio:checked {{ border-color: {accent}; }}\
+        .mcx radio:checked > indicator {{ background-color: {accent}; }}\
+        .mcx scale highlight {{ background-color: {accent}; }}\
+        .mcx scale slider {{ background-color: {accent}; border-color: {accent}; }}"
     );
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&css);
