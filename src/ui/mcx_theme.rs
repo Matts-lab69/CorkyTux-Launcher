@@ -8,6 +8,7 @@ pub fn install(theme: &ThemeManager) {
     let css = format!(
         ".mcx {{ background-color: #000000; }}\
         .mcx .mc-head {{ background-color: #181818; border: 1px solid #242424; border-radius: 16px; padding: 10px 12px; }}\
+        .mcx .mcx-headcard {{ background-color: #181818; border: 1px solid #242424; border-radius: 12px; padding: 16px; }}\
         .mcx .mc-tile {{ background-color: #181818; border: 1px solid #242424; border-radius: 16px; }}\
         .mcx .mc-tile:hover {{ border-color: {accent}; }}\
         .mcx .mc-tile-name {{ color: #ECEEF3; font-size: 14px; font-weight: 700; }}\

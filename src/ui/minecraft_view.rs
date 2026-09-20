@@ -803,6 +803,7 @@ pub struct MinecraftView {
     detail_icon: gtk::Image,
     detail_name: gtk::EditableLabel,
     detail_play: gtk::Button,
+    detail_play_icon: gtk::Button,
     detail_star: gtk::ToggleButton,
     addons_tab_wrap: gtk::Box,
     det_addons_btn: gtk::ToggleButton,
@@ -856,6 +857,7 @@ impl Clone for MinecraftView {
             detail_icon: self.detail_icon.clone(),
             detail_name: self.detail_name.clone(),
             detail_play: self.detail_play.clone(),
+            detail_play_icon: self.detail_play_icon.clone(),
             detail_star: self.detail_star.clone(),
             addons_tab_wrap: self.addons_tab_wrap.clone(),
             det_addons_btn: self.det_addons_btn.clone(),
@@ -1034,18 +1036,29 @@ impl MinecraftView {
         main_stack.add_named(&lib_page, Some("library"));
 
         // ============ DETAIL PAGE (Carbon DetailPageLayout) ============
-        let det_page = gtk::Box::new(gtk::Orientation::Vertical, 16);
+        let det_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let det_clamp = adw::Clamp::new();
+        det_clamp.set_maximum_size(1100);
+        det_clamp.set_tightening_threshold(720);
+        let det_col = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        det_col.set_vexpand(true);
+        det_col.set_valign(gtk::Align::Fill);
+        det_clamp.set_child(Some(&det_col));
+        det_page.append(&det_clamp);
         let det_head = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        det_head.set_height_request(96);
+        det_head.add_css_class("mcx-headcard");
         let back_btn = gtk::Button::new();
         back_btn.add_css_class("icon-ghost");
         set_btn_icon(&back_btn, "go-previous-symbolic", 18);
         back_btn.set_tooltip_text(Some("Back to library"));
+        back_btn.set_size_request(40, 40);
+        back_btn.set_valign(gtk::Align::Center);
         det_head.append(&back_btn);
         let detail_icon_btn = gtk::Button::new();
         detail_icon_btn.add_css_class("icon-ghost");
         detail_icon_btn.set_tooltip_text(Some("Change icon"));
-        let detail_icon = helpers::themed_image("minecraft", state.theme.is_dark(), 64);
+        detail_icon_btn.set_valign(gtk::Align::Center);
+        let detail_icon = helpers::themed_image("minecraft", state.theme.is_dark(), 56);
         let icon_wrap = gtk::Overlay::new();
         icon_wrap.add_css_class("icon-wrap");
         icon_wrap.set_child(Some(&detail_icon));
@@ -1060,28 +1073,32 @@ impl MinecraftView {
         det_head.append(&detail_icon_btn);
         let name_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
         name_box.set_hexpand(true);
+        name_box.set_valign(gtk::Align::Center);
         let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let detail_name = gtk::EditableLabel::new("—");
         detail_name.set_halign(gtk::Align::Start);
-        detail_name.set_hexpand(true);
         detail_name.set_width_chars(8);
+        detail_name.set_max_width_chars(16);
         detail_name.add_css_class("mcx-title");
         name_row.append(&detail_name);
         let name_pencil = gtk::Button::new();
         name_pencil.add_css_class("icon-ghost");
-        name_pencil.set_child(Some(&sym("document-edit-symbolic", 14)));
+        name_pencil.set_child(Some(&sym("document-edit-symbolic", 16)));
         name_pencil.set_tooltip_text(Some("Rename"));
+        name_pencil.set_valign(gtk::Align::Center);
         name_row.append(&name_pencil);
+        let name_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        name_spacer.set_hexpand(true);
+        name_row.append(&name_spacer);
         name_box.append(&name_row);
         let chips_flow = gtk::FlowBox::new();
         chips_flow.set_orientation(gtk::Orientation::Horizontal);
         chips_flow.set_max_children_per_line(10);
         chips_flow.set_min_children_per_line(1);
         chips_flow.set_selection_mode(gtk::SelectionMode::None);
-        chips_flow.set_row_spacing(6);
-        chips_flow.set_column_spacing(6);
+        chips_flow.set_row_spacing(8);
+        chips_flow.set_column_spacing(8);
         chips_flow.set_halign(gtk::Align::Start);
-        let mut det_chip_labels: Vec<gtk::Label> = Vec::new();
         let (ov_mc, ov_loader, ov_addons, ov_played) = {
             let defs = [
                 ("applications-games-symbolic", "Minecraft version"),
@@ -1098,18 +1115,11 @@ impl MinecraftView {
                 let im = gtk::Image::from_icon_name(icon);
                 im.set_pixel_size(16);
                 chip.append(&im);
-                let tx = gtk::Box::new(gtk::Orientation::Vertical, 0);
-                let lb = gtk::Label::new(Some(tip));
-                lb.set_halign(gtk::Align::Start);
-                lb.add_css_class("mcx-chip-label");
-                det_chip_labels.push(lb.clone());
-                tx.append(&lb);
                 let vv = gtk::Label::new(Some("—"));
                 vv.set_halign(gtk::Align::Start);
                 vv.add_css_class("mcx-chip-value");
-                tx.append(&vv);
+                chip.append(&vv);
                 vals.push(vv);
-                chip.append(&tx);
                 tile.set_child(Some(&chip));
                 chips_flow.insert(&tile, -1);
             }
@@ -1119,18 +1129,28 @@ impl MinecraftView {
         det_head.append(&name_box);
         let detail_play = themed_btn("play", "Play", state.theme.is_dark(), 20);
         detail_play.add_css_class("add-btn");
-        detail_play.set_width_request(170);
-        detail_play.set_height_request(48);
+        detail_play.set_height_request(40);
+        detail_play.set_valign(gtk::Align::Center);
         paint_accent(&detail_play, &state.theme);
         det_head.append(&detail_play);
+        let detail_play_icon = gtk::Button::from_icon_name("media-playback-start-symbolic");
+        detail_play_icon.add_css_class("add-btn");
+        detail_play_icon.set_tooltip_text(Some("Play"));
+        detail_play_icon.set_size_request(40, 40);
+        detail_play_icon.set_visible(false);
+        detail_play_icon.set_valign(gtk::Align::Center);
+        det_head.append(&detail_play_icon);
         let detail_star = gtk::ToggleButton::new();
-        detail_star.set_icon_name("starred-symbolic");
+        let star_img = gtk::Image::from_icon_name("starred-symbolic");
+        star_img.set_pixel_size(22);
+        detail_star.set_child(Some(&star_img));
         detail_star.add_css_class("star-btn");
         detail_star.set_tooltip_text(Some("Favorite"));
+        detail_star.set_size_request(40, 40);
+        detail_star.set_valign(gtk::Align::Center);
         det_head.append(&detail_star);
 
-        det_head.add_css_class("mc-head");
-        det_page.append(&det_head);
+        det_col.append(&det_head);
 
         // detail tabs (Addons/Logs/Settings)
         let det_tabbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
@@ -1190,7 +1210,7 @@ impl MinecraftView {
                 }
             });
         }
-        det_page.append(&det_tabbar);
+        det_tabbar.set_margin_top(4);
 
         // Addons tab: Carbon AddonsPageLayout toolbar
         let ad_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -1372,12 +1392,12 @@ impl MinecraftView {
         st_inner.append(&set_save);
         st_page.append(&st_frame);
         detail_tabs.add_titled(&page_scroll(&st_page, 720), Some("isettings"), "Settings");
-        if let Ok(c900) = adw::BreakpointCondition::parse("max-width: 900px") {
+        if let Ok(c900) = adw::BreakpointCondition::parse("max-width: 700px") {
             let bp = adw::Breakpoint::new(c900);
+            let t = gtk::glib::Value::from(true);
             let f = gtk::glib::Value::from(false);
-            for lbl in &det_chip_labels {
-                bp.add_setter(lbl, "visible", Some(&f));
-            }
+            bp.add_setter(&detail_play, "visible", Some(&f));
+            bp.add_setter(&detail_play_icon, "visible", Some(&t));
             parent.add_breakpoint(bp);
         }
         if let Ok(c600) = adw::BreakpointCondition::parse("max-width: 600px") {
@@ -1401,7 +1421,8 @@ impl MinecraftView {
         }
         detail_tabs.set_vexpand(true);
         detail_tabs.set_valign(gtk::Align::Fill);
-        det_page.append(&detail_tabs);
+        det_col.append(&det_tabbar);
+        det_col.append(&detail_tabs);
         det_page.set_vexpand(true);
         det_page.set_valign(gtk::Align::Fill);
         main_stack.add_named(&det_page, Some("detail"));
@@ -1426,6 +1447,7 @@ impl MinecraftView {
             detail_icon: detail_icon.clone(),
             detail_name,
             detail_play,
+            detail_play_icon,
             detail_star,
             addons_tab_wrap: addons_tab_wrap_holder.borrow().clone().unwrap_or_else(|| gtk::Box::new(gtk::Orientation::Vertical, 1)),
             det_addons_btn: det_addons_btn.clone(),
@@ -1492,6 +1514,10 @@ impl MinecraftView {
         {
             let v = view.clone();
             view.detail_play.connect_clicked(move |_| v.toggle_play_selected());
+        }
+        {
+            let v = view.clone();
+            view.detail_play_icon.connect_clicked(move |_| v.toggle_play_selected());
         }
         {
             let v = view.clone();
@@ -2369,19 +2395,23 @@ impl MinecraftView {
         }
         {
             let kind = self.inst_cfg(&inst.id, "Icon");
-            let fresh = inst_icon_image(&inst.id, &kind, self.state.theme.is_dark(), 64);
+            let fresh = inst_icon_image(&inst.id, &kind, self.state.theme.is_dark(), 56);
             if let Some(p) = fresh.paintable() {
                 self.detail_icon.set_paintable(Some(&p));
-                self.detail_icon.set_pixel_size(64);
+                self.detail_icon.set_pixel_size(56);
             }
         }
         let running = !MinecraftManager::running_pids().is_empty();
         if running {
             set_btn_icon_label(&self.detail_play, "media-playback-stop-symbolic", "Stop");
             paint_btn(&self.detail_play, "#E53935");
+            set_btn_icon(&self.detail_play_icon, "media-playback-stop-symbolic", 20);
+            self.detail_play_icon.set_tooltip_text(Some("Stop"));
         } else {
             set_themed_btn(&self.detail_play, "play", "Play", self.state.theme.is_dark(), 20);
             paint_accent(&self.detail_play, &self.state.theme);
+            set_btn_icon(&self.detail_play_icon, "media-playback-start-symbolic", 20);
+            self.detail_play_icon.set_tooltip_text(Some("Play"));
         }
         self.detail_star.set_active(inst.fav);
         self.detail_star.set_tooltip_text(Some(if inst.fav { "Unfavorite" } else { "Favorite" }));
@@ -2871,17 +2901,6 @@ impl MinecraftView {
             sub.add_css_class("mc-tile-sub");
             mid.append(&sub);
             row.append(&mid);
-            let tgl = gtk::Switch::new();
-            tgl.set_valign(gtk::Align::Center);
-            tgl.set_tooltip_text(Some(if r.enabled { "Enabled — click to disable" } else { "Disabled — click to enable" }));
-            tgl.set_active(r.enabled);
-            let v = self.clone();
-            let fc = r.file.clone();
-            tgl.connect_state_set(move |_, _| {
-                v.do_addon_toggle(&fc);
-                glib::Propagation::Proceed
-            });
-            row.append(&tgl);
             if !r.project_id.is_empty() {
                 let upd = btn_with_icon("software-update-available-symbolic", "Update");
                 upd.add_css_class("settings-btn");
@@ -2893,6 +2912,17 @@ impl MinecraftView {
                 upd.connect_clicked(move |_| vv.do_addon_update(&fc2));
                 row.append(&upd);
             }
+            let tgl = gtk::Switch::new();
+            tgl.set_valign(gtk::Align::Center);
+            tgl.set_tooltip_text(Some(if r.enabled { "Enabled — click to disable" } else { "Disabled — click to enable" }));
+            tgl.set_active(r.enabled);
+            let v = self.clone();
+            let fc = r.file.clone();
+            tgl.connect_state_set(move |_, _| {
+                v.do_addon_toggle(&fc);
+                glib::Propagation::Proceed
+            });
+            row.append(&tgl);
             let menu = gtk::Button::new();
             set_btn_icon(&menu, "view-more-symbolic", 16);
             menu.set_valign(gtk::Align::Center);
