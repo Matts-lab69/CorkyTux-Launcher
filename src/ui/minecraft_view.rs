@@ -174,18 +174,16 @@ fn java_range_text(ver: &str) -> String {
     }
 }
 
-fn fmt_playtime(secs: u64) -> String {
-    if secs < 60 {
-        return format!("{}s", secs);
+fn fmt_playtime_long(secs: u64) -> String {
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    if h == 0 {
+        return format!("{} min", m);
     }
-    if secs < 3600 {
-        return format!("{}m", secs / 60);
+    if m == 0 {
+        return format!("{} h", h);
     }
-    format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
-}
-
-fn fmt_date(epoch: &str) -> String {
-    epoch.to_string()
+    format!("{} h {} min", h, m)
 }
 
 fn card(title: &str) -> (gtk::Box, gtk::Box) {
@@ -288,32 +286,6 @@ fn note(text: &str) -> gtk::Label {
     l.set_opacity(0.6);
     l.add_css_class("time-label");
     l
-}
-
-fn stat_mini(icon: &str, title: &str) -> (gtk::Box, gtk::Label) {
-    let frame = gtk::Box::new(gtk::Orientation::Vertical, 4);
-    frame.add_css_class("page-card");
-    frame.add_css_class("mc-tile");
-    frame.set_margin_top(4);
-    frame.set_margin_bottom(4);
-    frame.set_margin_start(4);
-    frame.set_margin_end(4);
-    frame.set_hexpand(true);
-    let im = gtk::Image::from_icon_name(icon);
-    im.set_pixel_size(20);
-    im.set_halign(gtk::Align::Center);
-    frame.append(&im);
-    let v = gtk::Label::new(Some("—"));
-    v.set_halign(gtk::Align::Center);
-    v.set_wrap(true);
-    v.add_css_class("mc-tile-name");
-    frame.append(&v);
-    let t = gtk::Label::new(Some(title));
-    t.set_halign(gtk::Align::Center);
-    t.set_opacity(0.9);
-    t.add_css_class("mc-tile-sub");
-    frame.append(&t);
-    (frame, v)
 }
 
 fn clean_md(s: &str) -> String {
@@ -829,20 +801,16 @@ pub struct MinecraftView {
     // detail
     detail_id: Rc<RefCell<String>>,
     detail_icon: gtk::Image,
-    detail_name: gtk::Label,
-    detail_sub: gtk::Label,
+    detail_name: gtk::EditableLabel,
     detail_play: gtk::Button,
-    detail_star: gtk::Button,
+    detail_star: gtk::ToggleButton,
     addons_tab_wrap: gtk::Box,
-    det_overview_btn: gtk::ToggleButton,
+    det_addons_btn: gtk::ToggleButton,
     detail_tabs: gtk::Stack,
     ov_mc: gtk::Label,
     ov_loader: gtk::Label,
     ov_addons: gtk::Label,
     ov_played: gtk::Label,
-    ov_last: gtk::Label,
-    ov_icon_btn: gtk::Button,
-    ov_name_entry: gtk::Entry,
     // addons tab
     addons_search: gtk::SearchEntry,
     addons_type: Rc<RefCell<String>>,
@@ -887,19 +855,15 @@ impl Clone for MinecraftView {
             detail_id: self.detail_id.clone(),
             detail_icon: self.detail_icon.clone(),
             detail_name: self.detail_name.clone(),
-            detail_sub: self.detail_sub.clone(),
             detail_play: self.detail_play.clone(),
             detail_star: self.detail_star.clone(),
             addons_tab_wrap: self.addons_tab_wrap.clone(),
-            det_overview_btn: self.det_overview_btn.clone(),
+            det_addons_btn: self.det_addons_btn.clone(),
             detail_tabs: self.detail_tabs.clone(),
             ov_mc: self.ov_mc.clone(),
             ov_loader: self.ov_loader.clone(),
             ov_addons: self.ov_addons.clone(),
             ov_played: self.ov_played.clone(),
-            ov_last: self.ov_last.clone(),
-            ov_icon_btn: self.ov_icon_btn.clone(),
-            ov_name_entry: self.ov_name_entry.clone(),
             addons_search: self.addons_search.clone(),
             addons_type: self.addons_type.clone(),
             addons_box: self.addons_box.clone(),
@@ -1072,27 +1036,86 @@ impl MinecraftView {
         // ============ DETAIL PAGE (Carbon DetailPageLayout) ============
         let det_page = gtk::Box::new(gtk::Orientation::Vertical, 16);
         let det_head = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        det_head.set_height_request(64);
+        det_head.set_height_request(96);
         let back_btn = gtk::Button::new();
         back_btn.add_css_class("icon-ghost");
         set_btn_icon(&back_btn, "go-previous-symbolic", 18);
         back_btn.set_tooltip_text(Some("Back to library"));
         det_head.append(&back_btn);
+        let detail_icon_btn = gtk::Button::new();
+        detail_icon_btn.add_css_class("icon-ghost");
+        detail_icon_btn.set_tooltip_text(Some("Change icon"));
         let detail_icon = helpers::themed_image("minecraft", state.theme.is_dark(), 64);
-        det_head.append(&detail_icon);
-        let name_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let icon_wrap = gtk::Overlay::new();
+        icon_wrap.add_css_class("icon-wrap");
+        icon_wrap.set_child(Some(&detail_icon));
+        let icon_pencil = gtk::Button::new();
+        icon_pencil.add_css_class("icon-ghost");
+        icon_pencil.add_css_class("icon-pencil");
+        icon_pencil.set_child(Some(&sym("document-edit-symbolic", 12)));
+        icon_pencil.set_halign(gtk::Align::End);
+        icon_pencil.set_valign(gtk::Align::End);
+        icon_wrap.add_overlay(&icon_pencil);
+        detail_icon_btn.set_child(Some(&icon_wrap));
+        det_head.append(&detail_icon_btn);
+        let name_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
         name_box.set_hexpand(true);
-        let detail_name = gtk::Label::new(Some("—"));
+        let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let detail_name = gtk::EditableLabel::new("—");
         detail_name.set_halign(gtk::Align::Start);
         detail_name.set_hexpand(true);
-        detail_name.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        detail_name.add_css_class("details-title");
-        name_box.append(&detail_name);
-        let detail_sub = gtk::Label::new(Some(""));
-        detail_sub.set_halign(gtk::Align::Start);
-        detail_sub.set_opacity(0.6);
-        detail_sub.add_css_class("time-label");
-        name_box.append(&detail_sub);
+        detail_name.set_width_chars(8);
+        detail_name.add_css_class("mcx-title");
+        name_row.append(&detail_name);
+        let name_pencil = gtk::Button::new();
+        name_pencil.add_css_class("icon-ghost");
+        name_pencil.set_child(Some(&sym("document-edit-symbolic", 14)));
+        name_pencil.set_tooltip_text(Some("Rename"));
+        name_row.append(&name_pencil);
+        name_box.append(&name_row);
+        let chips_flow = gtk::FlowBox::new();
+        chips_flow.set_orientation(gtk::Orientation::Horizontal);
+        chips_flow.set_max_children_per_line(10);
+        chips_flow.set_min_children_per_line(1);
+        chips_flow.set_selection_mode(gtk::SelectionMode::None);
+        chips_flow.set_row_spacing(6);
+        chips_flow.set_column_spacing(6);
+        chips_flow.set_halign(gtk::Align::Start);
+        let mut det_chip_labels: Vec<gtk::Label> = Vec::new();
+        let (ov_mc, ov_loader, ov_addons, ov_played) = {
+            let defs = [
+                ("applications-games-symbolic", "Minecraft version"),
+                ("application-x-addon-symbolic", "Modloader"),
+                ("package-x-generic-symbolic", "Addons"),
+                ("alarm-symbolic", "Time played"),
+            ];
+            let mut vals: Vec<gtk::Label> = Vec::new();
+            for (icon, tip) in defs {
+                let tile = gtk::FlowBoxChild::new();
+                tile.set_tooltip_text(Some(tip));
+                let chip = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+                chip.add_css_class("mcx-chip");
+                let im = gtk::Image::from_icon_name(icon);
+                im.set_pixel_size(16);
+                chip.append(&im);
+                let tx = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                let lb = gtk::Label::new(Some(tip));
+                lb.set_halign(gtk::Align::Start);
+                lb.add_css_class("mcx-chip-label");
+                det_chip_labels.push(lb.clone());
+                tx.append(&lb);
+                let vv = gtk::Label::new(Some("—"));
+                vv.set_halign(gtk::Align::Start);
+                vv.add_css_class("mcx-chip-value");
+                tx.append(&vv);
+                vals.push(vv);
+                chip.append(&tx);
+                tile.set_child(Some(&chip));
+                chips_flow.insert(&tile, -1);
+            }
+            (vals[0].clone(), vals[1].clone(), vals[2].clone(), vals[3].clone())
+        };
+        name_box.append(&chips_flow);
         det_head.append(&name_box);
         let detail_play = themed_btn("play", "Play", state.theme.is_dark(), 20);
         detail_play.add_css_class("add-btn");
@@ -1100,27 +1123,27 @@ impl MinecraftView {
         detail_play.set_height_request(48);
         paint_accent(&detail_play, &state.theme);
         det_head.append(&detail_play);
-        let detail_star = gtk::Button::new();
-        detail_star.add_css_class("icon-ghost");
-        detail_star.set_child(Some(&helpers::themed_image("star_gray", state.theme.is_dark(), 20)));
+        let detail_star = gtk::ToggleButton::new();
+        detail_star.set_icon_name("starred-symbolic");
+        detail_star.add_css_class("star-btn");
         detail_star.set_tooltip_text(Some("Favorite"));
         det_head.append(&detail_star);
 
         det_head.add_css_class("mc-head");
         det_page.append(&det_head);
 
-        // detail tabs (Carbon: Overview/Addons/Settings/Logs)
+        // detail tabs (Addons/Logs/Settings)
         let det_tabbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         det_tabbar.set_halign(gtk::Align::Center);
         let mut det_tab_labels: Vec<gtk::Label> = Vec::new();
         let detail_tabs = gtk::Stack::new();
         detail_tabs.set_vexpand(false);
-        let det_ids = ["overview", "addons", "logs", "isettings"];
-        let det_labels = ["Overview", "Addons", "Logs", "Settings"];
+        let det_ids = ["addons", "logs", "isettings"];
+        let det_labels = ["Addons", "Logs", "Settings"];
         let mut det_btns: Vec<gtk::ToggleButton> = Vec::new();
         let mut det_inds: Vec<gtk::Box> = Vec::new();
         let addons_tab_wrap_holder: Rc<RefCell<Option<gtk::Box>>> = Rc::new(RefCell::new(None));
-        let det_icons = ["view-grid-symbolic", "application-x-addon-symbolic", "text-x-generic-symbolic", "preferences-system-symbolic"];
+        let det_icons = ["application-x-addon-symbolic", "text-x-generic-symbolic", "preferences-system-symbolic"];
         for ((label, id), tab_icon) in det_labels.iter().zip(det_ids.iter()).zip(det_icons.iter()) {
             let wrap = gtk::Box::new(gtk::Orientation::Vertical, 1);
             let btn = gtk::ToggleButton::new();
@@ -1134,10 +1157,10 @@ impl MinecraftView {
             det_tab_labels.push(lbl.clone());
             let ind = gtk::Box::new(gtk::Orientation::Horizontal, 0);
             ind.add_css_class("settings-tab-indicator");
-            ind.set_visible(*id == "overview");
+            ind.set_visible(*id == "addons");
             c.append(&ind);
             btn.set_child(Some(&c));
-            if *id == "overview" {
+            if *id == "addons" {
                 btn.set_active(true);
             }
             wrap.append(&btn);
@@ -1151,7 +1174,7 @@ impl MinecraftView {
         for b in &det_btns[1..] {
             b.set_group(Some(&det_btns[0]));
         }
-        let det_overview_btn = det_btns[0].clone();
+        let det_addons_btn = det_btns[0].clone();
         for (i, id) in det_ids.iter().enumerate() {
             let stack = detail_tabs.clone();
             let tid = id.to_string();
@@ -1168,62 +1191,6 @@ impl MinecraftView {
             });
         }
         det_page.append(&det_tabbar);
-
-        // Overview tab: compact name row + stat cards
-        let ov_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        let ov_id_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let ov_icon_btn = gtk::Button::new();
-        ov_icon_btn.set_tooltip_text(Some("Change icon"));
-        let ov_icon_overlay = gtk::Overlay::new();
-        ov_icon_overlay.set_child(Some(&ov_icon_btn));
-        let ov_pencil = gtk::Button::new();
-        ov_pencil.add_css_class("icon-ghost");
-        ov_pencil.set_child(Some(&sym("document-edit-symbolic", 11)));
-        ov_pencil.set_halign(gtk::Align::End);
-        ov_pencil.set_valign(gtk::Align::End);
-        ov_pencil.set_width_request(20);
-        ov_pencil.set_height_request(20);
-        ov_pencil.set_tooltip_text(Some("Change icon"));
-        ov_id_row.append(&ov_icon_overlay);
-        {
-            let ov_icon_btn_c = ov_icon_btn.clone();
-            ov_pencil.connect_clicked(move |_| ov_icon_btn_c.emit_clicked());
-        }
-        ov_icon_overlay.add_overlay(&ov_pencil);
-        let ov_name_entry = gtk::Entry::new();
-        ov_name_entry.set_placeholder_text(Some("Display name"));
-        ov_name_entry.set_hexpand(true);
-        ov_id_row.append(&ov_name_entry);
-        let ov_name_save = btn_with_icon("view-refresh-symbolic", "Save");
-        ov_name_save.add_css_class("settings-btn");
-        ov_name_save.set_valign(gtk::Align::Center);
-        ov_id_row.append(&ov_name_save);
-        let ov_panel = gtk::Box::new(gtk::Orientation::Vertical, 12);
-        ov_panel.add_css_class("mcx-panel");
-        ov_panel.append(&ov_id_row);
-        ov_page.append(&ov_panel);
-        ov_page.set_margin_top(24);
-        ov_page.set_margin_bottom(24);
-        ov_page.set_margin_start(24);
-        ov_page.set_margin_end(24);
-        let stats_flow = gtk::FlowBox::new();
-        stats_flow.set_max_children_per_line(4);
-        stats_flow.set_min_children_per_line(2);
-        stats_flow.set_selection_mode(gtk::SelectionMode::None);
-        stats_flow.set_row_spacing(12);
-        stats_flow.set_column_spacing(12);
-        stats_flow.set_halign(gtk::Align::Fill);
-        stats_flow.set_hexpand(true);
-        let (c1, ov_mc) = stat_mini("applications-games-symbolic", "Minecraft");
-        let (c2, ov_loader) = stat_mini("application-x-addon-symbolic", "Modloader");
-        let (c3, ov_addons) = stat_mini("package-x-generic-symbolic", "Addons");
-        let (c4, ov_played) = stat_mini("alarm-symbolic", "Time played");
-        let (c5, ov_last) = stat_mini("calendar-symbolic", "Last played");
-        for c in [&c1, &c2, &c3, &c4, &c5] {
-            stats_flow.insert(c, -1);
-        }
-        ov_panel.append(&stats_flow);
-        detail_tabs.add_titled(&page_scroll(&ov_page, 1100), Some("overview"), "Overview");
 
         // Addons tab: Carbon AddonsPageLayout toolbar
         let ad_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -1405,6 +1372,14 @@ impl MinecraftView {
         st_inner.append(&set_save);
         st_page.append(&st_frame);
         detail_tabs.add_titled(&page_scroll(&st_page, 720), Some("isettings"), "Settings");
+        if let Ok(c900) = adw::BreakpointCondition::parse("max-width: 900px") {
+            let bp = adw::Breakpoint::new(c900);
+            let f = gtk::glib::Value::from(false);
+            for lbl in &det_chip_labels {
+                bp.add_setter(lbl, "visible", Some(&f));
+            }
+            parent.add_breakpoint(bp);
+        }
         if let Ok(c600) = adw::BreakpointCondition::parse("max-width: 600px") {
             let bp = adw::Breakpoint::new(c600);
             let f = gtk::glib::Value::from(false);
@@ -1416,7 +1391,7 @@ impl MinecraftView {
         if let Ok(c800m) = adw::BreakpointCondition::parse("max-width: 800px") {
             let bp = adw::Breakpoint::new(c800m);
             let m16 = gtk::glib::Value::from(16);
-            for pg in [&ov_page, &ad_page, &lg_page, &st_page] {
+            for pg in [&ad_page, &lg_page, &st_page] {
                 bp.add_setter(pg, "margin-start", Some(&m16));
                 bp.add_setter(pg, "margin-end", Some(&m16));
                 bp.add_setter(pg, "margin-top", Some(&m16));
@@ -1450,19 +1425,15 @@ impl MinecraftView {
             detail_id,
             detail_icon: detail_icon.clone(),
             detail_name,
-            detail_sub,
             detail_play,
             detail_star,
             addons_tab_wrap: addons_tab_wrap_holder.borrow().clone().unwrap_or_else(|| gtk::Box::new(gtk::Orientation::Vertical, 1)),
-            det_overview_btn: det_overview_btn.clone(),
+            det_addons_btn: det_addons_btn.clone(),
             detail_tabs,
             ov_mc,
             ov_loader,
             ov_addons,
             ov_played,
-            ov_last,
-            ov_icon_btn: ov_icon_btn.clone(),
-            ov_name_entry: ov_name_entry.clone(),
             addons_search,
             addons_type,
             addons_box,
@@ -1528,38 +1499,40 @@ impl MinecraftView {
         }
         {
             let v = view.clone();
-            view.ov_icon_btn.connect_clicked(move |_| v.show_icon_popover());
+            detail_icon_btn.connect_clicked(move |_| v.show_icon_popover());
         }
         {
             let v = view.clone();
-            let save = move || {
-                let name = v.ov_name_entry.text().to_string().trim().to_string();
-                if !name.is_empty() {
-                    let id = v.detail_id.borrow().clone();
-                    if !id.is_empty() {
-                        v.set_inst_cfg(&id, "Name", &name);
-                        v.reload_silent();
-                        v.render_detail();
-                    }
-                }
-            };
-            let s2 = save.clone();
-            ov_name_save.connect_clicked(move |_| save());
-            let vv = view.clone();
-            view.ov_name_entry.connect_activate(move |_| {
-                s2();
-                let _ = &vv;
-            });
+            icon_pencil.connect_clicked(move |_| v.show_icon_popover());
         }
         {
             let v = view.clone();
-            let gesture = gtk::GestureClick::new();
-            gesture.connect_pressed(move |g, _, _, _| {
-                if g.current_button() == 1 {
-                    v.show_icon_popover();
+            name_pencil.connect_clicked(move |_| v.detail_name.start_editing());
+        }
+        {
+            let v = view.clone();
+            view.detail_name.connect_editing_notify(move |edit| {
+                if edit.is_editing() {
+                    return;
                 }
+                let id = v.detail_id.borrow().clone();
+                let Some(inst) = v.get_inst(&id) else {
+                    return;
+                };
+                let want = dedup_disp(&inst.disp);
+                let got = edit.text().to_string().trim().to_string();
+                if got == want {
+                    return;
+                }
+                if got.is_empty() {
+                    edit.set_text(&want);
+                    v.toast("Invalid name", "Name cannot be empty.");
+                    return;
+                }
+                v.set_inst_cfg(&id, "Name", &got);
+                v.reload_silent();
+                v.render_detail();
             });
-            view.detail_icon.add_controller(gesture);
         }
 
         {
@@ -1960,7 +1933,19 @@ impl MinecraftView {
                 }
                 inner.append(&bar);
             }
-            tile.set_child(Some(&inner));
+            let tile_overlay = gtk::Overlay::new();
+            tile_overlay.set_child(Some(&inner));
+            if inst.fav {
+                let star = gtk::Image::from_icon_name("starred-symbolic");
+                star.set_pixel_size(28);
+                star.add_css_class("mcx-fav-star");
+                star.set_halign(gtk::Align::End);
+                star.set_valign(gtk::Align::Start);
+                star.set_margin_top(6);
+                star.set_margin_end(6);
+                tile_overlay.add_overlay(&star);
+            }
+            tile.set_child(Some(&tile_overlay));
             let v = self.clone();
             let id = inst.id.clone();
             let gesture = gtk::GestureClick::new();
@@ -2060,8 +2045,13 @@ impl MinecraftView {
 
     fn open_detail(&self, id: &str) {
         *self.detail_id.borrow_mut() = id.to_string();
-        self.detail_tabs.set_visible_child_name("overview");
-        self.det_overview_btn.set_active(true);
+        let vanilla = self.get_inst(id).map(|i| i.loader == "vanilla").unwrap_or(false);
+        if vanilla {
+            self.detail_tabs.set_visible_child_name("logs");
+        } else {
+            self.detail_tabs.set_visible_child_name("addons");
+            self.det_addons_btn.set_active(true);
+        }
         self.render_detail();
         self.main_stack.set_visible_child_name("detail");
     }
@@ -2374,32 +2364,18 @@ impl MinecraftView {
             Some(i) => i,
             None => return,
         };
-        self.detail_name.set_text(&dedup_disp(&inst.disp));
+        if !self.detail_name.is_editing() {
+            self.detail_name.set_text(&dedup_disp(&inst.disp));
+        }
         {
             let kind = self.inst_cfg(&inst.id, "Icon");
-            let fresh = inst_icon_image(&inst.id, &kind, self.state.theme.is_dark(), 44);
+            let fresh = inst_icon_image(&inst.id, &kind, self.state.theme.is_dark(), 64);
             if let Some(p) = fresh.paintable() {
                 self.detail_icon.set_paintable(Some(&p));
-                self.detail_icon.set_pixel_size(44);
+                self.detail_icon.set_pixel_size(64);
             }
-            let ov_img = inst_icon_image(&inst.id, &kind, self.state.theme.is_dark(), 40);
-            if let Some(p) = ov_img.paintable() {
-                self.ov_icon_btn.set_child(Some(&{
-                    let img = gtk::Image::new();
-                    img.set_paintable(Some(&p));
-                    img.set_pixel_size(40);
-                    img
-                }));
-            }
-            self.ov_name_entry.set_text(&dedup_disp(&inst.disp));
         }
         let running = !MinecraftManager::running_pids().is_empty();
-        let loader_txt = if inst.loader == "vanilla" { "Vanilla".to_string() } else { format!("{} {}", inst.loader, inst.loader_ver) };
-        let mut sub = format!("{} • {} • {}", inst.mc_ver, loader_txt, fmt_playtime(inst.secs));
-        if !inst.last.is_empty() {
-            sub.push_str(&format!(" • last {}", fmt_date(&inst.last)));
-        }
-        self.detail_sub.set_text(&sub);
         if running {
             set_btn_icon_label(&self.detail_play, "media-playback-stop-symbolic", "Stop");
             paint_btn(&self.detail_play, "#E53935");
@@ -2407,26 +2383,21 @@ impl MinecraftView {
             set_themed_btn(&self.detail_play, "play", "Play", self.state.theme.is_dark(), 20);
             paint_accent(&self.detail_play, &self.state.theme);
         }
-        self.detail_star.set_child(Some(&helpers::themed_image(
-            if inst.fav { "star_gold" } else { "star_gray" }, self.state.theme.is_dark(), 20)));
+        self.detail_star.set_active(inst.fav);
+        self.detail_star.set_tooltip_text(Some(if inst.fav { "Unfavorite" } else { "Favorite" }));
         // vanilla has no addons: hide the whole category
         let is_vanilla = inst.loader == "vanilla";
         self.addons_tab_wrap.set_visible(!is_vanilla);
-        if is_vanilla {
-            self.detail_tabs.set_visible_child_name("overview");
-            self.det_overview_btn.set_active(true);
+        if is_vanilla && self.detail_tabs.visible_child_name().as_deref() == Some("addons") {
+            self.detail_tabs.set_visible_child_name("logs");
         }
-        // overview cards
+        // header chips
         self.ov_mc.set_text(&inst.mc_ver);
         let loader_txt = if inst.loader == "vanilla" { "Vanilla".to_string() } else { format!("{} {}", inst.loader, inst.loader_ver) };
         self.ov_loader.set_text(&loader_txt);
-        let (nd, _items) = self.addon_dir_items("mods");
-        let _ = nd;
         let count = self.count_addons();
         self.ov_addons.set_text(&format!("{}", count));
-        self.ov_played.set_text(&fmt_playtime(inst.secs));
-        let last_txt = if inst.last.is_empty() { "—".to_string() } else { fmt_date(&inst.last) };
-        self.ov_last.set_text(&last_txt);
+        self.ov_played.set_text(&fmt_playtime_long(inst.secs));
         self.set_jvm.set_text(&self.inst_cfg(&inst.id, "Jvm"));
         self.set_res_w.set_text(&self.inst_cfg(&inst.id, "ResW"));
         self.set_res_h.set_text(&self.inst_cfg(&inst.id, "ResH"));
@@ -2772,10 +2743,6 @@ impl MinecraftView {
             std::fs::create_dir_all(&d).ok();
         }
         d
-    }
-
-    fn addon_dir_items(&self, _which: &str) -> (std::path::PathBuf, Vec<AddonRow>) {
-        (self.addon_dir(), Vec::new())
     }
 
     fn inst_base_dir(&self) -> std::path::PathBuf {
@@ -3172,8 +3139,15 @@ impl MinecraftView {
     }
 
     fn render_detail_cards(&self) {
-        let count = self.count_addons();
-        self.ov_addons.set_text(&format!("{}", count));
+        let id = self.detail_id.borrow().clone();
+        let Some(inst) = self.get_inst(&id) else {
+            return;
+        };
+        self.ov_mc.set_text(&inst.mc_ver);
+        let loader_txt = if inst.loader == "vanilla" { "Vanilla".to_string() } else { format!("{} {}", inst.loader, inst.loader_ver) };
+        self.ov_loader.set_text(&loader_txt);
+        self.ov_addons.set_text(&format!("{}", self.count_addons()));
+        self.ov_played.set_text(&fmt_playtime_long(inst.secs));
     }
 
     // ============ logs tab ============

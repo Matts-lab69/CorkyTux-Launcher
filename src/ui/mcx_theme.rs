@@ -36,7 +36,15 @@ pub fn install(theme: &ThemeManager) {
         .mcx radio:checked {{ border-color: {accent}; }}\
         .mcx radio:checked > indicator {{ background-color: {accent}; }}\
         .mcx scale highlight {{ background-color: {accent}; }}\
-        .mcx scale slider {{ background-color: {accent}; border-color: {accent}; }}"
+        .mcx scale slider {{ background-color: {accent}; border-color: {accent}; }}\
+        .mcx .mcx-title {{ color: #ECEEF3; font-size: 20px; font-weight: 700; padding: 0; }}\
+        .mcx .mcx-chip {{ background-color: #181818; border: 1px solid #242424; border-radius: 8px; padding: 2px 8px; min-height: 28px; }}\
+        .mcx .mcx-chip-label {{ color: #A3A9B7; font-size: 10px; }}\
+        .mcx .mcx-chip-value {{ color: #ECEEF3; font-size: 12px; font-weight: 600; }}\
+        .mcx .mcx-fav-star {{ color: #FFD700; }}\
+        .mcx .icon-pencil {{ opacity: 0; }}\
+        .mcx .icon-wrap:hover .icon-pencil {{ opacity: 1; }}\
+        .mcx flowboxchild {{ padding: 0; }}"
     );
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&css);
