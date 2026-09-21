@@ -5767,9 +5767,9 @@ impl MinecraftView {
             acc_inner.append(&note("No accounts yet."));
         }
         let add_menu_btn = gtk::MenuButton::new();
-        add_menu_btn.add_css_class("settings-btn");
+        add_menu_btn.add_css_class("mcx-add-account");
         add_menu_btn.set_halign(gtk::Align::Start);
-        add_menu_btn.set_size_request(-1, 40);
+        add_menu_btn.set_margin_top(8);
         let add_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         add_box.set_valign(gtk::Align::Center);
         add_box.append(&sym("list-add-symbolic", 16));
@@ -5856,9 +5856,9 @@ impl MinecraftView {
         }
         add_pop.set_child(Some(&add_pop_box));
         add_menu_btn.set_popover(Some(&add_pop));
-        acc_inner.append(&add_menu_btn);
 
         acc_page.append(&acc_frame);
+        acc_page.append(&add_menu_btn);
         // Skins (Ely.by skins system + Mojang proxy, per account type)
         let (skin_frame, skin_inner) = card("Skins");
         let skin_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
