@@ -5766,9 +5766,14 @@ impl MinecraftView {
             acc_inner.append(&note("No accounts yet."));
         }
         let add_menu_btn = gtk::MenuButton::new();
-        add_menu_btn.set_label("Add account");
         add_menu_btn.add_css_class("settings-btn");
-        add_menu_btn.set_halign(gtk::Align::Fill);
+        add_menu_btn.set_halign(gtk::Align::Start);
+        add_menu_btn.set_size_request(-1, 40);
+        let add_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        add_box.set_valign(gtk::Align::Center);
+        add_box.append(&sym("list-add-symbolic", 16));
+        add_box.append(&gtk::Label::new(Some("Add account")));
+        add_menu_btn.set_child(Some(&add_box));
         let add_pop = gtk::Popover::new();
         let add_pop_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
         add_pop_box.set_margin_top(10);
