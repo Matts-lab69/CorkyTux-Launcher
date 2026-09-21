@@ -1138,7 +1138,7 @@ impl MinecraftView {
         detail_icon_btn.add_css_class("icon-ghost");
         detail_icon_btn.set_tooltip_text(Some("Change icon"));
         detail_icon_btn.set_valign(gtk::Align::Center);
-        let detail_icon = helpers::themed_image("minecraft", state.theme.is_dark(), 56);
+        let detail_icon = helpers::themed_image("minecraft", state.theme.is_dark(), 72);
         let icon_wrap = gtk::Overlay::new();
         icon_wrap.add_css_class("icon-wrap");
         icon_wrap.set_child(Some(&detail_icon));
@@ -1207,9 +1207,9 @@ impl MinecraftView {
         };
         name_box.append(&chips_flow);
         det_head.append(&name_box);
-        let detail_play = themed_btn("play", "Play", state.theme.is_dark(), 20);
+        let detail_play = themed_btn("play", "Play", state.theme.is_dark(), 24);
         detail_play.add_css_class("add-btn");
-        detail_play.set_height_request(40);
+        detail_play.set_height_request(48);
         detail_play.set_valign(gtk::Align::Center);
         paint_accent(&detail_play, &state.theme);
         det_head.append(&detail_play);
