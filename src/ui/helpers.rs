@@ -531,7 +531,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .mc-tile {{ border-radius: 14px; }}
              .mc-tile:hover {{ border-color: {accent}; }}
              .mc-head {{ background-color: {panel}; border: 1px solid {border}; border-radius: 14px; padding: 6px 10px; }}
-             .mc-account {{ background-color: transparent; border: none; padding: 4px 8px; border-radius: 10px; }}
+             .mc-account {{ background-color: {well}; border: 1.5px solid {accent}; padding: 4px 8px; border-radius: 10px; }}
              .mc-account:hover {{ background-color: {hover}; }}
              .mc-account-label {{ font-weight: bold; font-size: 13px; color: {text_main}; }}
              .mc-row {{ background-color: {panel}; border: 1px solid {border}; border-radius: 10px; padding: 8px 10px; }}
@@ -556,6 +556,9 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .seg:hover {{ color: {text_main}; }}\
              .seg:checked {{ background-color: {accent}; color: #FFFFFF; }}\
              .filter-bar {{ background-color: {well}; border-radius: 12px; padding: 8px; }}\
+             dropdown, dropdown > button {{ background-color: {well}; color: {text_main}; }}\
+             dropdown > button {{ border: 1.5px solid {accent}; }}\
+             entry.search {{ background-color: {well}; border: 1.5px solid {accent}; color: {text_main}; }}\
              .page-card {{ background-color: {panel}; border: 1px solid {border}; border-radius: 8px; padding: 14px; }}\
              .modal-bg {{ background-color: {panel}; border-radius: 12px; border: 1px solid {border}; }}\
              tooltip.background {{ background-color: {tab_bar_bg}; border-radius: 8px; border: 1px solid {border}; padding: 12px; }}\

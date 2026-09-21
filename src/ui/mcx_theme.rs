@@ -19,9 +19,10 @@ pub fn install(theme: &ThemeManager) {
         .mcx .mcx-bar {{ border: none; background: none; padding: 0; }}\
         .mcx .mcx-bar > button, .mcx .mcx-bar > entry, .mcx .mcx-bar > dropdown, .mcx .mcx-bar > menubutton {{ min-height: 40px; padding-top: 0; padding-bottom: 0; border-radius: 10px; font-size: 14px; }}\
         .mcx .mcx-bar > button {{ min-width: 40px; padding-left: 12px; padding-right: 12px; }}\
-        .mcx .mcx-bar entry {{ background-color: #181818; border: 1px solid #242424; color: #ECEEF3; min-width: 120px; }}\
+        .mcx .mcx-bar entry {{ background-color: #181818; border: 1.5px solid {accent}; color: #ECEEF3; min-width: 120px; }}\
         .mcx .mcx-bar entry placeholder {{ color: #A3A9B7; }}\
-        .mcx .mcx-bar dropdown {{ min-width: 96px; background-color: #181818; border: 1px solid #242424; color: #ECEEF3; }}\
+        .mcx .mcx-bar dropdown {{ min-width: 96px; background-color: #181818; border: none; }}\
+        .mcx .mcx-bar dropdown > button {{ background-color: #181818; border: 1.5px solid {accent}; color: #ECEEF3; }}\
         .mcx .mcx-panel {{ background-color: #121212; border: 1px solid #242424; border-radius: 16px; padding: 16px; }}\
         .mcx .mc-row {{ background-color: #181818; border: 1px solid #242424; border-radius: 12px; }}\
         .mcx .mc-row:hover {{ border-color: {accent}; }}\
