@@ -533,8 +533,9 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .mc-tile {{ border-radius: 14px; }}
              .mc-tile:hover {{ border-color: {accent}; }}
              .mc-head {{ background-color: {panel}; border: 1px solid {border}; border-radius: 14px; padding: 6px 10px; }}
-             .mc-account {{ background-color: {well}; border: 1.5px solid {accent}; padding: 4px 8px; border-radius: 10px; }}
-             .mc-account:hover {{ background-color: {hover}; }}
+             .mc-account {{ background-color: transparent; background-image: none; border: none; box-shadow: none; padding: 0; margin: 0; min-width: 0; min-height: 0; }}
+             .mc-account > button {{ background-color: {well}; border: 1.5px solid {accent}; padding: 4px 8px; border-radius: 10px; }}
+             .mc-account > button:hover {{ background-color: {hover}; }}
              .mc-account-label {{ font-weight: bold; font-size: 13px; color: {text_main}; }}
              .mc-row {{ background-color: {panel}; border: 1px solid {border}; border-radius: 10px; padding: 8px 10px; }}
              .mc-row:hover {{ border-color: {accent}; }}
