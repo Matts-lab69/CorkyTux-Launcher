@@ -501,6 +501,11 @@ fn dl_button_child(ver: &str, installed: bool) -> gtk::Box {
     inner.set_valign(gtk::Align::Center);
     let dot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     dot.add_css_class(if installed { "mcx-dot-ok" } else { "mcx-dot-missing" });
+    dot.set_halign(gtk::Align::Center);
+    dot.set_valign(gtk::Align::Center);
+    dot.set_hexpand(false);
+    dot.set_vexpand(false);
+    dot.set_size_request(10, 10);
     inner.append(&dot);
     inner.append(&gtk::Label::new(Some(&format!("Java {}", ver))));
     inner
@@ -5989,6 +5994,8 @@ impl MinecraftView {
                         o.set_sensitive(false);
                     }
                     let sp = gtk::Spinner::new();
+                    sp.set_halign(gtk::Align::Center);
+                    sp.set_valign(gtk::Align::Center);
                     sp.set_size_request(10, 10);
                     sp.start();
                     if let Some(inner) = btn.child().and_downcast::<gtk::Box>() {

@@ -42,8 +42,9 @@ pub fn install(theme: &ThemeManager) {
         .mcx-modal radio:checked {{ background-color: #AA47BC; border-color: #AA47BC; color: #FFFFFF; }}\
         .mcx-modal radio:checked > indicator {{ background-color: #AA47BC; }}\
         .mcx .mcx-origin {{ background-color: #272727; border: 1px solid #242424; border-radius: 8px; padding: 2px 8px; color: #ECEEF3; font-size: 12px; }}\
-        .mcx-modal .mcx-dot-ok {{ background-color: #3FB950; min-width: 10px; min-height: 10px; border-radius: 50%; }}\
-        .mcx-modal .mcx-dot-missing {{ background-color: #E5484D; min-width: 10px; min-height: 10px; border-radius: 50%; }}\
+        .mcx-modal .mcx-dot-ok, .mcx-modal .mcx-dot-missing {{ min-width: 10px; min-height: 10px; padding: 0; margin: 0; border-radius: 999px; }}\
+        .mcx-modal .mcx-dot-ok {{ background-color: #3FB950; }}\
+        .mcx-modal .mcx-dot-missing {{ background-color: #E5484D; }}\
         .mcx scale highlight {{ background-color: {accent}; }}\
         .mcx scale slider {{ background-color: {accent}; border-color: {accent}; }}\
         .mcx .mcx-title {{ color: #ECEEF3; font-size: 20px; font-weight: 700; padding: 0; }}\
