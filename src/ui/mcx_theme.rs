@@ -66,7 +66,11 @@ pub fn install(theme: &ThemeManager) {
         .mcx .java-row {{ border-radius: 10px; border: 1px solid transparent; border-left-width: 3px; padding: 0 12px; }}\
         .mcx checkbutton:checked .java-row {{ background-color: color-mix(in srgb, {accent} 12%, transparent); border-color: {accent}; }}\
         .mcx .java-row-title {{ color: #ECEEF3; font-size: 14px; font-weight: 600; }}\
-        .mcx .java-row-sub {{ color: #A3A9B7; font-size: 12px; }}"
+        .mcx .java-row-sub {{ color: #A3A9B7; font-size: 12px; }}\
+        .mcx-page scrollbar slider, .mcx-modal scrollbar slider {{ background-color: color-mix(in srgb, {accent} 55%, transparent); border-radius: 9999px; }}\
+        .mcx-page scrollbar slider:hover, .mcx-modal scrollbar slider:hover {{ background-color: color-mix(in srgb, {accent} 85%, transparent); }}\
+        .mcx-page scrollbar slider:active, .mcx-modal scrollbar slider:active {{ background-color: {accent}; }}\
+        .mcx-page scrollbar trough, .mcx-modal scrollbar trough {{ background-color: color-mix(in srgb, {accent} 10%, transparent); border-radius: 9999px; }}"
     );
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&css);
