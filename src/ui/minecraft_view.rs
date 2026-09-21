@@ -5613,6 +5613,15 @@ impl MinecraftView {
         let stack = gtk::Stack::new();
         stack.set_vexpand(true);
         stack.set_vhomogeneous(false);
+        let modal_scroll = |page: &gtk::Box| -> gtk::ScrolledWindow {
+            let s = gtk::ScrolledWindow::new();
+            s.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+            s.set_vexpand(true);
+            s.set_has_frame(false);
+            s.set_propagate_natural_height(false);
+            s.set_child(Some(page));
+            s
+        };
 
         // General
         let gen_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -5664,7 +5673,8 @@ impl MinecraftView {
         gen_save.add_css_class("add-btn");
         gen_save.set_sensitive(false);
         setup_inner.append(&gen_save);
-        stack.add_titled(&gen_page, Some("general"), "General");
+        let gen_scroll = modal_scroll(&gen_page);
+        stack.add_titled(&gen_scroll, Some("general"), "General");
 
         // Accounts
         let acc_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -5881,7 +5891,8 @@ impl MinecraftView {
         skin_lbl.set_visible(false);
         skin_inner.append(&skin_lbl);
         acc_page.append(&skin_frame);
-        stack.add_titled(&acc_page, Some("accounts"), "Accounts");
+        let acc_scroll = modal_scroll(&acc_page);
+        stack.add_titled(&acc_scroll, Some("accounts"), "Accounts");
 
         // Java
         let java_page = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -5997,7 +6008,8 @@ impl MinecraftView {
                 });
             }
         }
-        stack.add_titled(&java_page, Some("java"), "Java");
+        let java_scroll = modal_scroll(&java_page);
+        stack.add_titled(&java_scroll, Some("java"), "Java");
         let ap_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
         ap_page.set_margin_top(24);
         ap_page.set_margin_bottom(24);
@@ -6031,13 +6043,9 @@ impl MinecraftView {
         prev_inner.append(&prev_tile);
         ap_inner.append(&prev_frame);
         ap_page.append(&ap_frame);
-        stack.add_titled(&ap_page, Some("appearance"), "Appearance");
-        let set_scroll = gtk::ScrolledWindow::new();
-        set_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-        set_scroll.set_vexpand(true);
-        set_scroll.set_has_frame(false);
-        set_scroll.set_propagate_natural_height(false);
-        set_scroll.set_child(Some(&stack));
+        let ap_scroll = modal_scroll(&ap_page);
+        stack.add_titled(&ap_scroll, Some("appearance"), "Appearance");
+        let tab_scrolls = [gen_scroll.clone(), acc_scroll.clone(), java_scroll.clone(), ap_scroll.clone()];
 
         // tab bar (centered, above content)
         let tab_bar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
@@ -6079,7 +6087,7 @@ impl MinecraftView {
         }
         for (i, id) in ids.iter().enumerate() {
             let st = stack.clone();
-            let sc = set_scroll.clone();
+            let sc = tab_scrolls[i].clone();
             let tid = id.to_string();
             let all = inds.clone();
             let mine = inds[i].clone();
@@ -6095,7 +6103,7 @@ impl MinecraftView {
             });
         }
         content.append(&tab_bar);
-        content.append(&set_scroll);
+        content.append(&stack);
         if let Ok(c560m) = adw::BreakpointCondition::parse("max-width: 560px") {
             let bp = adw::Breakpoint::new(c560m);
             let m16 = gtk::glib::Value::from(16);
