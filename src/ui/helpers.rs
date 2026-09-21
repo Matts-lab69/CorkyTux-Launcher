@@ -384,6 +384,9 @@ pub fn modal_header(title: &str) -> (gtk::Box, gtk::Button) {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     row.set_halign(gtk::Align::Fill);
     row.set_valign(gtk::Align::Start);
+    row.set_margin_start(24);
+    row.set_margin_end(16);
+    row.set_margin_top(16);
     let lbl = gtk::Label::new(Some(title));
     lbl.add_css_class("modal-title");
     lbl.set_halign(gtk::Align::Start);
@@ -519,7 +522,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .close-btn {{ background: transparent; border: none; color: {accent}; font-size: 16px; font-weight: bold; }}\
              .close-btn:hover {{ opacity: 0.75; }}\
              .proton-path-badge {{ color: {accent}; border: 1px solid {accent}; border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: bold; }}\
-             .modal-title {{ color: {text_main}; font-size: 16px; font-weight: bold; }}\
+             .modal-title {{ color: {text_main}; font-size: 20px; font-weight: 800; }}\
              .cand-list {{ background-color: {well}; border-radius: 8px; padding: 6px; }}\
              .card-selected {{ background-color: {accent}; }}\
              .card-selected label {{ color: #000000; }}\

@@ -57,7 +57,7 @@ pub fn install(theme: &ThemeManager) {
         .mcx flowboxchild {{ padding: 0; }}\
         .mcx-modal {{ background-color: #181818; border-radius: 16px; border: 1px solid #242424; }}\
         .mcx .mcx-mhead {{ min-height: 56px; }}\
-        .mcx .modal-title {{ font-size: 18px; padding-left: 24px; }}\
+        .mcx .modal-title {{ font-size: 20px; font-weight: 800; }}\
         .mcx .close-btn {{ color: #ECEEF3; }}\
         .mcx .close-btn:hover {{ background-color: #272727; opacity: 1; }}\
         .mcx separator {{ background-color: #242424; min-height: 1px; }}\
