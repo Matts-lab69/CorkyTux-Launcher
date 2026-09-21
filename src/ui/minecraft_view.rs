@@ -2398,6 +2398,7 @@ impl MinecraftView {
             if *aid == cur_aid || *name == cur_name {
                 let check = gtk::Image::from_icon_name("emblem-ok-symbolic");
                 check.set_pixel_size(16);
+                check.set_margin_end(8);
                 row.append(&check);
             }
             row_btn.set_child(Some(&row));
