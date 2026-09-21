@@ -560,7 +560,6 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .filter-bar {{ background-color: {well}; border-radius: 12px; padding: 8px; }}\
              dropdown, dropdown > button {{ background-color: {well}; color: {text_main}; }}\
              dropdown > button {{ border: 1.5px solid {accent}; }}\
-             dropdown popover {{ border: 1px solid {accent}; border-radius: 12px; }}\
              dropdown popover row:hover {{ background-color: color-mix(in srgb, {accent} 15%, transparent); }}\
              dropdown popover row:selected {{ background-color: color-mix(in srgb, {accent} 25%, transparent); }}\
              entry.search {{ background-color: {well}; border: 1.5px solid {accent}; color: {text_main}; }}\
