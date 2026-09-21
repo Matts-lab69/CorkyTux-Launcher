@@ -3327,36 +3327,27 @@ impl MinecraftView {
         add_stack.add_titled(&custom_page, Some("custom"), "Custom");
         add_stack.add_titled(&pack_page, Some("modpack"), "Modpack");
         add_stack.add_titled(&import_page, Some("import"), "Import");
-        let add_tabbar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        let add_tabbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        add_tabbar.add_css_class("seg-bar");
         let add_ids = ["custom", "modpack", "import"];
         let add_labels = ["Custom", "Modpack", "Import"];
         let mut add_btns: Vec<gtk::ToggleButton> = Vec::new();
-        let mut add_inds: Vec<gtk::Box> = Vec::new();
         let add_icons = ["applications-engineering-symbolic", "package-x-generic-symbolic", "document-open-symbolic"];
         for ((label, id), tab_icon) in add_labels.iter().zip(add_ids.iter()).zip(add_icons.iter()) {
-            let wrap = gtk::Box::new(gtk::Orientation::Vertical, 1);
-            wrap.set_hexpand(true);
             let btn = gtk::ToggleButton::new();
-            btn.add_css_class("settings-tab");
+            btn.add_css_class("seg");
             btn.set_hexpand(true);
-            let c = gtk::Box::new(gtk::Orientation::Vertical, 2);
+            let c = gtk::Box::new(gtk::Orientation::Horizontal, 8);
             c.set_halign(gtk::Align::Center);
-            c.append(&sym(tab_icon, 18));
-            let lbl = gtk::Label::new(Some(label));
-            lbl.add_css_class("time-label");
-            c.append(&lbl);
-            let ind = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-            ind.add_css_class("settings-tab-indicator");
-            ind.set_visible(*id == "custom");
-            c.append(&ind);
+            c.set_valign(gtk::Align::Center);
+            c.append(&sym(tab_icon, 16));
+            c.append(&gtk::Label::new(Some(label)));
             btn.set_child(Some(&c));
             if *id == "custom" {
                 btn.set_active(true);
             }
-            wrap.append(&btn);
-            add_tabbar.append(&wrap);
+            add_tabbar.append(&btn);
             add_btns.push(btn);
-            add_inds.push(ind);
         }
         for b in &add_btns[1..] {
             b.set_group(Some(&add_btns[0]));
@@ -3364,15 +3355,9 @@ impl MinecraftView {
         for (i, id) in add_ids.iter().enumerate() {
             let st = add_stack.clone();
             let tid = id.to_string();
-            let all = add_inds.clone();
-            let mine = add_inds[i].clone();
             add_btns[i].connect_toggled(move |b| {
                 if b.is_active() {
                     st.set_visible_child_name(&tid);
-                    for ind in &all {
-                        ind.set_visible(false);
-                    }
-                    mine.set_visible(true);
                 }
             });
         }
@@ -3383,15 +3368,18 @@ impl MinecraftView {
         let name_entry = gtk::Entry::new();
         custom_page.append(&name_entry);
 
-        custom_page.append(&note("Minecraft version"));
+        let ver_group = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        ver_group.add_css_class("page-card");
+        custom_page.append(&ver_group);
+        ver_group.append(&note("Minecraft version"));
         let avail: Vec<String> = self.data.borrow().versions.iter().map(|(id, _)| id.clone()).collect();
         let ver_store = gtk::StringList::new(&[] as &[&str]);
         let refs: Vec<&str> = avail.iter().map(|s| s.as_str()).collect();
         ver_store.splice(0, 0, &refs);
         let ver_drop = gtk::DropDown::new(Some(ver_store), gtk::Expression::NONE);
-        custom_page.append(&ver_drop);
+        ver_group.append(&ver_drop);
         let add_java_req = note("");
-        custom_page.append(&add_java_req);
+        ver_group.append(&add_java_req);
 
         let filt_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let snap_sw = gtk::Switch::new();
@@ -3401,7 +3389,7 @@ impl MinecraftView {
         let ver_refresh = btn_with_icon("view-refresh-symbolic", "Refresh list");
         ver_refresh.add_css_class("settings-btn");
         filt_row.append(&ver_refresh);
-        custom_page.append(&filt_row);
+        ver_group.append(&filt_row);
 
         custom_page.append(&note("Modloader (auto-detected for this version)"));
         let loader_ids: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(vec!["vanilla".to_string()]));
@@ -3684,6 +3672,7 @@ impl MinecraftView {
                             }
                             for (pid, title, author, desc, icon) in hits {
                                 let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                                row.add_css_class("mc-row");
                                 if !icon.is_empty() {
                                     let img = gtk::Image::new();
                                     img.set_pixel_size(40);
