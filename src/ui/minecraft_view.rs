@@ -282,8 +282,8 @@ fn info_card(title: &str) -> (gtk::Box, gtk::Label) {
     frame.append(&t);
     let v = gtk::Label::new(Some("—"));
     v.set_halign(gtk::Align::Start);
-    v.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-    v.add_css_class("details-title");
+    v.set_wrap(true);
+    v.add_css_class("mc-tile-name");
     frame.append(&v);
     (frame, v)
 }
@@ -901,12 +901,17 @@ impl MinecraftView {
         scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
         scroll.set_has_frame(false);
         scroll.set_overlay_scrolling(false);
+        scroll.set_propagate_natural_height(false);
+        scroll.add_css_class("mcx");
+        crate::ui::mcx_theme::install(&state.theme);
         let col = gtk::Box::new(gtk::Orientation::Vertical, 12);
         col.set_margin_top(24);
         col.set_margin_bottom(24);
         col.set_margin_start(24);
         col.set_margin_end(24);
         col.set_hexpand(true);
+        col.set_vexpand(true);
+        col.set_valign(gtk::Align::Fill);
         scroll.set_child(Some(&col));
 
         let data = Rc::new(RefCell::new(McData::default()));
@@ -916,13 +921,15 @@ impl MinecraftView {
         let addons_type: Rc<RefCell<String>> = Rc::new(RefCell::new("mods".to_string()));
 
         let main_stack = gtk::Stack::new();
-        main_stack.set_vexpand(false);
+        main_stack.set_vexpand(true);
+        main_stack.set_valign(gtk::Align::Fill);
         main_stack.set_hexpand(true);
 
         // ============ LIBRARY PAGE (Carbon HomeGrid) ============
-        let lib_page = gtk::Box::new(gtk::Orientation::Vertical, 10);
-        let head = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let lib_page = gtk::Box::new(gtk::Orientation::Vertical, 16);
+        let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         head.set_valign(gtk::Align::Start);
+        head.add_css_class("mcx-bar");
         let account_head = gtk::Image::new();
         account_head.set_pixel_size(24);
         account_head.set_icon_name(Some("avatar-default-symbolic"));
@@ -956,46 +963,81 @@ impl MinecraftView {
         sort_drop.set_tooltip_text(Some("Sort by"));
         sort_drop.set_valign(gtk::Align::Center);
         head.append(&sort_drop);
+        let sort_cycle = btn_with_icon("view-sort-ascending-symbolic", "");
+        sort_cycle.set_tooltip_text(Some("Sort by"));
+        sort_cycle.set_visible(false);
+        sort_cycle.set_valign(gtk::Align::Center);
+        head.append(&sort_cycle);
         let settings_btn = gtk::Button::new();
         settings_btn.set_child(Some(&helpers::themed_image("settings", state.theme.is_dark(), 16)));
         settings_btn.set_tooltip_text(Some("Minecraft settings"));
         settings_btn.set_valign(gtk::Align::Center);
         head.append(&settings_btn);
-        let add_btn = themed_btn("download", "ADD INSTANCE", state.theme.is_dark(), 18);
+        let add_btn = themed_btn("download", "Add instance", state.theme.is_dark(), 18);
         add_btn.add_css_class("add-btn");
         paint_accent(&add_btn, &state.theme);
         head.append(&add_btn);
-        head.add_css_class("mc-head");
+        let add_compact = gtk::Button::with_label("+");
+        add_compact.set_tooltip_text(Some("Add instance"));
+        add_compact.add_css_class("add-btn");
+        add_compact.set_visible(false);
+        add_compact.set_valign(gtk::Align::Center);
+        head.append(&add_compact);
         lib_page.append(&head);
+        {
+            let sd = sort_drop.clone();
+            sort_cycle.connect_clicked(move |_| {
+                sd.set_selected((sd.selected() + 1) % 4);
+            });
+        }
+        if let Ok(c1100) = adw::BreakpointCondition::parse("max-width: 1100px") {
+            let bp = adw::Breakpoint::new(c1100);
+            let t = gtk::glib::Value::from(true);
+            let f = gtk::glib::Value::from(false);
+            bp.add_setter(&sort_drop, "visible", Some(&f));
+            bp.add_setter(&sort_cycle, "visible", Some(&t));
+            parent.add_breakpoint(bp);
+        }
+        if let Ok(c800) = adw::BreakpointCondition::parse("max-width: 800px") {
+            let bp2 = adw::Breakpoint::new(c800);
+            let t = gtk::glib::Value::from(true);
+            let f = gtk::glib::Value::from(false);
+            bp2.add_setter(&account_label, "visible", Some(&f));
+            bp2.add_setter(&add_btn, "visible", Some(&f));
+            bp2.add_setter(&add_compact, "visible", Some(&t));
+            parent.add_breakpoint(bp2);
+        }
 
         let lib_status = note("");
         lib_page.append(&lib_status);
 
         let flow = gtk::FlowBox::new();
         flow.set_max_children_per_line(20);
-        flow.set_min_children_per_line(2);
+        flow.set_min_children_per_line(1);
         flow.set_selection_mode(gtk::SelectionMode::None);
-        flow.set_row_spacing(10);
-        flow.set_column_spacing(10);
+        flow.set_row_spacing(12);
+        flow.set_column_spacing(12);
         flow.set_halign(gtk::Align::Fill);
         flow.set_hexpand(true);
         lib_page.append(&flow);
         main_stack.add_named(&lib_page, Some("library"));
 
         // ============ DETAIL PAGE (Carbon DetailPageLayout) ============
-        let det_page = gtk::Box::new(gtk::Orientation::Vertical, 10);
-        let det_head = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        let det_page = gtk::Box::new(gtk::Orientation::Vertical, 16);
+        let det_head = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         let back_btn = gtk::Button::new();
         back_btn.add_css_class("icon-ghost");
         set_btn_icon(&back_btn, "go-previous-symbolic", 18);
         back_btn.set_tooltip_text(Some("Back to library"));
         det_head.append(&back_btn);
-        let detail_icon = helpers::themed_image("minecraft", state.theme.is_dark(), 44);
+        let detail_icon = helpers::themed_image("minecraft", state.theme.is_dark(), 64);
         det_head.append(&detail_icon);
         let name_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
         name_box.set_hexpand(true);
         let detail_name = gtk::Label::new(Some("—"));
         detail_name.set_halign(gtk::Align::Start);
+        detail_name.set_hexpand(true);
+        detail_name.set_ellipsize(gtk::pango::EllipsizeMode::End);
         detail_name.add_css_class("details-title");
         name_box.append(&detail_name);
         let detail_sub = gtk::Label::new(Some(""));
@@ -1004,9 +1046,10 @@ impl MinecraftView {
         detail_sub.add_css_class("time-label");
         name_box.append(&detail_sub);
         det_head.append(&name_box);
-        let detail_play = themed_btn("play", "PLAY", state.theme.is_dark(), 20);
+        let detail_play = themed_btn("play", "Play", state.theme.is_dark(), 20);
         detail_play.add_css_class("add-btn");
-        detail_play.set_width_request(150);
+        detail_play.set_width_request(170);
+        detail_play.set_height_request(48);
         paint_accent(&detail_play, &state.theme);
         det_head.append(&detail_play);
         let detail_star = gtk::Button::new();
@@ -1019,7 +1062,8 @@ impl MinecraftView {
         det_page.append(&det_head);
 
         // detail tabs (Carbon: Overview/Addons/Settings/Logs)
-        let det_tabbar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        let det_tabbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        det_tabbar.set_halign(gtk::Align::Start);
         let detail_tabs = gtk::Stack::new();
         detail_tabs.set_vexpand(false);
         let det_ids = ["overview", "addons", "logs", "isettings"];
@@ -1030,10 +1074,8 @@ impl MinecraftView {
         let det_icons = ["view-grid-symbolic", "application-x-addon-symbolic", "text-x-generic-symbolic", "preferences-system-symbolic"];
         for ((label, id), tab_icon) in det_labels.iter().zip(det_ids.iter()).zip(det_icons.iter()) {
             let wrap = gtk::Box::new(gtk::Orientation::Vertical, 1);
-            wrap.set_hexpand(true);
             let btn = gtk::ToggleButton::new();
             btn.add_css_class("settings-tab");
-            btn.set_hexpand(true);
             let c = gtk::Box::new(gtk::Orientation::Vertical, 2);
             c.set_halign(gtk::Align::Center);
             c.append(&sym(tab_icon, 18));
@@ -1115,7 +1157,7 @@ impl MinecraftView {
         ov_page.set_margin_bottom(12);
         ov_page.set_margin_start(16);
         ov_page.set_margin_end(16);
-        let cards_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let cards_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         cards_row.set_homogeneous(true);
         let (c1, ov_mc) = info_card("Minecraft version");
         let (c2, ov_loader) = info_card("Modloader");
@@ -1124,7 +1166,7 @@ impl MinecraftView {
         cards_row.append(&c2);
         cards_row.append(&c3);
         ov_page.append(&cards_row);
-        let cards_row2 = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let cards_row2 = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         cards_row2.set_homogeneous(true);
         let (c4, ov_played) = info_card("Time played");
         let (c5, ov_last) = info_card("Last played");
@@ -1139,27 +1181,32 @@ impl MinecraftView {
         ad_page.set_margin_bottom(12);
         ad_page.set_margin_start(16);
         ad_page.set_margin_end(16);
-        let ad_toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let ad_toolbar = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        let ad_toolbar_row1 = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let addons_search = gtk::SearchEntry::new();
         addons_search.set_placeholder_text(Some("Search installed…"));
         addons_search.set_hexpand(true);
-        ad_toolbar.append(&addons_search);
+        ad_toolbar_row1.append(&addons_search);
         let plat_store = gtk::StringList::new(&["All", "Modrinth", "Local"]);
         let plat_drop = gtk::DropDown::new(Some(plat_store), gtk::Expression::NONE);
-        ad_toolbar.append(&plat_drop);
+        ad_toolbar_row1.append(&plat_drop);
+        ad_toolbar.append(&ad_toolbar_row1);
+        let ad_toolbar_row2 = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        ad_toolbar_row2.set_halign(gtk::Align::End);
         let update_all_btn = btn_with_icon("software-update-available-symbolic", "Update all");
         update_all_btn.add_css_class("settings-btn");
         update_all_btn.set_visible(false);
-        ad_toolbar.append(&update_all_btn);
+        ad_toolbar_row2.append(&update_all_btn);
         let rescan_btn = themed_btn("search", "Rescan", state.theme.is_dark(), 14);
         rescan_btn.add_css_class("settings-btn");
-        ad_toolbar.append(&rescan_btn);
-        let browse_btn = themed_btn("download", "ADD", state.theme.is_dark(), 16);
-        browse_btn.add_css_class("add-btn");
-        ad_toolbar.append(&browse_btn);
+        ad_toolbar_row2.append(&rescan_btn);
+        let browse_btn = themed_btn("download", "Add", state.theme.is_dark(), 16);
+        browse_btn.add_css_class("settings-btn");
+        ad_toolbar_row2.append(&browse_btn);
         let ad_folder_btn = gtk::Button::with_label("Open folder");
         ad_folder_btn.add_css_class("settings-btn");
-        ad_toolbar.append(&ad_folder_btn);
+        ad_toolbar_row2.append(&ad_folder_btn);
+        ad_toolbar.append(&ad_toolbar_row2);
         ad_page.append(&ad_toolbar);
         let chips_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let chip_mods = gtk::ToggleButton::with_label("Mods");
@@ -1215,11 +1262,11 @@ impl MinecraftView {
         detail_tabs.add_titled(&lg_page, Some("logs"), "Logs");
 
         // Per-instance Settings tab
-        let st_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        st_page.set_margin_top(12);
-        st_page.set_margin_bottom(12);
-        st_page.set_margin_start(16);
-        st_page.set_margin_end(16);
+        let st_page = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        st_page.set_margin_top(8);
+        st_page.set_margin_bottom(8);
+        st_page.set_margin_start(12);
+        st_page.set_margin_end(12);
         let (st_frame, st_inner) = card("Instance settings");
         st_inner.append(&note("Memory (RAM)"));
         let set_ram_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -1281,7 +1328,17 @@ impl MinecraftView {
         st_inner.append(&set_save);
         st_page.append(&st_frame);
         detail_tabs.add_titled(&st_page, Some("isettings"), "Settings");
-        det_page.append(&detail_tabs);
+        let det_body_scroll = gtk::ScrolledWindow::new();
+        det_body_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        det_body_scroll.set_min_content_height(200);
+        det_body_scroll.set_vexpand(true);
+        det_body_scroll.set_valign(gtk::Align::Fill);
+        det_body_scroll.set_has_frame(false);
+        det_body_scroll.set_propagate_natural_height(false);
+        det_body_scroll.set_child(Some(&detail_tabs));
+        det_page.append(&det_body_scroll);
+        det_page.set_vexpand(true);
+        det_page.set_valign(gtk::Align::Fill);
         main_stack.add_named(&det_page, Some("detail"));
 
         col.append(&main_stack);
@@ -1355,6 +1412,10 @@ impl MinecraftView {
         {
             let v = view.clone();
             add_btn.connect_clicked(move |_| v.show_add_instance());
+        }
+        {
+            let v = view.clone();
+            add_compact.connect_clicked(move |_| v.show_add_instance());
         }
         {
             let v = view.clone();
@@ -1602,6 +1663,16 @@ impl MinecraftView {
 
     fn refresh_all(&self) {
         self.lib_status.set_text("Loading…");
+        while let Some(c) = self.flow.first_child() {
+            self.flow.remove(&c);
+        }
+        for _ in 0..4 {
+            let sk = gtk::FlowBoxChild::new();
+            let inner = gtk::Box::new(gtk::Orientation::Vertical, 6);
+            inner.add_css_class("skeleton-tile");
+            sk.set_child(Some(&inner));
+            self.flow.insert(&sk, -1);
+        }
         let (tx, rx) = std::sync::mpsc::channel::<McData>();
         std::thread::spawn(move || {
             let st = MinecraftManager::status(&legacy_dir().display().to_string()).unwrap_or_default();
@@ -1703,22 +1774,49 @@ impl MinecraftView {
         let total = self.data.borrow().installed.len();
         let msg = if list.is_empty() {
             if total == 0 {
-                "No instances — press ADD INSTANCE.".to_string()
+                "Instances".to_string()
             } else {
-                "No matches.".to_string()
+                "Instances · no matches".to_string()
             }
         } else if list.len() == total {
-            format!("{} instance(s)", total)
+            format!("Instances · {} {}", total, if total == 1 { "instance" } else { "instances" })
         } else {
-            format!("{} of {} shown", list.len(), total)
+            format!("Instances · {} of {}", list.len(), total)
         };
         self.lib_status.set_text(&msg);
+        self.lib_status.add_css_class("frame-title");
+        if list.is_empty() && total == 0 {
+            let empty = gtk::Box::new(gtk::Orientation::Vertical, 10);
+            empty.add_css_class("mc-empty");
+            empty.set_halign(gtk::Align::Center);
+            empty.set_valign(gtk::Align::Center);
+            empty.set_hexpand(true);
+            let icon = helpers::themed_image("minecraft", self.state.theme.is_dark(), 56);
+            icon.set_halign(gtk::Align::Center);
+            empty.append(&icon);
+            let lbl = gtk::Label::new(Some("No instances yet"));
+            lbl.add_css_class("mc-tile-name");
+            lbl.set_halign(gtk::Align::Center);
+            empty.append(&lbl);
+            let sub = gtk::Label::new(Some("Create your first instance to start playing."));
+            sub.add_css_class("mc-tile-sub");
+            sub.set_halign(gtk::Align::Center);
+            empty.append(&sub);
+            let go = gtk::Button::with_label("Add instance");
+            go.add_css_class("add-btn");
+            go.set_halign(gtk::Align::Center);
+            let vv = self.clone();
+            go.connect_clicked(move |_| vv.show_add_instance());
+            empty.append(&go);
+            self.flow.insert(&empty, -1);
+            return;
+        }
         let compact = self.cfg("McCompact") == "1";
         for inst in &list {
             let tile = gtk::FlowBoxChild::new();
-            tile.set_width_request((self.cfg("McTileSize").parse().unwrap_or(64) + if compact { 110 } else { 126 }).max(150));
-            let inner = gtk::Box::new(gtk::Orientation::Vertical, if compact { 2 } else { 4 });
-            let pad = if compact { 4 } else { 8 };
+            tile.set_width_request((self.cfg("McTileSize").parse().unwrap_or(64) + if compact { 110 } else { 134 }).max(158));
+            let inner = gtk::Box::new(gtk::Orientation::Vertical, if compact { 4 } else { 6 });
+            let pad = if compact { 8 } else { 12 };
             inner.set_margin_top(pad);
             inner.set_margin_bottom(pad);
             inner.set_margin_start(pad);
@@ -1733,13 +1831,13 @@ impl MinecraftView {
             let name = gtk::Label::new(Some(&inst.disp));
             name.set_halign(gtk::Align::Center);
             name.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-            name.add_css_class("details-title");
+            name.add_css_class("mc-tile-name");
             inner.append(&name);
             let sub = gtk::Label::new(Some(&format!("{} • {}", inst.mc_ver,
                 if inst.loader == "vanilla" { "Vanilla".to_string() } else { inst.loader.clone() })));
             sub.set_halign(gtk::Align::Center);
-            sub.set_opacity(0.6);
-            sub.add_css_class("time-label");
+            sub.set_opacity(0.9);
+            sub.add_css_class("mc-tile-sub");
             inner.append(&sub);
             let badge_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
             badge_row.set_halign(gtk::Align::Center);
@@ -1762,10 +1860,13 @@ impl MinecraftView {
             let prog = self.install_prog.borrow().get(&inst.id).cloned();
             if let Some(p) = prog {
                 let bar = gtk::ProgressBar::new();
+                bar.set_show_text(true);
                 if p < 0.0 {
                     bar.pulse();
+                    bar.set_text(Some("Working…"));
                 } else {
                     bar.set_fraction(p.clamp(0.0, 1.0));
+                    bar.set_text(Some(&format!("{}%", (p.clamp(0.0, 1.0) * 100.0) as u32)));
                 }
                 inner.append(&bar);
             }
@@ -1782,6 +1883,17 @@ impl MinecraftView {
                 }
             });
             tile.add_controller(gesture);
+            let vk = self.clone();
+            let idk = inst.id.clone();
+            let key = gtk::EventControllerKey::new();
+            key.connect_key_pressed(move |_, keyval, _, _| {
+                if keyval == gtk::gdk::Key::Return || keyval == gtk::gdk::Key::KP_Enter || keyval == gtk::gdk::Key::space {
+                    vk.open_detail(&idk);
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            });
+            tile.add_controller(key);
             self.flow.insert(&tile, -1);
         }
     }
@@ -1954,10 +2066,21 @@ impl MinecraftView {
             Some(i) => i,
             None => return,
         };
-        let dir = inst_dir(&inst.id, inst.isolated);
+        // Containers are not always named safe_id(version): installs may use
+        // a display-based dir (e.g. "26.3-fabric-0.19.5" holding
+        // "fabric-loader-0.19.5-26.3"). Locate the real container by scan.
+        let mut dir = inst_dir(&inst.id, inst.isolated);
+        if inst.isolated {
+            for (d, vid) in scan_instance_dirs() {
+                if vid == inst.id {
+                    dir = std::path::PathBuf::from(d);
+                    break;
+                }
+            }
+        }
         let mut errs = Vec::new();
         let mc_dir = if inst.isolated {
-            instances_root().join(safe_id(&inst.id)).display().to_string()
+            dir.display().to_string()
         } else {
             legacy_dir().display().to_string()
         };
@@ -3037,7 +3160,8 @@ impl MinecraftView {
         let add_labels = ["Custom", "Modpack", "Import"];
         let mut add_btns: Vec<gtk::ToggleButton> = Vec::new();
         let mut add_inds: Vec<gtk::Box> = Vec::new();
-        for (label, id) in add_labels.iter().zip(add_ids.iter()) {
+        let add_icons = ["applications-engineering-symbolic", "package-x-generic-symbolic", "document-open-symbolic"];
+        for ((label, id), tab_icon) in add_labels.iter().zip(add_ids.iter()).zip(add_icons.iter()) {
             let wrap = gtk::Box::new(gtk::Orientation::Vertical, 1);
             wrap.set_hexpand(true);
             let btn = gtk::ToggleButton::new();
@@ -3045,6 +3169,7 @@ impl MinecraftView {
             btn.set_hexpand(true);
             let c = gtk::Box::new(gtk::Orientation::Vertical, 2);
             c.set_halign(gtk::Align::Center);
+            c.append(&sym(tab_icon, 18));
             let lbl = gtk::Label::new(Some(label));
             lbl.add_css_class("time-label");
             c.append(&lbl);
@@ -4355,7 +4480,7 @@ impl MinecraftView {
                 let frac = (pc / 100.0).clamp(0.0, 1.0);
                 bar.set_fraction(frac);
                 bar.set_text(Some(&format!("{}%", pc as u32)));
-                status.set_text(&format!("{}{}", prefix, if st.is_empty() { String::new() } else { format!(" — {}", st) }));
+                status.set_text(&format!("{}{} ({}%)", prefix, if st.is_empty() { String::new() } else { format!(" — {}", st) }, pc as u32));
             }
             None => {
                 bar.pulse();
@@ -4625,13 +4750,13 @@ impl MinecraftView {
                 for c in pr.get("loaders").and_then(|x| x.as_array()).cloned().unwrap_or_default()
                     .into_iter().filter_map(|x| x.as_str().map(str::to_string)) {
                     let b = gtk::Label::new(Some(&c));
-                    b.add_css_class("proton-path-badge");
+                    b.add_css_class("loader-tag");
                     chips.append(&b);
                 }
                 for g in pr.get("game_versions").and_then(|x| x.as_array()).cloned().unwrap_or_default()
                     .into_iter().filter_map(|x| x.as_str().map(str::to_string)) {
                     let b = gtk::Label::new(Some(&g));
-                    b.add_css_class("proton-path-badge");
+                    b.add_css_class("loader-tag");
                     chips.append(&b);
                 }
                 body.append(&chips);
@@ -4743,8 +4868,8 @@ impl MinecraftView {
         };
         let dlg = adw::Dialog::new();
         dlg.set_title("Browse Modrinth");
-        dlg.set_content_width(640);
-        dlg.set_content_height(560);
+        dlg.set_content_width(600);
+        dlg.set_content_height(480);
         let (header, x_btn) = helpers::modal_header("Browse addons");
         let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
         content.add_css_class("modal-bg");
@@ -5020,7 +5145,7 @@ impl MinecraftView {
                             for bl in ["fabric", "forge", "neoforge", "quilt"] {
                                 if cats.iter().any(|c| c == bl) {
                                     let b = gtk::Label::new(Some(bl));
-                                    b.add_css_class("proton-path-badge");
+                                    b.add_css_class("loader-tag");
                                     badges.append(&b);
                                 }
                             }

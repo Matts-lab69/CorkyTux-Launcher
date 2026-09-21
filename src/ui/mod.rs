@@ -11,5 +11,6 @@ pub mod prefix_warning;
 pub mod proton_modal;
 pub mod game_settings;
 pub mod apps_settings;
+pub mod mcx_theme;
 pub mod minecraft_view;
 pub mod stores_view;
