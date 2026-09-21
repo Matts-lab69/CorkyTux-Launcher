@@ -36,6 +36,7 @@ pub fn install(theme: &ThemeManager) {
         .mcx check:checked {{ background-color: {accent}; border-color: {accent}; color: #FFFFFF; -gtk-icon-source: -gtk-icontheme(\"object-select-symbolic\"); }}\
         .mcx radio:checked {{ border-color: {accent}; }}\
         .mcx radio:checked > indicator {{ background-color: {accent}; }}\
+        .mcx checkbutton.radio > check:checked, .mcx checkbutton > check.radio:checked {{ background-color: {accent}; border-color: {accent}; }}\
         .mcx scale highlight {{ background-color: {accent}; }}\
         .mcx scale slider {{ background-color: {accent}; border-color: {accent}; }}\
         .mcx .mcx-title {{ color: #ECEEF3; font-size: 20px; font-weight: 700; padding: 0; }}\
@@ -57,7 +58,7 @@ pub fn install(theme: &ThemeManager) {
         .mcx .mcx-danger {{ color: #E5484D; background-color: transparent; }}\
         .mcx .mcx-danger:hover {{ background-color: #272727; }}\
         .mcx .mcx-acc-row {{ background-color: #181818; border: 1px solid #242424; border-radius: 12px; padding: 8px 12px; }}\
-        .mcx .java-row {{ border-radius: 10px; border: 1px solid transparent; border-left-width: 3px; }}\
+        .mcx .java-row {{ border-radius: 10px; border: 1px solid transparent; border-left-width: 3px; padding: 0 12px; }}\
         .mcx checkbutton:checked .java-row {{ background-color: color-mix(in srgb, {accent} 12%, transparent); border-color: {accent}; }}\
         .mcx .java-row-title {{ color: #ECEEF3; font-size: 14px; font-weight: 600; }}\
         .mcx .java-row-sub {{ color: #A3A9B7; font-size: 12px; }}"

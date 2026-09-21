@@ -5472,7 +5472,13 @@ impl MinecraftView {
                     b.set_label(&format!("Java {}{}", ver, mark));
                 }
                 if let Some((path, version, _)) = found.iter().find(|(p, _, _)| *p == sel) {
-                    et_c.set_text(&format!("Java {} · {} {}", java_major_of(version), java_vendor(path), version));
+                    let vendor = java_vendor(path);
+                    let title = if vendor == "Java" {
+                        format!("Java {} · {}", java_major_of(version), version)
+                    } else {
+                        format!("Java {} · {} · {}", java_major_of(version), vendor, version)
+                    };
+                    et_c.set_text(&title);
                     ep_c.set_text(path);
                     ep_c.set_tooltip_text(Some(path));
                 } else {
@@ -5509,7 +5515,9 @@ impl MinecraftView {
                         let mid = gtk::Box::new(gtk::Orientation::Vertical, 0);
                         mid.set_hexpand(true);
                         mid.set_valign(gtk::Align::Center);
-                        let t = gtk::Label::new(Some(&format!("{} · {}", version, java_vendor(path))));
+                        let vendor = java_vendor(path);
+                        let title = if vendor == "Java" { version.clone() } else { format!("{} · {}", version, vendor) };
+                        let t = gtk::Label::new(Some(&title));
                         t.set_halign(gtk::Align::Start);
                         t.set_ellipsize(gtk::pango::EllipsizeMode::End);
                         t.add_css_class("java-row-title");
@@ -5685,7 +5693,7 @@ impl MinecraftView {
             tag.add_css_class("loader-tag");
             chips.append(&tag);
             if aid == sel_aid {
-                let act = gtk::Label::new(Some("Activa"));
+                let act = gtk::Label::new(Some("Active"));
                 act.add_css_class("proton-path-badge");
                 chips.append(&act);
             }
@@ -5747,7 +5755,7 @@ impl MinecraftView {
             acc_inner.append(&note("No accounts yet."));
         }
         let add_menu_btn = gtk::MenuButton::new();
-        add_menu_btn.set_label("Añadir cuenta");
+        add_menu_btn.set_label("Add account");
         add_menu_btn.add_css_class("settings-btn");
         add_menu_btn.set_halign(gtk::Align::Fill);
         let add_pop = gtk::Popover::new();
@@ -5844,10 +5852,6 @@ impl MinecraftView {
         skin_img.set_pixel_size(128);
         skin_img.set_valign(gtk::Align::Center);
         skin_prev.append(&skin_img);
-        let skin_head_img = gtk::Image::new();
-        skin_head_img.set_pixel_size(64);
-        skin_head_img.set_valign(gtk::Align::Center);
-        skin_prev.append(&skin_head_img);
         skin_row.append(&skin_prev);
         let skin_mid = gtk::Box::new(gtk::Orientation::Vertical, 4);
         skin_mid.set_hexpand(true);
@@ -5888,8 +5892,8 @@ impl MinecraftView {
         java_head.set_halign(gtk::Align::Start);
         java_head.add_css_class("mcx-section");
         java_page.append(&java_head);
-        java_page.append(&note("Versión de Java con la que se inicia Minecraft"));
-        let (enuso_frame, enuso_inner) = card("En uso");
+        java_page.append(&note("Java version used to launch Minecraft"));
+        let (enuso_frame, enuso_inner) = card("In use");
         let enuso_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let enuso_mid = gtk::Box::new(gtk::Orientation::Vertical, 2);
         enuso_mid.set_hexpand(true);
@@ -5904,7 +5908,7 @@ impl MinecraftView {
         enuso_path.add_css_class("time-label");
         enuso_mid.append(&enuso_path);
         enuso_row.append(&enuso_mid);
-        let enuso_chip = gtk::Label::new(Some("En uso"));
+        let enuso_chip = gtk::Label::new(Some("In use"));
         enuso_chip.add_css_class("proton-path-badge");
         enuso_chip.set_valign(gtk::Align::Center);
         enuso_row.append(&enuso_chip);
@@ -5954,7 +5958,7 @@ impl MinecraftView {
                     let sp = gtk::Spinner::new();
                     sp.start();
                     spin.append(&sp);
-                    spin.append(&gtk::Label::new(Some("Instalando…")));
+                    spin.append(&gtk::Label::new(Some("Installing…")));
                     btn.set_child(Some(&spin));
                     let rx = MinecraftManager::spawn_java_install(verc.clone());
                     let vv = v.clone();
@@ -6243,7 +6247,6 @@ impl MinecraftView {
             let vv0 = v.clone();
             *load.borrow_mut() = {
                 Box::new(move |force: bool| {
-                    let head_img = skin_head_img.clone();
                     let model_lbl = skin_model.clone();
                     let img = img.clone();
                     let lbl = lbl.clone();
@@ -6266,14 +6269,10 @@ impl MinecraftView {
                         )).map_err(|e| e.to_string()));
                     });
                     glib::idle_add_local(move || match rx.try_recv() {
-                        Ok(Ok((skin, head, model))) => {
+                        Ok(Ok((skin, _head, model))) => {
                             if let Some(tex) = skin_pix_front(&skin) {
                                 img.set_paintable(Some(&tex));
                                 img.set_pixel_size(128);
-                            }
-                            if let Some(tex) = skin_pix_face(&head) {
-                                head_img.set_paintable(Some(&tex));
-                                head_img.set_pixel_size(64);
                             }
                             model_lbl.set_text(if model == "slim" { "Slim (Alex)" } else { "Classic (Steve)" });
                             model_lbl.set_visible(true);
