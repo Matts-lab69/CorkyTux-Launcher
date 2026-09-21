@@ -16,8 +16,6 @@ pub fn install(theme: &ThemeManager) {
         .mcx .time-label {{ color: #A3A9B7; }}\
         .mcx .frame-title {{ color: #A3A9B7; font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; }}\
         .mcx .add-btn {{ background-color: #AA47BC; color: #FFFFFF; border: none; border-radius: 10px; font-size: 14px; font-weight: 800; }}\
-        .mcx .settings-btn {{ background-color: #181818; color: #ECEEF3; border: 1px solid #242424; border-radius: 10px; font-size: 14px; font-weight: 700; }}\
-        .mcx .settings-btn:hover {{ border-color: {accent}; }}\
         .mcx .mcx-bar {{ border: none; background: none; padding: 0; }}\
         .mcx .mcx-bar > button, .mcx .mcx-bar > entry, .mcx .mcx-bar > dropdown, .mcx .mcx-bar > menubutton {{ min-height: 40px; padding-top: 0; padding-bottom: 0; border-radius: 10px; font-size: 14px; }}\
         .mcx .mcx-bar > button {{ min-width: 40px; padding-left: 12px; padding-right: 12px; }}\
