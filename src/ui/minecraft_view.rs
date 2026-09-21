@@ -1341,19 +1341,29 @@ impl MinecraftView {
         ad_page.append(&ad_panel);
         let chips_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         chips_row.add_css_class("mcx-seg-wrap");
-        let chip_mods = gtk::ToggleButton::with_label("Mods");
-        let chip_shaders = gtk::ToggleButton::with_label("Shaders");
-        let chip_res = gtk::ToggleButton::with_label("Resource Packs");
-        chip_mods.add_css_class("mcx-seg-tab");
-        chip_shaders.add_css_class("mcx-seg-tab");
-        chip_res.add_css_class("mcx-seg-tab");
+        chips_row.set_halign(gtk::Align::Fill);
+        let seg_tab = |icon: &str, label: &str| -> gtk::ToggleButton {
+            let b = gtk::ToggleButton::new();
+            b.add_css_class("mcx-seg-tab");
+            b.set_hexpand(true);
+            let c = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            c.set_halign(gtk::Align::Center);
+            c.set_valign(gtk::Align::Center);
+            c.append(&sym(icon, 16));
+            c.append(&gtk::Label::new(Some(label)));
+            b.set_child(Some(&c));
+            b
+        };
+        let chip_mods = seg_tab("application-x-addon-symbolic", "Mods");
+        let chip_shaders = seg_tab("display-brightness-symbolic", "Shaders");
+        let chip_res = seg_tab("image-x-generic-symbolic", "Resource Packs");
         chip_mods.set_active(true);
         chip_shaders.set_group(Some(&chip_mods));
         chip_res.set_group(Some(&chip_mods));
         chips_row.append(&chip_mods);
         chips_row.append(&chip_shaders);
         chips_row.append(&chip_res);
-        chips_row.set_halign(gtk::Align::Center);
+        chips_row.set_halign(gtk::Align::Fill);
         ad_panel.append(&chips_row);
         let addons_count = note("");
         addons_count.set_halign(gtk::Align::Center);
