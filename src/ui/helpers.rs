@@ -554,6 +554,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .seg {{ background-color: transparent; border: none; border-radius: 8px; padding: 8px 12px; color: {text_sec}; font-size: 13px; font-weight: bold; }}\
              .seg:hover {{ color: {text_main}; }}\
              .seg:checked {{ background-color: {accent}; color: #FFFFFF; }}\
+             .filter-bar {{ background-color: {well}; border-radius: 12px; padding: 8px; }}\
              .page-card {{ background-color: {panel}; border: 1px solid {border}; border-radius: 8px; padding: 14px; }}\
              .modal-bg {{ background-color: {panel}; border-radius: 12px; border: 1px solid {border}; }}\
              tooltip.background {{ background-color: {tab_bar_bg}; border-radius: 8px; border: 1px solid {border}; padding: 12px; }}\

@@ -5061,7 +5061,10 @@ impl MinecraftView {
         let go = gtk::Button::with_label("Search");
         go.add_css_class("settings-btn");
         search_row.append(&go);
-        body.append(&search_row);
+        let filter_bar = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        filter_bar.add_css_class("filter-bar");
+        filter_bar.append(&search_row);
+        body.append(&filter_bar);
         let inst_loader_lbl = note(&format!("Instance: {} • {}",
             inst.mc_ver,
             if inst.loader == "vanilla" { "Vanilla".to_string() } else { inst.loader.clone() }));
@@ -5273,6 +5276,7 @@ impl MinecraftView {
                         }
                         for (pid, title, author, desc, icon, cats) in hits {
                             let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                            row.add_css_class("mc-row");
                             let check = gtk::CheckButton::new();
                             check.set_valign(gtk::Align::Center);
                             check.set_tooltip_text(Some("Select for batch install"));
@@ -5284,18 +5288,24 @@ impl MinecraftView {
                             }
                             if !icon.is_empty() {
                                 let img = gtk::Image::new();
-                                img.set_pixel_size(40);
-                                load_mod_icon(&icon, &pid, &img, 40);
+                                img.set_pixel_size(56);
+                                load_mod_icon(&icon, &pid, &img, 56);
                                 row.append(&img);
                             } else {
-                                row.append(&block_fallback_image(vv_c.state.theme.is_dark(), 40));
+                                row.append(&block_fallback_image(vv_c.state.theme.is_dark(), 56));
                             }
                             let mid = gtk::Box::new(gtk::Orientation::Vertical, 0);
                             mid.set_hexpand(true);
-                            let t = gtk::Label::new(Some(&format!("{}  ·  {}", title, author)));
+                            let t = gtk::Label::new(Some(&title));
                             t.set_halign(gtk::Align::Start);
                             t.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+                            t.add_css_class("details-title");
                             mid.append(&t);
+                            let au = gtk::Label::new(Some(&format!("by {}", author)));
+                            au.set_halign(gtk::Align::Start);
+                            au.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                            au.add_css_class("time-label");
+                            mid.append(&au);
                             let dd = gtk::Label::new(Some(&clean_md(&desc).lines().next().unwrap_or("").to_string()));
                             dd.set_halign(gtk::Align::Start);
                             dd.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -5312,6 +5322,9 @@ impl MinecraftView {
                             }
                             mid.append(&badges);
                             row.append(&mid);
+                            let row_btns = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                            row_btns.set_valign(gtk::Align::Center);
+                            row.append(&row_btns);
                             let inst_btn = themed_btn("download", "Install", vv_c.state.theme.is_dark(), 16);
                             inst_btn.add_css_class("add-btn");
                             inst_btn.set_valign(gtk::Align::Center);
@@ -5356,7 +5369,7 @@ impl MinecraftView {
                                     vvw.show_project_view(&pidw, Some(("Install".to_string(), cb)));
                                 }
                             });
-                            row.append(&view_btn);
+                            row_btns.append(&view_btn);
                             let vers_btn = gtk::Button::with_label("Versions");
                             vers_btn.add_css_class("settings-btn");
                             vers_btn.set_valign(gtk::Align::Center);
@@ -5372,7 +5385,7 @@ impl MinecraftView {
                                     vv4.show_mod_versions(&pidv, &titlec, &mcv, &ldv);
                                 }
                             });
-                            row.append(&vers_btn);
+                            row_btns.append(&vers_btn);
                             let kind_inst = kind_rows.clone();
                             inst_btn.connect_clicked(move |_| {
                                 let at = match type_drop2.selected() {
@@ -5386,7 +5399,7 @@ impl MinecraftView {
                                     vv2.install_addon_with_progress(&pidc, "", &mc2, &ldinst, &at, &title);
                                 }
                             });
-                            row.append(&inst_btn);
+                            row_btns.append(&inst_btn);
                             results_c.append(&row);
                         }
                         glib::ControlFlow::Break
