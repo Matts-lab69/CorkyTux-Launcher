@@ -491,7 +491,8 @@ pub fn apply_theme_css(theme: &ThemeManager) {
             .neon-green {{ background-color: #00E639; color: #FFFFFF; font-weight: bold; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; border: none; }}\
             switch {{ background-color: {well}; border: 1px solid {border}; border-radius: 16px; }}\
             switch:checked {{ background-color: {accent}; border-color: {accent}; }}\
-            switch:checked > slider {{ background-color: #FFFFFF; }}\
+             switch:checked > slider {{ background-color: #FFFFFF; }}\
+             check:checked {{ background-color: {accent}; border-color: {accent}; color: #FFFFFF; }}\
             .emu-dot-on {{ color: #00E639; font-size: 14px; }}\
             .emu-dot-off {{ color: {text_muted}; font-size: 14px; }}\
             .warn-dot {{ color: {warn_dot}; font-size: 14px; }}\
