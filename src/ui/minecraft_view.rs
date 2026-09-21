@@ -5486,7 +5486,6 @@ impl MinecraftView {
                     let state = if installed { "installed" } else { "not installed, click to install" };
                     b.set_child(Some(&dl_button_child(ver, installed)));
                     b.set_tooltip_text(Some(&format!("Java {} · {}", ver, state)));
-                    b.set_property("accessible-label", format!("Java {} · {}", ver, state));
                 }
                 if let Some((path, version, _)) = found.iter().find(|(p, _, _)| *p == sel) {
                     let vendor = java_vendor(path);
@@ -5968,7 +5967,6 @@ impl MinecraftView {
             b.add_css_class("settings-btn");
             b.set_child(Some(&dl_button_child(ver, false)));
             b.set_tooltip_text(Some(&format!("Java {} · not installed, click to install", ver)));
-            b.set_property("accessible-label", format!("Java {} · not installed, click to install", ver));
             dl_flow.append(&b);
             dl_btns.push(b);
         }
