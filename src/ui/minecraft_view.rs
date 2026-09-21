@@ -5612,6 +5612,7 @@ impl MinecraftView {
         }
         let stack = gtk::Stack::new();
         stack.set_vexpand(true);
+        stack.set_vhomogeneous(false);
 
         // General
         let gen_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -6078,12 +6079,14 @@ impl MinecraftView {
         }
         for (i, id) in ids.iter().enumerate() {
             let st = stack.clone();
+            let sc = set_scroll.clone();
             let tid = id.to_string();
             let all = inds.clone();
             let mine = inds[i].clone();
             btns[i].connect_toggled(move |b| {
                 if b.is_active() {
                     st.set_visible_child_name(&tid);
+                    sc.vadjustment().set_value(0.0);
                     for ind in &all {
                         ind.set_visible(false);
                     }
