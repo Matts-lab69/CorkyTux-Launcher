@@ -5749,7 +5749,7 @@ impl MinecraftView {
                 });
                 glib::idle_add_local(move || match rx.try_recv() {
                     Ok(Some(path)) => {
-                        if let Some(tex) = skin_pix_face(&path) {
+                        if let Some(tex) = helpers::load_texture(&path) {
                             av.set_custom_image(Some(&tex));
                         }
                         glib::ControlFlow::Break
