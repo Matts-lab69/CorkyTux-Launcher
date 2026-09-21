@@ -1062,6 +1062,7 @@ impl MinecraftView {
         sort_cycle.set_valign(gtk::Align::Center);
         head.append(&sort_cycle);
         let settings_btn = gtk::Button::new();
+        settings_btn.add_css_class("settings-btn");
         settings_btn.set_child(Some(&helpers::themed_image("settings", state.theme.is_dark(), 16)));
         settings_btn.set_tooltip_text(Some("Minecraft settings"));
         settings_btn.set_valign(gtk::Align::Center);
