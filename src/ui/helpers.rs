@@ -539,7 +539,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .mc-account-label {{ font-weight: bold; font-size: 13px; color: {text_main}; }}
              .mc-row {{ background-color: {panel}; border: 1px solid {border}; border-radius: 10px; padding: 8px 10px; }}
              .mc-row:hover {{ border-color: {accent}; }}
-             .icon-ghost {{ background: transparent; border: none; padding: 0; min-height: 0; min-width: 0; }}
+             .icon-ghost {{ background: transparent; border: none; padding: 0; min-height: 0; min-width: 0; color: {accent}; }}
              .icon-ghost:hover {{ opacity: 0.7; }}\
              .dark-btn {{ background-color: #000000; color: #FFFFFF; border: 1.5px solid #FFFFFF; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; font-weight: bold; }}\
             .title-label {{ font-weight: bold; font-size: 16px; color: {text_main}; }}\

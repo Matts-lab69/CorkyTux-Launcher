@@ -2025,9 +2025,6 @@ impl MinecraftView {
             inner.append(&sub);
             let badge_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
             badge_row.set_halign(gtk::Align::Center);
-            if inst.fav {
-                badge_row.append(&helpers::themed_image("star_gold", self.state.theme.is_dark(), 14));
-            }
             if running_any {
                 let dot = gtk::Label::new(Some("● running"));
                 dot.add_css_class("time-label");
