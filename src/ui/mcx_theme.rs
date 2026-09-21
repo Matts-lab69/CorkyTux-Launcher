@@ -62,8 +62,6 @@ pub fn install(theme: &ThemeManager) {
         .mcx separator {{ background-color: #242424; min-height: 1px; }}\
         .mcx .mcx-section {{ color: #ECEEF3; font-size: 16px; font-weight: 700; }}\
         .mcx .mcx-section-sm {{ color: #ECEEF3; font-size: 14px; font-weight: 700; }}\
-        .mcx .mcx-danger {{ color: #E5484D; background-color: transparent; }}\
-        .mcx .mcx-danger:hover {{ background-color: #272727; }}\
         .mcx .mcx-acc-row {{ background-color: #181818; border: 1px solid #242424; border-radius: 12px; padding: 8px 12px; }}\
         .mcx .mcx-seg-wrap {{ border: 1.5px solid {accent}; border-radius: 12px; padding: 4px; background-color: transparent; }}\
         .mcx .mcx-seg-tab {{ background-color: transparent; background-image: none; border: none; box-shadow: none; border-radius: 8px; padding: 8px 16px; color: #A3A9B7; font-size: 13px; font-weight: 700; }}\

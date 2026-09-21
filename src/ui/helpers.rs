@@ -528,6 +528,8 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .card-selected {{ background-color: {accent}; }}\
              .card-selected label {{ color: #000000; }}\
              .destructive-action {{ border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; font-weight: bold; }}
+             .danger-btn {{ background-color: color-mix(in srgb, #E5484D 12%, transparent); border: 1.5px solid #E5484D; color: #E5484D; border-radius: 20px; min-height: 36px; padding: 0 16px; font-size: 14px; font-weight: bold; }}\
+             .danger-btn:hover {{ background-color: color-mix(in srgb, #E5484D 22%, transparent); }}\
              .mc-tile {{ border-radius: 14px; }}
              .mc-tile:hover {{ border-color: {accent}; }}
              .mc-head {{ background-color: {panel}; border: 1px solid {border}; border-radius: 14px; padding: 6px 10px; }}

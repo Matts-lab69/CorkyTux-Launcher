@@ -598,6 +598,7 @@ pub fn show_settings_modal(
                 }
                 let remove_btn = gtk::Button::with_label("Remove");
                 remove_btn.add_css_class("destructive-action");
+                remove_btn.add_css_class("danger-btn");
                 let proton_cc = proton_c.clone();
                 let name_c = name.clone();
                 let state_cc = state_c.clone();
@@ -668,6 +669,7 @@ pub fn show_settings_modal(
                 let action = gtk::Button::with_label(if already { "Remove" } else { "Download" });
                 if already {
                     action.add_css_class("destructive-action");
+                    action.add_css_class("danger-btn");
                 } else {
                     action.add_css_class("add-btn");
                 }
@@ -1064,6 +1066,7 @@ pub fn show_settings_modal(
                     name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
                     let del = gtk::Button::with_label("✕");
                     del.add_css_class("destructive-action");
+                    del.add_css_class("danger-btn");
                     del.set_width_request(36);
                     let state_cc = state_c.clone();
                     let pid = p.id.clone();
@@ -1136,6 +1139,7 @@ pub fn show_settings_modal(
                     });
                     let del = gtk::Button::with_label("✕");
                     del.add_css_class("destructive-action");
+                    del.add_css_class("danger-btn");
                     del.set_valign(gtk::Align::Center);
                     del.set_width_request(36);
                     let state_cc2 = state_c.clone();
@@ -2127,6 +2131,7 @@ fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {
         col.append(&path_lbl);
         let remove_btn = gtk::Button::with_label("Remove");
         remove_btn.add_css_class("destructive-action");
+        remove_btn.add_css_class("danger-btn");
         remove_btn.set_valign(gtk::Align::Center);
         let state_c = state.clone();
         let name_c = name.clone();

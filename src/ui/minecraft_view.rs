@@ -5740,8 +5740,7 @@ impl MinecraftView {
             mid.append(&chips);
             row.append(&mid);
             let rm = gtk::Button::with_label("Remove");
-            rm.add_css_class("flat");
-            rm.add_css_class("mcx-danger");
+            rm.add_css_class("danger-btn");
             rm.set_valign(gtk::Align::Center);
             let v = self.clone();
             let idc = aid.clone();
