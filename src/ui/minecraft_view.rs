@@ -6089,7 +6089,7 @@ impl MinecraftView {
         let mut set_tab_labels: Vec<gtk::Label> = Vec::new();
         let init_tab = initial.to_string();
         stack.set_visible_child_name(&init_tab);
-        let set_icons = ["preferences-other-symbolic", "system-users-symbolic", "application-x-executable-symbolic", "view-grid-symbolic"];
+        let set_icons = ["preferences-other-symbolic", "system-users-symbolic", "system-run-symbolic", "view-grid-symbolic"];
         for ((label, id), tab_icon) in labels.iter().zip(ids.iter()).zip(set_icons.iter()) {
             let wrap = gtk::Box::new(gtk::Orientation::Vertical, 1);
             let btn = gtk::ToggleButton::new();
