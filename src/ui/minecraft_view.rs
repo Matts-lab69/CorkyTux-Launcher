@@ -1339,10 +1339,14 @@ impl MinecraftView {
         ad_panel.add_css_class("mcx-panel");
         ad_panel.append(&ad_toolbar);
         ad_page.append(&ad_panel);
-        let chips_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let chips_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        chips_row.add_css_class("mcx-seg-wrap");
         let chip_mods = gtk::ToggleButton::with_label("Mods");
         let chip_shaders = gtk::ToggleButton::with_label("Shaders");
         let chip_res = gtk::ToggleButton::with_label("Resource Packs");
+        chip_mods.add_css_class("mcx-seg-tab");
+        chip_shaders.add_css_class("mcx-seg-tab");
+        chip_res.add_css_class("mcx-seg-tab");
         chip_mods.set_active(true);
         chip_shaders.set_group(Some(&chip_mods));
         chip_res.set_group(Some(&chip_mods));
