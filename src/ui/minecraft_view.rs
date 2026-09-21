@@ -5532,6 +5532,7 @@ impl MinecraftView {
                         row.append(&mid);
                         let chip = gtk::Label::new(Some(origin));
                         chip.add_css_class("loader-tag");
+                        chip.add_css_class("mcx-origin");
                         chip.set_valign(gtk::Align::Center);
                         row.append(&chip);
                         cb.set_child(Some(&row));
