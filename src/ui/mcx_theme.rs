@@ -6,7 +6,7 @@ pub fn install(theme: &ThemeManager) {
     };
     let accent = theme.accent_color();
     let css = format!(
-        ".mcx {{ background-color: #000000; }}\
+        ".mcx-page {{ background-color: #000000; }}\
         .mcx .mc-head {{ background-color: #181818; border: 1px solid #242424; border-radius: 16px; padding: 10px 12px; }}\
         .mcx .mcx-headcard {{ background-color: #181818; border: 1px solid #242424; border-radius: 12px; padding: 16px; }}\
         .mcx .mc-tile {{ background-color: #181818; border: 1px solid #242424; border-radius: 16px; }}\
@@ -46,7 +46,7 @@ pub fn install(theme: &ThemeManager) {
         .mcx .icon-pencil {{ opacity: 0; }}\
         .mcx .icon-wrap:hover .icon-pencil {{ opacity: 1; }}\
         .mcx flowboxchild {{ padding: 0; }}\
-        dialog.mcx-dialog {{ background-color: #181818; border-radius: 16px; border: 1px solid #242424; }}\
+        .mcx-modal {{ background-color: #181818; border-radius: 16px; border: 1px solid #242424; }}\
         .mcx .mcx-mhead {{ min-height: 56px; }}\
         .mcx .modal-title {{ font-size: 18px; padding-left: 24px; }}\
         .mcx .close-btn {{ color: #ECEEF3; }}\

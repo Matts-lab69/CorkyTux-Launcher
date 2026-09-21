@@ -976,6 +976,7 @@ impl MinecraftView {
         scroll.set_overlay_scrolling(false);
         scroll.set_propagate_natural_height(false);
         scroll.add_css_class("mcx");
+        scroll.add_css_class("mcx-page");
         crate::ui::mcx_theme::install(&state.theme);
         let col = gtk::Box::new(gtk::Orientation::Vertical, 12);
         col.set_margin_top(24);
@@ -5582,12 +5583,12 @@ impl MinecraftView {
         dlg.set_title("Minecraft settings");
         dlg.set_content_width(760);
         dlg.set_content_height(620);
-        dlg.add_css_class("mcx-dialog");
         let (header, x_btn) = helpers::modal_header("Minecraft settings");
         header.add_css_class("mcx-mhead");
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
         content.add_css_class("modal-bg");
         content.add_css_class("mcx");
+        content.add_css_class("mcx-modal");
         content.append(&header);
         {
             let d = dlg.clone();
