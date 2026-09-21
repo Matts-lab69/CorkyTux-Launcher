@@ -488,8 +488,22 @@ fn skin_pix_front(path: &str) -> Option<gtk::gdk::Texture> {
 }
 
 fn java_major_of(ver: &str) -> String {
-    let digits: String = ver.chars().take_while(|c| c.is_ascii_digit()).collect();
+    // Legacy "1.x" scheme: 1.8.x means Java 8.
+    let v = ver.trim();
+    let rest = v.strip_prefix("1.").unwrap_or(v);
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
     if digits.is_empty() { "0".to_string() } else { digits }
+}
+
+fn dl_button_child(ver: &str, installed: bool) -> gtk::Box {
+    let inner = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    inner.set_halign(gtk::Align::Center);
+    inner.set_valign(gtk::Align::Center);
+    let dot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    dot.add_css_class(if installed { "mcx-dot-ok" } else { "mcx-dot-missing" });
+    inner.append(&dot);
+    inner.append(&gtk::Label::new(Some(&format!("Java {}", ver))));
+    inner
 }
 
 fn java_vendor(path: &str) -> String {
@@ -5468,8 +5482,11 @@ impl MinecraftView {
                     majors.insert(java_major_of(version));
                 }
                 for (b, ver) in dl_c.iter().zip(["8", "17", "21", "25"]) {
-                    let mark = if majors.contains(ver) { " ✓" } else { "" };
-                    b.set_label(&format!("Java {}{}", ver, mark));
+                    let installed = majors.contains(ver);
+                    let state = if installed { "installed" } else { "not installed, click to install" };
+                    b.set_child(Some(&dl_button_child(ver, installed)));
+                    b.set_tooltip_text(Some(&format!("Java {} · {}", ver, state)));
+                    b.set_property("accessible-label", format!("Java {} · {}", ver, state));
                 }
                 if let Some((path, version, _)) = found.iter().find(|(p, _, _)| *p == sel) {
                     let vendor = java_vendor(path);
@@ -5934,7 +5951,7 @@ impl MinecraftView {
         java_page.append(&enuso_frame);
         let java_groups = gtk::Box::new(gtk::Orientation::Vertical, 8);
         java_page.append(&java_groups);
-        let dl_head = gtk::Label::new(Some("Descargar Java"));
+        let dl_head = gtk::Label::new(Some("Download Java"));
         dl_head.set_halign(gtk::Align::Start);
         dl_head.add_css_class("mcx-section-sm");
         java_page.append(&dl_head);
@@ -5947,8 +5964,11 @@ impl MinecraftView {
         dl_flow.set_column_spacing(8);
         let mut dl_btns: Vec<gtk::Button> = Vec::new();
         for ver in ["8", "17", "21", "25"] {
-            let b = gtk::Button::with_label(&format!("Java {}", ver));
+            let b = gtk::Button::new();
             b.add_css_class("settings-btn");
+            b.set_child(Some(&dl_button_child(ver, false)));
+            b.set_tooltip_text(Some(&format!("Java {} · not installed, click to install", ver)));
+            b.set_property("accessible-label", format!("Java {} · not installed, click to install", ver));
             dl_flow.append(&b);
             dl_btns.push(b);
         }
@@ -5970,14 +5990,16 @@ impl MinecraftView {
                     for o in &all {
                         o.set_sensitive(false);
                     }
-                    let orig = btn.label().map(|s| s.to_string()).unwrap_or_default();
-                    let spin = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-                    spin.set_halign(gtk::Align::Center);
                     let sp = gtk::Spinner::new();
+                    sp.set_size_request(10, 10);
                     sp.start();
-                    spin.append(&sp);
-                    spin.append(&gtk::Label::new(Some("Installing…")));
-                    btn.set_child(Some(&spin));
+                    if let Some(inner) = btn.child().and_downcast::<gtk::Box>() {
+                        if let Some(dot) = inner.first_child() {
+                            inner.remove(&dot);
+                            inner.prepend(&sp);
+                        }
+                    }
+                    btn.set_tooltip_text(Some(&format!("Java {} · installing…", verc)));
                     let rx = MinecraftManager::spawn_java_install(verc.clone());
                     let vv = v.clone();
                     let verc2 = verc.clone();
@@ -5985,8 +6007,6 @@ impl MinecraftView {
                     let et_cc = et_c.clone();
                     let ep_cc = ep_c.clone();
                     let all_c = all.clone();
-                    let orig_c = orig.clone();
-                    let btn_c = btn.clone();
                     crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
                         match ev {
                             crate::backend::plugin_process::PluginEvent::Done(val) => {
@@ -5994,7 +6014,6 @@ impl MinecraftView {
                                 vv.toast("Java installed", &format!("{}: {}", verc2, p));
                                 vv.refresh_all();
                                 vv.render_java_card(&groups_cc, &et_cc, &ep_cc, &all_c);
-                                btn_c.set_label(&orig_c);
                                 for o in &all_c {
                                     o.set_sensitive(true);
                                 }
@@ -6002,7 +6021,6 @@ impl MinecraftView {
                             }
                             crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
                                 vv.toast("Java install failed", &message);
-                                btn_c.set_label(&orig_c);
                                 for o in &all_c {
                                     o.set_sensitive(true);
                                 }
