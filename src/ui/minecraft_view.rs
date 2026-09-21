@@ -446,6 +446,66 @@ fn serde_json_to_py_str(s: &str) -> String {
     format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"))
 }
 
+fn skin_pixbuf(path: &str) -> Option<gdk_pixbuf::Pixbuf> {
+    let pb = gdk_pixbuf::Pixbuf::from_file(path).ok()?;
+    if pb.width() < 64 || pb.height() < 32 || !pb.has_alpha() {
+        return None;
+    }
+    Some(pb)
+}
+
+fn skin_pix_face(path: &str) -> Option<gtk::gdk::Texture> {
+    let pb = skin_pixbuf(path)?;
+    let face = gdk_pixbuf::Pixbuf::new(gdk_pixbuf::Colorspace::Rgb, true, 8, 8, 8)?;
+    pb.copy_area(8, 8, 8, 8, &face, 0, 0);
+    let scaled = face.scale_simple(64, 64, gdk_pixbuf::InterpType::Nearest)?;
+    Some(gtk::gdk::Texture::for_pixbuf(&scaled))
+}
+
+fn skin_pix_front(path: &str) -> Option<gtk::gdk::Texture> {
+    let pb = skin_pixbuf(path)?;
+    let legacy = pb.height() < 64;
+    let canvas = gdk_pixbuf::Pixbuf::new(gdk_pixbuf::Colorspace::Rgb, true, 8, 16, 32)?;
+    canvas.fill(0x00000000);
+    let blit = |sx: i32, sy: i32, sw: i32, sh: i32, dx: i32, dy: i32| {
+        pb.copy_area(sx, sy, sw, sh, &canvas, dx, dy);
+    };
+    blit(8, 8, 8, 8, 4, 0);
+    blit(20, 20, 8, 12, 4, 8);
+    if legacy {
+        blit(44, 20, 4, 12, 0, 8);
+        blit(44, 20, 4, 12, 12, 8);
+        blit(4, 20, 4, 12, 4, 20);
+        blit(4, 20, 4, 12, 8, 20);
+    } else {
+        blit(44, 20, 4, 12, 0, 8);
+        blit(36, 52, 4, 12, 12, 8);
+        blit(4, 20, 4, 12, 4, 20);
+        blit(20, 52, 4, 12, 8, 20);
+    }
+    let scaled = canvas.scale_simple(64, 128, gdk_pixbuf::InterpType::Nearest)?;
+    Some(gtk::gdk::Texture::for_pixbuf(&scaled))
+}
+
+fn java_major_of(ver: &str) -> String {
+    let digits: String = ver.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() { "0".to_string() } else { digits }
+}
+
+fn java_vendor(path: &str) -> String {
+    let l = path.to_lowercase();
+    for (k, name) in [
+        ("temurin", "Temurin"), ("zulu", "Zulu"), ("corretto", "Corretto"),
+        ("oracle", "Oracle"), ("graal", "GraalVM"), ("semeru", "Semeru"),
+        ("microsoft", "Microsoft"), ("openjdk", "OpenJDK"),
+    ] {
+        if l.contains(k) {
+            return name.to_string();
+        }
+    }
+    "Java".to_string()
+}
+
 fn clamp_wrap(page: &gtk::Box, max: i32) -> adw::Clamp {
     let clamp = adw::Clamp::new();
     clamp.set_maximum_size(max);
@@ -5373,11 +5433,12 @@ impl MinecraftView {
 
     // ============ global MC settings dialog (Carbon Settings page) ============
 
-    fn render_java_card(&self, java_box: &gtk::Box, java_lbl: &gtk::Label) {
-        while let Some(c) = java_box.first_child() {
-            java_box.remove(&c);
+    fn render_java_card(&self, groups: &gtk::Box, enuso_t: &gtk::Label, enuso_p: &gtk::Label, dl_btns: &[gtk::Button]) {
+        while let Some(c) = groups.first_child() {
+            groups.remove(&c);
         }
-        java_lbl.set_text("Detecting Java…");
+        enuso_t.set_text("Detecting Java…");
+        enuso_p.set_text("");
         let (tx, rx) = std::sync::mpsc::channel::<(Vec<(String, String, String)>, String)>();
         std::thread::spawn(move || {
             let found: Vec<(String, String, String)> = MinecraftManager::java_detect().ok()
@@ -5393,59 +5454,117 @@ impl MinecraftView {
             let _ = tx.send((found, sel));
         });
         let v = self.clone();
-        let box_c = java_box.clone();
-        let lbl_c = java_lbl.clone();
+        let groups_c = groups.clone();
+        let et_c = enuso_t.clone();
+        let ep_c = enuso_p.clone();
+        let dl_c: Vec<gtk::Button> = dl_btns.to_vec();
         glib::idle_add_local(move || match rx.try_recv() {
             Ok((found, sel)) => {
                 v.data.borrow_mut().java_found = found.clone();
                 v.data.borrow_mut().java_selected = sel.clone();
-                lbl_c.set_text(&format!("Selected: {}",
-                    if sel.is_empty() { "(auto)".to_string() } else { sel.clone() }));
-                if found.is_empty() {
-                    box_c.append(&note("No Java found — install 8/17/21/25 below."));
+                let mut majors: std::collections::HashSet<String> = std::collections::HashSet::new();
+                for (_, version, _) in &found {
+                    majors.insert(java_major_of(version));
                 }
-                for (path, version, origin) in &found {
-                    let bc = box_c.clone();
-                    let lc = lbl_c.clone();
-                    let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-                    let current = *path == sel;
-                    let lbl = gtk::Label::new(Some(&format!("{}{} ({}, {})",
-                        path, if current { " ✓" } else { "" }, version, origin)));
-                    lbl.set_halign(gtk::Align::Start);
-                    lbl.set_hexpand(true);
-                    lbl.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-                    let use_btn = gtk::Button::with_label(if current { "Current" } else { "Use" });
-                    use_btn.add_css_class("settings-btn");
-                    use_btn.set_sensitive(!current);
-                    let vv = v.clone();
-                    let pc = path.clone();
-                    use_btn.connect_clicked(move |_| {
-                        let vv = vv.clone();
-                        let bc = bc.clone();
-                        let lc = lc.clone();
-                        let (tx2, rx2) = std::sync::mpsc::channel::<Result<(), String>>();
-                        let pcc = pc.clone();
-                        std::thread::spawn(move || {
-                            let _ = tx2.send(MinecraftManager::java_use(&pcc).map(|_| ()).map_err(|e| e.to_string()));
-                        });
-                        glib::idle_add_local(move || match rx2.try_recv() {
-                            Ok(Ok(_)) => {
-                                vv.toast("Java selected", "Default Java updated.");
-                                vv.refresh_all();
-                                vv.render_java_card(&bc, &lc);
-                                glib::ControlFlow::Break
+                for (b, ver) in dl_c.iter().zip(["8", "17", "21", "25"]) {
+                    let mark = if majors.contains(ver) { " ✓" } else { "" };
+                    b.set_label(&format!("Java {}{}", ver, mark));
+                }
+                if let Some((path, version, _)) = found.iter().find(|(p, _, _)| *p == sel) {
+                    et_c.set_text(&format!("Java {} · {} {}", java_major_of(version), java_vendor(path), version));
+                    ep_c.set_text(path);
+                    ep_c.set_tooltip_text(Some(path));
+                } else {
+                    et_c.set_text("Automatic");
+                    ep_c.set_text("Auto-selected on launch.");
+                    ep_c.set_tooltip_text(None);
+                }
+                if found.is_empty() {
+                    groups_c.append(&note("No Java found — install 8/17/21/25 below."));
+                }
+                let mut order: Vec<String> = majors.into_iter().collect();
+                order.sort_by(|a, b| {
+                    let ai = a.parse::<u32>().unwrap_or(0);
+                    let bi = b.parse::<u32>().unwrap_or(0);
+                    bi.cmp(&ai).then_with(|| a.cmp(b))
+                });
+                let mut anchor: Option<gtk::CheckButton> = None;
+                for major in order {
+                    let head = gtk::Label::new(Some(&if major == "0" { "Other".to_string() } else { format!("Java {}", major) }));
+                    head.set_halign(gtk::Align::Start);
+                    head.add_css_class("mcx-section-sm");
+                    groups_c.append(&head);
+                    for (path, version, origin) in found.iter().filter(|(_, ver, _)| java_major_of(ver) == major) {
+                        let cb = gtk::CheckButton::new();
+                        if let Some(ref a) = anchor {
+                            cb.set_group(Some(a));
+                        } else {
+                            anchor = Some(cb.clone());
+                        }
+                        let current = *path == sel;
+                        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                        row.add_css_class("java-row");
+                        row.set_height_request(56);
+                        let mid = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                        mid.set_hexpand(true);
+                        mid.set_valign(gtk::Align::Center);
+                        let t = gtk::Label::new(Some(&format!("{} · {}", version, java_vendor(path))));
+                        t.set_halign(gtk::Align::Start);
+                        t.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                        t.add_css_class("java-row-title");
+                        mid.append(&t);
+                        let sub = gtk::Label::new(Some(path));
+                        sub.set_halign(gtk::Align::Start);
+                        sub.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+                        sub.set_max_width_chars(48);
+                        sub.set_tooltip_text(Some(path));
+                        sub.add_css_class("java-row-sub");
+                        mid.append(&sub);
+                        row.append(&mid);
+                        let chip = gtk::Label::new(Some(origin));
+                        chip.add_css_class("loader-tag");
+                        chip.set_valign(gtk::Align::Center);
+                        row.append(&chip);
+                        cb.set_child(Some(&row));
+                        cb.set_active(current);
+                        let vv = v.clone();
+                        let groups_cc = groups_c.clone();
+                        let et_cc = et_c.clone();
+                        let ep_cc = ep_c.clone();
+                        let dl_cc = dl_c.clone();
+                        let pcc = path.clone();
+                        cb.connect_toggled(move |b| {
+                            if !b.is_active() {
+                                return;
                             }
-                            Ok(Err(e)) => {
-                                vv.toast("Failed", &e);
-                                glib::ControlFlow::Break
-                            }
-                            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-                            Err(_) => glib::ControlFlow::Break,
+                            let pcc = pcc.clone();
+                            let vv = vv.clone();
+                            let groups_cc = groups_cc.clone();
+                            let et_cc = et_cc.clone();
+                            let ep_cc = ep_cc.clone();
+                            let dl_cc = dl_cc.clone();
+                            let (tx2, rx2) = std::sync::mpsc::channel::<Result<(), String>>();
+                            std::thread::spawn(move || {
+                                let _ = tx2.send(MinecraftManager::java_use(&pcc).map(|_| ()).map_err(|e| e.to_string()));
+                            });
+                            glib::idle_add_local(move || match rx2.try_recv() {
+                                Ok(Ok(_)) => {
+                                    vv.toast("Java selected", "Default Java updated.");
+                                    vv.refresh_all();
+                                    vv.render_java_card(&groups_cc, &et_cc, &ep_cc, &dl_cc);
+                                    glib::ControlFlow::Break
+                                }
+                                Ok(Err(e)) => {
+                                    vv.toast("Failed", &e);
+                                    vv.render_java_card(&groups_cc, &et_cc, &ep_cc, &dl_cc);
+                                    glib::ControlFlow::Break
+                                }
+                                Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                                Err(_) => glib::ControlFlow::Break,
+                            });
                         });
-                    });
-                    row.append(&lbl);
-                    row.append(&use_btn);
-                    box_c.append(&row);
+                        groups_c.append(&cb);
+                    }
                 }
                 glib::ControlFlow::Break
             }
@@ -5461,20 +5580,36 @@ impl MinecraftView {
     fn show_mc_settings_tab(&self, initial: &str) {
         let dlg = adw::Dialog::new();
         dlg.set_title("Minecraft settings");
-        dlg.set_content_width(560);
-        dlg.set_content_height(600);
+        dlg.set_content_width(760);
+        dlg.set_content_height(620);
+        dlg.add_css_class("mcx-dialog");
         let (header, x_btn) = helpers::modal_header("Minecraft settings");
+        header.add_css_class("mcx-mhead");
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
         content.add_css_class("modal-bg");
+        content.add_css_class("mcx");
         content.append(&header);
+        {
+            let d = dlg.clone();
+            let esc = gtk::EventControllerKey::new();
+            esc.connect_key_pressed(move |_, keyval, _, _| {
+                if keyval == gtk::gdk::Key::Escape {
+                    d.close();
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            });
+            content.add_controller(esc);
+        }
         let stack = gtk::Stack::new();
         stack.set_vexpand(true);
 
         // General
         let gen_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        gen_page.set_margin_top(12);
-        gen_page.set_margin_start(16);
-        gen_page.set_margin_end(16);
+        gen_page.set_margin_top(24);
+        gen_page.set_margin_bottom(24);
+        gen_page.set_margin_start(24);
+        gen_page.set_margin_end(24);
         let (setup_frame, setup_inner) = card("Setup");
         let setup_lbl = note(if self.data.borrow().deps_ok { "Dependencies ready." } else { "Missing deps — press Install." });
         setup_inner.append(&setup_lbl);
@@ -5517,25 +5652,48 @@ impl MinecraftView {
         setup_inner.append(&gres_row);
         let gen_save = gtk::Button::with_label("Save defaults");
         gen_save.add_css_class("add-btn");
+        gen_save.set_sensitive(false);
         setup_inner.append(&gen_save);
         stack.add_titled(&gen_page, Some("general"), "General");
 
         // Accounts
         let acc_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        acc_page.set_margin_top(12);
-        acc_page.set_margin_start(16);
-        acc_page.set_margin_end(16);
+        acc_page.set_margin_top(24);
+        acc_page.set_margin_bottom(24);
+        acc_page.set_margin_start(24);
+        acc_page.set_margin_end(24);
         let (acc_frame, acc_inner) = card("Accounts");
         let accounts_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
         acc_inner.append(&accounts_box);
+        let (sel_aid, _) = self.selected_account();
         for (aid, name, offline, ely) in self.data.borrow().accounts.clone() {
-            let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-            let tag = if ely { "(Ely.by)" } else if offline { "(offline)" } else { "(MS)" };
-            let lbl = gtk::Label::new(Some(&format!("{} {}", name, tag)));
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            row.add_css_class("mcx-acc-row");
+            let av = adw::Avatar::new(36, Some(&name), true);
+            av.set_valign(gtk::Align::Center);
+            row.append(&av);
+            let mid = gtk::Box::new(gtk::Orientation::Vertical, 2);
+            mid.set_hexpand(true);
+            mid.set_valign(gtk::Align::Center);
+            let lbl = gtk::Label::new(Some(&name));
             lbl.set_halign(gtk::Align::Start);
-            lbl.set_hexpand(true);
+            lbl.add_css_class("mc-tile-name");
+            mid.append(&lbl);
+            let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            let tag = gtk::Label::new(Some(if ely { "Ely.by" } else if offline { "Offline" } else { "Microsoft" }));
+            tag.add_css_class("loader-tag");
+            chips.append(&tag);
+            if aid == sel_aid {
+                let act = gtk::Label::new(Some("Activa"));
+                act.add_css_class("proton-path-badge");
+                chips.append(&act);
+            }
+            mid.append(&chips);
+            row.append(&mid);
             let rm = gtk::Button::with_label("Remove");
-            rm.add_css_class("settings-btn");
+            rm.add_css_class("flat");
+            rm.add_css_class("mcx-danger");
+            rm.set_valign(gtk::Align::Center);
             let v = self.clone();
             let idc = aid.clone();
             rm.connect_clicked(move |_| {
@@ -5559,13 +5717,7 @@ impl MinecraftView {
                     Err(_) => glib::ControlFlow::Break,
                 });
             });
-            row.append(&lbl);
-            // GDL-style account head (async, cached PNGs)
-            let head_img = gtk::Image::new();
-            head_img.set_pixel_size(32);
-            head_img.set_valign(gtk::Align::Center);
-            head_img.set_tooltip_text(Some(&name));
-            row.append(&head_img);
+            // account head (async, cached PNGs)
             {
                 let nm = name.clone();
                 let aidc = aid.clone();
@@ -5577,9 +5729,8 @@ impl MinecraftView {
                 });
                 glib::idle_add_local(move || match rx.try_recv() {
                     Ok(Some(path)) => {
-                        if let Some(tex) = helpers::load_texture(&path) {
-                            head_img.set_paintable(Some(&tex));
-                            head_img.set_pixel_size(32);
+                        if let Some(tex) = skin_pix_face(&path) {
+                            av.set_custom_image(Some(&tex));
                         }
                         glib::ControlFlow::Break
                     }
@@ -5594,43 +5745,92 @@ impl MinecraftView {
         if self.data.borrow().accounts.is_empty() {
             acc_inner.append(&note("No accounts yet."));
         }
-        let acc_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let add_menu_btn = gtk::MenuButton::new();
+        add_menu_btn.set_label("Añadir cuenta");
+        add_menu_btn.add_css_class("settings-btn");
+        add_menu_btn.set_halign(gtk::Align::Fill);
+        let add_pop = gtk::Popover::new();
+        let add_pop_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        add_pop_box.set_margin_top(10);
+        add_pop_box.set_margin_bottom(10);
+        add_pop_box.set_margin_start(10);
+        add_pop_box.set_margin_end(10);
+        let kind_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        kind_row.set_halign(gtk::Align::Center);
+        let kind_ms = gtk::ToggleButton::with_label("Microsoft");
+        let kind_ely = gtk::ToggleButton::with_label("Ely.by");
+        let kind_off = gtk::ToggleButton::with_label("Offline");
+        kind_ely.set_group(Some(&kind_ms));
+        kind_off.set_group(Some(&kind_ms));
+        kind_ms.set_active(true);
+        kind_row.append(&kind_ms);
+        kind_row.append(&kind_ely);
+        kind_row.append(&kind_off);
+        add_pop_box.append(&kind_row);
+        let ms_form = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let ms_btn = gtk::Button::with_label("Add Microsoft");
         ms_btn.add_css_class("settings-btn");
-        ms_btn.set_hexpand(true);
+        ms_btn.set_halign(gtk::Align::Fill);
+        ms_form.append(&ms_btn);
+        let ms_lbl = note("");
+        ms_lbl.set_visible(false);
+        ms_form.append(&ms_lbl);
+        add_pop_box.append(&ms_form);
+        let off_form = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        off_form.set_visible(false);
         let off_entry = gtk::Entry::new();
         off_entry.set_placeholder_text(Some("offline name"));
         off_entry.set_hexpand(true);
+        off_form.append(&off_entry);
         let off_btn = gtk::Button::with_label("Add offline");
         off_btn.add_css_class("settings-btn");
-        acc_row.append(&ms_btn);
-        acc_row.append(&off_entry);
-        acc_row.append(&off_btn);
-        acc_inner.append(&acc_row);
-        let ms_lbl = note("");
-        ms_lbl.set_visible(false);
-        acc_inner.append(&ms_lbl);
-        let ely_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        off_btn.set_halign(gtk::Align::Fill);
+        off_form.append(&off_btn);
+        add_pop_box.append(&off_form);
+        let ely_form = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        ely_form.set_visible(false);
         let ely_user = gtk::Entry::new();
         ely_user.set_placeholder_text(Some("Ely.by username or e-mail"));
         ely_user.set_hexpand(true);
+        ely_form.append(&ely_user);
         let ely_pass = gtk::Entry::new();
         ely_pass.set_placeholder_text(Some("password (use password:token with 2FA)"));
         ely_pass.set_visibility(false);
         ely_pass.set_hexpand(true);
+        ely_form.append(&ely_pass);
+        let ely_btn_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        ely_btn_row.set_homogeneous(true);
         let ely_btn = gtk::Button::with_label("Add Ely.by");
         ely_btn.add_css_class("settings-btn");
         let ely_reg = gtk::Button::with_label("Register");
         ely_reg.add_css_class("settings-btn");
         ely_reg.set_tooltip_text(Some("Open Ely.by to create an account"));
-        ely_row.append(&ely_user);
-        ely_row.append(&ely_pass);
-        ely_row.append(&ely_btn);
-        ely_row.append(&ely_reg);
-        acc_inner.append(&ely_row);
+        ely_btn_row.append(&ely_btn);
+        ely_btn_row.append(&ely_reg);
+        ely_form.append(&ely_btn_row);
         let ely_lbl = note("");
         ely_lbl.set_visible(false);
-        acc_inner.append(&ely_lbl);
+        ely_form.append(&ely_lbl);
+        add_pop_box.append(&ely_form);
+        {
+            let mf = ms_form.clone();
+            let ef = ely_form.clone();
+            let of = off_form.clone();
+            let show: Rc<dyn Fn(&str)> = Rc::new(move |which: &str| {
+                mf.set_visible(which == "ms");
+                ef.set_visible(which == "ely");
+                of.set_visible(which == "off");
+            });
+            let s1 = show.clone();
+            kind_ms.connect_toggled(move |b| if b.is_active() { s1("ms"); });
+            let s2 = show.clone();
+            kind_ely.connect_toggled(move |b| if b.is_active() { s2("ely"); });
+            let s3 = show.clone();
+            kind_off.connect_toggled(move |b| if b.is_active() { s3("off"); });
+        }
+        add_pop.set_child(Some(&add_pop_box));
+        add_menu_btn.set_popover(Some(&add_pop));
+        acc_inner.append(&add_menu_btn);
 
         acc_page.append(&acc_frame);
         // Skins (Ely.by skins system + Mojang proxy, per account type)
@@ -5678,63 +5878,125 @@ impl MinecraftView {
         stack.add_titled(&acc_page, Some("accounts"), "Accounts");
 
         // Java
-        let java_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        java_page.set_margin_top(12);
-        java_page.set_margin_start(16);
-        java_page.set_margin_end(16);
-        let (java_frame, java_inner) = card("Java");
-        let java_lbl = note(&format!("Selected: {}",
-            {
-                let s = &self.data.borrow().java_selected;
-                if s.is_empty() { "(auto)".to_string() } else { s.clone() }
-            }));
-        java_inner.append(&java_lbl);
-        let java_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        java_inner.append(&java_box);
-        self.render_java_card(&java_box, &java_lbl);
-        let java_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let java_page = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        java_page.set_margin_top(24);
+        java_page.set_margin_bottom(24);
+        java_page.set_margin_start(24);
+        java_page.set_margin_end(24);
+        let java_head = gtk::Label::new(Some("Java"));
+        java_head.set_halign(gtk::Align::Start);
+        java_head.add_css_class("mcx-section");
+        java_page.append(&java_head);
+        java_page.append(&note("Versión de Java con la que se inicia Minecraft"));
+        let (enuso_frame, enuso_inner) = card("En uso");
+        let enuso_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let enuso_mid = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        enuso_mid.set_hexpand(true);
+        let enuso_title = gtk::Label::new(Some("Detecting Java…"));
+        enuso_title.set_halign(gtk::Align::Start);
+        enuso_title.add_css_class("mc-tile-name");
+        enuso_mid.append(&enuso_title);
+        let enuso_path = gtk::Label::new(Some(""));
+        enuso_path.set_halign(gtk::Align::Start);
+        enuso_path.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+        enuso_path.set_max_width_chars(50);
+        enuso_path.add_css_class("time-label");
+        enuso_mid.append(&enuso_path);
+        enuso_row.append(&enuso_mid);
+        let enuso_chip = gtk::Label::new(Some("En uso"));
+        enuso_chip.add_css_class("proton-path-badge");
+        enuso_chip.set_valign(gtk::Align::Center);
+        enuso_row.append(&enuso_chip);
+        enuso_inner.append(&enuso_row);
+        java_page.append(&enuso_frame);
+        let java_groups = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        java_page.append(&java_groups);
+        let dl_head = gtk::Label::new(Some("Descargar Java"));
+        dl_head.set_halign(gtk::Align::Start);
+        dl_head.add_css_class("mcx-section-sm");
+        java_page.append(&dl_head);
+        let dl_flow = gtk::FlowBox::new();
+        dl_flow.set_max_children_per_line(4);
+        dl_flow.set_min_children_per_line(2);
+        dl_flow.set_selection_mode(gtk::SelectionMode::None);
+        dl_flow.set_homogeneous(true);
+        dl_flow.set_row_spacing(8);
+        dl_flow.set_column_spacing(8);
+        let mut dl_btns: Vec<gtk::Button> = Vec::new();
         for ver in ["8", "17", "21", "25"] {
-            let b = gtk::Button::with_label(&format!("Install {}", ver));
+            let b = gtk::Button::with_label(&format!("Java {}", ver));
             b.add_css_class("settings-btn");
-            b.set_hexpand(true);
-            let v = self.clone();
-            let verc = ver.to_string();
-            let d = dlg.clone();
-            let java_box_c = java_box.clone();
-            let java_lbl_c = java_lbl.clone();
-            b.connect_clicked(move |_| {
-                let rx = MinecraftManager::spawn_java_install(verc.clone());
-                let vv = v.clone();
-                let verc2 = verc.clone();
-                let java_box_c = java_box_c.clone();
-                let java_lbl_c = java_lbl_c.clone();
-                crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
-                    match ev {
-                        crate::backend::plugin_process::PluginEvent::Done(val) => {
-                            let p = val.get("path").and_then(|x| x.as_str()).unwrap_or("");
-                            vv.toast("Java installed", &format!("{}: {}", verc2, p));
-                            vv.refresh_all();
-                            vv.render_java_card(&java_box_c.clone(), &java_lbl_c.clone());
-                            false
-                        }
-                        crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
-                            vv.toast("Java install failed", &message);
-                            false
-                        }
-                        _ => true,
-                    }
-                });
-                let _ = d;
-            });
-            java_row.append(&b);
+            dl_flow.append(&b);
+            dl_btns.push(b);
         }
-        java_inner.append(&java_row);
-        java_page.append(&java_frame);
+        java_page.append(&dl_flow);
+        self.render_java_card(&java_groups, &enuso_title, &enuso_path, &dl_btns);
+        {
+            let v = self.clone();
+            let vercs: Vec<String> = ["8", "17", "21", "25"].iter().map(|s| s.to_string()).collect();
+            let groups_c = java_groups.clone();
+            let et_c = enuso_title.clone();
+            let ep_c = enuso_path.clone();
+            for (b, verc) in dl_btns.clone().into_iter().zip(vercs) {
+                let v = v.clone();
+                let groups_c = groups_c.clone();
+                let et_c = et_c.clone();
+                let ep_c = ep_c.clone();
+                let all = dl_btns.clone();
+                b.connect_clicked(move |btn| {
+                    for o in &all {
+                        o.set_sensitive(false);
+                    }
+                    let orig = btn.label().map(|s| s.to_string()).unwrap_or_default();
+                    let spin = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+                    spin.set_halign(gtk::Align::Center);
+                    let sp = gtk::Spinner::new();
+                    sp.start();
+                    spin.append(&sp);
+                    spin.append(&gtk::Label::new(Some("Instalando…")));
+                    btn.set_child(Some(&spin));
+                    let rx = MinecraftManager::spawn_java_install(verc.clone());
+                    let vv = v.clone();
+                    let verc2 = verc.clone();
+                    let groups_cc = groups_c.clone();
+                    let et_cc = et_c.clone();
+                    let ep_cc = ep_c.clone();
+                    let all_c = all.clone();
+                    let orig_c = orig.clone();
+                    let btn_c = btn.clone();
+                    crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
+                        match ev {
+                            crate::backend::plugin_process::PluginEvent::Done(val) => {
+                                let p = val.get("path").and_then(|x| x.as_str()).unwrap_or("");
+                                vv.toast("Java installed", &format!("{}: {}", verc2, p));
+                                vv.refresh_all();
+                                vv.render_java_card(&groups_cc, &et_cc, &ep_cc, &all_c);
+                                btn_c.set_label(&orig_c);
+                                for o in &all_c {
+                                    o.set_sensitive(true);
+                                }
+                                false
+                            }
+                            crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
+                                vv.toast("Java install failed", &message);
+                                btn_c.set_label(&orig_c);
+                                for o in &all_c {
+                                    o.set_sensitive(true);
+                                }
+                                false
+                            }
+                            _ => true,
+                        }
+                    });
+                });
+            }
+        }
         stack.add_titled(&java_page, Some("java"), "Java");
         let ap_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        ap_page.set_margin_top(12);
-        ap_page.set_margin_start(16);
-        ap_page.set_margin_end(16);
+        ap_page.set_margin_top(24);
+        ap_page.set_margin_bottom(24);
+        ap_page.set_margin_start(24);
+        ap_page.set_margin_end(24);
         let (ap_frame, ap_inner) = card("Appearance");
         ap_inner.append(&note("Instance tile size (preview below, library updates live)"));
         let tile_store = gtk::StringList::new(&["Small (48px)", "Medium (64px)", "Large (96px)"]);
@@ -5770,29 +6032,29 @@ impl MinecraftView {
         set_scroll.set_has_frame(false);
         set_scroll.set_propagate_natural_height(false);
         set_scroll.set_child(Some(&stack));
-        content.append(&set_scroll);
 
-        // tab bar
-        let tab_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        // tab bar (centered, above content)
+        let tab_bar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        tab_bar.set_halign(gtk::Align::Center);
         let ids = ["general", "accounts", "java", "appearance"];
         let labels = ["General", "Accounts", "Java", "Appearance"];
         let mut btns: Vec<gtk::ToggleButton> = Vec::new();
         let mut inds: Vec<gtk::Box> = Vec::new();
+        let mut set_tab_labels: Vec<gtk::Label> = Vec::new();
         let init_tab = initial.to_string();
         stack.set_visible_child_name(&init_tab);
         let set_icons = ["preferences-other-symbolic", "system-users-symbolic", "application-x-executable-symbolic", "view-grid-symbolic"];
         for ((label, id), tab_icon) in labels.iter().zip(ids.iter()).zip(set_icons.iter()) {
             let wrap = gtk::Box::new(gtk::Orientation::Vertical, 1);
-            wrap.set_hexpand(true);
             let btn = gtk::ToggleButton::new();
             btn.add_css_class("settings-tab");
-            btn.set_hexpand(true);
             let c = gtk::Box::new(gtk::Orientation::Vertical, 2);
             c.set_halign(gtk::Align::Center);
-            c.append(&sym(tab_icon, 18));
+            c.append(&sym(tab_icon, 16));
             let lbl = gtk::Label::new(Some(label));
             lbl.add_css_class("time-label");
             c.append(&lbl);
+            set_tab_labels.push(lbl.clone());
             let ind = gtk::Box::new(gtk::Orientation::Horizontal, 0);
             ind.add_css_class("settings-tab-indicator");
             ind.set_visible(*id == init_tab);
@@ -5825,6 +6087,26 @@ impl MinecraftView {
             });
         }
         content.append(&tab_bar);
+        content.append(&set_scroll);
+        if let Ok(c560m) = adw::BreakpointCondition::parse("max-width: 560px") {
+            let bp = adw::Breakpoint::new(c560m);
+            let m16 = gtk::glib::Value::from(16);
+            for pg in [&gen_page, &acc_page, &java_page, &ap_page] {
+                bp.add_setter(pg, "margin-start", Some(&m16));
+                bp.add_setter(pg, "margin-end", Some(&m16));
+                bp.add_setter(pg, "margin-top", Some(&m16));
+                bp.add_setter(pg, "margin-bottom", Some(&m16));
+            }
+            dlg.add_breakpoint(bp);
+        }
+        if let Ok(c560) = adw::BreakpointCondition::parse("max-width: 560px") {
+            let bp = adw::Breakpoint::new(c560);
+            let f = gtk::glib::Value::from(false);
+            for lbl in &set_tab_labels {
+                bp.add_setter(lbl, "visible", Some(&f));
+            }
+            dlg.add_breakpoint(bp);
+        }
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
@@ -5884,11 +6166,28 @@ impl MinecraftView {
             ram_entry.add_controller(rfocus);
         }
         {
+            let gs = gen_save.clone();
+            let e = gjvm.clone();
+            e.connect_changed(move |_| gs.set_sensitive(true));
+        }
+        {
+            let gs = gen_save.clone();
+            let e = gres_w.clone();
+            e.connect_changed(move |_| gs.set_sensitive(true));
+        }
+        {
+            let gs = gen_save.clone();
+            let e = gres_h.clone();
+            e.connect_changed(move |_| gs.set_sensitive(true));
+        }
+        {
             let v = self.clone();
+            let gs = gen_save.clone();
             gen_save.connect_clicked(move |_| {
                 v.set_cfg("McJvmArgs", &gjvm.text().to_string().trim());
                 v.set_cfg("McResW", &gres_w.text().to_string().trim().chars().filter(|c| c.is_ascii_digit()).collect::<String>());
                 v.set_cfg("McResH", &gres_h.text().to_string().trim().chars().filter(|c| c.is_ascii_digit()).collect::<String>());
+                gs.set_sensitive(false);
                 v.toast("Saved", "Defaults saved.");
             });
         }
@@ -5967,11 +6266,11 @@ impl MinecraftView {
                     });
                     glib::idle_add_local(move || match rx.try_recv() {
                         Ok(Ok((skin, head, model))) => {
-                            if let Some(tex) = helpers::load_texture(&skin) {
+                            if let Some(tex) = skin_pix_front(&skin) {
                                 img.set_paintable(Some(&tex));
                                 img.set_pixel_size(128);
                             }
-                            if let Some(tex) = helpers::load_texture(&head) {
+                            if let Some(tex) = skin_pix_face(&head) {
                                 head_img.set_paintable(Some(&tex));
                                 head_img.set_pixel_size(64);
                             }
@@ -6124,6 +6423,12 @@ impl MinecraftView {
             });
         }
         dlg.present(Some(&self.parent));
+        let focus_btn = btns.into_iter().find(|b| b.is_active());
+        glib::idle_add_local_once(move || {
+            if let Some(b) = focus_btn {
+                b.grab_focus();
+            }
+        });
     }
 }
 

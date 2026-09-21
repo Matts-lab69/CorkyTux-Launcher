@@ -45,7 +45,22 @@ pub fn install(theme: &ThemeManager) {
         .mcx .mcx-fav-star {{ color: #FFD700; }}\
         .mcx .icon-pencil {{ opacity: 0; }}\
         .mcx .icon-wrap:hover .icon-pencil {{ opacity: 1; }}\
-        .mcx flowboxchild {{ padding: 0; }}"
+        .mcx flowboxchild {{ padding: 0; }}\
+        dialog.mcx-dialog {{ background-color: #181818; border-radius: 16px; border: 1px solid #242424; }}\
+        .mcx .mcx-mhead {{ min-height: 56px; }}\
+        .mcx .modal-title {{ font-size: 18px; padding-left: 24px; }}\
+        .mcx .close-btn {{ color: #ECEEF3; }}\
+        .mcx .close-btn:hover {{ background-color: #272727; opacity: 1; }}\
+        .mcx separator {{ background-color: #242424; min-height: 1px; }}\
+        .mcx .mcx-section {{ color: #ECEEF3; font-size: 16px; font-weight: 700; }}\
+        .mcx .mcx-section-sm {{ color: #ECEEF3; font-size: 14px; font-weight: 700; }}\
+        .mcx .mcx-danger {{ color: #E5484D; background-color: transparent; }}\
+        .mcx .mcx-danger:hover {{ background-color: #272727; }}\
+        .mcx .mcx-acc-row {{ background-color: #181818; border: 1px solid #242424; border-radius: 12px; padding: 8px 12px; }}\
+        .mcx .java-row {{ border-radius: 10px; border: 1px solid transparent; border-left-width: 3px; }}\
+        .mcx checkbutton:checked .java-row {{ background-color: color-mix(in srgb, {accent} 12%, transparent); border-color: {accent}; }}\
+        .mcx .java-row-title {{ color: #ECEEF3; font-size: 14px; font-weight: 600; }}\
+        .mcx .java-row-sub {{ color: #A3A9B7; font-size: 12px; }}"
     );
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&css);
