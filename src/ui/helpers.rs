@@ -546,7 +546,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .time-label {{ color: {text_sec}; font-size: 12px; }}\
              .add-btn {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: {accent}; color: #FFFFFF; border: none; font-weight: bold; }}\
              .add-btn:hover {{ opacity: 0.85; }}\
-             .settings-btn {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: #181818; color: {text_main}; border: 1.5px solid {accent}; font-weight: bold; }}\
+             .settings-btn {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: {well}; color: {text_main}; border: 1.5px solid {accent}; font-weight: bold; }}\
              .settings-btn:hover {{ background-color: {hover}; }}\
             .settings-title {{ color: {text_main}; font-size: 18px; font-weight: bold; }}\
             .settings-tab-bar {{ background-color: {tab_bar_bg}; border: 1px solid {border}; border-radius: 14px; min-height: 44px; }}\
