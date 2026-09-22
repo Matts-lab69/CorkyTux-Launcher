@@ -2073,6 +2073,7 @@ fn rebuild_emu_rows(
         if let Some(label) = status_text {
             let badge = gtk::Label::new(Some(label));
             badge.add_css_class("proton-path-badge");
+            badge.add_css_class("status-badge");
             badge.set_valign(gtk::Align::Center);
             row.append(&badge);
         } else {

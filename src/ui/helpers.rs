@@ -530,6 +530,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .close-btn {{ background: transparent; border: none; color: {accent}; font-size: 16px; font-weight: bold; }}\
              .close-btn:hover {{ opacity: 0.75; }}\
              .proton-path-badge {{ color: {accent}; border: 1px solid {accent}; border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: bold; }}\
+             .status-badge {{ min-height: 36px; padding-top: 0; padding-bottom: 0; padding-left: 16px; padding-right: 16px; }}\
              .modal-title {{ color: {text_main}; font-size: 20px; font-weight: 800; }}\
              .cand-list {{ background-color: {well}; border-radius: 8px; padding: 6px; }}\
              .card-selected {{ background-color: {accent}; }}\
