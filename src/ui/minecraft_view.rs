@@ -3727,6 +3727,7 @@ impl MinecraftView {
                                 let mid = gtk::Box::new(gtk::Orientation::Vertical, 0);
                                 mid.set_hexpand(true);
                                 let tt = gtk::Label::new(Some(&format!("{}  ·  {}", title, author)));
+                                tt.add_css_class("details-title");
                                 tt.set_halign(gtk::Align::Start);
                                 tt.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
                                 mid.append(&tt);
@@ -5767,8 +5768,9 @@ impl MinecraftView {
             lbl.add_css_class("mc-tile-name");
             mid.append(&lbl);
             let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-            let tag = gtk::Label::new(Some(if ely { "Ely.by" } else if offline { "Offline" } else { "Microsoft" }));
-            tag.add_css_class("loader-tag");
+                            let tag = gtk::Label::new(Some(if ely { "Ely.by" } else if offline { "Offline" } else { "Microsoft" }));
+                            tag.add_css_class("loader-tag");
+                            tag.add_css_class("mcx-origin");
             chips.append(&tag);
             if aid == sel_aid {
                 let act = gtk::Label::new(Some("Active"));
