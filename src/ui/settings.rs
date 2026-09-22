@@ -114,7 +114,12 @@ pub fn show_settings_modal(
         helpers::apply_theme_css(&state_clone.theme);
         helpers::init_accent_provider(&state_clone.theme);
         crate::ui::mcx_theme::install(&state_clone.theme);
-        helpers::refresh_themed_icons(true);
+        // Paint new CSS first; reload PNGs on idle so disk decode doesn't
+        // block the transition on already-open widgets, then redraw dialog.
+        dialog.queue_draw();
+        glib::timeout_add_local_once(std::time::Duration::from_millis(50), move || {
+            helpers::refresh_themed_icons(true);
+        });
     });
     let state_clone2 = state.clone();
     light_btn.connect_clicked(move |_| {
@@ -122,7 +127,12 @@ pub fn show_settings_modal(
         helpers::apply_theme_css(&state_clone2.theme);
         helpers::init_accent_provider(&state_clone2.theme);
         crate::ui::mcx_theme::install(&state_clone2.theme);
-        helpers::refresh_themed_icons(false);
+        // Paint new CSS first; reload PNGs on idle so disk decode doesn't
+        // block the transition on already-open widgets, then redraw dialog.
+        dialog.queue_draw();
+        glib::timeout_add_local_once(std::time::Duration::from_millis(50), move || {
+            helpers::refresh_themed_icons(false);
+        });
     });
     theme_box.append(&dark_btn);
     theme_box.append(&light_btn);
@@ -160,6 +170,7 @@ pub fn show_settings_modal(
             helpers::apply_theme_css(&state_clone.theme);
             helpers::init_accent_provider(&state_clone.theme);
             crate::ui::mcx_theme::install(&state_clone.theme);
+            dialog.queue_draw();
         });
         if accent.id == current_accent { btn.set_active(true); }
         let col = (i % 5) as i32;
