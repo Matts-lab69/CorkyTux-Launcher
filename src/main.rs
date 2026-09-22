@@ -194,6 +194,17 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     let state = AppState::new();
     helpers::apply_theme_css(&state.theme);
     helpers::init_accent_provider(&state.theme);
+    // Bundled symbolic icons first (assets/icons/CorkyTux), system icon
+    // theme second: the launcher no longer depends on Adwaita/hicolor
+    // being installed for its own icons. Symbolic recoloring preserved.
+    if let Some(display) = gtk::gdk::Display::default() {
+        let it = gtk::IconTheme::for_display(&display);
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+        let mut paths = vec![std::path::PathBuf::from(home).join(".local/share/corkytux/assets/icons")];
+        paths.extend(it.search_path());
+        let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
+        it.set_search_path(&refs);
+    }
 
     // Restored size lets Cinnamon/Muffin tile freely; small minimum
     // so corner/side snapping is never blocked by our min size.
