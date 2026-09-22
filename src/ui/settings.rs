@@ -1462,9 +1462,7 @@ pub fn show_settings_modal(
         let src_icon = if source_name == "Steam" {
             helpers::themed_image("steam", state.theme.is_dark(), 24)
         } else {
-            let im = gtk::Image::from_icon_name("applications-games-symbolic");
-            im.set_pixel_size(24);
-            im
+            helpers::themed_image("lutris", state.theme.is_dark(), 24)
         };
         src_icon.set_valign(gtk::Align::Center);
         row.append(&src_icon);
@@ -1657,8 +1655,7 @@ pub fn show_settings_modal(
         col.set_margin_start(10);
         col.set_margin_end(10);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let heroic_icon = gtk::Image::from_icon_name("system-software-install-symbolic");
-        heroic_icon.set_pixel_size(24);
+        let heroic_icon = helpers::themed_image("heroic", state.theme.is_dark(), 24);
         heroic_icon.set_valign(gtk::Align::Center);
         row.append(&heroic_icon);
         let lbl = gtk::Label::new(Some("Heroic"));

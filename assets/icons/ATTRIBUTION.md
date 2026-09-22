@@ -12,3 +12,17 @@ launcher does not depend on the user's system icon theme being installed.
 
 Lookup order at runtime: bundled `CorkyTux` theme first (prepended search
 path, symbolic recoloring preserved), system icon theme second.
+
+# Bundled brand logos (assets/*.png, full-color, theme-independent)
+
+- `lutris.png`: Lutris desktop client icon,
+  `lutris/lutris` @ `share/icons/hicolor/128x128/apps/net.lutris.Lutris.png`,
+  GPL-3.0 (https://github.com/lutris/lutris/blob/master/LICENSE).
+- `heroic.png`: Heroic Games Launcher icon,
+  `Heroic-Games-Launcher/HeroicGamesLauncher` @ `public/icon.png` (downscaled
+  1024 → 128px, no visual change at 24px display size),
+  GPL-3.0 (https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher/blob/main/COPYING).
+- umu-launcher: NO bundled logo. Its repo
+  (`Open-Wine-Components/umu-launcher`, GPL-3.0) is a CLI tool with no
+  artwork directory and no recognizable brand mark, so the row keeps the
+  generic `system-run-symbolic` rather than risking an unofficial logo.
