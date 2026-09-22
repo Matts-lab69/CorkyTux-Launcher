@@ -26,3 +26,8 @@ path, symbolic recoloring preserved), system icon theme second.
   (`Open-Wine-Components/umu-launcher`, GPL-3.0) is a CLI tool with no
   artwork directory and no recognizable brand mark, so the row keeps the
   generic `system-run-symbolic` rather than risking an unofficial logo.
+- `steam.png`: official Steam ball icon, Wikimedia Commons
+  `File:Steam icon logo.svg` (512px vector, server-rendered to 330px PNG,
+  stored at 256px; verified full-color, saturation 0.62). Trademark of
+  Valve Corporation — used solely to indicate Steam integration, as
+  Lutris/Heroic do; no endorsement implied.
