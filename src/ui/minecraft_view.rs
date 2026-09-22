@@ -1418,6 +1418,7 @@ impl MinecraftView {
         log_lbl.set_selectable(true);
         lg_inner.append(&log_lbl);
         let logs_view = gtk::TextView::new();
+        logs_view.add_css_class("log-view");
         logs_view.set_editable(false);
         logs_view.set_cursor_visible(false);
         logs_view.set_monospace(true);
