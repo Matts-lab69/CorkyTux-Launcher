@@ -1459,6 +1459,9 @@ pub fn show_settings_modal(
         col.set_margin_start(10);
         col.set_margin_end(10);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let src_icon = helpers::themed_image(if source_name == "Steam" { "steam" } else { "game" }, state.theme.is_dark(), 24);
+        src_icon.set_valign(gtk::Align::Center);
+        row.append(&src_icon);
         let lbl = gtk::Label::new(Some(source_name));
         lbl.set_halign(gtk::Align::Start);
         lbl.set_hexpand(true);
@@ -1628,6 +1631,7 @@ pub fn show_settings_modal(
         row.append(&lbl);
         row.append(&scan);
         col.append(&row);
+        col.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         let desc_lbl = gtk::Label::new(Some(desc));
         desc_lbl.set_halign(gtk::Align::Start);
         desc_lbl.set_opacity(0.6);
@@ -1647,6 +1651,9 @@ pub fn show_settings_modal(
         col.set_margin_start(10);
         col.set_margin_end(10);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let heroic_icon = helpers::themed_image("game", state.theme.is_dark(), 24);
+        heroic_icon.set_valign(gtk::Align::Center);
+        row.append(&heroic_icon);
         let lbl = gtk::Label::new(Some("Heroic"));
         lbl.set_halign(gtk::Align::Start);
         lbl.set_hexpand(true);
@@ -1755,6 +1762,7 @@ pub fn show_settings_modal(
         row.append(&lbl);
         row.append(&scan);
         col.append(&row);
+        col.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         let desc_lbl = gtk::Label::new(Some("Import Epic/GOG games installed by Heroic, with their anti-cheat runtime flags"));
         desc_lbl.set_halign(gtk::Align::Start);
         desc_lbl.set_opacity(0.6);
@@ -1774,6 +1782,9 @@ pub fn show_settings_modal(
         col.set_margin_start(10);
         col.set_margin_end(10);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let umu_icon = helpers::themed_image("game", state.theme.is_dark(), 24);
+        umu_icon.set_valign(gtk::Align::Center);
+        row.append(&umu_icon);
         let lbl = gtk::Label::new(Some("umu-launcher"));
         lbl.set_halign(gtk::Align::Start);
         lbl.set_hexpand(true);
@@ -1788,6 +1799,7 @@ pub fn show_settings_modal(
         row.append(&lbl);
         row.append(&umu_btn);
         col.append(&row);
+        col.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         col.append(&umu_status_lbl);
         let desc_lbl = gtk::Label::new(Some("Unified Linux Wine runner used for Heroic-style launches"));
         desc_lbl.set_halign(gtk::Align::Start);
