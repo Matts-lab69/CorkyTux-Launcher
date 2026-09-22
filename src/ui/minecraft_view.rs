@@ -3429,7 +3429,9 @@ impl MinecraftView {
         let filt_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let snap_sw = gtk::Switch::new();
         snap_sw.set_valign(gtk::Align::Center);
-        filt_row.append(&gtk::Label::new(Some("Snapshots")));
+        let snap_lbl = gtk::Label::new(Some("Snapshots"));
+        snap_lbl.add_css_class("time-label");
+        filt_row.append(&snap_lbl);
         filt_row.append(&snap_sw);
         let ver_refresh = btn_with_icon("view-refresh-symbolic", "Refresh list");
         ver_refresh.add_css_class("settings-btn");
@@ -5710,6 +5712,7 @@ impl MinecraftView {
         setup_inner.append(&note("Default memory for new instances (per-instance override in its Settings tab)"));
         let ram_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let ram_lbl = gtk::Label::new(Some(&format!("{} MB", self.cfg("McRam"))));
+        ram_lbl.add_css_class("info-value");
         let ram = gtk::Scale::with_range(gtk::Orientation::Horizontal, 512.0, 16384.0, 256.0);
         ram.set_value(self.cfg("McRam").parse().unwrap_or(2048.0));
         ram.set_hexpand(true);
@@ -5736,7 +5739,9 @@ impl MinecraftView {
         gres_h.set_text(&self.cfg("McResH"));
         gres_h.set_hexpand(true);
         gres_row.append(&gres_w);
-        gres_row.append(&gtk::Label::new(Some("×")));
+        let gres_x = gtk::Label::new(Some("×"));
+        gres_x.add_css_class("time-label");
+        gres_row.append(&gres_x);
         gres_row.append(&gres_h);
         setup_inner.append(&gres_row);
         let gen_save = gtk::Button::with_label("Save defaults");

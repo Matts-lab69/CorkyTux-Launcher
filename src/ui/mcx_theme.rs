@@ -69,7 +69,8 @@ pub fn install(theme: &ThemeManager) {
         .mcx-modal .mcx-dot-ok {{ background-color: #3FB950; }}\
         .mcx-modal .mcx-dot-missing {{ background-color: #E5484D; }}\
         .mcx scale highlight {{ background-color: {accent}; }}\
-        .mcx scale slider {{ background-color: {accent}; border-color: {accent}; }}\
+        .mcx scale trough {{ background-color: {border}; }}\
+        .mcx scale slider {{ background-color: #FFFFFF; border: 2px solid {accent}; }}\
         .mcx .mcx-title {{ color: {text_main}; font-size: 20px; font-weight: 700; padding: 0; }}\
         .mcx .mcx-chip {{ background-color: {well}; border: 1px solid {border}; border-radius: 8px; padding: 2px 8px; min-height: 28px; }}\
         .mcx .mcx-chip-label {{ color: {text_sec}; font-size: 10px; }}\
