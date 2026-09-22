@@ -495,6 +495,10 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              switch:checked {{ background-color: {accent}; border-color: {accent}; }}\
              switch:checked > slider {{ background-color: #FFFFFF; }}\
              check:checked {{ background-color: {accent}; border-color: {accent}; color: #FFFFFF; }}\
+             check, radio {{ background-color: transparent; border: 1px solid {text_muted}; }}\
+             listbox, listbox > row {{ background-color: transparent; }}\
+             listbox > row {{ color: {text_main}; }}\
+             listbox > row:selected {{ background-color: color-mix(in srgb, {accent} 25%, transparent); }}\
             .emu-dot-on {{ color: #00E639; font-size: 14px; }}\
             .emu-dot-off {{ color: {text_muted}; font-size: 14px; }}\
             .warn-dot {{ color: {warn_dot}; font-size: 14px; }}\
@@ -509,7 +513,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              scrollbar overlay-indicator.vertical {{ min-width: 2px; }}\
              scrollbar overlay-indicator.horizontal {{ min-height: 2px; }}\
              scrollbar > contents {{ background: transparent; border: none; padding: 0; margin: 0; min-width: 2px; }}\
-             scrollbar > contents > slider {{ min-width: 2px; min-height: 2px; border-radius: 1px; background: alpha({text_muted}, 0.45); border: none; min-padding: 0; min-margin: 0; padding: 0; margin: 0; }}\
+             scrollbar > contents > slider {{ min-width: 2px; min-height: 2px; border-radius: 1px; background: alpha({text_muted}, 0.45); border: none; padding: 0; margin: 0; }}\
              scrollbar > contents > slider:hover {{ background: {accent}; }}\
              scrollbar.vertical trough {{ background: none; background-color: transparent; background-image: none; border: none; box-shadow: none; outline: none; min-width: 2px; padding: 0; margin: 0; }}\
              scrollbar.horizontal trough {{ background: none; background-color: transparent; background-image: none; border: none; box-shadow: none; outline: none; min-height: 2px; padding: 0; margin: 0; }}\
