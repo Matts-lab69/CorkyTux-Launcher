@@ -89,8 +89,11 @@ pub fn show_settings_modal(
     visuals_page.append(&theme_sub);
 
     let theme_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    theme_box.add_css_class("seg-bar");
     let dark_btn = gtk::ToggleButton::new();
     let light_btn = gtk::ToggleButton::new();
+    dark_btn.add_css_class("seg");
+    light_btn.add_css_class("seg");
     for (btn, icon_name, label) in [(&dark_btn, "moon", "Dark"), (&light_btn, "sun", "Light")] {
         let content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         content.set_halign(gtk::Align::Center);
@@ -712,6 +715,7 @@ pub fn show_settings_modal(
                             let b = gtk::Button::with_label(
                                 &format!("Path {} — {}", i + 1, p.display()),
                             );
+                            b.add_css_class("settings-btn");
                             b.set_halign(gtk::Align::Fill);
                             let tag_cc = tag_c.clone();
                             let url_cc = url_c.clone();
@@ -2044,13 +2048,16 @@ fn rebuild_emu_rows(
         if is_none && !emu.native {
             btn.add_css_class("add-btn");
         }
+        let remove_c = if emu.source.is_empty() { emu.installed } else { is_appimage };
+        if remove_c {
+            btn.add_css_class("danger-btn");
+        }
         // linked, system → disabled; appimage and none → enabled.
         btn.set_sensitive(is_none || is_appimage);
         btn.set_width_request(80);
         let name_c = emu.name.clone();
         // For legacy backend fall back to installed; otherwise use source to
         // decide the action (only appimage can be removed; none can be installed).
-        let remove_c = if emu.source.is_empty() { emu.installed } else { is_appimage };
         let state_c = state.clone();
         let status_c = emu_status.clone();
         let tx_c = tx.clone();
