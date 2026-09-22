@@ -188,7 +188,7 @@ impl ThemeManager {
     }
 
     pub fn bg(&self) -> &str {
-        if self.is_dark() { "#000000" } else { "#F8F9FA" }
+        if self.is_dark() { "#000000" } else { "#F4F1F8" }
     }
 
     pub fn panel(&self) -> &str {
@@ -200,27 +200,27 @@ impl ThemeManager {
     }
 
     pub fn well(&self) -> &str {
-        if self.is_dark() { "#181818" } else { "#F1F3F5" }
+        if self.is_dark() { "#181818" } else { "#ECE8F2" }
     }
 
     pub fn hover(&self) -> &str {
-        if self.is_dark() { "#282828" } else { "#E9ECEF" }
+        if self.is_dark() { "#282828" } else { "#E3DCEE" }
     }
 
     pub fn border(&self) -> &str {
-        if self.is_dark() { "#282828" } else { "#DEE2E6" }
+        if self.is_dark() { "#282828" } else { "#D8D0E3" }
     }
 
     pub fn text_main(&self) -> &str {
-        if self.is_dark() { "#E0E0E0" } else { "#212529" }
+        if self.is_dark() { "#E0E0E0" } else { "#241F2E" }
     }
 
     pub fn text_sec(&self) -> &str {
-        if self.is_dark() { "#AAAAAA" } else { "#495057" }
+        if self.is_dark() { "#AAAAAA" } else { "#5B5468" }
     }
 
     pub fn text_muted(&self) -> &str {
-        if self.is_dark() { "#777777" } else { "#6C757D" }
+        if self.is_dark() { "#777777" } else { "#8A8296" }
     }
 
     pub fn accent_color(&self) -> String {

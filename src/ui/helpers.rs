@@ -448,13 +448,13 @@ pub fn apply_theme_css(theme: &ThemeManager) {
         let is_dark = theme.is_dark();
 
         let strip_color = accent_strip_color(theme);
-        let banner_bg = if is_dark { "#282828" } else { "#E9ECEF" };
-        let tab_bar_bg = if is_dark { "#181818" } else { "#FFFFFF" };
-        let search_bg = if is_dark { "#242424" } else { "#F1F3F5" };
+        let banner_bg = if is_dark { "#282828" } else { hover };
+        let tab_bar_bg = if is_dark { "#181818" } else { panel };
+        let search_bg = if is_dark { "#242424" } else { well };
         let game_border = if is_dark { "transparent" } else { &border };
         let game_border_width = if is_dark { "0" } else { "1" };
-        let action_bg = if is_dark { "#242424" } else { "#F1F3F5" };
-        let dialog_bg = if is_dark { "#1E1E1E" } else { "#FFFFFF" };
+        let action_bg = if is_dark { "#242424" } else { well };
+        let dialog_bg = if is_dark { "#1E1E1E" } else { panel };
         let warn_dot = if is_dark { "#FFA726" } else { "#FB8C00" };
 
         let css = format!(
