@@ -1459,7 +1459,13 @@ pub fn show_settings_modal(
         col.set_margin_start(10);
         col.set_margin_end(10);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let src_icon = helpers::themed_image(if source_name == "Steam" { "steam" } else { "game" }, state.theme.is_dark(), 24);
+        let src_icon = if source_name == "Steam" {
+            helpers::themed_image("steam", state.theme.is_dark(), 24)
+        } else {
+            let im = gtk::Image::from_icon_name("applications-games-symbolic");
+            im.set_pixel_size(24);
+            im
+        };
         src_icon.set_valign(gtk::Align::Center);
         row.append(&src_icon);
         let lbl = gtk::Label::new(Some(source_name));
@@ -1651,7 +1657,8 @@ pub fn show_settings_modal(
         col.set_margin_start(10);
         col.set_margin_end(10);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let heroic_icon = helpers::themed_image("game", state.theme.is_dark(), 24);
+        let heroic_icon = gtk::Image::from_icon_name("system-software-install-symbolic");
+        heroic_icon.set_pixel_size(24);
         heroic_icon.set_valign(gtk::Align::Center);
         row.append(&heroic_icon);
         let lbl = gtk::Label::new(Some("Heroic"));
@@ -1782,7 +1789,8 @@ pub fn show_settings_modal(
         col.set_margin_start(10);
         col.set_margin_end(10);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let umu_icon = helpers::themed_image("game", state.theme.is_dark(), 24);
+        let umu_icon = gtk::Image::from_icon_name("system-run-symbolic");
+        umu_icon.set_pixel_size(24);
         umu_icon.set_valign(gtk::Align::Center);
         row.append(&umu_icon);
         let lbl = gtk::Label::new(Some("umu-launcher"));
