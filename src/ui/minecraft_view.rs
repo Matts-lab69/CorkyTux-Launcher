@@ -454,14 +454,6 @@ fn skin_pixbuf(path: &str) -> Option<gdk_pixbuf::Pixbuf> {
     Some(pb)
 }
 
-fn skin_pix_face(path: &str) -> Option<gtk::gdk::Texture> {
-    let pb = skin_pixbuf(path)?;
-    let face = gdk_pixbuf::Pixbuf::new(gdk_pixbuf::Colorspace::Rgb, true, 8, 8, 8)?;
-    pb.copy_area(8, 8, 8, 8, &face, 0, 0);
-    let scaled = face.scale_simple(64, 64, gdk_pixbuf::InterpType::Nearest)?;
-    Some(gtk::gdk::Texture::for_pixbuf(&scaled))
-}
-
 fn skin_pix_front(path: &str) -> Option<gtk::gdk::Texture> {
     let pb = skin_pixbuf(path)?;
     let legacy = pb.height() < 64;
@@ -5856,9 +5848,13 @@ impl MinecraftView {
         add_pop_box.set_margin_end(10);
         let kind_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         kind_row.set_halign(gtk::Align::Center);
+        kind_row.add_css_class("seg-bar");
         let kind_ms = gtk::ToggleButton::with_label("Microsoft");
         let kind_ely = gtk::ToggleButton::with_label("Ely.by");
         let kind_off = gtk::ToggleButton::with_label("Offline");
+        kind_ms.add_css_class("seg");
+        kind_ely.add_css_class("seg");
+        kind_off.add_css_class("seg");
         kind_ely.set_group(Some(&kind_ms));
         kind_off.set_group(Some(&kind_ms));
         kind_ms.set_active(true);
