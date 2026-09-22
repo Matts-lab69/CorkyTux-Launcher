@@ -2429,6 +2429,7 @@ impl MinecraftView {
             row.append(&head_img);
             let tag = if *ely { "Ely.by" } else if *offline { "Offline" } else { "MS" };
             let lbl = gtk::Label::new(Some(&format!("{}  ·  {}", name, tag)));
+            lbl.add_css_class("details-title");
             lbl.set_halign(gtk::Align::Start);
             lbl.set_hexpand(true);
             lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
