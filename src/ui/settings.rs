@@ -110,6 +110,7 @@ pub fn show_settings_modal(
 
     let state_clone = state.clone();
     let dlg_dark = dialog.clone();
+    let ps_dark = page_stack.clone();
     dark_btn.connect_clicked(move |_| {
         state_clone.theme.set_theme(ThemeMode::Dark);
         helpers::apply_theme_css(&state_clone.theme);
@@ -118,12 +119,14 @@ pub fn show_settings_modal(
         // Paint new CSS first; reload PNGs on idle so disk decode doesn't
         // block the transition on already-open widgets, then redraw dialog.
         dlg_dark.queue_draw();
+        ps_dark.queue_draw();
         glib::timeout_add_local_once(std::time::Duration::from_millis(50), move || {
             helpers::refresh_themed_icons(true);
         });
     });
     let state_clone2 = state.clone();
     let dlg_light = dialog.clone();
+    let ps_light = page_stack.clone();
     light_btn.connect_clicked(move |_| {
         state_clone2.theme.set_theme(ThemeMode::Light);
         helpers::apply_theme_css(&state_clone2.theme);
@@ -132,6 +135,7 @@ pub fn show_settings_modal(
         // Paint new CSS first; reload PNGs on idle so disk decode doesn't
         // block the transition on already-open widgets, then redraw dialog.
         dlg_light.queue_draw();
+        ps_light.queue_draw();
         glib::timeout_add_local_once(std::time::Duration::from_millis(50), move || {
             helpers::refresh_themed_icons(false);
         });
@@ -168,12 +172,14 @@ pub fn show_settings_modal(
         let accent_clone = accent.clone();
         let state_clone = state.clone();
         let dlg_acc = dialog.clone();
+        let ps_acc = page_stack.clone();
         btn.connect_clicked(move |_| {
             state_clone.theme.set_accent_id(accent_clone.id);
             helpers::apply_theme_css(&state_clone.theme);
             helpers::init_accent_provider(&state_clone.theme);
             crate::ui::mcx_theme::install(&state_clone.theme);
             dlg_acc.queue_draw();
+            ps_acc.queue_draw();
         });
         if accent.id == current_accent { btn.set_active(true); }
         let col = (i % 5) as i32;
