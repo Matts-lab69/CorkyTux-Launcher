@@ -426,6 +426,13 @@ pub fn apply_theme_css(theme: &ThemeManager) {
     } else {
         sm.set_color_scheme(adw::ColorScheme::PreferLight);
     }
+    // Force the Adwaita GTK theme itself: otherwise a system theme (e.g.
+    // Mint-Y-Dark) paints unstyled native widgets with its own dark
+    // surfaces while the app runs light, producing mixed broken UI.
+    // Our APPLICATION CSS still wins over it for every styled widget.
+    if let Some(settings) = gtk::Settings::default() {
+        settings.set_gtk_theme_name(Some("Adwaita"));
+    }
 
     MAIN_CSS_PROVIDER.with(|cell| {
         let mut borrow = cell.borrow_mut();
@@ -562,6 +569,8 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .filter-bar {{ background-color: {well}; border-radius: 12px; padding: 8px; }}\
              dropdown, dropdown > button {{ background-color: {well}; color: {text_main}; }}\
              dropdown > button {{ border: 1.5px solid {accent}; }}\
+             entry {{ background-color: {well}; color: {text_main}; border: 1px solid {border}; }}\
+             entry placeholder {{ color: {text_muted}; }}\
              dropdown popover row:hover {{ background-color: color-mix(in srgb, {accent} 15%, transparent); }}\
              dropdown popover row:selected {{ background-color: color-mix(in srgb, {accent} 25%, transparent); }}\
              entry.search {{ background-color: {well}; border: 1.5px solid {accent}; color: {text_main}; }}\
