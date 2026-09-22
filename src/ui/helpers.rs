@@ -569,8 +569,13 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              dropdown > button {{ border: 1.5px solid {accent}; }}\
              entry {{ background-color: {well}; color: {text_main}; border: 1px solid {border}; }}\
              entry placeholder {{ color: {text_muted}; }}\
+             dropdown popover {{ background-color: {panel}; }}\
              dropdown popover row:hover {{ background-color: color-mix(in srgb, {accent} 15%, transparent); }}\
              dropdown popover row:selected {{ background-color: color-mix(in srgb, {accent} 25%, transparent); }}\
+             popover, popover.background, popover > contents {{ background-color: {panel}; color: {text_main}; }}\
+             listview, listview > row {{ background-color: transparent; }}\
+             listview > row {{ color: {text_main}; }}\
+             listview > row:selected {{ background-color: color-mix(in srgb, {accent} 25%, transparent); }}\
              entry.search {{ background-color: {well}; border: 1.5px solid {accent}; color: {text_main}; }}\
              .page-card {{ background-color: {panel}; border: 1px solid {border}; border-radius: 8px; padding: 14px; }}\
              frame {{ background-color: {panel}; border: 1px solid {border}; border-radius: 8px; }}\
