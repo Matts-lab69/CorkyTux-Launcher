@@ -550,6 +550,26 @@ fn icon_cache_path(filename: &str) -> std::path::PathBuf {
         .join(filename)
 }
 
+// Negative cache: a hard failure skips refetch for 1h (no infinite
+// retry loop on 404/429/dead hosts). Removed once stale.
+fn icon_neg_mark(project_id: &str) {
+    std::fs::write(icon_cache_path(&format!("{}-icon.missing", project_id)), b"").ok();
+}
+
+fn icon_neg_fresh(project_id: &str) -> bool {
+    let neg = icon_cache_path(&format!("{}-icon.missing", project_id));
+    match std::fs::metadata(&neg) {
+        Ok(m) => match m.modified().ok().and_then(|t| t.elapsed().ok()) {
+            Some(age) if age < std::time::Duration::from_secs(3600) => true,
+            _ => {
+                std::fs::remove_file(&neg).ok();
+                false
+            }
+        },
+        Err(_) => false,
+    }
+}
+
 pub(crate) fn load_mod_icon(url: &str, project_id: &str, img: &gtk::Image, size: i32) {
     if url.is_empty() || project_id.is_empty() {
         return;
@@ -558,6 +578,11 @@ pub(crate) fn load_mod_icon(url: &str, project_id: &str, img: &gtk::Image, size:
     let max_px = (size * 2).max(64);
     // Modrinth serves webp; gdk-pixbuf here has no webp loader, so the
     // worker normalizes to PNG (PIL, ffmpeg fallback) before GTK loads it.
+    if icon_neg_fresh(project_id) {
+        img.set_icon_name(Some("image-x-generic-symbolic"));
+        img.set_pixel_size(size);
+        return;
+    }
     let png = icon_cache_path(&format!("{}-icon.png", project_id));
     if png.exists() {
         let path = png.display().to_string();
@@ -602,23 +627,29 @@ fn load_mod_icon_uncached(url: &str, project_id: &str, img: &gtk::Image, size: i
             }
         }
         let _guard = Release;
+        // Visible fallback (never a blank row): the idle side below turns
+        // this sentinel into a generic symbolic icon.
         let raw = icon_cache_path(&format!("{}-raw.bin", pid));
         if let Some(parent) = raw.parent() {
             std::fs::create_dir_all(parent).ok();
         }
         let mut dl = false;
         for _ in 0..2 {
-            dl = std::process::Command::new("curl").args(["-sL", "--max-time", "20", "-o", raw.to_str().unwrap_or(""), &url]).output().is_ok() && raw.exists();
+            dl = std::process::Command::new("curl").args(["-sL", "--fail", "--max-time", "20", "-o", raw.to_str().unwrap_or(""), &url]).output().is_ok() && raw.exists();
             if dl {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(400));
         }
         if !dl {
+            icon_neg_mark(&pid);
+            let _ = tx.send("corkytux-fallback".to_string());
             return;
         }
         let bytes = std::fs::read(&raw).unwrap_or_default();
         if bytes.len() <= 100 {
+            icon_neg_mark(&pid);
+            let _ = tx.send("corkytux-fallback".to_string());
             return;
         }
         let is_webp = bytes.len() > 12 && &bytes[8..12] == b"WEBP";
@@ -632,6 +663,9 @@ fn load_mod_icon_uncached(url: &str, project_id: &str, img: &gtk::Image, size: i
             if !converted {
                 let out = std::process::Command::new("ffmpeg").args(["-y", "-v", "error", "-i", raw.to_str().unwrap_or(""), png.to_str().unwrap_or("")]).output();
                 if !(out.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0) {
+                    eprintln!("corkytux: icon for {}: download ok but webp conversion failed (needs python3+PIL or ffmpeg installed)", pid);
+                    icon_neg_mark(&pid);
+                    let _ = tx.send("corkytux-fallback".to_string());
                     return;
                 }
             }
@@ -644,7 +678,10 @@ fn load_mod_icon_uncached(url: &str, project_id: &str, img: &gtk::Image, size: i
     glib::idle_add_local(move || match rx.try_recv() {
         Ok(path) => {
             if let Some(im) = imgw.upgrade() {
-                if let Some(tex) = helpers::load_thumb(&path, max_px) {
+                if path == "corkytux-fallback" {
+                    im.set_icon_name(Some("image-x-generic-symbolic"));
+                    im.set_pixel_size(size);
+                } else if let Some(tex) = helpers::load_thumb(&path, max_px) {
                     im.set_paintable(Some(&tex));
                     im.set_pixel_size(size);
                 }
@@ -675,7 +712,7 @@ fn download_pack_icon(icon_url: &str, launch_version: &str) -> Option<String> {
         std::fs::create_dir_all(parent).ok();
     }
     let raw = icon_cache_path(&format!("{}-pack-raw.bin", safe_id(launch_version)));
-    let dl = std::process::Command::new("curl").args(["-sL", "--max-time", "25", "-o", raw.to_str().unwrap_or(""), icon_url]).output().is_ok() && raw.exists();
+    let dl = std::process::Command::new("curl").args(["-sL", "--fail", "--max-time", "25", "-o", raw.to_str().unwrap_or(""), icon_url]).output().is_ok() && raw.exists();
     if !dl {
         return None;
     }
@@ -690,12 +727,13 @@ fn download_pack_icon(icon_url: &str, launch_version: &str) -> Option<String> {
                 serde_json_to_py_str(raw.to_str().unwrap_or("")),
                 serde_json_to_py_str(png.to_str().unwrap_or("")))]).output();
         let ok = py.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0;
-        if !ok {
-            let out = std::process::Command::new("ffmpeg").args(["-y", "-v", "error", "-i", raw.to_str().unwrap_or(""), png.to_str().unwrap_or("")]).output();
-            if !(out.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0) {
-                return None;
+            if !ok {
+                let out = std::process::Command::new("ffmpeg").args(["-y", "-v", "error", "-i", raw.to_str().unwrap_or(""), png.to_str().unwrap_or("")]).output();
+                if !(out.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0) {
+                    eprintln!("corkytux: pack icon for {}: webp conversion failed (needs python3+PIL or ffmpeg installed)", launch_version);
+                    return None;
+                }
             }
-        }
         std::fs::remove_file(&raw).ok();
     } else {
         std::fs::rename(&raw, &png).ok();
