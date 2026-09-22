@@ -111,6 +111,15 @@ if command -v python3 &>/dev/null; then
   else
     log "python3 requests OK"
   fi
+  # Pillow for webp mod icons (warn only: runtime falls back to a generic icon)
+  python3 -c "import PIL" 2>/dev/null || warn "Pillow (PIL) not found (webp mod icons need python3+PIL or ffmpeg, else generic icon)"
+fi
+command -v ffmpeg &>/dev/null && log "ffmpeg found" || warn "ffmpeg not found (webp mod icons need python3+PIL or ffmpeg, else generic icon)"
+# System icon theme is only a secondary fallback (bundled CorkyTux icons ship with the app)
+if [[ -d /usr/share/icons/Adwaita || -d /usr/share/icons/hicolor || -d "${HOME}/.local/share/icons/Adwaita" ]]; then
+  log "System icon theme OK (fallback)"
+else
+  warn "No system icon theme found (bundled icons will be used)"
 fi
 
 # ─── Install missing? ────────────────────────────────────────────
