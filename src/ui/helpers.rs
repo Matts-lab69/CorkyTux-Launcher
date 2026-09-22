@@ -489,8 +489,9 @@ pub fn apply_theme_css(theme: &ThemeManager) {
             .actions-frame {{ border: 1px solid {accent}; border-radius: 8px; background-color: transparent; padding: 8px; }}\
             .neon-red {{ background-color: #FF0040; color: #FFFFFF; font-weight: bold; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; border: none; }}\
             .neon-green {{ background-color: #00E639; color: #FFFFFF; font-weight: bold; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; border: none; }}\
-            switch {{ background-color: {well}; border: 1px solid {border}; border-radius: 16px; }}\
-            switch:checked {{ background-color: {accent}; border-color: {accent}; }}\
+             switch {{ background-color: {well}; border: 1px solid {border}; border-radius: 16px; }}\
+             switch > slider {{ background-color: {text_muted}; }}\
+             switch:checked {{ background-color: {accent}; border-color: {accent}; }}\
              switch:checked > slider {{ background-color: #FFFFFF; }}\
              check:checked {{ background-color: {accent}; border-color: {accent}; color: #FFFFFF; }}\
             .emu-dot-on {{ color: #00E639; font-size: 14px; }}\
