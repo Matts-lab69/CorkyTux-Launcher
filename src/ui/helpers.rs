@@ -461,6 +461,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
             "window.background {{ background-color: {bg}; color: {text_main}; }}\
              dialog.background {{ background-color: {dialog_bg}; color: {text_main}; border-radius: 12px; border: 1px solid {border}; }}\
              .top-bar {{ background-color: {bg}; min-height: 52px; padding: 0 16px; }}\
+             headerbar {{ background-color: {bg}; color: {text_main}; border-bottom: 1px solid {border}; }}\
              .sidebar {{ background-color: {bg}; min-width: 230px; }}\
             .sidebar-card {{ border: 1px solid {accent}; border-radius: 8px; background-color: transparent; padding: 8px; }}\
             .sidebar-frame {{ border: 1px solid {accent}; border-radius: 10px; background-color: transparent; padding: 4px; }}\
