@@ -375,6 +375,7 @@ fn build_run_tab(
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.set_margin_top(4);
         let lbl = gtk::Label::new(Some(label));
+        lbl.add_css_class("info-value");
         lbl.set_hexpand(true);
         lbl.set_halign(gtk::Align::Start);
         let sw = gtk::Switch::new();
@@ -582,6 +583,7 @@ fn build_run_tab(
             sw.set_valign(gtk::Align::Center);
             sw.set_active(state.config.game_value(game_name, key).map(|v| v == "true").unwrap_or(false));
             let lb = gtk::Label::new(Some(label));
+            lb.add_css_class("info-value");
             lb.set_halign(gtk::Align::Start);
             row.append(&sw);
             row.append(&lb);
@@ -812,6 +814,7 @@ fn open_shared_picker(
         row_btn.set_halign(gtk::Align::Fill);
         let col = gtk::Box::new(gtk::Orientation::Vertical, 2);
         let path_lbl = gtk::Label::new(Some(&path));
+        path_lbl.add_css_class("time-label");
         path_lbl.set_halign(gtk::Align::Start);
         path_lbl.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
         let sub_lbl = gtk::Label::new(Some(&if already {
@@ -946,6 +949,7 @@ fn build_emulator_tab(state: &AppState, game_name: &str) -> gtk::Box {
             });
             row.append(&browse);
             let clear = gtk::Button::with_label("X");
+            clear.add_css_class("icon-ghost");
             clear.set_width_request(36);
             let entry_c2 = entry.clone();
             clear.connect_clicked(move |_| {
@@ -958,6 +962,7 @@ fn build_emulator_tab(state: &AppState, game_name: &str) -> gtk::Box {
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
             row.set_margin_top(4);
             let lbl = gtk::Label::new(Some(&emu_setting_label(&def.id)));
+            lbl.add_css_class("info-value");
             lbl.set_halign(gtk::Align::Start);
             lbl.set_hexpand(true);
             lbl.set_wrap(true);
@@ -1262,6 +1267,7 @@ fn build_graphics_tab(state: &AppState, game_name: &str) -> gtk::Box {
     w3d_sw.set_active(state.config.game_value(game_name, "UseWined3d")
         .map(|v| v == "true").unwrap_or(false));
     let w3d_lbl = gtk::Label::new(Some("Use wined3d instead of DXVK"));
+    w3d_lbl.add_css_class("info-value");
     w3d_lbl.set_hexpand(true);
     w3d_box.append(&w3d_lbl);
     w3d_box.append(&w3d_sw);
@@ -1277,6 +1283,7 @@ fn build_graphics_tab(state: &AppState, game_name: &str) -> gtk::Box {
     wl_sw.set_active(state.config.game_value(game_name, "NativeWayland")
         .map(|v| v == "true").unwrap_or(false));
     let wl_lbl = gtk::Label::new(Some("Native Wayland (disable XWayland)"));
+    wl_lbl.add_css_class("info-value");
     wl_lbl.set_hexpand(true);
     wl_box.append(&wl_lbl);
     wl_box.append(&wl_sw);
