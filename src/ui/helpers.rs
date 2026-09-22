@@ -566,6 +566,8 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              dropdown popover row:selected {{ background-color: color-mix(in srgb, {accent} 25%, transparent); }}\
              entry.search {{ background-color: {well}; border: 1.5px solid {accent}; color: {text_main}; }}\
              .page-card {{ background-color: {panel}; border: 1px solid {border}; border-radius: 8px; padding: 14px; }}\
+             frame {{ background-color: {panel}; border: 1px solid {border}; border-radius: 8px; }}\
+             frame > border {{ border: none; background-color: transparent; background-image: none; }}\
              .modal-bg {{ background-color: {panel}; border-radius: 12px; border: 1px solid {border}; }}\
              tooltip.background {{ background-color: {tab_bar_bg}; border-radius: 8px; border: 1px solid {border}; padding: 12px; }}\
              tooltip label {{ color: {text_main}; font-size: 13px; }}"
