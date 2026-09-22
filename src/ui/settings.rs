@@ -83,6 +83,7 @@ pub fn show_settings_modal(
     visuals_page.append(&theme_label);
 
     let theme_sub = gtk::Label::new(Some("Dark is the default look. Light is easier on bright screens."));
+    theme_sub.add_css_class("time-label");
     theme_sub.set_opacity(0.6);
     theme_sub.set_wrap(true);
     theme_sub.set_halign(gtk::Align::Start);
@@ -133,6 +134,7 @@ pub fn show_settings_modal(
     visuals_page.append(&accent_label);
 
     let accent_sub = gtk::Label::new(Some("Choose an accent color for buttons, switches, and highlights"));
+    accent_sub.add_css_class("time-label");
     accent_sub.set_opacity(0.6);
     accent_sub.set_wrap(true);
     accent_sub.set_halign(gtk::Align::Start);
@@ -310,6 +312,7 @@ pub fn show_settings_modal(
             }
             col.append(&header_row);
             let lbl = gtk::Label::new(Some("Proton version for this shared prefix:"));
+            lbl.add_css_class("time-label");
             lbl.set_halign(gtk::Align::Start);
             col.append(&lbl);
             // Pick from installed builds instead of typing a version.
@@ -381,6 +384,7 @@ pub fn show_settings_modal(
     let def_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     def_row.set_margin_top(4);
     let default_lbl = gtk::Label::new(Some("Default Proton for new games:"));
+    default_lbl.add_css_class("time-label");
     default_lbl.set_halign(gtk::Align::Start);
     default_lbl.set_width_chars(26);
     let installed_names = state.proton.installed_protons();
@@ -560,7 +564,9 @@ pub fn show_settings_modal(
             }
             let details = proton_c.installed_proton_details();
             if details.is_empty() {
-                ibox.append(&gtk::Label::new(Some("No Proton builds installed")));
+                let no_proton = gtk::Label::new(Some("No Proton builds installed"));
+                no_proton.add_css_class("time-label");
+                ibox.append(&no_proton);
                 // List just went empty (path removed/changed): offer the
                 // automatic GE-Proton install.
                 status_c.set_text("No builds found — downloading latest Proton-GE automatically…");
@@ -577,6 +583,7 @@ pub fn show_settings_modal(
                 inner.set_margin_start(8);
                 inner.set_margin_end(8);
                 let lbl = gtk::Label::new(Some(name));
+                lbl.add_css_class("details-title");
                 lbl.set_halign(gtk::Align::Start);
                 lbl.set_hexpand(true);
                 lbl.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
@@ -667,6 +674,7 @@ pub fn show_settings_modal(
                 inner.set_margin_end(8);
                 let prefix = if source == "cachy" { "[CachyOS] " } else { "[GE] " };
                 let lbl = gtk::Label::new(Some(&format!("{}{}", prefix, tag)));
+                lbl.add_css_class("details-title");
                 lbl.set_halign(gtk::Align::Start);
                 lbl.set_hexpand(true);
                 lbl.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
@@ -910,6 +918,7 @@ pub fn show_settings_modal(
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.set_margin_top(4);
         let lbl = gtk::Label::new(Some(label));
+        lbl.add_css_class("info-value");
         lbl.set_halign(gtk::Align::Start);
         lbl.set_hexpand(true);
         lbl.set_wrap(true);
@@ -1068,6 +1077,7 @@ pub fn show_settings_modal(
                         "{}{}", p.name,
                         if p.version.is_empty() { String::new() } else { format!("  v{}", p.version) }
                     )));
+                    name_lbl.add_css_class("details-title");
                     name_lbl.set_halign(gtk::Align::Start);
                     name_lbl.set_hexpand(true);
                     name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -1117,6 +1127,7 @@ pub fn show_settings_modal(
                         "{}{}", p.name,
                         if p.version.is_empty() { String::new() } else { format!("  v{}", p.version) }
                     )));
+                    name_lbl.add_css_class("details-title");
                     name_lbl.set_halign(gtk::Align::Start);
                     name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
                     col.append(&name_lbl);
@@ -1252,6 +1263,7 @@ pub fn show_settings_modal(
                 let col = gtk::Box::new(gtk::Orientation::Vertical, 2);
                 col.set_hexpand(true);
                 let name_lbl = gtk::Label::new(Some(if e.name.is_empty() { &e.tag } else { &e.name }));
+                name_lbl.add_css_class("details-title");
                 name_lbl.set_halign(gtk::Align::Start);
                 name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
                 col.append(&name_lbl);
@@ -1850,9 +1862,11 @@ pub fn show_settings_modal(
     about_name.add_css_class("details-title");
     about_page.append(&about_name);
     let about_ver = gtk::Label::new(Some("v3.0.13"));
+    about_ver.add_css_class("time-label");
     about_ver.set_opacity(0.6);
     about_page.append(&about_ver);
     let about_author = gtk::Label::new(Some("by Matts-lab69"));
+    about_author.add_css_class("time-label");
     about_author.set_opacity(0.5);
     about_page.append(&about_author);
 
@@ -2015,6 +2029,7 @@ fn rebuild_emu_rows(
             badge,
             emu.description
         )));
+        name_lbl.add_css_class("details-title");
         name_lbl.set_halign(gtk::Align::Start);
         name_lbl.set_hexpand(true);
         name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
