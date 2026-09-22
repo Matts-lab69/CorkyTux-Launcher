@@ -161,7 +161,8 @@ done
 if [[ -n "$ASSETS" ]]; then
   mkdir -p "${INSTALL_DIR}/assets"
   cp -r "${ASSETS}/." "${INSTALL_DIR}/assets/"
-  chmod 0644 "${INSTALL_DIR}"/assets/* 2>/dev/null || true
+  find "${INSTALL_DIR}/assets" -type f -exec chmod 0644 {} + 2>/dev/null || true
+  find "${INSTALL_DIR}/assets" -type d -exec chmod 0755 {} + 2>/dev/null || true
   log "Assets: ${INSTALL_DIR}/assets ($(ls "$ASSETS" | wc -l) files)"
 else
   warn "assets/ not found, UI icons will be missing"
