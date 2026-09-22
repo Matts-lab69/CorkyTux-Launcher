@@ -2006,15 +2006,17 @@ fn rebuild_emu_rows(
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.set_margin_top(2);
         row.set_margin_bottom(2);
+        let usable = emu.installed || emu.native || matches!(emu.source.as_str(), "linked" | "system");
         let dot = gtk::Label::new(Some("●"));
-        if emu.installed {
+        dot.set_tooltip_text(Some(if usable { "Available" } else { "Not installed" }));
+        if usable {
             dot.add_css_class("emu-dot-on");
         } else {
             dot.add_css_class("emu-dot-off");
         }
         row.append(&dot);
         let badge = if emu.source.is_empty() {
-            if emu.native { " (native)" } else { "" }
+            if emu.native { " (native)" } else if emu.installed { " (installed)" } else { "" }
         } else {
             match emu.source.as_str() {
                 "linked" => " (linked)",
