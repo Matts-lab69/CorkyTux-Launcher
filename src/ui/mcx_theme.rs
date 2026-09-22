@@ -1,9 +1,22 @@
+use std::cell::RefCell;
+
 use crate::backend::theme::ThemeManager;
+
+thread_local! {
+    static MCX_CSS_PROVIDER: RefCell<Option<gtk::CssProvider>> = const { RefCell::new(None) };
+}
 
 pub fn install(theme: &ThemeManager) {
     let Some(display) = gtk::gdk::Display::default() else {
         return;
     };
+    // Re-installable like apply_theme_css: drop the previous provider so
+    // accent/mode changes apply live instead of freezing at startup values.
+    MCX_CSS_PROVIDER.with(|cell| {
+        if let Some(provider) = cell.borrow_mut().take() {
+            gtk::style_context_remove_provider_for_display(&display, &provider);
+        }
+    });
     // Theme-driven values (dark values match the previous hardcoded palette
     // so dark mode looks identical; light mode now follows the theme).
     // Replaces: bg #000000, well #181818, panel #121212, hover #272727,
@@ -96,4 +109,7 @@ pub fn install(theme: &ThemeManager) {
         &provider,
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
+    MCX_CSS_PROVIDER.with(|cell| {
+        *cell.borrow_mut() = Some(provider);
+    });
 }
