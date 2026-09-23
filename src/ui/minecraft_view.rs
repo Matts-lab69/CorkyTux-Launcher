@@ -1449,6 +1449,8 @@ impl MinecraftView {
         st_inner.append(&note("Memory (RAM)"));
         let set_ram_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let set_ram_lbl = gtk::Label::new(Some("2048 MB"));
+        // Fixed width (see ram_lbl above): avoids layout feedback while dragging.
+        set_ram_lbl.set_width_chars(9);
         let set_ram = gtk::Scale::with_range(gtk::Orientation::Horizontal, 512.0, 16384.0, 256.0);
         set_ram.set_hexpand(true);
         set_ram.set_draw_value(false);
@@ -1751,6 +1753,10 @@ impl MinecraftView {
             let e = view.set_ram_entry.clone();
             view.set_ram.connect_value_changed(move |s| {
                 let mb = s.value() as u32;
+                // TEMP-LOG (diagnóstico oscilación <1000MB): quitar al confirmar.
+                if mb < 1000 {
+                    eprintln!("TEMP-LOG setram-drag value={:.1}", s.value());
+                }
                 l.set_text(&format!("{} MB", mb));
                 e.set_text(&mb.to_string());
             });
@@ -5722,6 +5728,9 @@ impl MinecraftView {
         setup_inner.append(&note("Default memory for new instances (per-instance override in its Settings tab)"));
         let ram_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let ram_lbl = gtk::Label::new(Some(&format!("{} MB", self.cfg("McRam"))));
+        // Fixed width: a shrinking label ("1024 MB" -> "999 MB") resizes
+        // the slider mid-drag and feeds back into the value (oscillation).
+        ram_lbl.set_width_chars(9);
         ram_lbl.add_css_class("info-value");
         let ram = gtk::Scale::with_range(gtk::Orientation::Horizontal, 512.0, 16384.0, 256.0);
         ram.set_value(self.cfg("McRam").parse().unwrap_or(2048.0));
@@ -6252,6 +6261,10 @@ impl MinecraftView {
             let re = ram_entry.clone();
             ram.connect_value_changed(move |s| {
                 let mb = s.value() as u32;
+                // TEMP-LOG (diagnóstico oscilación <1000MB): quitar al confirmar.
+                if mb < 1000 {
+                    eprintln!("TEMP-LOG ram-drag value={:.1}", s.value());
+                }
                 l.set_text(&format!("{} MB", mb));
                 re.set_text(&mb.to_string());
             });
