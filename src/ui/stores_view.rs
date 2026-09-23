@@ -176,7 +176,7 @@ impl StoresView {
 
         // header
         let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let hicon = gtk::Image::from_icon_name("system-software-install-symbolic");
+        let hicon = gtk::Image::from_icon_name("corkytux-system-software-install-symbolic");
         hicon.set_pixel_size(28);
         head.append(&hicon);
         let title = gtk::Label::new(Some("Stores"));

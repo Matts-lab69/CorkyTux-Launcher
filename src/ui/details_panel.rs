@@ -74,7 +74,7 @@ impl DetailsPanel {
         title.add_css_class("details-title");
 
         let star = gtk::ToggleButton::new();
-        star.set_icon_name("starred-symbolic");
+        star.set_icon_name("corkytux-starred-symbolic");
         star.set_tooltip_text(Some("Toggle Favorite"));
         star.add_css_class("star-btn");
         let of = on_favorite.clone();
@@ -86,7 +86,7 @@ impl DetailsPanel {
             }
         });
 
-        let close_btn = gtk::Button::from_icon_name("window-close-symbolic");
+        let close_btn = gtk::Button::from_icon_name("corkytux-window-close-symbolic");
         close_btn.set_tooltip_text(Some("Close"));
         close_btn.add_css_class("close-btn");
 
@@ -123,7 +123,7 @@ impl DetailsPanel {
         if let Some(tex) = helpers::load_themed_icon("play", is_dark) {
             play_icon.set_paintable(Some(&tex));
         } else {
-            play_icon.set_icon_name(Some("media-playback-start-symbolic"));
+            play_icon.set_icon_name(Some("corkytux-media-playback-start-symbolic"));
         }
         helpers::track_themed_image(&play_icon, "play");
         let play_label = gtk::Label::new(Some("Play"));
@@ -614,11 +614,11 @@ impl DetailsPanel {
         // Load game icon into the header (tilde-aware)
         let icon_path = cfg.game_value(name, "Icon").unwrap_or_default();
         if icon_path.is_empty() {
-            self.icon_image.set_icon_name(Some("application-x-executable-symbolic"));
+            self.icon_image.set_icon_name(Some("corkytux-application-x-executable-symbolic"));
         } else if let Some(texture) = helpers::load_texture(&shellexpand_tilde(&icon_path)) {
             self.icon_image.set_paintable(Some(&texture));
         } else {
-            self.icon_image.set_icon_name(Some("application-x-executable-symbolic"));
+            self.icon_image.set_icon_name(Some("corkytux-application-x-executable-symbolic"));
         }
 
         // Time played

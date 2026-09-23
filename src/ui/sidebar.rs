@@ -87,7 +87,7 @@ impl Sidebar {
         store_btn.set_tooltip_text(Some("Stores (Epic / GOG)"));
         store_btn.add_css_class("mc-btn");
         store_btn.set_valign(gtk::Align::Center);
-        let store_icon = gtk::Image::from_icon_name("system-software-install-symbolic");
+        let store_icon = gtk::Image::from_icon_name("corkytux-system-software-install-symbolic");
         store_icon.set_pixel_size(22);
         store_btn.set_child(Some(&store_icon));
         {
@@ -299,13 +299,13 @@ impl Sidebar {
                 if let Some(texture) = helpers::load_texture(&icon_path) {
                     icon.set_paintable(Some(&texture));
                 } else {
-                    icon.set_icon_name(Some("application-x-executable-symbolic"));
+                    icon.set_icon_name(Some("corkytux-application-x-executable-symbolic"));
                 }
             } else {
-                icon.set_icon_name(Some("application-x-executable-symbolic"));
+                icon.set_icon_name(Some("corkytux-application-x-executable-symbolic"));
             }
         } else {
-            icon.set_icon_name(Some("application-x-executable-symbolic"));
+            icon.set_icon_name(Some("corkytux-application-x-executable-symbolic"));
         }
 
         let label = gtk::Label::new(Some(name));

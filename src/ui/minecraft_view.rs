@@ -1121,13 +1121,13 @@ impl MinecraftView {
         head.add_css_class("mcx-bar");
         let account_head = gtk::Image::new();
         account_head.set_pixel_size(24);
-        account_head.set_icon_name(Some("avatar-default-symbolic"));
+        account_head.set_icon_name(Some("corkytux-avatar-default-symbolic"));
         let account_label = gtk::Label::new(Some("Inicia sesión"));
         account_label.set_halign(gtk::Align::Start);
         account_label.add_css_class("mc-account-label");
         account_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
         account_label.set_max_width_chars(14);
-        let account_arrow = gtk::Image::from_icon_name("pan-down-symbolic");
+        let account_arrow = gtk::Image::from_icon_name("corkytux-pan-down-symbolic");
         account_arrow.set_pixel_size(14);
         account_arrow.set_opacity(0.6);
         let account_inner = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -1152,7 +1152,7 @@ impl MinecraftView {
         sort_drop.set_tooltip_text(Some("Sort by"));
         sort_drop.set_valign(gtk::Align::Center);
         head.append(&sort_drop);
-        let sort_cycle = btn_with_icon("view-sort-ascending-symbolic", "");
+        let sort_cycle = btn_with_icon("corkytux-view-sort-ascending-symbolic", "");
         sort_cycle.set_tooltip_text(Some("Sort by"));
         sort_cycle.set_visible(false);
         sort_cycle.set_valign(gtk::Align::Center);
@@ -1226,7 +1226,7 @@ impl MinecraftView {
         det_head.add_css_class("mcx-headcard");
         let back_btn = gtk::Button::new();
         back_btn.add_css_class("icon-ghost");
-        set_btn_icon(&back_btn, "go-previous-symbolic", 18);
+        set_btn_icon(&back_btn, "corkytux-go-previous-symbolic", 18);
         back_btn.set_tooltip_text(Some("Back to library"));
         back_btn.set_size_request(40, 40);
         back_btn.set_valign(gtk::Align::Center);
@@ -1242,7 +1242,7 @@ impl MinecraftView {
         let icon_pencil = gtk::Button::new();
         icon_pencil.add_css_class("icon-ghost");
         icon_pencil.add_css_class("icon-pencil");
-        icon_pencil.set_child(Some(&sym("document-edit-symbolic", 12)));
+        icon_pencil.set_child(Some(&sym("corkytux-document-edit-symbolic", 12)));
         icon_pencil.set_halign(gtk::Align::End);
         icon_pencil.set_valign(gtk::Align::End);
         icon_wrap.add_overlay(&icon_pencil);
@@ -1260,7 +1260,7 @@ impl MinecraftView {
         name_row.append(&detail_name);
         let name_pencil = gtk::Button::new();
         name_pencil.add_css_class("icon-ghost");
-        name_pencil.set_child(Some(&sym("document-edit-symbolic", 16)));
+        name_pencil.set_child(Some(&sym("corkytux-document-edit-symbolic", 16)));
         name_pencil.set_tooltip_text(Some("Rename"));
         name_pencil.set_valign(gtk::Align::Center);
         name_row.append(&name_pencil);
@@ -1310,7 +1310,7 @@ impl MinecraftView {
         detail_play.set_valign(gtk::Align::Center);
 
         det_head.append(&detail_play);
-        let detail_play_icon = gtk::Button::from_icon_name("media-playback-start-symbolic");
+        let detail_play_icon = gtk::Button::from_icon_name("corkytux-media-playback-start-symbolic");
         detail_play_icon.add_css_class("add-btn");
         detail_play_icon.set_tooltip_text(Some("Play"));
         detail_play_icon.set_size_request(40, 40);
@@ -1318,7 +1318,7 @@ impl MinecraftView {
         detail_play_icon.set_valign(gtk::Align::Center);
         det_head.append(&detail_play_icon);
         let detail_star = gtk::ToggleButton::new();
-        let star_img = gtk::Image::from_icon_name("starred-symbolic");
+        let star_img = gtk::Image::from_icon_name("corkytux-starred-symbolic");
         star_img.set_pixel_size(22);
         detail_star.set_child(Some(&star_img));
         detail_star.add_css_class("star-btn");
@@ -1340,7 +1340,7 @@ impl MinecraftView {
         let mut det_btns: Vec<gtk::ToggleButton> = Vec::new();
         let mut det_inds: Vec<gtk::Box> = Vec::new();
         let addons_tab_wrap_holder: Rc<RefCell<Option<gtk::Box>>> = Rc::new(RefCell::new(None));
-        let det_icons = ["application-x-addon-symbolic", "text-x-generic-symbolic", "preferences-system-symbolic"];
+        let det_icons = ["application-x-addon-symbolic", "text-x-generic-symbolic", "corkytux-preferences-system-symbolic"];
         for ((label, id), tab_icon) in det_labels.iter().zip(det_ids.iter()).zip(det_icons.iter()) {
             let wrap = gtk::Box::new(gtk::Orientation::Vertical, 1);
             let btn = gtk::ToggleButton::new();
@@ -1404,7 +1404,7 @@ impl MinecraftView {
         let plat_store = gtk::StringList::new(&["All", "Modrinth", "Local"]);
         let plat_drop = gtk::DropDown::new(Some(plat_store), gtk::Expression::NONE);
         ad_toolbar.append(&plat_drop);
-        let update_all_btn = btn_with_icon("software-update-available-symbolic", "Update all");
+        let update_all_btn = btn_with_icon("corkytux-software-update-available-symbolic", "Update all");
         update_all_btn.add_css_class("settings-btn");
         update_all_btn.set_visible(false);
         ad_toolbar.append(&update_all_btn);
@@ -1412,7 +1412,7 @@ impl MinecraftView {
         browse_btn.add_css_class("add-btn");
         ad_toolbar.append(&browse_btn);
         let addons_menu_btn = gtk::MenuButton::new();
-        addons_menu_btn.set_icon_name("view-more-symbolic");
+        addons_menu_btn.set_icon_name("corkytux-view-more-symbolic");
         addons_menu_btn.set_tooltip_text(Some("More actions"));
         let addons_pop = gtk::Popover::new();
         let addons_pop_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -1493,12 +1493,12 @@ impl MinecraftView {
         lg_inner.append(&logs_view);
         let lg_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         lg_row.set_halign(gtk::Align::End);
-        let lg_refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
+        let lg_refresh = gtk::Button::from_icon_name("corkytux-view-refresh-symbolic");
         lg_refresh.add_css_class("settings-btn");
         lg_refresh.set_tooltip_text(Some("Refresh"));
         lg_row.append(&lg_refresh);
         let logs_view_c = logs_view.clone();
-        let lg_copy = gtk::Button::from_icon_name("edit-copy-symbolic");
+        let lg_copy = gtk::Button::from_icon_name("corkytux-edit-copy-symbolic");
         lg_copy.add_css_class("settings-btn");
         lg_copy.set_tooltip_text(Some("Copy log"));
         lg_copy.connect_clicked(move |_| {
@@ -1509,7 +1509,7 @@ impl MinecraftView {
             }
         });
         lg_row.append(&lg_copy);
-        let lg_folder = gtk::Button::from_icon_name("folder-symbolic");
+        let lg_folder = gtk::Button::from_icon_name("corkytux-folder-symbolic");
         lg_folder.add_css_class("settings-btn");
         lg_folder.set_tooltip_text(Some("Open logs folder"));
         lg_row.append(&lg_folder);
@@ -1568,7 +1568,7 @@ impl MinecraftView {
         let set_prehook = gtk::Entry::new();
         set_prehook.set_placeholder_text(Some("empty = none"));
         st_inner.append(&set_prehook);
-        let set_repair = btn_with_icon("view-refresh-symbolic", "Repair (reinstall files)");
+        let set_repair = btn_with_icon("corkytux-view-refresh-symbolic", "Repair (reinstall files)");
         set_repair.add_css_class("settings-btn");
         st_inner.append(&set_repair);
         let set_danger_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -2173,7 +2173,7 @@ impl MinecraftView {
             let tile_overlay = gtk::Overlay::new();
             tile_overlay.set_child(Some(&inner));
             if inst.fav {
-                let star = gtk::Image::from_icon_name("starred-symbolic");
+                let star = gtk::Image::from_icon_name("corkytux-starred-symbolic");
                 star.set_pixel_size(28);
                 star.add_css_class("mcx-fav-star");
                 star.set_halign(gtk::Align::End);
@@ -2221,12 +2221,12 @@ impl MinecraftView {
         let running = !MinecraftManager::running_pids().is_empty();
         let is_dark = self.state.theme.is_dark();
         for (micon, label, action) in [
-            ("media-playback-stop-symbolic", "Stop", "play"),
+            ("corkytux-media-playback-stop-symbolic", "Stop", "play"),
             ("application-x-addon-symbolic", "Addons", "addons"),
-            ("folder-symbolic", "Open folder", "folder"),
-            ("document-edit-symbolic", "Rename", "rename"),
+            ("corkytux-folder-symbolic", "Open folder", "folder"),
+            ("corkytux-document-edit-symbolic", "Rename", "rename"),
             ("non-starred-symbolic", "Favorite", "fav"),
-            ("user-trash-symbolic", "Delete", "delete"),
+            ("corkytux-user-trash-symbolic", "Delete", "delete"),
         ] {
             if action == "addons" && is_vanilla {
                 continue;
@@ -2464,14 +2464,14 @@ impl MinecraftView {
         if aid.is_empty() {
             self.account_label.set_text("Inicia sesión");
             self.account_head.set_pixel_size(24);
-            self.account_head.set_icon_name(Some("avatar-default-symbolic"));
+            self.account_head.set_icon_name(Some("corkytux-avatar-default-symbolic"));
             self.account_btn.set_tooltip_text(Some("Sin cuenta — clic para añadir"));
             return;
         }
         self.account_label.set_text(&name);
         self.account_btn.set_tooltip_text(Some(&format!("{} — clic para cambiar", name)));
         self.account_head.set_pixel_size(24);
-        self.account_head.set_icon_name(Some("avatar-default-symbolic"));
+        self.account_head.set_icon_name(Some("corkytux-avatar-default-symbolic"));
         let img = self.account_head.clone();
         let (tx, rx) = std::sync::mpsc::channel::<Option<String>>();
         std::thread::spawn(move || {
@@ -2513,7 +2513,7 @@ impl MinecraftView {
             row.set_hexpand(true);
             let head_img = gtk::Image::new();
             head_img.set_pixel_size(24);
-            head_img.set_icon_name(Some("avatar-default-symbolic"));
+            head_img.set_icon_name(Some("corkytux-avatar-default-symbolic"));
             row.append(&head_img);
             let tag = if *ely { "Ely.by" } else if *offline { "Offline" } else { "MS" };
             let lbl = gtk::Label::new(Some(&format!("{}  ·  {}", name, tag)));
@@ -2523,7 +2523,7 @@ impl MinecraftView {
             lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
             row.append(&lbl);
             if *aid == cur_aid || *name == cur_name {
-                let check = gtk::Image::from_icon_name("emblem-ok-symbolic");
+                let check = gtk::Image::from_icon_name("corkytux-emblem-ok-symbolic");
                 check.set_pixel_size(16);
                 check.set_margin_end(8);
                 row.append(&check);
@@ -2566,7 +2566,7 @@ impl MinecraftView {
         }
         let sep = gtk::Separator::new(gtk::Orientation::Horizontal);
         list.append(&sep);
-        let add_btn = btn_with_icon("list-add-symbolic", "Añadir cuenta…");
+        let add_btn = btn_with_icon("corkytux-list-add-symbolic", "Añadir cuenta…");
         add_btn.add_css_class("settings-btn");
         {
             let v = self.clone();
@@ -2616,16 +2616,16 @@ impl MinecraftView {
         }
         let running = !MinecraftManager::running_pids().is_empty();
         if running {
-            set_btn_icon_label(&self.detail_play, "media-playback-stop-symbolic", "Stop");
+            set_btn_icon_label(&self.detail_play, "corkytux-media-playback-stop-symbolic", "Stop");
             self.detail_play.remove_css_class("add-btn");
             self.detail_play.add_css_class("danger-btn");
-            set_btn_icon(&self.detail_play_icon, "media-playback-stop-symbolic", 20);
+            set_btn_icon(&self.detail_play_icon, "corkytux-media-playback-stop-symbolic", 20);
             self.detail_play_icon.set_tooltip_text(Some("Stop"));
         } else {
             set_themed_btn(&self.detail_play, "play", "Play", self.state.theme.is_dark(), 20);
             self.detail_play.remove_css_class("danger-btn");
             self.detail_play.add_css_class("add-btn");
-            set_btn_icon(&self.detail_play_icon, "media-playback-start-symbolic", 20);
+            set_btn_icon(&self.detail_play_icon, "corkytux-media-playback-start-symbolic", 20);
             self.detail_play_icon.set_tooltip_text(Some("Play"));
         }
         self.detail_star.set_active(inst.fav);
@@ -3117,7 +3117,7 @@ impl MinecraftView {
             mid.append(&sub);
             row.append(&mid);
             if !r.project_id.is_empty() {
-                let upd = btn_with_icon("software-update-available-symbolic", "Update");
+                let upd = btn_with_icon("corkytux-software-update-available-symbolic", "Update");
                 upd.add_css_class("settings-btn");
                 upd.set_valign(gtk::Align::Center);
                 upd.set_visible(false);
@@ -3139,7 +3139,7 @@ impl MinecraftView {
             });
             row.append(&tgl);
             let menu = gtk::Button::new();
-            set_btn_icon(&menu, "view-more-symbolic", 16);
+            set_btn_icon(&menu, "corkytux-view-more-symbolic", 16);
             menu.set_valign(gtk::Align::Center);
             let vv = self.clone();
             let fc3 = r.file.clone();
@@ -3254,7 +3254,7 @@ impl MinecraftView {
         box_.set_margin_start(6);
         box_.set_margin_end(6);
         let is_dark = self.state.theme.is_dark();
-        let mut items = vec![("folder-symbolic", "Open folder", "folder"), ("user-trash-symbolic", "Delete", "delete")];
+        let mut items = vec![("corkytux-folder-symbolic", "Open folder", "folder"), ("corkytux-user-trash-symbolic", "Delete", "delete")];
         if !project_id.trim().is_empty() {
             items.push(("application-x-addon-symbolic", "View on Modrinth", "view"));
         }
@@ -3467,7 +3467,7 @@ impl MinecraftView {
         let add_ids = ["custom", "modpack", "import"];
         let add_labels = ["Custom", "Modpack", "Import"];
         let mut add_btns: Vec<gtk::ToggleButton> = Vec::new();
-        let add_icons = ["applications-engineering-symbolic", "package-x-generic-symbolic", "document-open-symbolic"];
+        let add_icons = ["applications-engineering-symbolic", "package-x-generic-symbolic", "corkytux-document-open-symbolic"];
         for ((label, id), tab_icon) in add_labels.iter().zip(add_ids.iter()).zip(add_icons.iter()) {
             let btn = gtk::ToggleButton::new();
             btn.add_css_class("seg");
@@ -3523,7 +3523,7 @@ impl MinecraftView {
         snap_lbl.add_css_class("time-label");
         filt_row.append(&snap_lbl);
         filt_row.append(&snap_sw);
-        let ver_refresh = btn_with_icon("view-refresh-symbolic", "Refresh list");
+        let ver_refresh = btn_with_icon("corkytux-view-refresh-symbolic", "Refresh list");
         ver_refresh.add_css_class("settings-btn");
         filt_row.append(&ver_refresh);
         ver_group.append(&filt_row);
@@ -3565,7 +3565,7 @@ impl MinecraftView {
         pack_scroll.set_child(Some(&pack_results));
         pack_page.append(&pack_scroll);
         import_page.append(&note("Import a Modrinth .mrpack (or compatible zip) from disk."));
-        let import_pick = btn_with_icon("folder-symbolic", "Choose .mrpack file…");
+        let import_pick = btn_with_icon("corkytux-folder-symbolic", "Choose .mrpack file…");
         import_pick.add_css_class("settings-btn");
         import_page.append(&import_pick);
         let import_lbl = note("");
@@ -5939,7 +5939,7 @@ impl MinecraftView {
         add_menu_btn.set_margin_top(8);
         let add_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         add_box.set_valign(gtk::Align::Center);
-        add_box.append(&sym("list-add-symbolic", 16));
+        add_box.append(&sym("corkytux-list-add-symbolic", 16));
         add_box.append(&gtk::Label::new(Some("Add account")));
         add_menu_btn.set_child(Some(&add_box));
         let add_pop = gtk::Popover::new();
@@ -6236,7 +6236,7 @@ impl MinecraftView {
         let mut set_tab_labels: Vec<gtk::Label> = Vec::new();
         let init_tab = initial.to_string();
         stack.set_visible_child_name(&init_tab);
-        let set_icons = ["preferences-other-symbolic", "system-users-symbolic", "system-run-symbolic", "view-grid-symbolic"];
+        let set_icons = ["corkytux-preferences-other-symbolic", "corkytux-system-users-symbolic", "corkytux-system-run-symbolic", "corkytux-view-grid-symbolic"];
         for ((label, id), tab_icon) in labels.iter().zip(ids.iter()).zip(set_icons.iter()) {
             let wrap = gtk::Box::new(gtk::Orientation::Vertical, 1);
             let btn = gtk::ToggleButton::new();

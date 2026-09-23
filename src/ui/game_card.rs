@@ -72,7 +72,7 @@ pub fn build_game_card(
         let fallback = match entry.source {
             GameSource::Epic => "package-x-generic-symbolic",
             GameSource::Gog => "applications-games-symbolic",
-            _ => "application-x-executable-symbolic",
+            _ => "corkytux-application-x-executable-symbolic",
         };
         if !entry.icon.is_empty() {
             if let Some(tex) = helpers::load_texture(&entry.icon) {

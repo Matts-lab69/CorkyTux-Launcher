@@ -1819,7 +1819,7 @@ pub fn show_settings_modal(
         col.set_margin_start(10);
         col.set_margin_end(10);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let umu_icon = gtk::Image::from_icon_name("system-run-symbolic");
+        let umu_icon = gtk::Image::from_icon_name("corkytux-system-run-symbolic");
         umu_icon.add_css_class("int-icon");
         umu_icon.set_pixel_size(24);
         umu_icon.set_valign(gtk::Align::Center);
@@ -1924,7 +1924,7 @@ pub fn show_settings_modal(
     let github_btn = gtk::Button::new();
     let gh_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     gh_box.set_halign(gtk::Align::Center);
-    gh_box.append(&gtk::Image::from_icon_name("web-browser-symbolic"));
+    gh_box.append(&gtk::Image::from_icon_name("corkytux-web-browser-symbolic"));
     let gh_label = gtk::Label::new(Some("GitHub"));
     gh_label.set_halign(gtk::Align::Center);
     gh_box.append(&gh_label);

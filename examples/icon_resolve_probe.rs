@@ -18,47 +18,23 @@ fn main() {
     let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
     it.set_search_path(&refs);
 
-    let icons = [
-        "epicgames-symbolic",
-        "gogdotcom-symbolic",
-        "applications-games-symbolic",
-        "applications-engineering-symbolic",
-        "preferences-other-symbolic",
-        "preferences-system-symbolic",
-        "folder-symbolic",
-        "user-trash-symbolic",
-        "system-run-symbolic",
-        "system-users-symbolic",
-        "view-grid-symbolic",
-        "view-more-symbolic",
-        "view-refresh-symbolic",
-        "view-sort-ascending-symbolic",
-        "document-edit-symbolic",
-        "document-open-symbolic",
-        "edit-copy-symbolic",
-        "list-add-symbolic",
-        "media-playback-start-symbolic",
-        "media-playback-stop-symbolic",
-        "go-previous-symbolic",
-        "emblem-ok-symbolic",
-        "window-close-symbolic",
-        "pan-down-symbolic",
-        "system-software-install-symbolic",
-        "web-browser-symbolic",
-        "alarm-symbolic",
-        "avatar-default-symbolic",
-        "display-brightness-symbolic",
-        "non-starred-symbolic",
-        "starred-symbolic",
-        "software-update-available-symbolic",
-        "application-x-addon-symbolic",
-        "application-x-executable-symbolic",
-        "image-x-generic-symbolic",
-        "package-x-generic-symbolic",
-        "text-x-generic-symbolic",
-    ];
+    let mut icons: Vec<String> = Vec::new();
+    for ctx in ["actions", "categories", "status", "places", "mimetypes", "ui", "legacy"] {
+        let dir = bundle.join("hicolor/symbolic").join(ctx);
+        if let Ok(read) = std::fs::read_dir(&dir) {
+            for e in read.flatten() {
+                if let Some(n) = e.file_name().to_str() {
+                    if let Some(stem) = n.strip_suffix(".svg") {
+                        icons.push(stem.to_string());
+                    }
+                }
+            }
+        }
+    }
+    icons.sort();
+    icons.dedup();
 
-    for name in icons {
+    for name in &icons {
         let paintable = it.lookup_icon(name, &[], 16, 1, gtk::TextDirection::None, gtk::IconLookupFlags::empty());
         let path = paintable
             .file()
