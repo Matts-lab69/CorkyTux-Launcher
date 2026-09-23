@@ -35,7 +35,13 @@ pub fn build_game_card(
     img.set_hexpand(true);
     img.set_vexpand(true);
     if !entry.banner.is_empty() {
-        if let Some(tex) = helpers::load_card_banner(&entry.banner, CARD_W, CARD_H) {
+        if entry.banner.starts_with("http") {
+            // Remote cover (deals/free shelves): async download+cache, the
+            // same loader the old list rows used (load_card_banner is
+            // local-files only and silently drops URLs).
+            let key = format!("card-{}", crate::ui::minecraft_view::safe_id(&entry.name));
+            crate::ui::minecraft_view::load_mod_icon(&entry.banner, &key, &img, CARD_W);
+        } else if let Some(tex) = helpers::load_card_banner(&entry.banner, CARD_W, CARD_H) {
             img.set_paintable(Some(&tex));
         }
     }

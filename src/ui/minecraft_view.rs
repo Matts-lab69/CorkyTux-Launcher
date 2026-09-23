@@ -91,7 +91,7 @@ fn dedup_disp(s: &str) -> String {
     s.to_string()
 }
 
-fn safe_id(id: &str) -> String {
+pub(crate) fn safe_id(id: &str) -> String {
     id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' }).collect()
 }
 
