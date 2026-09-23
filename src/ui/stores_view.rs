@@ -188,38 +188,29 @@ impl StoresView {
         let status = note("Epic + GOG via legendary/gogdl (Heroic pattern). Games install into the native library.");
         col.append(&status);
 
-        // tabs
-        let tabbar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        // tabs (segmented, same pattern as MC Addons tabs)
+        let tabbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        tabbar.add_css_class("seg-bar");
         let stack = gtk::Stack::new();
         stack.set_vexpand(false);
         let mut btns: Vec<gtk::ToggleButton> = Vec::new();
-        let mut inds: Vec<gtk::Box> = Vec::new();
-        for (label, _id, icon) in [("Epic Games", "epic", "application-x-executable-symbolic"), ("GOG", "gog", "application-x-executable-symbolic")] {
-            let wrap = gtk::Box::new(gtk::Orientation::Vertical, 1);
-            wrap.set_hexpand(true);
+        for (label, _id, icon) in [("Epic Games", "epic", "package-x-generic-symbolic"), ("GOG", "gog", "applications-games-symbolic")] {
             let btn = gtk::ToggleButton::new();
-            btn.add_css_class("settings-tab");
+            btn.add_css_class("seg");
             btn.set_hexpand(true);
-            let c = gtk::Box::new(gtk::Orientation::Vertical, 2);
+            let c = gtk::Box::new(gtk::Orientation::Horizontal, 8);
             c.set_halign(gtk::Align::Center);
+            c.set_valign(gtk::Align::Center);
             let im = gtk::Image::from_icon_name(icon);
-            im.set_pixel_size(18);
+            im.set_pixel_size(16);
             c.append(&im);
-            let lbl = gtk::Label::new(Some(label));
-            lbl.add_css_class("time-label");
-            c.append(&lbl);
-            let ind = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-            ind.add_css_class("settings-tab-indicator");
-            ind.set_visible(label == "Epic Games");
-            c.append(&ind);
+            c.append(&gtk::Label::new(Some(label)));
             btn.set_child(Some(&c));
             if label == "Epic Games" {
                 btn.set_active(true);
             }
-            wrap.append(&btn);
-            tabbar.append(&wrap);
+            tabbar.append(&btn);
             btns.push(btn);
-            inds.push(ind);
         }
         if btns.len() == 2 {
             btns[1].set_group(Some(&btns[0]));
@@ -241,16 +232,10 @@ impl StoresView {
             let h = handles.get(i).cloned();
             let tid = id.to_string();
             let st = stack.clone();
-            let all = inds.clone();
-            let mine = inds[i].clone();
             let b0 = btns[i].clone();
             b0.connect_toggled(move |b| {
                 if b.is_active() {
                     st.set_visible_child_name(&tid);
-                    for ind in &all {
-                        ind.set_visible(false);
-                    }
-                    mine.set_visible(true);
                     if let Some(ref hh) = h {
                         hh.ensure_loaded();
                     }
@@ -649,7 +634,7 @@ impl StoresView {
                         for t in nums {
                             if t > last + 1 {
                                 let e = gtk::Label::new(Some("…"));
-                                e.set_opacity(0.6);
+                                e.add_css_class("time-label");
                                 bar_c.append(&e);
                             }
                             let b = gtk::Button::with_label(&t.to_string());
