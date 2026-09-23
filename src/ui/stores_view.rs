@@ -410,6 +410,7 @@ impl StoresView {
                             let entry = crate::backend::game_model::GameEntry {
                                 name: t.clone(),
                                 banner: cover.clone(),
+                                source: crate::backend::game_model::GameSource::Epic,
                                 ..Default::default()
                             };
                             let uc = u.clone();
@@ -555,6 +556,7 @@ impl StoresView {
                                     let entry = crate::backend::game_model::GameEntry {
                                         name: t.clone(),
                                         banner: cover.clone(),
+                                        source: crate::backend::game_model::GameSource::Epic,
                                         ..Default::default()
                                     };
                                     let badge = if pct > 0 { Some(format!("-{}%", pct)) } else { None };
