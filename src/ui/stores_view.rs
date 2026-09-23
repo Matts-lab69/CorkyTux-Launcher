@@ -926,7 +926,11 @@ impl StoresView {
             let vh = view.clone();
             refresh_btn.connect_clicked(move |_| vh.refresh_library(false));
         }
-        view.refresh_auth(true);
+        // Full status at page build: --quick keeps `accounts` empty (verified
+        // via TEMP-LOG: quick=true => accounts={"epic":""}) so the account
+        // row would fall back to the store literal ("epic"). Non-quick fills
+        // the real displayName (e.g. "Matyy_y").
+        view.refresh_auth(false);
         (page, view)
     }
 }
