@@ -92,6 +92,31 @@ Commit: `5e4f2dc`
 - Bundle del runtime sincronizado: `diff -rq` repo == runtime.
 - `icon_resolve_probe` ahora escanea los SVGs del bundle (lista dinámica).
 
+### Regresión BUG A — descripción larga se cortaba en el modal View
+Commit: `c3b2592`
+- Síntoma: Marvel Rivals / Genshin / Fortnite cortaban el texto a ~2 líneas,
+  sin scrollbar. Diagnóstico: un `GtkLabel` dentro de `GtkScrolledWindow` **no
+  puede desplazarse en vertical**: su altura natural se mide a su ancho natural
+  (línea sin envolver, ~2 líneas), el viewport colapsa a ese mínimo y el texto
+  se recorta sin barras. Esto anulaba el fix de `d2b5d50`.
+- Fix: `GtkTextView` read-only (wrap WordChar, editable/cursor/focus off, clase
+  `time-label`) que sí reporta su altura envuelta real; el viewport mide
+  `min(alto completo, max_content_height=200)` y GTK decide la barra por altura
+  natural, sin umbrales. Cascada T1 y opacidad de fallback conservadas.
+
+### Regresión BUG B — ícono del store se veía como candado
+Commit: `64d1dcd`
+- El botón Stores pedía desde siempre `system-software-install-symbolic`
+  (da1d4ab). Pre-T3 el tema Mint ganaba el lookup (glyph moderno caja+flecha);
+  tras prefijar a `corkytux-`, el bundle resolvía primero y exponía la copia
+  legacy de Adwaita, que es un **candado** (rectángulo `M3 8h10v7.059…` +
+  grillete `M6.793 2.969…`). La referencia NO se renombró mal; el asset era el
+  equivocado.
+- Fix: ese SVG se sustituye por el trazo del `system-software-install` moderno
+  de Mint-Breeze, normalizado a `fill #2e3436` (convención del bundle) y
+  documentado en `ATTRIBUTION.md`. Probe: `corkytux-system-software-install`
+  → bundle (37/37, sin cambio de resolución).
+
 ## Hallazgos nuevos (anotados, NO arreglados)
 
 ### DLC de Fortnite fallan en el modal "View"
@@ -120,7 +145,10 @@ Commit: `5e4f2dc`
    VALORANT) y comprobar el texto "Última versión: … (última actualización
    conocida por Epic: …)" atenuado y bien legible en claro y oscuro.
    Para un juego SIN metadata de Epic: "Sin descripción disponible".
-3. **Scroll del modal View (T2)**: Mindcop (283 chars) sin scrollbar de
-   descripción; Fortnite (766 chars) con scroll dentro del diálogo y sin
-   texto cortado; el diálogo no debe exceder ~200px de descripción.
+3. **Scroll del modal View (T2 + BUG A)**: Mindcop (283 chars) sin scrollbar;
+   Marvel Rivals / Genshin / Fortnite (largas) con scroll SMOOTH del texto
+   completo y sin cortes a mitad de oración; el diálogo no debe exceder ~200px
+   de descripción.
+4. **Ícono del store (BUG B)**: en la sidebar, el botón junto a "Your Library"
+   debe volver al glyph de instalación moderna (caja+flecha), no candado.
 4. Re-render de iconos tras cualquier cambio de tema/íconos en el futuro.
