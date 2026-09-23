@@ -499,6 +499,7 @@ impl StoresView {
                                     let ends = p.get("ends").and_then(|x| x.as_str()).unwrap_or("").to_string();
                                     let u = p.get("store_url").and_then(|x| x.as_str()).unwrap_or("").to_string();
                                     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                                    row.add_css_class("mc-row");
                                     if !cover.is_empty() {
                                         let img = gtk::Image::new();
                                         img.set_pixel_size(52);
@@ -522,7 +523,6 @@ impl StoresView {
                                         dl.set_halign(gtk::Align::Start);
                                         dl.set_ellipsize(gtk::pango::EllipsizeMode::End);
                                         dl.set_max_width_chars(60);
-                                        dl.set_opacity(0.6);
                                         dl.add_css_class("time-label");
                                         mid.append(&dl);
                                     }
@@ -533,7 +533,6 @@ impl StoresView {
                                     };
                                     let sub = gtk::Label::new(Some(&subtext));
                                     sub.set_halign(gtk::Align::Start);
-                                    sub.set_opacity(0.6);
                                     sub.add_css_class("time-label");
                                     mid.append(&sub);
                                     row.append(&mid);
