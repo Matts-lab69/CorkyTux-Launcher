@@ -1273,6 +1273,7 @@ impl StorePageHandle {
                     desc.clear();
                 }
                 let ver = get("version", &fver);
+                let last_upd = get("last_updated", "");
                 let top = gtk::Box::new(gtk::Orientation::Horizontal, 12);
                 if !cover.is_empty() {
                     let img = gtk::Image::new();
@@ -1290,7 +1291,9 @@ impl StorePageHandle {
                 tt.set_wrap(true);
                 tt.add_css_class("details-title");
                 tcol.append(&tt);
-                if !ver.is_empty() {
+                // Version line only when a real description is present; otherwise
+                // the cascaded fallback below already carries it.
+                if !ver.is_empty() && !desc.is_empty() {
                     let vs = gtk::Label::new(Some(&ver));
                     vs.set_halign(gtk::Align::Start);
                     vs.set_opacity(0.6);
@@ -1306,7 +1309,21 @@ impl StorePageHandle {
                     dl.add_css_class("time-label");
                     tcol.append(&dl);
                 } else {
-                    let na = gtk::Label::new(Some("Sin descripción disponible"));
+                    // Cascade: real description -> catalog version/date -> neutral message.
+                    // "Catálogo de Epic" clarifies the date is Epic's own record,
+                    // not the user's local install time.
+                    let na_text = if !ver.is_empty() {
+                        if last_upd.is_empty() {
+                            format!("Última versión: {ver} (dato del catálogo de Epic)")
+                        } else {
+                            format!(
+                                "Última versión: {ver} (última actualización conocida por Epic: {last_upd})"
+                            )
+                        }
+                    } else {
+                        "Sin descripción disponible".to_string()
+                    };
+                    let na = gtk::Label::new(Some(&na_text));
                     na.set_halign(gtk::Align::Start);
                     na.set_wrap(true);
                     na.set_opacity(0.6);
