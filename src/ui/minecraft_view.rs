@@ -283,7 +283,7 @@ fn note(text: &str) -> gtk::Label {
     let l = gtk::Label::new(Some(text));
     l.set_halign(gtk::Align::Start);
     l.set_wrap(true);
-    l.set_opacity(0.6);
+
     l.add_css_class("time-label");
     l
 }
@@ -2063,7 +2063,7 @@ impl MinecraftView {
             }
             if !inst.isolated {
                 let sh = gtk::Label::new(Some("shared"));
-                sh.set_opacity(0.55);
+
                 sh.add_css_class("time-label");
                 badge_row.append(&sh);
             }
@@ -3738,7 +3738,7 @@ impl MinecraftView {
                                 let dd2 = gtk::Label::new(Some(&clean_md(&desc).lines().next().unwrap_or("").to_string()));
                                 dd2.set_halign(gtk::Align::Start);
                                 dd2.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                                dd2.set_opacity(0.6);
+
                                 dd2.add_css_class("time-label");
                                 mid.append(&dd2);
                                 row.append(&mid);
@@ -4176,7 +4176,7 @@ impl MinecraftView {
                     mid_box.append(&t);
                     let sub = gtk::Label::new(Some(&format!("{}  •  {}", date, games)));
                     sub.set_halign(gtk::Align::Start);
-                    sub.set_opacity(0.6);
+
                     sub.add_css_class("time-label");
                     mid_box.append(&sub);
                     row.append(&mid_box);
@@ -4266,7 +4266,7 @@ impl MinecraftView {
                 let stats = gtk::Label::new(Some(&format!("{} downloads",
                     pr.get("downloads").and_then(|x| x.as_u64()).unwrap_or(0))));
                 stats.set_halign(gtk::Align::Start);
-                stats.set_opacity(0.6);
+
                 stats.add_css_class("time-label");
                 tbox.append(&stats);
                 head.append(&tbox);
@@ -4371,7 +4371,7 @@ impl MinecraftView {
                     mid.append(&t);
                     let sub = gtk::Label::new(Some(&format!("{}  •  {}", &date[..10.min(date.len())], games)));
                     sub.set_halign(gtk::Align::Start);
-                    sub.set_opacity(0.6);
+
                     sub.add_css_class("time-label");
                     mid.append(&sub);
                     row.append(&mid);
@@ -4939,7 +4939,7 @@ impl MinecraftView {
                     pr.get("downloads").and_then(|x| x.as_u64()).unwrap_or(0),
                     pr.get("followers").and_then(|x| x.as_u64()).unwrap_or(0))));
                 stats.set_halign(gtk::Align::Start);
-                stats.set_opacity(0.6);
+
                 stats.add_css_class("time-label");
                 tbox.append(&stats);
                 head.append(&tbox);
@@ -5357,7 +5357,7 @@ impl MinecraftView {
                             let dd = gtk::Label::new(Some(&clean_md(&desc).lines().next().unwrap_or("").to_string()));
                             dd.set_halign(gtk::Align::Start);
                             dd.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                            dd.set_opacity(0.6);
+
                             dd.add_css_class("time-label");
                             mid.append(&dd);
                             let badges = gtk::Box::new(gtk::Orientation::Horizontal, 4);

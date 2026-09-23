@@ -567,6 +567,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .seg:hover {{ color: {text_main}; }}\
              .seg:checked {{ background-color: {accent}; color: #FFFFFF; }}\
              .filter-bar {{ background-color: {well}; border-radius: 12px; padding: 8px; }}\
+             .int-icon {{ color: {text_main}; }}\
              dropdown, dropdown > button {{ background-color: {well}; color: {text_main}; }}\
              dropdown > button {{ border: 1.5px solid {accent}; }}\
              entry {{ background-color: {well}; color: {text_main}; border: 1px solid {border}; }}\

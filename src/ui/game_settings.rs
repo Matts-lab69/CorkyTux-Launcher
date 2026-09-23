@@ -401,7 +401,7 @@ fn build_run_tab(
         let dep_status = gtk::Label::new(Some("Not scanned yet."));
         dep_status.set_halign(gtk::Align::Start);
         dep_status.set_wrap(true);
-        dep_status.set_opacity(0.6);
+        
         dep_status.add_css_class("time-label");
         dep_inner.append(&dep_status);
         let scan_btn = gtk::Button::with_label("Scan now");
@@ -536,7 +536,7 @@ fn build_run_tab(
         pp_inner.append(&{
             let n = gtk::Label::new(Some("If launching kills your desktop, turn this on."));
             n.set_halign(gtk::Align::Start);
-            n.set_opacity(0.6);
+            
             n.add_css_class("time-label");
             n
         });
@@ -787,7 +787,7 @@ fn open_shared_picker(
     let sub = gtk::Label::new(Some("Select an existing shared prefix or create a new one."));
     sub.set_halign(gtk::Align::Start);
     sub.set_wrap(true);
-    sub.set_opacity(0.6);
+
     sub.add_css_class("time-label");
     inner.append(&sub);
 
@@ -823,7 +823,7 @@ fn open_shared_picker(
             format!("{} (new)", name)
         }));
         sub_lbl.set_halign(gtk::Align::Start);
-        sub_lbl.set_opacity(0.6);
+
         sub_lbl.add_css_class("time-label");
         col.append(&path_lbl);
         col.append(&sub_lbl);
@@ -919,7 +919,7 @@ fn build_emulator_tab(state: &AppState, game_name: &str) -> gtk::Box {
 
     if defs.is_empty() {
         let hint = gtk::Label::new(Some("This emulator reports no configurable settings."));
-        hint.set_opacity(0.6);
+
         hint.set_wrap(true);
         hint.add_css_class("time-label");
         emu_inner.append(&hint);
@@ -1008,7 +1008,7 @@ fn build_rpg_tab(
     let dir_lbl = gtk::Label::new(Some(&exe));
     dir_lbl.set_halign(gtk::Align::Start);
     dir_lbl.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-    dir_lbl.set_opacity(0.6);
+
     dir_lbl.add_css_class("time-label");
     eng_inner.append(&dir_lbl);
     page.append(&eng_frame);
@@ -1057,7 +1057,7 @@ fn build_rpg_tab(
     let box_lbl = gtk::Label::new(Some("Checking…"));
     box_lbl.set_halign(gtk::Align::Start);
     box_lbl.set_wrap(true);
-    box_lbl.set_opacity(0.6);
+
     box_lbl.add_css_class("time-label");
     box_inner.append(&box_lbl);
     let box_btn = gtk::Button::with_label("Install box-rpg");
@@ -1308,7 +1308,7 @@ fn build_graphics_tab(state: &AppState, game_name: &str) -> gtk::Box {
         &crate::backend::proton::ProtonManager::component_status_text(&gm_status, "GameMode"),
     ));
     gm_sub.set_halign(gtk::Align::Start);
-    gm_sub.set_opacity(0.6);
+
     gm_sub.add_css_class("time-label");
     gm_inner.append(&gm_sub);
     save_switch(state, game_name, "GameMode", &gm_sw);
@@ -1328,7 +1328,7 @@ fn build_graphics_tab(state: &AppState, game_name: &str) -> gtk::Box {
         &crate::backend::proton::ProtonManager::component_status_text(&mh_status, "MangoHud"),
     ));
     mh_sub.set_halign(gtk::Align::Start);
-    mh_sub.set_opacity(0.6);
+
     mh_sub.add_css_class("time-label");
     gm_inner.append(&mh_sub);
     save_switch(state, game_name, "MangoHud", &mh_sw);

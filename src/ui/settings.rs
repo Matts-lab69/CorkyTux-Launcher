@@ -84,7 +84,7 @@ pub fn show_settings_modal(
 
     let theme_sub = gtk::Label::new(Some("Dark is the default look. Light is easier on bright screens."));
     theme_sub.add_css_class("time-label");
-    theme_sub.set_opacity(0.6);
+    
     theme_sub.set_wrap(true);
     theme_sub.set_halign(gtk::Align::Start);
     visuals_page.append(&theme_sub);
@@ -151,7 +151,7 @@ pub fn show_settings_modal(
 
     let accent_sub = gtk::Label::new(Some("Choose an accent color for buttons, switches, and highlights"));
     accent_sub.add_css_class("time-label");
-    accent_sub.set_opacity(0.6);
+    
     accent_sub.set_wrap(true);
     accent_sub.set_halign(gtk::Align::Start);
     visuals_page.append(&accent_sub);
@@ -290,7 +290,7 @@ pub fn show_settings_modal(
     let shared_desc = gtk::Label::new(Some("Create shared Wine/Proton prefixes. Each is tied to a specific Proton version. Games using that Proton will share the same prefix."));
     shared_desc.set_wrap(true);
     shared_desc.set_halign(gtk::Align::Center);
-    shared_desc.set_opacity(0.6);
+    
     shared_desc.add_css_class("time-label");
     paths_page.append(&shared_desc);
 
@@ -350,7 +350,7 @@ pub fn show_settings_modal(
             if installed.is_empty() {
                 let empty = gtk::Label::new(Some("No Proton builds installed yet."));
                 empty.set_halign(gtk::Align::Start);
-                empty.set_opacity(0.6);
+                
                 empty.add_css_class("time-label");
                 col.append(&empty);
             }
@@ -625,7 +625,7 @@ pub fn show_settings_modal(
                     inner.append(&badge);
                 } else if npaths > 0 {
                     let badge = gtk::Label::new(Some("Unknown"));
-                    badge.set_opacity(0.6);
+                    
                     badge.add_css_class("time-label");
                     inner.append(&badge);
                 }
@@ -777,7 +777,7 @@ pub fn show_settings_modal(
             }
             if shown == 0 {
                 let hint = gtk::Label::new(Some("Press Refresh to load releases."));
-                hint.set_opacity(0.6);
+                
                 hint.add_css_class("time-label");
                 abox.append(&hint);
             }
@@ -964,7 +964,7 @@ pub fn show_settings_modal(
     misc_inner.append(&misc_switch("gamesUsesSteamRuntime", "Use Steam Runtime for Proton games", true, true, state));
     let runtime_note = gtk::Label::new(Some("Provides 32-bit audio/video libs on pure 64-bit systems"));
     runtime_note.set_halign(gtk::Align::Start);
-    runtime_note.set_opacity(0.6);
+    
     runtime_note.add_css_class("time-label");
     misc_inner.append(&runtime_note);
     misc_inner.append(&misc_switch("gamesUsesUmu", "Use umu-launcher (unified Proton runner)", false, true, state));
@@ -974,7 +974,7 @@ pub fn show_settings_modal(
         "umu-run: not installed (toggle stays available; install umu to use it)"
     }));
     umu_status.set_halign(gtk::Align::Start);
-    umu_status.set_opacity(0.6);
+    
     umu_status.set_wrap(true);
     umu_status.add_css_class("time-label");
     misc_inner.append(&umu_status);
@@ -983,7 +983,7 @@ pub fn show_settings_modal(
         &crate::backend::proton::ProtonManager::component_status_text(&gm_comp, "GameMode"),
     ));
     gm_status.set_halign(gtk::Align::Start);
-    gm_status.set_opacity(0.6);
+    
     gm_status.add_css_class("time-label");
     misc_inner.append(&gm_status);
     misc_inner.append(&misc_switch("gamesUsesMangoHud", "Use MangoHud for new games", false, mangohud_avail, state));
@@ -991,7 +991,7 @@ pub fn show_settings_modal(
         &crate::backend::proton::ProtonManager::component_status_text(&mh_comp, "MangoHud"),
     ));
     mh_status.set_halign(gtk::Align::Start);
-    mh_status.set_opacity(0.6);
+    
     mh_status.add_css_class("time-label");
     misc_inner.append(&mh_status);
 
@@ -1053,7 +1053,7 @@ pub fn show_settings_modal(
             let list = state_c.plugins.list_plugins();
             if list.is_empty() {
                 let empty = gtk::Label::new(Some("No plugins installed."));
-                empty.set_opacity(0.6);
+                
                 empty.add_css_class("time-label");
                 ibox.append(&empty);
                 return;
@@ -1125,7 +1125,7 @@ pub fn show_settings_modal(
                     if !p.description.is_empty() {
                         let desc = gtk::Label::new(Some(&p.description));
                         desc.set_halign(gtk::Align::Start);
-                        desc.set_opacity(0.6);
+                        
                         desc.set_wrap(true);
                         desc.add_css_class("time-label");
                         inner.append(&desc);
@@ -1154,7 +1154,7 @@ pub fn show_settings_modal(
                     if !p.description.is_empty() {
                         let desc = gtk::Label::new(Some(&p.description));
                         desc.set_halign(gtk::Align::Start);
-                        desc.set_opacity(0.6);
+                        
                         desc.set_wrap(true);
                         desc.add_css_class("time-label");
                         col.append(&desc);
@@ -1162,7 +1162,7 @@ pub fn show_settings_modal(
                     if !p.capabilities.is_empty() {
                         let caps = gtk::Label::new(Some(&format!("Capabilities: {}", p.capabilities.join(", "))));
                         caps.set_halign(gtk::Align::Start);
-                        caps.set_opacity(0.5);
+                        
                         caps.set_wrap(true);
                         caps.add_css_class("time-label");
                         col.append(&caps);
@@ -1290,7 +1290,7 @@ pub fn show_settings_modal(
                 if !e.description.is_empty() {
                     let desc = gtk::Label::new(Some(&e.description));
                     desc.set_halign(gtk::Align::Start);
-                    desc.set_opacity(0.6);
+                    
                     desc.set_wrap(true);
                     desc.add_css_class("time-label");
                     col.append(&desc);
@@ -1298,7 +1298,7 @@ pub fn show_settings_modal(
                 if !e.date.is_empty() {
                     let date = gtk::Label::new(Some(&e.date));
                     date.set_halign(gtk::Align::Start);
-                    date.set_opacity(0.5);
+                    
                     date.add_css_class("time-label");
                     col.append(&date);
                 }
@@ -1456,7 +1456,7 @@ pub fn show_settings_modal(
     integrations_page.append(&int_title);
     let int_sub = gtk::Label::new(Some("Connect external platforms. Local scans need no API key."));
     int_sub.set_halign(gtk::Align::Start);
-    int_sub.set_opacity(0.6);
+    
     int_sub.set_wrap(true);
     int_sub.add_css_class("time-label");
     integrations_page.append(&int_sub);
@@ -1658,7 +1658,7 @@ pub fn show_settings_modal(
         col.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         let desc_lbl = gtk::Label::new(Some(desc));
         desc_lbl.set_halign(gtk::Align::Start);
-        desc_lbl.set_opacity(0.6);
+        
         desc_lbl.set_wrap(true);
         desc_lbl.add_css_class("time-label");
         col.append(&desc_lbl);
@@ -1789,7 +1789,7 @@ pub fn show_settings_modal(
         col.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         let desc_lbl = gtk::Label::new(Some("Import Epic/GOG games installed by Heroic, with their anti-cheat runtime flags"));
         desc_lbl.set_halign(gtk::Align::Start);
-        desc_lbl.set_opacity(0.6);
+        
         desc_lbl.set_wrap(true);
         desc_lbl.add_css_class("time-label");
         col.append(&desc_lbl);
@@ -1807,6 +1807,7 @@ pub fn show_settings_modal(
         col.set_margin_end(10);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let umu_icon = gtk::Image::from_icon_name("system-run-symbolic");
+        umu_icon.add_css_class("int-icon");
         umu_icon.set_pixel_size(24);
         umu_icon.set_valign(gtk::Align::Center);
         row.append(&umu_icon);
@@ -1819,7 +1820,7 @@ pub fn show_settings_modal(
         let umu_status_lbl = gtk::Label::new(Some("Checking…"));
         umu_status_lbl.set_halign(gtk::Align::Start);
         umu_status_lbl.set_hexpand(true);
-        umu_status_lbl.set_opacity(0.6);
+        
         umu_status_lbl.add_css_class("time-label");
         row.append(&lbl);
         row.append(&umu_btn);
@@ -1828,7 +1829,7 @@ pub fn show_settings_modal(
         col.append(&umu_status_lbl);
         let desc_lbl = gtk::Label::new(Some("Unified Linux Wine runner used for Heroic-style launches"));
         desc_lbl.set_halign(gtk::Align::Start);
-        desc_lbl.set_opacity(0.6);
+        
         desc_lbl.set_wrap(true);
         desc_lbl.add_css_class("time-label");
         col.append(&desc_lbl);
@@ -1900,11 +1901,11 @@ pub fn show_settings_modal(
     about_page.append(&about_name);
     let about_ver = gtk::Label::new(Some("v3.0.13"));
     about_ver.add_css_class("time-label");
-    about_ver.set_opacity(0.6);
+    
     about_page.append(&about_ver);
     let about_author = gtk::Label::new(Some("by Matts-lab69"));
     about_author.add_css_class("time-label");
-    about_author.set_opacity(0.5);
+    
     about_page.append(&about_author);
 
     let github_btn = gtk::Button::new();
@@ -2034,7 +2035,7 @@ fn rebuild_emu_rows(
     let list = emu_list.borrow().clone();
     if list.is_empty() {
         let hint = gtk::Label::new(Some("No emulators reported by emulator-manager."));
-        hint.set_opacity(0.6);
+        
         hint.add_css_class("time-label");
         emu_box.append(&hint);
         return;
@@ -2176,7 +2177,7 @@ fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {
     let names = state.config.shared_prefixes();
     if names.is_empty() {
         let empty = gtk::Label::new(Some("No shared prefixes created yet."));
-        empty.set_opacity(0.6);
+        
         empty.add_css_class("time-label");
         list_box.append(&empty);
         return;
@@ -2200,7 +2201,7 @@ fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {
                 .unwrap_or_default(),
         ));
         path_lbl.set_halign(gtk::Align::Start);
-        path_lbl.set_opacity(0.6);
+        
         path_lbl.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
         path_lbl.add_css_class("time-label");
         col.append(&name_lbl);
