@@ -1300,6 +1300,7 @@ impl StorePageHandle {
                     vs.add_css_class("time-label");
                     tcol.append(&vs);
                 }
+                body.append(&top);
                 // Cascade: real description -> catalog version/date -> neutral message.
                 // "Catálogo de Epic" clarifies the date is Epic's own record,
                 // not the user's local install time.
