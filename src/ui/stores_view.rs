@@ -314,11 +314,10 @@ impl StoresView {
             let promo_lbl = note("Loading…");
             promo_inner.append(&promo_lbl);
             // Scrollable list so long catalogs don't stretch the page.
-            let promo_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
+            let promo_list = gtk::Box::new(gtk::Orientation::Horizontal, 12);
             let promo_scroll = gtk::ScrolledWindow::new();
-            promo_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-            promo_scroll.set_min_content_height(180);
-            promo_scroll.set_max_content_height(480);
+            promo_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
+            promo_scroll.set_min_content_height(170);
             promo_scroll.set_propagate_natural_height(true);
             promo_scroll.set_vexpand(false);
             promo_scroll.set_child(Some(&promo_list));
@@ -337,6 +336,8 @@ impl StoresView {
                     }).collect::<Vec<_>>());
             });
             let st = state.clone();
+            let no_det_f: Rc<RefCell<Option<crate::ui::details_panel::DetailsPanel>>> = Rc::new(RefCell::new(None));
+            let no_sel_f: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
             crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
                 Ok(list) => {
                     while let Some(c) = promo_list.first_child() {
@@ -347,40 +348,19 @@ impl StoresView {
                     } else {
                         promo_lbl.set_text("");
                         for (t, d, cover, u) in list {
-                            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                            if !cover.is_empty() {
-                                let img = gtk::Image::new();
-                                img.set_pixel_size(52);
-                                img.set_valign(gtk::Align::Center);
-                                crate::ui::minecraft_view::load_mod_icon(&cover, &format!("promo-{}", t), &img, 52);
-                                row.append(&img);
-                            }
-                            let mid = gtk::Box::new(gtk::Orientation::Vertical, 2);
-                            mid.set_hexpand(true);
-                            let lbl = gtk::Label::new(Some(&t));
-                            lbl.set_halign(gtk::Align::Start);
-                            lbl.add_css_class("details-title");
-                            mid.append(&lbl);
-                            if !d.is_empty() {
-                                let dl = gtk::Label::new(Some(&d));
-                                dl.set_halign(gtk::Align::Start);
-                                dl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                                dl.set_max_width_chars(60);
-                                dl.set_opacity(0.6);
-                                dl.add_css_class("time-label");
-                                mid.append(&dl);
-                            }
-                            row.append(&mid);
-                            if !u.is_empty() {
-                                let claim = gtk::Button::with_label("Claim free");
-                                claim.add_css_class("add-btn");
-                                claim.set_valign(gtk::Align::Center);
-                                let stc = st.clone();
-                                let uc = u.clone();
-                                claim.connect_clicked(move |_| { stc.integration.open_url(&uc); });
-                                row.append(&claim);
-                            }
-                            promo_list.append(&row);
+                            let entry = crate::backend::game_model::GameEntry {
+                                name: t.clone(),
+                                banner: cover.clone(),
+                                ..Default::default()
+                            };
+                            let uc = u.clone();
+                            let stc2 = st.clone();
+                            let open: Rc<dyn Fn()> = Rc::new(move || {
+                                stc2.integration.open_url(&uc);
+                            });
+                            let card = crate::ui::game_card::build_game_card(&entry, &st.config, &no_det_f, &no_sel_f, Some("GRATIS".to_string()), Some(open));
+                            card.set_tooltip_text(Some(&format!("{}\n{}", t, d)));
+                            promo_list.append(&card);
                         }
                     }
                     glib::ControlFlow::Break
@@ -393,11 +373,10 @@ impl StoresView {
             let deals_lbl = note("Loading…");
             deals_inner.append(&deals_lbl);
             // Scrollable list so 80 deals don't stretch the page.
-            let deals_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
+            let deals_list = gtk::Box::new(gtk::Orientation::Horizontal, 12);
             let deals_scroll = gtk::ScrolledWindow::new();
-            deals_scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-            deals_scroll.set_min_content_height(300);
-            deals_scroll.set_max_content_height(640);
+            deals_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
+            deals_scroll.set_min_content_height(215);
             deals_scroll.set_propagate_natural_height(true);
             deals_scroll.set_vexpand(false);
             deals_scroll.set_child(Some(&deals_list));
@@ -483,6 +462,8 @@ impl StoresView {
                                     }
                                 }
                                 let mut added = 0usize;
+                                let no_det: Rc<RefCell<Option<crate::ui::details_panel::DetailsPanel>>> = Rc::new(RefCell::new(None));
+                                let no_sel: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
                                 for p in arr {
                                     let t = match p.get("title").and_then(|x| x.as_str()) {
                                         Some(s) if !s.is_empty() => s.to_string(),
@@ -498,54 +479,33 @@ impl StoresView {
                                     let base = p.get("base_price").and_then(|x| x.as_str()).unwrap_or("").to_string();
                                     let ends = p.get("ends").and_then(|x| x.as_str()).unwrap_or("").to_string();
                                     let u = p.get("store_url").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                                    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                                    row.add_css_class("mc-row");
-                                    if !cover.is_empty() {
-                                        let img = gtk::Image::new();
-                                        img.set_pixel_size(52);
-                                        img.set_valign(gtk::Align::Center);
-                                        crate::ui::minecraft_view::load_mod_icon(&cover, &format!("deal-{}", t), &img, 52);
-                                        row.append(&img);
-                                    }
-                                    let mid = gtk::Box::new(gtk::Orientation::Vertical, 2);
-                                    mid.set_hexpand(true);
-                                    let top = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-                                    let lbl = gtk::Label::new(Some(&t));
-                                    lbl.set_halign(gtk::Align::Start);
-                                    lbl.add_css_class("details-title");
-                                    top.append(&lbl);
-                                    let badge = gtk::Label::new(Some(&format!("-{}%", pct)));
-                                    badge.add_css_class("proton-path-badge");
-                                    top.append(&badge);
-                                    mid.append(&top);
-                                    if !d.is_empty() {
-                                        let dl = gtk::Label::new(Some(&d));
-                                        dl.set_halign(gtk::Align::Start);
-                                        dl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                                        dl.set_max_width_chars(60);
-                                        dl.add_css_class("time-label");
-                                        mid.append(&dl);
-                                    }
-                                    let subtext = if ends.is_empty() {
+                                    let entry = crate::backend::game_model::GameEntry {
+                                        name: t.clone(),
+                                        banner: cover.clone(),
+                                        ..Default::default()
+                                    };
+                                    let badge = if pct > 0 { Some(format!("-{}%", pct)) } else { None };
+                                    let uc = u.clone();
+                                    let stc2 = st_cc.clone();
+                                    let open: Rc<dyn Fn()> = Rc::new(move || {
+                                        stc2.integration.open_url(&uc);
+                                    });
+                                    let card = crate::ui::game_card::build_game_card(&entry, &st_cc.config, &no_det, &no_sel, badge, Some(open));
+                                    card.set_tooltip_text(Some(&format!("{}\n{}", t, d)));
+                                    let cell = gtk::Box::new(gtk::Orientation::Vertical, 4);
+                                    cell.append(&card);
+                                    let priceline = if ends.is_empty() {
                                         format!("{} (was {})", price, base)
                                     } else {
                                         format!("{} (was {}) • ends {}", price, base, ends)
                                     };
-                                    let sub = gtk::Label::new(Some(&subtext));
-                                    sub.set_halign(gtk::Align::Start);
-                                    sub.add_css_class("time-label");
-                                    mid.append(&sub);
-                                    row.append(&mid);
-                                    if !u.is_empty() {
-                                        let buy = gtk::Button::with_label("View deal");
-                                        buy.add_css_class("add-btn");
-                                        buy.set_valign(gtk::Align::Center);
-                                        let stc = st_cc.clone();
-                                        let uc = u.clone();
-                                        buy.connect_clicked(move |_| { stc.integration.open_url(&uc); });
-                                        row.append(&buy);
-                                    }
-                                    list_cc.append(&row);
+                                    let pl = gtk::Label::new(Some(&priceline));
+                                    pl.set_halign(gtk::Align::Start);
+                                    pl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                                    pl.set_max_width_chars(28);
+                                    pl.add_css_class("info-value");
+                                    cell.append(&pl);
+                                    list_cc.append(&cell);
                                     added += 1;
                                 }
                                 shown_cc.set(shown_cc.get() + added);
