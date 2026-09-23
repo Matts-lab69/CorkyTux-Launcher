@@ -421,7 +421,7 @@ impl StoresView {
                             let open: Rc<dyn Fn()> = Rc::new(move || {
                                 stc2.integration.open_url(&uc);
                             });
-                            let card = crate::ui::game_card::build_game_card(&entry, &st.config, &no_det_f, &no_sel_f, Some("GRATIS".to_string()), Some(open));
+                            let card = crate::ui::game_card::build_game_card(&entry, &st.config, &no_det_f, &no_sel_f, Some("GRATIS".to_string()), Some(open), false);
                             card.set_tooltip_text(Some(&format!("{}\n{}", t, d)));
                             if claimed {
                                 promo_list.append(&claimed_overlay(card, &st.theme));
@@ -568,7 +568,7 @@ impl StoresView {
                                     let open: Rc<dyn Fn()> = Rc::new(move || {
                                         stc2.integration.open_url(&uc);
                                     });
-                                    let card = crate::ui::game_card::build_game_card(&entry, &st_cc.config, &no_det, &no_sel, badge, Some(open));
+                                    let card = crate::ui::game_card::build_game_card(&entry, &st_cc.config, &no_det, &no_sel, badge, Some(open), false);
                                     card.set_tooltip_text(Some(&format!("{}\n{}", t, d)));
                                     let cell = gtk::Box::new(gtk::Orientation::Vertical, 4);
                                     cell.append(&card);

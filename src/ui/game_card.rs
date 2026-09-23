@@ -19,6 +19,7 @@ pub fn build_game_card(
     selected_game: &Rc<RefCell<String>>,
     badge: Option<String>,
     on_activate: Option<Rc<dyn Fn()>>,
+    show_store_icon: bool,
 ) -> gtk::Button {
     let card = gtk::Button::new();
     card.add_css_class("game-card");
@@ -57,33 +58,36 @@ pub fn build_game_card(
     strip.set_halign(gtk::Align::Fill);
     strip.set_valign(gtk::Align::End);
 
-    let icon = gtk::Image::new();
-    icon.set_pixel_size(22);
-    // Store-aware fallback (no trademarked brand logos bundled: Epic/GOG
-    // artwork is proprietary, unlike GPL Lutris/Heroic): distinct generic
-    // symbolic per store instead of one repeated icon.
-    let fallback = match entry.source {
-        GameSource::Epic => "package-x-generic-symbolic",
-        GameSource::Gog => "applications-games-symbolic",
-        _ => "application-x-executable-symbolic",
-    };
-    if !entry.icon.is_empty() {
-        if let Some(tex) = helpers::load_texture(&entry.icon) {
-            icon.set_paintable(Some(&tex));
-        } else {
-            icon.set_icon_name(Some(fallback));
-        }
-    } else {
-        icon.set_icon_name(Some(fallback));
-    }
-
     let name_lbl = gtk::Label::new(Some(&entry.name));
     name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
     name_lbl.set_max_width_chars(22);
-    name_lbl.set_halign(gtk::Align::Start);
-    name_lbl.set_hexpand(true);
-
-    strip.append(&icon);
+    if show_store_icon {
+        name_lbl.set_halign(gtk::Align::Start);
+        name_lbl.set_hexpand(true);
+        let icon = gtk::Image::new();
+        icon.set_pixel_size(22);
+        // Store-aware fallback (no trademarked brand logos bundled: Epic/GOG
+        // artwork is proprietary, unlike GPL Lutris/Heroic): distinct generic
+        // symbolic per store instead of one repeated icon.
+        let fallback = match entry.source {
+            GameSource::Epic => "package-x-generic-symbolic",
+            GameSource::Gog => "applications-games-symbolic",
+            _ => "application-x-executable-symbolic",
+        };
+        if !entry.icon.is_empty() {
+            if let Some(tex) = helpers::load_texture(&entry.icon) {
+                icon.set_paintable(Some(&tex));
+            } else {
+                icon.set_icon_name(Some(fallback));
+            }
+        } else {
+            icon.set_icon_name(Some(fallback));
+        }
+        strip.append(&icon);
+    } else {
+        name_lbl.set_halign(gtk::Align::Center);
+        name_lbl.set_hexpand(true);
+    }
     strip.append(&name_lbl);
 
     let overlay = gtk::Overlay::new();
