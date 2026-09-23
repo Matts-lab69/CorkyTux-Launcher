@@ -113,6 +113,7 @@ pub fn show_settings_modal(
     let state_clone = state.clone();
     let dlg_dark = dialog.clone();
     let ps_dark = page_stack.clone();
+    let outer_dark = outer.clone();
     dark_btn.connect_clicked(move |_| {
         state_clone.theme.set_theme(ThemeMode::Dark);
         eprintln!("TEMP-LOG theme-click dark is_dark={} accent={}", state_clone.theme.is_dark(), state_clone.theme.accent_id());
@@ -121,6 +122,10 @@ pub fn show_settings_modal(
         crate::ui::mcx_theme::install(&state_clone.theme);
         // Paint new CSS first; reload PNGs on idle so disk decode doesn't
         // block the transition on already-open widgets, then redraw dialog.
+        // Force full subtree restyle: some contexts keep stale values
+        // after a provider swap until rebuilt (same classes → no flicker).
+        outer_dark.remove_css_class("modal-bg");
+        outer_dark.add_css_class("modal-bg");
         dlg_dark.queue_draw();
         ps_dark.queue_draw();
         glib::timeout_add_local_once(std::time::Duration::from_millis(50), move || {
@@ -130,6 +135,7 @@ pub fn show_settings_modal(
     let state_clone2 = state.clone();
     let dlg_light = dialog.clone();
     let ps_light = page_stack.clone();
+    let outer_light = outer.clone();
     light_btn.connect_clicked(move |_| {
         state_clone2.theme.set_theme(ThemeMode::Light);
         eprintln!("TEMP-LOG theme-click light is_dark={} accent={}", state_clone2.theme.is_dark(), state_clone2.theme.accent_id());
@@ -138,6 +144,10 @@ pub fn show_settings_modal(
         crate::ui::mcx_theme::install(&state_clone2.theme);
         // Paint new CSS first; reload PNGs on idle so disk decode doesn't
         // block the transition on already-open widgets, then redraw dialog.
+        // Force full subtree restyle: some contexts keep stale values
+        // after a provider swap until rebuilt (same classes → no flicker).
+        outer_light.remove_css_class("modal-bg");
+        outer_light.add_css_class("modal-bg");
         dlg_light.queue_draw();
         ps_light.queue_draw();
         glib::timeout_add_local_once(std::time::Duration::from_millis(50), move || {
@@ -177,12 +187,15 @@ pub fn show_settings_modal(
         let state_clone = state.clone();
         let dlg_acc = dialog.clone();
         let ps_acc = page_stack.clone();
+        let outer_acc = outer.clone();
         btn.connect_clicked(move |_| {
             state_clone.theme.set_accent_id(accent_clone.id);
             eprintln!("TEMP-LOG theme-click accent is_dark={} accent={}", state_clone.theme.is_dark(), state_clone.theme.accent_id());
             helpers::apply_theme_css(&state_clone.theme);
             helpers::init_accent_provider(&state_clone.theme);
             crate::ui::mcx_theme::install(&state_clone.theme);
+            outer_acc.remove_css_class("modal-bg");
+            outer_acc.add_css_class("modal-bg");
             dlg_acc.queue_draw();
             ps_acc.queue_draw();
         });
