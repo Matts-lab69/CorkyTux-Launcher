@@ -911,6 +911,7 @@ impl StorePageHandle {
         let store = self.store.clone();
         std::thread::spawn(move || {
             let st = StoreManager::status(quick).unwrap_or_default();
+            eprintln!("TEMP-LOG refresh_auth store={} quick={} status={}", store, quick, st);
             let logged = st.get("logged").cloned().unwrap_or_default();
             let bins = st.get("bins").cloned().unwrap_or_default();
             let accs = st.get("accounts").cloned().unwrap_or_default();
@@ -1185,9 +1186,15 @@ impl StorePageHandle {
                 let title = get("title", &ftitle);
                 let cover = get("cover", &fcover);
                 let mut desc = get("description", &fdesc);
+                let info_desc_len = info.get("description").and_then(|x| x.as_str()).map(|s| s.len()).unwrap_or(0);
                 if desc.trim() == title.trim() {
                     desc.clear();
                 }
+                eprintln!(
+                    "TEMP-LOG game_info title={:?} info_desc_len={} fdesc_len={} final_len={} final_empty={} head={:?}",
+                    title, info_desc_len, fdesc.len(), desc.len(), desc.is_empty(),
+                    desc.chars().take(60).collect::<String>()
+                );
                 let ver = get("version", &fver);
                 let top = gtk::Box::new(gtk::Orientation::Horizontal, 12);
                 if !cover.is_empty() {
