@@ -1300,51 +1300,41 @@ impl StorePageHandle {
                     vs.add_css_class("time-label");
                     tcol.append(&vs);
                 }
-                if !desc.is_empty() {
-                    let dl = gtk::Label::new(Some(&desc));
-                    dl.set_halign(gtk::Align::Start);
-                    dl.set_wrap(true);
-                    dl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                    dl.set_lines(6);
-                    dl.add_css_class("time-label");
-                    tcol.append(&dl);
-                } else {
-                    // Cascade: real description -> catalog version/date -> neutral message.
-                    // "Catálogo de Epic" clarifies the date is Epic's own record,
-                    // not the user's local install time.
-                    let na_text = if !ver.is_empty() {
-                        if last_upd.is_empty() {
-                            format!("Última versión: {ver} (dato del catálogo de Epic)")
-                        } else {
-                            format!(
-                                "Última versión: {ver} (última actualización conocida por Epic: {last_upd})"
-                            )
-                        }
+                // Cascade: real description -> catalog version/date -> neutral message.
+                // "Catálogo de Epic" clarifies the date is Epic's own record,
+                // not the user's local install time.
+                let na_text = if !ver.is_empty() {
+                    if last_upd.is_empty() {
+                        format!("Última versión: {ver} (dato del catálogo de Epic)")
                     } else {
-                        "Sin descripción disponible".to_string()
-                    };
-                    let na = gtk::Label::new(Some(&na_text));
-                    na.set_halign(gtk::Align::Start);
-                    na.set_wrap(true);
-                    na.set_opacity(0.6);
-                    na.add_css_class("time-label");
-                    tcol.append(&na);
+                        format!(
+                            "Última versión: {ver} (última actualización conocida por Epic: {last_upd})"
+                        )
+                    }
+                } else {
+                    "Sin descripción disponible".to_string()
+                };
+                let has_desc = !desc.is_empty();
+                let shown = if has_desc { desc } else { na_text };
+                // Description (or its fallback) lives in its own scrolling
+                // container so the full text is always reachable. No ellipsis
+                // and no line-count heuristic: GTK shows the scrollbar only
+                // when the label's measured size exceeds max_content_height and
+                // the dialog stays capped there. Robust to font/size/width
+                // changes without hardcoding a char-per-line estimate.
+                let dl = gtk::Label::new(Some(&shown));
+                dl.set_halign(gtk::Align::Start);
+                dl.set_wrap(true);
+                dl.add_css_class("time-label");
+                if !has_desc {
+                    dl.set_opacity(0.6);
                 }
-                top.append(&tcol);
-                body.append(&top);
-                if desc.lines().count() > 6 {
-                    let exp = gtk::Expander::new(Some("Read more"));
-                    let full = gtk::Label::new(Some(&desc));
-                    full.set_halign(gtk::Align::Start);
-                    full.set_wrap(true);
-                    full.add_css_class("time-label");
-                    let scr = gtk::ScrolledWindow::new();
-                    scr.set_min_content_height(120);
-                    scr.set_vexpand(true);
-                    scr.set_child(Some(&full));
-                    exp.set_child(Some(&scr));
-                    body.append(&exp);
-                }
+                let scr = gtk::ScrolledWindow::new();
+                scr.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+                scr.set_max_content_height(200);
+                scr.set_vexpand(true);
+                scr.set_child(Some(&dl));
+                body.append(&scr);
                 let brow = gtk::Box::new(gtk::Orientation::Horizontal, 6);
                 brow.set_homogeneous(true);
                 if let Some(url) = info.get("store_url").and_then(|x| x.as_str()) {
