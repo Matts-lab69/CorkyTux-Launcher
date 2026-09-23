@@ -117,6 +117,26 @@ Commit: `64d1dcd`
   documentado en `ATTRIBUTION.md`. Probe: `corkytux-system-software-install`
   → bundle (37/37, sin cambio de resolución).
 
+### Regresión scroll del modal (viewport de 24px) + banner perdido
+Commits: `361d6c8` (asunto a) y `6b6ed24` (asunto b)
+- Diagnóstico con medidas (TEMP-LOG en `show_game_info`, post-map):
+  - `scr` `measure(Vertical)` = **24px** con `min_content_height=-1` y
+    `propagates_natural_height=false` → el viewport se alojaba a 24px (texto
+    cortado a "2 líneas", barra overlay invisible sin scroll).
+  - `top` (portada + título) **`allocH=0`**: `git log -S` demostró que
+    `d2b5d50` eliminó `body.append(&top)` → la fila quedó huérfana y el banner
+    desapareció del modal (no se borró el código de la portada).
+  - `tv` (TextView) sí reportaba su altura envuelta real; el cuello de botella
+    era el ScrolledWindow sin tamaño mínimo ni propagación.
+- Fix (a) `361d6c8`: `scr` con `min_content_height(120)`, `max(300)`,
+  `propagate_natural_height(true)`, `vexpand(true)`; CSS
+  `textview`/`textview > text` transparentes en `.modal-bg` (elimina franja
+  oscura). Fix (b) `6b6ed24`: restaura `body.append(&top)`.
+- Verificación medida (re-run con el fix): desc corta → `tv` 16px, viewport
+  120; desc larga real (Marvel Rivals) → `tv` natural 195px **propagado** por
+  el `scr` (texto completo sin scroll porque cabe); desc >300 capa en 300 con
+  scroll; `top` `allocH=160` (banner visible); `body` 334/362, `content` 421.
+
 ## Hallazgos nuevos (anotados, NO arreglados)
 
 ### DLC de Fortnite fallan en el modal "View"
@@ -145,10 +165,11 @@ Commit: `64d1dcd`
    VALORANT) y comprobar el texto "Última versión: … (última actualización
    conocida por Epic: …)" atenuado y bien legible en claro y oscuro.
    Para un juego SIN metadata de Epic: "Sin descripción disponible".
-3. **Scroll del modal View (T2 + BUG A)**: Mindcop (283 chars) sin scrollbar;
-   Marvel Rivals / Genshin / Fortnite (largas) con scroll SMOOTH del texto
-   completo y sin cortes a mitad de oración; el diálogo no debe exceder ~200px
-   de descripción.
+3. **Scroll del modal View (T2 + BUG A + 361d6c8)**: Mindcop (283 chars) sin
+   scrollbar; Marvel Rivals / Genshin / Fortnite (largas) con la descripción
+   completa (hasta ~300px de viewport, scroll SMOOTH en la cola) y **portada +
+   título visibles arriba** (6b6ed24). Diálogo no debe exceder ~300px de
+   descripción.
 4. **Ícono del store (BUG B)**: en la sidebar, el botón junto a "Your Library"
    debe volver al glyph de instalación moderna (caja+flecha), no candado.
 4. Re-render de iconos tras cualquier cambio de tema/íconos en el futuro.
