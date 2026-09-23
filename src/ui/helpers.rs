@@ -598,6 +598,8 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              frame {{ background-color: {panel}; border: 1px solid {border}; border-radius: 8px; }}\
              frame > border {{ border: none; background-color: transparent; background-image: none; }}\
              .modal-bg {{ background-color: {panel}; border-radius: 12px; border: 1px solid {border}; }}\
+             .modal-bg textview {{ background-color: transparent; background-image: none; }}\
+             .modal-bg textview > text {{ background-color: transparent; background-image: none; }}\
              tooltip.background {{ background-color: {tab_bar_bg}; border-radius: 8px; border: 1px solid {border}; padding: 12px; }}\
              tooltip label {{ color: {text_main}; font-size: 13px; }}"
         );

@@ -1336,7 +1336,10 @@ impl StorePageHandle {
                 tv.buffer().set_text(&shown);
                 let scr = gtk::ScrolledWindow::new();
                 scr.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-                scr.set_max_content_height(200);
+                scr.set_min_content_height(120);
+                scr.set_max_content_height(300);
+                scr.set_propagate_natural_height(true);
+                scr.set_vexpand(true);
                 scr.set_child(Some(&tv));
                 body.append(&scr);
                 let brow = gtk::Box::new(gtk::Orientation::Horizontal, 6);
