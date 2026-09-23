@@ -204,6 +204,10 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
         paths.extend(it.search_path());
         let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
         it.set_search_path(&refs);
+        // First real activation of the bundled theme: without this, lookups
+        // only ever hit the system theme by the same-named icons. index.theme
+        // Inherits=hicolor,Adwaita keeps unbundled names reachable.
+        it.set_theme_name(Some("CorkyTux"));
     }
 
     // Restored size lets Cinnamon/Muffin tile freely; small minimum

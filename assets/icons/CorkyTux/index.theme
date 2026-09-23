@@ -1,6 +1,7 @@
 [Icon Theme]
 Name=CorkyTux
 Comment=Bundled symbolic fallback icons (Adwaita, CC BY-SA 3.0). System theme stays as secondary fallback.
+Inherits=hicolor,Adwaita
 Directories=symbolic,symbolic/categories,symbolic/status,symbolic/actions,symbolic/ui,symbolic/places,symbolic/legacy,symbolic/mimetypes
 
 [symbolic]
