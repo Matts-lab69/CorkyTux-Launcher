@@ -91,7 +91,7 @@ fn dedup_disp(s: &str) -> String {
     s.to_string()
 }
 
-pub(crate) fn safe_id(id: &str) -> String {
+fn safe_id(id: &str) -> String {
     id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' }).collect()
 }
 
@@ -670,6 +670,111 @@ fn load_mod_icon_uncached(url: &str, project_id: &str, img: &gtk::Image, size: i
         }
         Err(std::sync::mpsc::TryRecvError::Empty) => {
             // Row scrolled away: stop polling instead of spinning forever.
+            if imgw.upgrade().is_none() {
+                glib::ControlFlow::Break
+            } else {
+                glib::ControlFlow::Continue
+            }
+        }
+        Err(_) => glib::ControlFlow::Break,
+    });
+}
+
+/// Async cover download for gtk::Picture (store shelves): same cache,
+/// slot gate, retries and webp handling as load_mod_icon, which targets
+/// gtk::Image. Failures leave the card background (no blank placeholder).
+pub(crate) fn load_cover_async(url: &str, project_id: &str, img: &gtk::Picture, max_px: i32) {
+    if url.is_empty() || project_id.is_empty() {
+        return;
+    }
+    let key = format!("cover-{}", safe_id(project_id));
+    let png = icon_cache_path(&format!("{}-icon.png", key));
+    if png.exists() {
+        if let Some(tex) = helpers::load_thumb(&png.display().to_string(), max_px) {
+            img.set_paintable(Some(&tex));
+        }
+        return;
+    }
+    if icon_neg_fresh(&key) {
+        return;
+    }
+    if !helpers::img_slot_try_acquire() {
+        let url_c = url.to_string();
+        let pid_c = project_id.to_string();
+        let imgw = img.downgrade();
+        glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+            if let Some(im) = imgw.upgrade() {
+                load_cover_async(&url_c, &pid_c, &im, max_px);
+            }
+        });
+        return;
+    }
+    let url = url.to_string();
+    let pid = project_id.to_string();
+    let imgw = img.downgrade();
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        struct Release;
+        impl Drop for Release {
+            fn drop(&mut self) {
+                helpers::img_slot_release();
+            }
+        }
+        let _guard = Release;
+        let key = format!("cover-{}", safe_id(&pid));
+        let png = icon_cache_path(&format!("{}-icon.png", key));
+        let raw = icon_cache_path(&format!("{}-raw.bin", key));
+        if let Some(parent) = raw.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        let mut dl = false;
+        for _ in 0..2 {
+            dl = std::process::Command::new("curl").args(["-sL", "--fail", "--max-time", "20", "-o", raw.to_str().unwrap_or(""), &url]).output().is_ok() && raw.exists();
+            if dl {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(400));
+        }
+        if !dl {
+            icon_neg_mark(&key);
+            return;
+        }
+        let bytes = std::fs::read(&raw).unwrap_or_default();
+        if bytes.len() <= 100 {
+            icon_neg_mark(&key);
+            return;
+        }
+        let is_webp = bytes.len() > 12 && &bytes[8..12] == b"WEBP";
+        let needs_convert = is_webp || url.ends_with(".webp");
+        if needs_convert {
+            let py = std::process::Command::new("python3").args(["-c",
+                &format!("from PIL import Image; Image.open({}).convert('RGBA').save({})",
+                    serde_json_to_py_str(raw.to_str().unwrap_or("")),
+                    serde_json_to_py_str(png.to_str().unwrap_or("")))]).output();
+            let converted = py.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0;
+            if !converted {
+                let out = std::process::Command::new("ffmpeg").args(["-y", "-v", "error", "-i", raw.to_str().unwrap_or(""), png.to_str().unwrap_or("")]).output();
+                if !(out.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0) {
+                    icon_neg_mark(&key);
+                    return;
+                }
+            }
+            std::fs::remove_file(&raw).ok();
+        } else {
+            std::fs::rename(&raw, &png).ok();
+        }
+        let _ = tx.send(png.display().to_string());
+    });
+    glib::idle_add_local(move || match rx.try_recv() {
+        Ok(path) => {
+            if let Some(im) = imgw.upgrade() {
+                if let Some(tex) = helpers::load_thumb(&path, max_px) {
+                    im.set_paintable(Some(&tex));
+                }
+            }
+            glib::ControlFlow::Break
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty) => {
             if imgw.upgrade().is_none() {
                 glib::ControlFlow::Break
             } else {
