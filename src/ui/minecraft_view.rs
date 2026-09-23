@@ -230,15 +230,7 @@ fn set_btn_icon(btn: &gtk::Button, icon: &str, size: i32) {
     btn.set_child(Some(&sym(icon, size)));
 }
 
-/// Force the current theme accent on a primary button, bypassing any
-/// cascade issue (USER priority always wins).
-fn paint_accent(btn: &gtk::Button, theme: &crate::backend::theme::ThemeManager) {
-    let fg = if theme.is_dark() { "#FFFFFF" } else { theme.text_main() };
-    let css = format!("button {{ background-color: {}; color: {}; }}", theme.accent_color(), fg);
-    let provider = gtk::CssProvider::new();
-    provider.load_from_string(&css);
-    btn.style_context().add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_USER);
-}
+
 
 fn menu_btn(icon: &str, label: &str) -> gtk::Button {
     let b = btn_with_icon(icon, label);
@@ -273,13 +265,7 @@ fn menu_btn_png(asset: &str, label: &str, is_dark: bool) -> gtk::Button {
     b
 }
 
-fn paint_btn(btn: &gtk::Button, hex: &str, theme: &crate::backend::theme::ThemeManager) {
-    let fg = if theme.is_dark() { "#FFFFFF" } else { theme.text_main() };
-    let css = format!("button {{ background-color: {}; color: {}; }}", hex, fg);
-    let provider = gtk::CssProvider::new();
-    provider.load_from_string(&css);
-    btn.style_context().add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_USER);
-}
+
 
 fn note(text: &str) -> gtk::Label {
     let l = gtk::Label::new(Some(text));
@@ -1101,7 +1087,7 @@ impl MinecraftView {
         head.append(&settings_btn);
         let add_btn = themed_btn("download", "Add instance", state.theme.is_dark(), 18);
         add_btn.add_css_class("add-btn");
-        paint_accent(&add_btn, &state.theme);
+
         head.append(&add_btn);
         let add_compact = gtk::Button::with_label("+");
         add_compact.set_tooltip_text(Some("Add instance"));
@@ -1244,7 +1230,7 @@ impl MinecraftView {
         detail_play.add_css_class("add-btn");
         detail_play.set_height_request(48);
         detail_play.set_valign(gtk::Align::Center);
-        paint_accent(&detail_play, &state.theme);
+
         det_head.append(&detail_play);
         let detail_play_icon = gtk::Button::from_icon_name("media-playback-start-symbolic");
         detail_play_icon.add_css_class("add-btn");
@@ -1516,7 +1502,7 @@ impl MinecraftView {
         st_inner.append(&set_danger_row);
         let set_save = gtk::Button::with_label("Save");
         set_save.add_css_class("add-btn");
-        paint_accent(&set_save, &state.theme);
+
         st_inner.append(&set_save);
         st_page.append(&st_frame);
         detail_tabs.add_titled(&page_scroll(&st_page, 720), Some("isettings"), "Settings");
@@ -2531,12 +2517,14 @@ impl MinecraftView {
         let running = !MinecraftManager::running_pids().is_empty();
         if running {
             set_btn_icon_label(&self.detail_play, "media-playback-stop-symbolic", "Stop");
-            paint_btn(&self.detail_play, "#E53935", &self.state.theme);
+            self.detail_play.remove_css_class("add-btn");
+            self.detail_play.add_css_class("danger-btn");
             set_btn_icon(&self.detail_play_icon, "media-playback-stop-symbolic", 20);
             self.detail_play_icon.set_tooltip_text(Some("Stop"));
         } else {
             set_themed_btn(&self.detail_play, "play", "Play", self.state.theme.is_dark(), 20);
-            paint_accent(&self.detail_play, &self.state.theme);
+            self.detail_play.remove_css_class("danger-btn");
+            self.detail_play.add_css_class("add-btn");
             set_btn_icon(&self.detail_play_icon, "media-playback-start-symbolic", 20);
             self.detail_play_icon.set_tooltip_text(Some("Play"));
         }
@@ -3490,7 +3478,7 @@ impl MinecraftView {
         body.append(&bar);
         let create = gtk::Button::with_label("Create");
         create.add_css_class("add-btn");
-        paint_accent(&create, &self.state.theme);
+
         body.append(&create);
         content.append(&body);
         dlg.set_child(Some(&content));
@@ -3747,7 +3735,7 @@ impl MinecraftView {
                                 let ib = themed_btn("download", "Install", vv.state.theme.is_dark(), 14);
                                 ib.add_css_class("add-btn");
                                 ib.set_valign(gtk::Align::Center);
-                                paint_accent(&ib, &vv.state.theme);
+
                                 let vv2 = vv.clone();
                                 let pidc = pid.clone();
                                 let iconc = icon.clone();
@@ -4184,7 +4172,7 @@ impl MinecraftView {
                     row.append(&mid_box);
                     let ib = themed_btn("download", "Install", v.state.theme.is_dark(), 14);
                     ib.add_css_class("add-btn");
-                    paint_accent(&ib, &v.state.theme);
+
                     let vv = v.clone();
                     let midc = mid2.clone();
                     let mc3 = mc2.clone();
@@ -4291,7 +4279,7 @@ impl MinecraftView {
                 if let Some((label, cb)) = install_slot.borrow_mut().take() {
                     let ib = themed_btn("download", &label, v.state.theme.is_dark(), 16);
                     ib.add_css_class("add-btn");
-                    paint_accent(&ib, &v.state.theme);
+
                     ib.connect_clicked(move |_| cb());
                     body.append(&ib);
                 }
@@ -4379,7 +4367,7 @@ impl MinecraftView {
                     row.append(&mid);
                     let ib = themed_btn("download", "Install", v.state.theme.is_dark(), 14);
                     ib.add_css_class("add-btn");
-                    paint_accent(&ib, &v.state.theme);
+
                     let vv = v.clone();
                     let pidc = pid2.clone();
                     let mc3 = mc2.clone();
@@ -5050,7 +5038,7 @@ impl MinecraftView {
                 if let Some((label, cb)) = install_slot.borrow_mut().take() {
                     let ib = themed_btn("download", &label, v.state.theme.is_dark(), 16);
                     ib.add_css_class("add-btn");
-                    paint_accent(&ib, &v.state.theme);
+
                     ib.connect_clicked(move |_| cb());
                     body.append(&ib);
                 }
@@ -5378,7 +5366,7 @@ impl MinecraftView {
                             let inst_btn = themed_btn("download", "Install", vv_c.state.theme.is_dark(), 16);
                             inst_btn.add_css_class("add-btn");
                             inst_btn.set_valign(gtk::Align::Center);
-                            paint_accent(&inst_btn, &vv_c.state.theme);
+
                             let vv2 = vv_c.clone();
                             let pidc = pid.clone();
                             let titlec = title.clone();
