@@ -1231,6 +1231,7 @@ impl StorePageHandle {
                 let tcol = gtk::Box::new(gtk::Orientation::Vertical, 4);
                 tcol.set_hexpand(true);
                 tcol.set_valign(gtk::Align::Start);
+                tcol.set_size_request(-1, 160);
                 let tt = gtk::Label::new(Some(&title));
                 tt.set_halign(gtk::Align::Start);
                 tt.set_wrap(true);
@@ -1249,7 +1250,7 @@ impl StorePageHandle {
                     dl.set_wrap(true);
                     dl.set_ellipsize(gtk::pango::EllipsizeMode::End);
                     dl.set_lines(6);
-                    dl.set_opacity(0.85);
+                    dl.add_css_class("time-label");
                     tcol.append(&dl);
                 }
                 top.append(&tcol);
@@ -1259,6 +1260,7 @@ impl StorePageHandle {
                     let full = gtk::Label::new(Some(&desc));
                     full.set_halign(gtk::Align::Start);
                     full.set_wrap(true);
+                    full.add_css_class("time-label");
                     let scr = gtk::ScrolledWindow::new();
                     scr.set_min_content_height(120);
                     scr.set_vexpand(true);
