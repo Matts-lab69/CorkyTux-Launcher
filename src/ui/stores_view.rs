@@ -1243,36 +1243,68 @@ impl StorePageHandle {
         body.set_margin_bottom(16);
         body.set_margin_start(16);
         body.set_margin_end(16);
-        body.append(&note("Loading info…"));
         content.append(&body);
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
             x_btn.connect_clicked(move |_| { d.close(); });
         }
+        self.load_game_info(&body, game, &dlg, false);
+        dlg.present(Some(&self.parent));
+    }
+
+    /// Loads plugin info into the modal body, clearing it first. `force`
+    /// is the "Refrescar descripción" path that ignores any saved or
+    /// negative entry and re-runs the cascade.
+    fn load_game_info(&self, body: &gtk::Box, game: &StoreGame, dlg: &adw::Dialog, force: bool) {
+        while let Some(c) = body.first_child() {
+            body.remove(&c);
+        }
+        body.append(&note("Loading info…"));
         let (tx, rx) = std::sync::mpsc::channel::<Result<serde_json::Value, String>>();
         let (store, app) = (self.store.clone(), game.app_id.clone());
-        let (ftitle, fcover, fdesc, fver) = (game.title.clone(), game.cover.clone(), game.description.clone(), game.version.clone());
         std::thread::spawn(move || {
-            let _ = tx.send(StoreManager::game_info(&store, &app).map_err(|e| e.to_string()));
+            let res = if force {
+                StoreManager::game_info_refresh(&store, &app)
+            } else {
+                StoreManager::game_info(&store, &app)
+            };
+            let _ = tx.send(res.map_err(|e| e.to_string()));
         });
         let vh = self.clone();
         let game_c = game.clone();
         let dd0 = dlg.clone();
+        let b2 = body.clone();
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
             Ok(Ok(doc)) => {
-                while let Some(c) = body.first_child() {
-                    body.remove(&c);
+                vh.render_game_info(&b2, &doc, &game_c, &dd0);
+                glib::ControlFlow::Break
+            }
+            Ok(Err(e)) => {
+                while let Some(c) = b2.first_child() {
+                    b2.remove(&c);
                 }
-                let info = doc.get("info").cloned().unwrap_or_default();
-                let get = |k: &str, fb: &str| info.get(k).and_then(|x| x.as_str()).unwrap_or(fb).to_string();
-                let title = get("title", &ftitle);
-                let cover = get("cover", &fcover);
-                let mut desc = get("description", &fdesc);
+                b2.append(&note(&format!("Failed: {}", e)));
+                glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(_) => glib::ControlFlow::Break,
+        });
+    }
+
+    fn render_game_info(&self, body: &gtk::Box, doc: &serde_json::Value, game_c: &StoreGame, dd0: &adw::Dialog) {
+        while let Some(c) = body.first_child() {
+            body.remove(&c);
+        }
+        let info = doc.get("info").cloned().unwrap_or_default();
+        let get = |k: &str, fb: &str| info.get(k).and_then(|x| x.as_str()).unwrap_or(fb).to_string();
+        let title = get("title", &game_c.title);
+        let cover = get("cover", &game_c.cover);
+        let mut desc = get("description", &game_c.description);
                 if desc.trim() == title.trim() {
                     desc.clear();
                 }
-                let ver = get("version", &fver);
+                let ver = get("version", &game_c.version);
                 let last_upd = get("last_updated", "");
                 let top = gtk::Box::new(gtk::Orientation::Horizontal, 12);
                 if !cover.is_empty() {
@@ -1357,7 +1389,7 @@ impl StorePageHandle {
                             let att = gtk::Button::with_label(label);
                             att.add_css_class("settings-btn");
                             att.set_halign(gtk::Align::Start);
-                            let st = vh.state.clone();
+                            let st = self.state.clone();
                             let url = u.to_string();
                             att.connect_clicked(move |_| { st.integration.open_url(&url); });
                             tcol.append(&att);
@@ -1370,42 +1402,64 @@ impl StorePageHandle {
                         }
                     }
                 }
-                let brow = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-                brow.set_homogeneous(true);
-                if let Some(url) = info.get("store_url").and_then(|x| x.as_str()) {
-                    if !url.is_empty() {
-                        let open = gtk::Button::with_label("Open store page");
-                        open.add_css_class("settings-btn");
-                        let st = vh.state.clone();
-                        let u = url.to_string();
-                        open.connect_clicked(move |_| { st.integration.open_url(&u); });
-                        brow.append(&open);
-                    }
-                }
-                let ib = gtk::Button::with_label(if game_c.installed { "Import to library" } else { "Install" });
-                ib.add_css_class("add-btn");
-                let vv = vh.clone();
-                let gc = game_c.clone();
-                let dd = dd0.clone();
-                ib.connect_clicked(move |_| {
-                    dd.close();
-                    vv.install_or_import(&gc);
-                });
-                brow.append(&ib);
-                body.append(&brow);
-                glib::ControlFlow::Break
+                // "Refrescar descripción" (Epic only): re-runs the cascade ignoring
+        // any saved/negative entry; a network failure keeps the old text.
+        if self.store == "epic" {
+            let brow2 = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            brow2.set_halign(gtk::Align::Start);
+            let refresh = gtk::Button::with_label("Refrescar descripción");
+            refresh.add_css_class("settings-btn");
+            let vh = self.clone();
+            let b2 = body.clone();
+            let gc = game_c.clone();
+            let dd = dd0.clone();
+            refresh.connect_clicked(move |_| vh.load_game_info(&b2, &gc, &dd, true));
+            brow2.append(&refresh);
+            body.append(&brow2);
+        }
+        let brow = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        brow.set_homogeneous(true);
+        if let Some(url) = info.get("store_url").and_then(|x| x.as_str()) {
+            if !url.is_empty() {
+                let open = gtk::Button::with_label("Open store page");
+                open.add_css_class("settings-btn");
+                let st = self.state.clone();
+                let u = url.to_string();
+                open.connect_clicked(move |_| { st.integration.open_url(&u); });
+                brow.append(&open);
             }
-            Ok(Err(e)) => {
-                while let Some(c) = body.first_child() {
-                    body.remove(&c);
-                }
-                body.append(&note(&format!("Failed: {}", e)));
-                glib::ControlFlow::Break
-            }
-            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-            Err(_) => glib::ControlFlow::Break,
+        }
+        let ib = gtk::Button::with_label(if game_c.installed { "Import to library" } else { "Install" });
+        ib.add_css_class("add-btn");
+        let vv = self.clone();
+        let gc = game_c.clone();
+        let dd = dd0.clone();
+        ib.connect_clicked(move |_| {
+            dd.close();
+            vv.install_or_import(&gc);
         });
-        dlg.present(Some(&self.parent));
+        brow.append(&ib);
+        body.append(&brow);
+    }
+
+    /// Reads an app's saved description from the plugin's descriptions.json
+    /// (the plugin is the only writer; Rust just reads). Returns
+    /// (description, source, source_url, lang) for a positive entry.
+    fn descriptions_entry(app_id: &str) -> Option<(String, String, String, String)> {
+        let path = crate::backend::config::ConfigManager::new()
+            .config_dir()
+            .join("plugins/heroic-store/descriptions.json");
+        let content = std::fs::read_to_string(path).ok()?;
+        let doc: serde_json::Value = serde_json::from_str(&content).ok()?;
+        let e = doc.get(app_id)?;
+        let desc = e.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if desc.is_empty() {
+            return None;
+        }
+        let src = e.get("source").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let url = e.get("source_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let lang = e.get("lang").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        Some((desc, src, url, lang))
     }
 
     fn default_games_dir() -> String {
@@ -1523,6 +1577,26 @@ impl StorePageHandle {
             heroic_battleye: battleye,
         };
         self.state.game_model.add_game(entry);
+        // Copy the saved description (descriptions.json) into the native
+        // record field-by-field so the game carries its text offline.
+        // add_game already persisted time_spent/last_played above and
+        // set_game_value only writes this field, so nothing else is
+        // overwritten.
+        if store == "epic" {
+            if let Some((desc, src, url, lang)) = Self::descriptions_entry(app_id) {
+                let cfg = self.state.config.clone();
+                cfg.set_game_value(&name, "Description", &desc);
+                if !src.is_empty() {
+                    cfg.set_game_value(&name, "DescriptionSource", &src);
+                }
+                if !url.is_empty() {
+                    cfg.set_game_value(&name, "DescriptionUrl", &url);
+                }
+                if !lang.is_empty() {
+                    cfg.set_game_value(&name, "DescriptionLang", &lang);
+                }
+            }
+        }
         self.state.recent_model.refresh(30);
         if let Some(ref sb) = *self.sidebar.borrow() {
             sb.apply_current_filter();

@@ -242,7 +242,15 @@ impl ConfigManager {
         if last.as_deref() == Some(data.as_str()) {
             return;
         }
-        fs::write(self.games_ini_path(), &data).ok();
+        // Atomic write: temp file in the same dir, then rename, so a
+        // crash mid-write never leaves a truncated Games.ini behind.
+        let path = self.games_ini_path();
+        let tmp = path.with_file_name(
+            format!("{}.tmp", path.file_name().unwrap_or_default().to_string_lossy()));
+        let committed = fs::write(&tmp, &data).is_ok() && fs::rename(&tmp, &path).is_ok();
+        if !committed {
+            let _ = fs::remove_file(&tmp);
+        }
         *last = Some(data);
     }
 

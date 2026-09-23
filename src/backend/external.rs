@@ -233,6 +233,14 @@ impl StoreManager {
         plugin_process::run_single_json(&Self::exe(), &["game-info", "--store", store, "--app-id", app_id])
     }
 
+    /// Re-runs the description cascade ignoring any saved/negative entry
+    /// (the modal's "Refrescar descripción" button).
+    pub fn game_info_refresh(store: &str, app_id: &str) -> Result<serde_json::Value, String> {
+        plugin_process::run_single_json(
+            &Self::exe(),
+            &["game-info", "--store", store, "--app-id", app_id, "--force-description"])
+    }
+
     pub fn heroic_scan() -> Result<serde_json::Value, String> {
         plugin_process::run_single_json(&Self::exe(), &["heroic-scan"])
     }
