@@ -1269,15 +1269,9 @@ impl StorePageHandle {
                 let title = get("title", &ftitle);
                 let cover = get("cover", &fcover);
                 let mut desc = get("description", &fdesc);
-                let info_desc_len = info.get("description").and_then(|x| x.as_str()).map(|s| s.len()).unwrap_or(0);
                 if desc.trim() == title.trim() {
                     desc.clear();
                 }
-                eprintln!(
-                    "TEMP-LOG game_info title={:?} info_desc_len={} fdesc_len={} final_len={} final_empty={} head={:?}",
-                    title, info_desc_len, fdesc.len(), desc.len(), desc.is_empty(),
-                    desc.chars().take(60).collect::<String>()
-                );
                 let ver = get("version", &fver);
                 let top = gtk::Box::new(gtk::Orientation::Horizontal, 12);
                 if !cover.is_empty() {
@@ -1311,6 +1305,13 @@ impl StorePageHandle {
                     dl.set_lines(6);
                     dl.add_css_class("time-label");
                     tcol.append(&dl);
+                } else {
+                    let na = gtk::Label::new(Some("Sin descripción disponible"));
+                    na.set_halign(gtk::Align::Start);
+                    na.set_wrap(true);
+                    na.set_opacity(0.6);
+                    na.add_css_class("time-label");
+                    tcol.append(&na);
                 }
                 top.append(&tcol);
                 body.append(&top);
