@@ -35,6 +35,8 @@ pub fn show_settings_modal(
     dialog.set_title("Settings");
     dialog.set_content_width(720);
     dialog.set_content_height(520);
+    // TEMP-LOG (diagnóstico theme-stale): quitar cuando se confirme la causa.
+    eprintln!("TEMP-LOG settings-open is_dark={} accent={}", state.theme.is_dark(), state.theme.accent_id());
 
     let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
     outer.add_css_class("modal-bg");
@@ -113,6 +115,7 @@ pub fn show_settings_modal(
     let ps_dark = page_stack.clone();
     dark_btn.connect_clicked(move |_| {
         state_clone.theme.set_theme(ThemeMode::Dark);
+        eprintln!("TEMP-LOG theme-click dark is_dark={} accent={}", state_clone.theme.is_dark(), state_clone.theme.accent_id());
         helpers::apply_theme_css(&state_clone.theme);
         helpers::init_accent_provider(&state_clone.theme);
         crate::ui::mcx_theme::install(&state_clone.theme);
@@ -129,6 +132,7 @@ pub fn show_settings_modal(
     let ps_light = page_stack.clone();
     light_btn.connect_clicked(move |_| {
         state_clone2.theme.set_theme(ThemeMode::Light);
+        eprintln!("TEMP-LOG theme-click light is_dark={} accent={}", state_clone2.theme.is_dark(), state_clone2.theme.accent_id());
         helpers::apply_theme_css(&state_clone2.theme);
         helpers::init_accent_provider(&state_clone2.theme);
         crate::ui::mcx_theme::install(&state_clone2.theme);
@@ -175,6 +179,7 @@ pub fn show_settings_modal(
         let ps_acc = page_stack.clone();
         btn.connect_clicked(move |_| {
             state_clone.theme.set_accent_id(accent_clone.id);
+            eprintln!("TEMP-LOG theme-click accent is_dark={} accent={}", state_clone.theme.is_dark(), state_clone.theme.accent_id());
             helpers::apply_theme_css(&state_clone.theme);
             helpers::init_accent_provider(&state_clone.theme);
             crate::ui::mcx_theme::install(&state_clone.theme);
