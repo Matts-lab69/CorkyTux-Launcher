@@ -1928,6 +1928,11 @@ pub fn show_settings_modal(
 
     outer.append(&page_stack);
 
+    let tab_sep = gtk::Separator::new(gtk::Orientation::Horizontal);
+    tab_sep.set_margin_start(8);
+    tab_sep.set_margin_end(8);
+    outer.append(&tab_sep);
+
     // Tab bar with text labels + active indicator
     let tab_bar_frame = gtk::Frame::new(None);
     tab_bar_frame.add_css_class("settings-tab-bar");

@@ -218,10 +218,11 @@ fn btn_with_icon(icon: &str, label: &str) -> gtk::Button {
     b
 }
 
-fn set_btn_icon_label(btn: &gtk::Button, icon: &str, label: &str) {
+fn set_btn_icon_label(btn: &gtk::Button, icon: &str, label: &str, size: i32) {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     row.set_halign(gtk::Align::Center);
-    row.append(&sym(icon, 16));
+    row.set_valign(gtk::Align::Center);
+    row.append(&sym(icon, size));
     row.append(&gtk::Label::new(Some(label)));
     btn.set_child(Some(&row));
 }
@@ -1226,7 +1227,8 @@ impl MinecraftView {
         };
         name_box.append(&chips_flow);
         det_head.append(&name_box);
-        let detail_play = themed_btn("play", "Play", state.theme.is_dark(), 24);
+        let detail_play = gtk::Button::new();
+        set_btn_icon_label(&detail_play, "media-playback-start-symbolic", "Play", 20);
         detail_play.add_css_class("add-btn");
         detail_play.set_height_request(48);
         detail_play.set_valign(gtk::Align::Center);
@@ -2516,13 +2518,13 @@ impl MinecraftView {
         }
         let running = !MinecraftManager::running_pids().is_empty();
         if running {
-            set_btn_icon_label(&self.detail_play, "media-playback-stop-symbolic", "Stop");
+            set_btn_icon_label(&self.detail_play, "media-playback-stop-symbolic", "Stop", 16);
             self.detail_play.remove_css_class("add-btn");
             self.detail_play.add_css_class("danger-btn");
             set_btn_icon(&self.detail_play_icon, "media-playback-stop-symbolic", 20);
             self.detail_play_icon.set_tooltip_text(Some("Stop"));
         } else {
-            set_themed_btn(&self.detail_play, "play", "Play", self.state.theme.is_dark(), 20);
+            set_btn_icon_label(&self.detail_play, "media-playback-start-symbolic", "Play", 20);
             self.detail_play.remove_css_class("danger-btn");
             self.detail_play.add_css_class("add-btn");
             set_btn_icon(&self.detail_play_icon, "media-playback-start-symbolic", 20);
