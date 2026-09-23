@@ -194,13 +194,14 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     let state = AppState::new();
     helpers::apply_theme_css(&state.theme);
     helpers::init_accent_provider(&state.theme);
-    // Bundled symbolic icons first (assets/icons/CorkyTux), system icon
+    // Bundled symbolic icons first (assets/icons/hicolor), system icon
     // theme second: the launcher no longer depends on Adwaita/hicolor
     // being installed for its own icons. Symbolic recoloring preserved.
-    // The bundled theme ships as a search-path "hicolor" dir, which GTK
-    // consults as final fallback for every lookup, so the 37 bundled
-    // symbols win over the system by search-path order. (set_theme_name is
-    // not usable here: GTK4 asserts on the display-singleton icon theme.)
+    // hicolor is GTK's universal fallback theme, always at the end of the
+    // lookup chain regardless of the active system theme; prepending our
+    // search path to <path>/hicolor/<context>/*.svg wins by search-path
+    // order without naming any custom theme. (set_theme_name is not usable
+    // here: GTK4 asserts on the display-singleton icon theme.)
     if let Some(display) = gtk::gdk::Display::default() {
         let it = gtk::IconTheme::for_display(&display);
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
