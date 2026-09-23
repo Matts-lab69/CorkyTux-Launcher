@@ -233,7 +233,8 @@ fn set_btn_icon(btn: &gtk::Button, icon: &str, size: i32) {
 /// Force the current theme accent on a primary button, bypassing any
 /// cascade issue (USER priority always wins).
 fn paint_accent(btn: &gtk::Button, theme: &crate::backend::theme::ThemeManager) {
-    let css = format!("button {{ background-color: {}; color: #FFFFFF; }}", theme.accent_color());
+    let fg = if theme.is_dark() { "#FFFFFF" } else { theme.text_main() };
+    let css = format!("button {{ background-color: {}; color: {}; }}", theme.accent_color(), fg);
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&css);
     btn.style_context().add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_USER);
@@ -272,8 +273,9 @@ fn menu_btn_png(asset: &str, label: &str, is_dark: bool) -> gtk::Button {
     b
 }
 
-fn paint_btn(btn: &gtk::Button, hex: &str) {
-    let css = format!("button {{ background-color: {}; color: #FFFFFF; }}", hex);
+fn paint_btn(btn: &gtk::Button, hex: &str, theme: &crate::backend::theme::ThemeManager) {
+    let fg = if theme.is_dark() { "#FFFFFF" } else { theme.text_main() };
+    let css = format!("button {{ background-color: {}; color: {}; }}", hex, fg);
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&css);
     btn.style_context().add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_USER);
@@ -2529,7 +2531,7 @@ impl MinecraftView {
         let running = !MinecraftManager::running_pids().is_empty();
         if running {
             set_btn_icon_label(&self.detail_play, "media-playback-stop-symbolic", "Stop");
-            paint_btn(&self.detail_play, "#E53935");
+            paint_btn(&self.detail_play, "#E53935", &self.state.theme);
             set_btn_icon(&self.detail_play_icon, "media-playback-stop-symbolic", 20);
             self.detail_play_icon.set_tooltip_text(Some("Stop"));
         } else {

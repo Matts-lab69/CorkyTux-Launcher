@@ -325,13 +325,14 @@ pub fn init_accent_provider(theme: &ThemeManager) {
         let provider = gtk::CssProvider::new();
         let accents = crate::backend::theme::all_accents();
         let current_id = theme.accent_id();
+        let on_accent = if theme.is_dark() { "#FFFFFF" } else { theme.text_main() };
         let mut css = String::new();
         for accent in &accents {
             let checked_border = if accent.id == current_id { "3px" } else { "2px" };
             css.push_str(&format!(
-                ".accent-swatch-{} {{ background-color: {}; color: #FFFFFF; border-radius: 8px; min-width: 84px; min-height: 28px; font-weight: bold; font-size: 11px; border: {} solid transparent; }}\
-                 .accent-swatch-{}:checked {{ border-color: #FFFFFF; border-width: 3px; }}",
-                accent.name, accent.hex, checked_border, accent.name,
+                ".accent-swatch-{} {{ background-color: {}; color: {}; border-radius: 8px; min-width: 84px; min-height: 28px; font-weight: bold; font-size: 11px; border: {} solid transparent; }}\
+                 .accent-swatch-{}:checked {{ border-color: {}; border-width: 3px; }}",
+                accent.name, accent.hex, on_accent, checked_border, accent.name, on_accent,
             ));
         }
         provider.load_from_string(&css);
@@ -456,6 +457,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
         let action_bg = if is_dark { "#242424" } else { well };
         let dialog_bg = if is_dark { "#1E1E1E" } else { panel };
         let warn_dot = if is_dark { "#FFA726" } else { "#FB8C00" };
+        let on_accent = if is_dark { "#FFFFFF" } else { text_main };
 
         let css = format!(
             "window.background {{ background-color: {bg}; color: {text_main}; }}\
@@ -477,7 +479,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .details-panel {{ background-color: {panel}; border-left: 1px solid {accent}; padding: 12px; min-width: 270px; border-radius: 0; }}\
              .banner-frame {{ background-color: {banner_bg}; border-radius: 8px; min-height: 200px; }}\
              .details-title {{ font-weight: bold; font-size: 16px; color: {text_main}; }}\
-             .play-btn {{ background-color: {accent}; color: #FFFFFF; font-weight: bold; border-radius: 8px; min-height: 44px; font-size: 14px; border: none; }}\
+             .play-btn {{ background-color: {accent}; color: {on_accent}; font-weight: bold; border-radius: 8px; min-height: 44px; font-size: 14px; border: none; }}\
              .play-btn:hover {{ opacity: 0.85; }}\
              .info-card {{ background-color: {panel}; border: 1px solid {border}; border-radius: 6px; padding: 8px; }}\
              .info-label {{ color: {text_muted}; font-size: 11px; font-weight: bold; }}\
@@ -489,13 +491,13 @@ pub fn apply_theme_css(theme: &ThemeManager) {
             .action-btn {{ background-color: {action_bg}; color: {text_main}; border: 1px solid transparent; border-radius: 18px; min-height: 36px; font-size: 11px; font-weight: bold; }}\
             .action-btn:hover {{ background-color: {hover}; }}\
             .actions-frame {{ border: 1px solid {accent}; border-radius: 8px; background-color: transparent; padding: 8px; }}\
-            .neon-red {{ background-color: #FF0040; color: #FFFFFF; font-weight: bold; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; border: none; }}\
-            .neon-green {{ background-color: #00E639; color: #FFFFFF; font-weight: bold; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; border: none; }}\
+             .neon-red {{ background-color: #FF0040; color: {on_accent}; font-weight: bold; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; border: none; }}\
+             .neon-green {{ background-color: #00E639; color: {on_accent}; font-weight: bold; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; border: none; }}\
              switch {{ background-color: {well}; border: 1px solid {border}; border-radius: 16px; }}\
              switch > slider {{ background-color: {text_muted}; }}\
              switch:checked {{ background-color: {accent}; border-color: {accent}; }}\
-             switch:checked > slider {{ background-color: #FFFFFF; }}\
-             check:checked {{ background-color: {accent}; border-color: {accent}; color: #FFFFFF; }}\
+             switch:checked > slider {{ background-color: {on_accent}; }}\
+             check:checked {{ background-color: {accent}; border-color: {accent}; color: {on_accent}; }}\
              check, radio {{ background-color: transparent; border: 1px solid {text_muted}; }}\
              listbox, listbox > row {{ background-color: transparent; }}\
              listbox > row {{ color: {text_main}; }}\
@@ -524,7 +526,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .game-card {{ background-color: {card}; border-radius: 22px; min-width: 200px; min-height: 140px; border: {game_border_width}px solid {game_border}; padding: 0; }}\
              .game-card:hover {{ background-color: {hover}; }}\
              .accent-strip {{ background-color: {strip_color}; border-radius: 0 0 20px 20px; padding: 6px 10px; }}\
-             .accent-strip label {{ color: #FFFFFF; font-weight: bold; font-size: 12px; }}\
+             .accent-strip label {{ color: {on_accent}; font-weight: bold; font-size: 12px; }}\
              .star-btn {{ color: {text_muted}; background: transparent; border: none; font-size: 20px; }}\
              .star-btn:checked {{ color: #FFD700; }}\
              .close-btn {{ background: transparent; border: none; color: {accent}; font-size: 16px; font-weight: bold; }}\
@@ -552,7 +554,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .dark-btn {{ background-color: #000000; color: #FFFFFF; border: 1.5px solid #FFFFFF; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; font-weight: bold; }}\
             .title-label {{ font-weight: bold; font-size: 16px; color: {text_main}; }}\
              .time-label {{ color: {text_sec}; font-size: 12px; }}\
-             .add-btn {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: {accent}; color: #FFFFFF; border: none; font-weight: bold; }}\
+             .add-btn {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: {accent}; color: {on_accent}; border: none; font-weight: bold; }}\
              .add-btn:hover {{ opacity: 0.85; }}\
              .settings-btn {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: {well}; color: {text_main}; border: 1.5px solid {accent}; font-weight: bold; }}\
              .settings-btn:hover {{ background-color: {hover}; }}\
@@ -565,7 +567,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .seg-bar {{ background-color: {well}; border-radius: 12px; padding: 4px; }}\
              .seg {{ background-color: transparent; border: none; border-radius: 8px; padding: 8px 12px; color: {text_sec}; font-size: 13px; font-weight: bold; }}\
              .seg:hover {{ color: {text_main}; }}\
-             .seg:checked {{ background-color: {accent}; color: #FFFFFF; }}\
+             .seg:checked {{ background-color: {accent}; color: {on_accent}; }}\
              .filter-bar {{ background-color: {well}; border-radius: 12px; padding: 8px; }}\
              .int-icon {{ color: {text_main}; }}\
              dropdown, dropdown > button {{ background-color: {well}; color: {text_main}; }}\

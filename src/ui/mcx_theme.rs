@@ -29,6 +29,7 @@ pub fn install(theme: &ThemeManager) {
     let border = theme.border();
     let text_main = theme.text_main();
     let text_sec = theme.text_sec();
+    let on_accent = if theme.is_dark() { "#FFFFFF" } else { theme.text_main() };
     let css = format!(
         ".mcx-page {{ background-color: {bg}; }}\
         .mcx .mc-head {{ background-color: {well}; border: 1px solid {border}; border-radius: 16px; padding: 10px 12px; }}\
@@ -39,7 +40,7 @@ pub fn install(theme: &ThemeManager) {
         .mcx .mc-tile-sub {{ color: {text_sec}; font-size: 11px; }}\
         .mcx .time-label {{ color: {text_sec}; }}\
         .mcx .frame-title {{ color: {text_sec}; font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; }}\
-        .mcx .add-btn {{ background-color: {accent}; color: #FFFFFF; border: none; border-radius: 10px; font-size: 14px; font-weight: 800; }}\
+        .mcx .add-btn {{ background-color: {accent}; color: {on_accent}; border: none; border-radius: 10px; font-size: 14px; font-weight: 800; }}\
         .mcx .mcx-bar {{ border: none; background: none; padding: 0; }}\
         .mcx .mcx-bar > button, .mcx .mcx-bar > entry, .mcx .mcx-bar > dropdown, .mcx .mcx-bar > menubutton {{ min-height: 40px; padding-top: 0; padding-bottom: 0; border-radius: 10px; font-size: 14px; }}\
         .mcx .mcx-bar > button {{ min-width: 40px; padding-left: 12px; padding-right: 12px; }}\
@@ -55,14 +56,14 @@ pub fn install(theme: &ThemeManager) {
         .mcx .store-row {{ background-color: {well}; border: 1px solid {border}; }}\
         .mcx .settings-tab {{ min-height: 40px; }}\
         .mcx switch:checked {{ background-color: {accent}; border-color: {accent}; }}\
-        .mcx switch:checked > slider {{ background-color: #FFFFFF; }}\
-        .mcx check:checked {{ background-color: {accent}; border-color: {accent}; color: #FFFFFF; -gtk-icon-source: -gtk-icontheme(\"object-select-symbolic\"); }}\
+        .mcx switch:checked > slider {{ background-color: {on_accent}; }}\
+        .mcx check:checked {{ background-color: {accent}; border-color: {accent}; color: {on_accent}; -gtk-icon-source: -gtk-icontheme(\"object-select-symbolic\"); }}\
         .mcx radio:checked {{ border-color: {accent}; }}\
         .mcx radio:checked > indicator {{ background-color: {accent}; }}\
         .mcx checkbutton.radio > check:checked, .mcx checkbutton > check.radio:checked {{ background-color: {accent}; border-color: {accent}; }}\
-        .mcx-modal check:checked {{ background-color: {accent}; border-color: {accent}; color: #FFFFFF; -gtk-icon-source: -gtk-icontheme(\"object-select-symbolic\"); }}\
-        .mcx-modal checkbutton.radio > check:checked {{ background-color: {accent}; border-color: {accent}; color: #FFFFFF; }}\
-        .mcx-modal radio:checked {{ background-color: {accent}; border-color: {accent}; color: #FFFFFF; }}\
+        .mcx-modal check:checked {{ background-color: {accent}; border-color: {accent}; color: {on_accent}; -gtk-icon-source: -gtk-icontheme(\"object-select-symbolic\"); }}\
+        .mcx-modal checkbutton.radio > check:checked {{ background-color: {accent}; border-color: {accent}; color: {on_accent}; }}\
+        .mcx-modal radio:checked {{ background-color: {accent}; border-color: {accent}; color: {on_accent}; }}\
         .mcx-modal radio:checked > indicator {{ background-color: {accent}; }}\
         .mcx .mcx-origin {{ background-color: {hover}; border: 1px solid {border}; border-radius: 8px; padding: 2px 8px; color: {text_main}; font-size: 12px; }}\
         .mcx-modal .mcx-dot-ok, .mcx-modal .mcx-dot-missing {{ min-width: 10px; min-height: 10px; padding: 0; margin: 0; border-radius: 999px; }}\
@@ -70,7 +71,7 @@ pub fn install(theme: &ThemeManager) {
         .mcx-modal .mcx-dot-missing {{ background-color: #E5484D; }}\
         .mcx scale highlight {{ background-color: {accent}; }}\
         .mcx scale trough {{ background-color: {border}; }}\
-        .mcx scale slider {{ background-color: #FFFFFF; border: 2px solid {accent}; }}\
+        .mcx scale slider {{ background-color: {on_accent}; border: 2px solid {accent}; }}\
         .mcx .mcx-title {{ color: {text_main}; font-size: 20px; font-weight: 700; padding: 0; }}\
         .mcx .mcx-chip {{ background-color: {well}; border: 1px solid {border}; border-radius: 8px; padding: 2px 8px; min-height: 28px; }}\
         .mcx .mcx-chip-label {{ color: {text_sec}; font-size: 10px; }}\
@@ -90,7 +91,7 @@ pub fn install(theme: &ThemeManager) {
         .mcx .mcx-seg-wrap {{ border: 1.5px solid {accent}; border-radius: 12px; padding: 4px; background-color: transparent; }}\
         .mcx .mcx-seg-tab {{ background-color: transparent; background-image: none; border: none; box-shadow: none; border-radius: 8px; padding: 8px 16px; color: {text_sec}; font-size: 13px; font-weight: 700; }}\
         .mcx .mcx-seg-tab:hover {{ color: {text_main}; }}\
-        .mcx .mcx-seg-tab:checked {{ background-color: {accent}; color: #FFFFFF; }}\
+        .mcx .mcx-seg-tab:checked {{ background-color: {accent}; color: {on_accent}; }}\
         .mcx-modal menubutton.mcx-add-account {{ background-color: transparent; background-image: none; border: none; box-shadow: none; padding: 0; margin: 8px 0 0 0; min-width: 0; min-height: 0; }}\
         .mcx-modal menubutton.mcx-add-account > button {{ background-color: {hover}; border: 1px solid {border}; border-radius: 10px; color: {text_main}; font-size: 14px; font-weight: 700; min-height: 40px; padding: 0 16px; }}\
         .mcx-modal menubutton.mcx-add-account > button:hover {{ border-color: {accent}; }}\
