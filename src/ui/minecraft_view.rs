@@ -2575,6 +2575,8 @@ impl MinecraftView {
         self.set_wrapper.set_text(&self.inst_cfg(&inst.id, "Wrapper"));
         self.set_prehook.set_text(&self.inst_cfg(&inst.id, "PreHook"));
         let ram = self.inst_ram(&inst.id);
+        // TEMP-LOG (diagnóstico oscilación): quitar al confirmar.
+        eprintln!("TEMP-LOG render-reset set_ram={} current={:.1}", ram, self.set_ram.value());
         self.set_ram.set_value(ram as f64);
         self.set_ram_lbl.set_text(&format!("{} MB", ram));
         self.set_java.set_text(&self.inst_cfg(&inst.id, "Java"));
