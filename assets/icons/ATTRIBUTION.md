@@ -9,6 +9,12 @@ launcher does not depend on the user's system icon theme being installed.
 - Exception: `emblem-ok-symbolic.svg` is a copy of Adwaita's
   `object-select-symbolic.svg` renamed, because Adwaita ships no
   `emblem-ok-symbolic` (only full-color PNGs exist elsewhere).
+- Exception: `corkytux-system-software-install-symbolic.svg` uses the trace
+  of the modern `system-software-install-symbolic.svg` glyph from the
+  **Mint-Breeze** icon theme: the original Adwaita-legacy copy is a lock
+  glyph that mismatched the store button; normalized to the bundle's plain
+  `fill #2e3436` ink convention. Mint icon themes are GPL-3.0-or-later;
+  this copy is bundled for local display only.
 
 Lookup order at runtime: bundled `CorkyTux` theme first (prepended search
 path, symbolic recoloring preserved), system icon theme second.
