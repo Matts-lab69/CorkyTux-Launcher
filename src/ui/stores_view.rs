@@ -1342,6 +1342,34 @@ impl StorePageHandle {
                 scr.set_vexpand(true);
                 scr.set_child(Some(&tv));
                 tcol.append(&scr);
+                // Source attribution: show the source name for real
+                // descriptions, with a link back to the source page when
+                // the plugin provided one (Steam store page / Wikipedia).
+                let desc_src = info.get("description_source").and_then(|x| x.as_str()).unwrap_or("");
+                if has_desc && !desc_src.is_empty() && desc_src != "fallback" {
+                    let label = match desc_src {
+                        "steam" => "Fuente: Steam",
+                        "wikipedia" => "Fuente: Wikipedia",
+                        _ => "Fuente: Epic Store",
+                    };
+                    match info.get("source_url").and_then(|x| x.as_str()) {
+                        Some(u) if !u.is_empty() => {
+                            let att = gtk::Button::with_label(label);
+                            att.add_css_class("settings-btn");
+                            att.set_halign(gtk::Align::Start);
+                            let st = vh.state.clone();
+                            let url = u.to_string();
+                            att.connect_clicked(move |_| { st.integration.open_url(&url); });
+                            tcol.append(&att);
+                        }
+                        _ => {
+                            let att = gtk::Label::new(Some(label));
+                            att.set_halign(gtk::Align::Start);
+                            att.add_css_class("time-label");
+                            tcol.append(&att);
+                        }
+                    }
+                }
                 let brow = gtk::Box::new(gtk::Orientation::Horizontal, 6);
                 brow.set_homogeneous(true);
                 if let Some(url) = info.get("store_url").and_then(|x| x.as_str()) {

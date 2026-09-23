@@ -1809,6 +1809,39 @@ pub fn show_settings_modal(
         card.set_child(Some(&col));
         integrations_page.append(&card);
     }
+    // Epic store descriptions: sources used when a game has no text in
+    // the Epic catalog itself. No configuration; purely informational.
+    {
+        let card = gtk::Frame::new(None);
+        card.add_css_class("page-card");
+        let col = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        col.set_margin_top(6);
+        col.set_margin_bottom(6);
+        col.set_margin_start(10);
+        col.set_margin_end(10);
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let desc_icon = gtk::Image::from_icon_name("corkytux-system-run-symbolic");
+        desc_icon.add_css_class("int-icon");
+        desc_icon.set_pixel_size(24);
+        desc_icon.set_valign(gtk::Align::Center);
+        row.append(&desc_icon);
+        let lbl = gtk::Label::new(Some("Descripciones de Epic"));
+        lbl.set_halign(gtk::Align::Start);
+        lbl.set_hexpand(true);
+        lbl.add_css_class("details-title");
+        row.append(&lbl);
+        col.append(&row);
+        col.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        let desc_lbl = gtk::Label::new(Some(
+            "Cuando un juego de Epic no tiene descripción en el catálogo, el launcher busca texto público en la tienda de Epic (store-content), Steam y Wikipedia, en ese orden. Sin claves API.",
+        ));
+        desc_lbl.set_halign(gtk::Align::Start);
+        desc_lbl.set_wrap(true);
+        desc_lbl.add_css_class("time-label");
+        col.append(&desc_lbl);
+        card.set_child(Some(&col));
+        integrations_page.append(&card);
+    }
     // umu-launcher runner (Heroic-style Windows launches outside Steam).
     {
         let card = gtk::Frame::new(None);
