@@ -1747,26 +1747,41 @@ impl MinecraftView {
             });
         }
         {
-            let v = view.clone();
             let l = view.set_ram_lbl.clone();
             let e = view.set_ram_entry.clone();
             view.set_ram.connect_value_changed(move |s| {
                 let mb = s.value() as u32;
                 l.set_text(&format!("{} MB", mb));
                 e.set_text(&mb.to_string());
-                let id = v.detail_id.borrow().clone();
-                if !id.is_empty() {
-                    v.set_inst_cfg(&id, "Ram", &mb.to_string());
-                }
             });
+            // Disk write only on release/confirm (see modal slider above).
+            let sv = view.clone();
+            let rs = view.set_ram.clone();
+            let release = gtk::EventControllerLegacy::new();
+            release.connect_event(move |_, event| {
+                if event.event_type() == gtk::gdk::EventType::ButtonRelease {
+                    let id = sv.detail_id.borrow().clone();
+                    if !id.is_empty() {
+                        sv.set_inst_cfg(&id, "Ram", &(rs.value() as u32).to_string());
+                    }
+                }
+                glib::Propagation::Proceed
+            });
+            view.set_ram.add_controller(release);
         }
         {
             let v = view.clone();
             // typed MB (Enter or focus-leave) <-> slider, saved live
-            v.set_ram_entry.connect_activate(move |e| {
+            let entry = v.set_ram_entry.clone();
+            entry.connect_activate(move |e| {
                 let raw = e.text().to_string().trim().to_string();
                 if let Ok(mb) = raw.parse::<f64>() {
-                    v.set_ram.set_value(mb.clamp(512.0, 16384.0));
+                    let mb = mb.clamp(512.0, 16384.0);
+                    v.set_ram.set_value(mb);
+                    let id = v.detail_id.borrow().clone();
+                    if !id.is_empty() {
+                        v.set_inst_cfg(&id, "Ram", &(mb as u32).to_string());
+                    }
                 } else {
                     e.set_text(&format!("{}", v.set_ram.value() as u32));
                 }
@@ -1776,7 +1791,12 @@ impl MinecraftView {
             focus.connect_leave(move |_| {
                 let raw = v2.set_ram_entry.text().to_string().trim().to_string();
                 if let Ok(mb) = raw.parse::<f64>() {
-                    v2.set_ram.set_value(mb.clamp(512.0, 16384.0));
+                    let mb = mb.clamp(512.0, 16384.0);
+                    v2.set_ram.set_value(mb);
+                    let id = v2.detail_id.borrow().clone();
+                    if !id.is_empty() {
+                        v2.set_inst_cfg(&id, "Ram", &(mb as u32).to_string());
+                    }
                 }
             });
             view.set_ram_entry.add_controller(focus);
@@ -6228,31 +6248,47 @@ impl MinecraftView {
             });
         }
         {
-            let v = self.clone();
             let l = ram_lbl.clone();
             let re = ram_entry.clone();
             ram.connect_value_changed(move |s| {
                 let mb = s.value() as u32;
                 l.set_text(&format!("{} MB", mb));
                 re.set_text(&mb.to_string());
-                v.set_cfg("McRam", &mb.to_string());
             });
+            // Disk write only on release/confirm: saving the whole INI on
+            // every drag tick stalls the main loop (lag + oscillation).
+            let sv = self.clone();
+            let rs = ram.clone();
+            let release = gtk::EventControllerLegacy::new();
+            release.connect_event(move |_, event| {
+                if event.event_type() == gtk::gdk::EventType::ButtonRelease {
+                    sv.set_cfg("McRam", &(rs.value() as u32).to_string());
+                }
+                glib::Propagation::Proceed
+            });
+            ram.add_controller(release);
+            let v = self.clone();
             let rr = ram.clone();
             ram_entry.connect_activate(move |e| {
                 let raw = e.text().to_string().trim().to_string();
                 if let Ok(mb) = raw.parse::<f64>() {
-                    rr.set_value(mb.clamp(512.0, 16384.0));
+                    let mb = mb.clamp(512.0, 16384.0);
+                    rr.set_value(mb);
+                    v.set_cfg("McRam", &(mb as u32).to_string());
                 } else {
                     e.set_text(&format!("{}", rr.value() as u32));
                 }
             });
+            let v2 = self.clone();
             let rr2 = ram.clone();
             let re2 = ram_entry.clone();
             let rfocus = gtk::EventControllerFocus::new();
             rfocus.connect_leave(move |_| {
                 let raw = re2.text().to_string().trim().to_string();
                 if let Ok(mb) = raw.parse::<f64>() {
-                    rr2.set_value(mb.clamp(512.0, 16384.0));
+                    let mb = mb.clamp(512.0, 16384.0);
+                    rr2.set_value(mb);
+                    v2.set_cfg("McRam", &(mb as u32).to_string());
                 }
             });
             ram_entry.add_controller(rfocus);
