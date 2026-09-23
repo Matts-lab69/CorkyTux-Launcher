@@ -259,6 +259,14 @@ pub fn load_themed_icon(name: &str, is_dark: bool) -> Option<gdk::Texture> {
     load_texture(&path).or_else(|| load_texture(&asset_path(name)))
 }
 
+/// Register an externally-loaded themed image so refresh_themed_icons()
+/// also updates it on Dark/Light switches. Repeat calls for the same
+/// widget converge (newest entry wins on refresh); callers that swap the
+/// asset name at runtime (play/stop) must re-track on every swap.
+pub fn track_themed_image(img: &gtk::Image, name: &str) {
+    THEMED_IMAGES.with(|v| v.borrow_mut().push((img.downgrade(), name.to_string())));
+}
+
 /// Build a theme-aware image: its paintable follows Dark/Light switches
 /// via refresh_themed_icons() (C++ Theme.icon binding parity).
 pub fn themed_image(name: &str, is_dark: bool, pixel_size: i32) -> gtk::Image {

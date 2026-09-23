@@ -125,6 +125,7 @@ impl DetailsPanel {
         } else {
             play_icon.set_icon_name(Some("media-playback-start-symbolic"));
         }
+        helpers::track_themed_image(&play_icon, "play");
         let play_label = gtk::Label::new(Some("Play"));
         play_box.append(&play_icon);
         play_box.append(&play_label);
@@ -427,6 +428,7 @@ impl DetailsPanel {
         if let Some(tex) = helpers::load_themed_icon(name, self.is_dark) {
             self.play_icon.set_paintable(Some(&tex));
         }
+        helpers::track_themed_image(&self.play_icon, name);
     }
 
     pub fn set_time_played(&self, seconds: u64) {
