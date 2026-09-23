@@ -78,6 +78,51 @@ fn note(text: &str) -> gtk::Label {
     l
 }
 
+/// Diagonal "Reclamado" corner ribbon over a free-promos card when the
+/// title is already in the Epic library. The band is a rotated rect
+/// anchored near the top-right corner (offset inward so it cuts the
+/// corner); excess is clipped by the card's overflow. The DrawingArea is
+/// non-targetable so clicks still reach the card button underneath.
+fn claimed_overlay(card: gtk::Button, theme: &crate::backend::theme::ThemeManager) -> gtk::Overlay {
+    let overlay = gtk::Overlay::new();
+    overlay.set_child(Some(&card));
+    let band = helpers::parse_rgba(theme.success());
+    let ink = helpers::parse_rgba(if theme.is_dark() { "#FFFFFF" } else { theme.text_main() });
+    let da = gtk::DrawingArea::new();
+    da.set_can_target(false);
+    da.set_halign(gtk::Align::Fill);
+    da.set_valign(gtk::Align::Fill);
+    da.set_hexpand(true);
+    da.set_vexpand(true);
+    da.set_draw_func(move |_, cr, w, h| {
+        let thickness = 24.0_f64;
+        let off = 38.0_f64;
+        let n = std::f64::consts::FRAC_1_SQRT_2;
+        cr.save().ok();
+        cr.translate(w as f64 - off * n, off * n);
+        cr.rotate(std::f64::consts::FRAC_PI_4);
+        let span = (w as f64).hypot(h as f64);
+        cr.rectangle(-span, -thickness / 2.0, span * 2.0, thickness);
+        cr.set_source_rgba(band.red() as f64, band.green() as f64, band.blue() as f64, 1.0);
+        cr.fill_preserve().ok();
+        cr.set_line_width(1.0);
+        cr.set_source_rgba(0.0, 0.0, 0.0, 0.18);
+        cr.stroke().ok();
+        cr.set_font_size(11.0);
+        cr.set_source_rgba(ink.red() as f64, ink.green() as f64, ink.blue() as f64, 1.0);
+        if let Ok(te) = cr.text_extents("Reclamado") {
+            cr.move_to(
+                -te.x_bearing() - te.width() / 2.0,
+                -(te.y_bearing() + te.height() / 2.0),
+            );
+            let _ = cr.show_text("Reclamado");
+        }
+        cr.restore().ok();
+    });
+    overlay.add_overlay(&da);
+    overlay
+}
+
 fn url_encode(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
@@ -323,9 +368,9 @@ impl StoresView {
             promo_scroll.set_child(Some(&promo_list));
             promo_inner.append(&promo_scroll);
             page.append(&promo_frame);
-            let (tx, rx) = std::sync::mpsc::channel::<Vec<(String, String, String, String)>>();
+            let (tx, rx) = std::sync::mpsc::channel::<Vec<(String, String, String, String, bool)>>();
             std::thread::spawn(move || {
-                let _ = tx.send(StoreManager::free_promos().ok()
+                let promos = StoreManager::free_promos().ok()
                     .and_then(|d| d.get("free_now").cloned())
                     .and_then(|v| v.as_array().cloned()).unwrap_or_default()
                     .into_iter().filter_map(|p| {
@@ -333,7 +378,21 @@ impl StoresView {
                               p.get("description")?.as_str().unwrap_or("").to_string(),
                               p.get("cover")?.as_str().unwrap_or("").to_string(),
                               p.get("store_url")?.as_str().unwrap_or("").to_string()))
-                    }).collect::<Vec<_>>());
+                    }).collect::<Vec<_>>();
+                // Owned titles (casefolded) for the "Reclamado" ribbon.
+                // Library failure => empty set => no ribbons (never a
+                // false positive when the library can't be read).
+                let owned: std::collections::HashSet<String> = StoreManager::library("epic", false)
+                    .ok()
+                    .and_then(|d| d.get("games").cloned())
+                    .and_then(|v| v.as_array().cloned()).unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|g| g.get("title").and_then(|x| x.as_str()).map(|s| s.to_lowercase()))
+                    .collect();
+                let _ = tx.send(promos.into_iter().map(|(t, d, c, u)| {
+                    let claimed = owned.contains(&t.to_lowercase());
+                    (t, d, c, u, claimed)
+                }).collect::<Vec<_>>());
             });
             let st = state.clone();
             let no_det_f: Rc<RefCell<Option<crate::ui::details_panel::DetailsPanel>>> = Rc::new(RefCell::new(None));
@@ -347,7 +406,7 @@ impl StoresView {
                         promo_lbl.set_text("Nothing free right now.");
                     } else {
                         promo_lbl.set_text("");
-                        for (t, d, cover, u) in list {
+                        for (t, d, cover, u, claimed) in list {
                             let entry = crate::backend::game_model::GameEntry {
                                 name: t.clone(),
                                 banner: cover.clone(),
@@ -360,7 +419,11 @@ impl StoresView {
                             });
                             let card = crate::ui::game_card::build_game_card(&entry, &st.config, &no_det_f, &no_sel_f, Some("GRATIS".to_string()), Some(open));
                             card.set_tooltip_text(Some(&format!("{}\n{}", t, d)));
-                            promo_list.append(&card);
+                            if claimed {
+                                promo_list.append(&claimed_overlay(card, &st.theme));
+                            } else {
+                                promo_list.append(&card);
+                            }
                         }
                     }
                     glib::ControlFlow::Break
