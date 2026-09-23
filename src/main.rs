@@ -197,6 +197,10 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     // Bundled symbolic icons first (assets/icons/CorkyTux), system icon
     // theme second: the launcher no longer depends on Adwaita/hicolor
     // being installed for its own icons. Symbolic recoloring preserved.
+    // The bundled theme ships as a search-path "hicolor" dir, which GTK
+    // consults as final fallback for every lookup, so the 37 bundled
+    // symbols win over the system by search-path order. (set_theme_name is
+    // not usable here: GTK4 asserts on the display-singleton icon theme.)
     if let Some(display) = gtk::gdk::Display::default() {
         let it = gtk::IconTheme::for_display(&display);
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
@@ -204,10 +208,6 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
         paths.extend(it.search_path());
         let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
         it.set_search_path(&refs);
-        // First real activation of the bundled theme: without this, lookups
-        // only ever hit the system theme by the same-named icons. index.theme
-        // Inherits=hicolor,Adwaita keeps unbundled names reachable.
-        it.set_theme_name(Some("CorkyTux"));
     }
 
     // Restored size lets Cinnamon/Muffin tile freely; small minimum
