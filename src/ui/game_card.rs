@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::backend::config::ConfigManager;
-use crate::backend::game_model::GameEntry;
+use crate::backend::game_model::{GameEntry, GameSource};
 use crate::backend::theme::ThemeManager;
 use crate::ui::details_panel::DetailsPanel;
 use crate::ui::helpers;
@@ -45,14 +45,22 @@ pub fn build_game_card(
 
     let icon = gtk::Image::new();
     icon.set_pixel_size(22);
+    // Store-aware fallback (no trademarked brand logos bundled: Epic/GOG
+    // artwork is proprietary, unlike GPL Lutris/Heroic): distinct generic
+    // symbolic per store instead of one repeated icon.
+    let fallback = match entry.source {
+        GameSource::Epic => "package-x-generic-symbolic",
+        GameSource::Gog => "applications-games-symbolic",
+        _ => "application-x-executable-symbolic",
+    };
     if !entry.icon.is_empty() {
         if let Some(tex) = helpers::load_texture(&entry.icon) {
             icon.set_paintable(Some(&tex));
         } else {
-            icon.set_icon_name(Some("application-x-executable-symbolic"));
+            icon.set_icon_name(Some(fallback));
         }
     } else {
-        icon.set_icon_name(Some("application-x-executable-symbolic"));
+        icon.set_icon_name(Some(fallback));
     }
 
     let name_lbl = gtk::Label::new(Some(&entry.name));
