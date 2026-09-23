@@ -531,7 +531,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              scrollbar.vertical slider {{ background-color: alpha({text_muted}, 0.45); border-radius: 1px; min-width: 2px; min-height: 24px; border: none; padding: 0; margin: 0; }}\
              scrollbar.horizontal slider {{ background-color: alpha({text_muted}, 0.45); border-radius: 1px; min-height: 2px; min-width: 24px; border: none; padding: 0; margin: 0; }}\
              scrollbar.vertical slider:hover {{ background-color: {accent}; }}\
-             .game-card {{ background-color: {card}; border-radius: 22px; min-width: 200px; min-height: 140px; border: {game_border_width}px solid {game_border}; padding: 0; }}\
+             .game-card {{ background-color: {card}; border-radius: 22px; min-width: 200px; min-height: 140px; max-width: 200px; max-height: 140px; border: {game_border_width}px solid {game_border}; padding: 0; }}\
              .game-card:hover {{ background-color: {hover}; }}\
              .accent-strip {{ background-color: {strip_color}; border-radius: 0 0 20px 20px; padding: 6px 10px; }}\
              .accent-strip label {{ color: {on_accent}; font-weight: bold; font-size: 12px; }}\
