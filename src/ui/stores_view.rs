@@ -1121,7 +1121,10 @@ impl StorePageHandle {
             let name = gtk::Label::new(Some(&g.title));
             name.set_halign(gtk::Align::Center);
             name.set_wrap(true);
+            name.set_lines(2);
+            name.set_ellipsize(gtk::pango::EllipsizeMode::End);
             name.set_max_width_chars(18);
+            name.set_size_request(-1, 48);
             name.add_css_class("details-title");
             inner.append(&name);
             let btnrow = gtk::Box::new(gtk::Orientation::Horizontal, 4);
