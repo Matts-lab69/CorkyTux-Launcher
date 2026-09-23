@@ -1317,23 +1317,26 @@ impl StorePageHandle {
                 let has_desc = !desc.is_empty();
                 let shown = if has_desc { desc } else { na_text };
                 // Description (or its fallback) lives in its own scrolling
-                // container so the full text is always reachable. No ellipsis
-                // and no line-count heuristic: GTK shows the scrollbar only
-                // when the label's measured size exceeds max_content_height and
-                // the dialog stays capped there. Robust to font/size/width
-                // changes without hardcoding a char-per-line estimate.
-                let dl = gtk::Label::new(Some(&shown));
-                dl.set_halign(gtk::Align::Start);
-                dl.set_wrap(true);
-                dl.add_css_class("time-label");
-                if !has_desc {
-                    dl.set_opacity(0.6);
-                }
+                // container so the full text is always reachable. A GtkLabel
+                // can't drive a vertical ScrolledWindow: its natural height is
+                // measured at its natural (unwrapped) width, so the window
+                // collapses to ~2 lines, clips the text and never shows a bar.
+                // A read-only TextView reports its true wrapped height, so the
+                // viewport measures min(full_height, max_content_height) and
+                // GTK shows the scrollbar from the natural height alone — no
+                // char/line heuristics, robust to font size and width.
+                let tv = gtk::TextView::new();
+                tv.set_wrap_mode(gtk::WrapMode::WordChar);
+                tv.set_editable(false);
+                tv.set_cursor_visible(false);
+                tv.set_focusable(false);
+                tv.set_opacity(if has_desc { 1.0 } else { 0.6 });
+                tv.add_css_class("time-label");
+                tv.buffer().set_text(&shown);
                 let scr = gtk::ScrolledWindow::new();
                 scr.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
                 scr.set_max_content_height(200);
-                scr.set_vexpand(true);
-                scr.set_child(Some(&dl));
+                scr.set_child(Some(&tv));
                 body.append(&scr);
                 let brow = gtk::Box::new(gtk::Orientation::Horizontal, 6);
                 brow.set_homogeneous(true);
