@@ -239,7 +239,7 @@ impl StoresView {
         let stack = gtk::Stack::new();
         stack.set_vexpand(false);
         let mut btns: Vec<gtk::ToggleButton> = Vec::new();
-        for (label, _id, icon) in [("Epic Games", "epic", "package-x-generic-symbolic"), ("GOG", "gog", "applications-games-symbolic")] {
+        for (label, _id, icon) in [("Epic Games", "epic", "epicgames-symbolic"), ("GOG", "gog", "gogdotcom-symbolic")] {
             let btn = gtk::ToggleButton::new();
             btn.add_css_class("seg");
             btn.set_hexpand(true);
@@ -335,9 +335,12 @@ impl StoresView {
         auth_inner.append(&login_box);
         // logged-in session row: avatar + name + logout
         let acc_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let acc_icon = gtk::Image::from_icon_name("avatar-default-symbolic");
-        acc_icon.set_pixel_size(32);
-        acc_row.append(&acc_icon);
+        let acc_avatar = gtk::Label::new(Some(""));
+        acc_avatar.add_css_class("account-avatar");
+        acc_avatar.set_xalign(0.5);
+        acc_avatar.set_yalign(0.5);
+        acc_avatar.set_valign(gtk::Align::Center);
+        acc_row.append(&acc_avatar);
         let acc_name = gtk::Label::new(Some(""));
         acc_name.set_halign(gtk::Align::Start);
         acc_name.set_hexpand(true);
@@ -878,6 +881,7 @@ impl StoresView {
             login_box: login_box.clone(),
             acc_row: acc_row.clone(),
             acc_name: acc_name.clone(),
+            acc_avatar: acc_avatar.clone(),
             loaded: Rc::new(std::cell::Cell::new(false)),
         };
 
@@ -966,6 +970,7 @@ struct StorePageHandle {
     login_box: gtk::Box,
     acc_row: gtk::Box,
     acc_name: gtk::Label,
+    acc_avatar: gtk::Label,
     loaded: Rc<std::cell::Cell<bool>>,
 }
 
@@ -996,6 +1001,7 @@ impl StorePageHandle {
         let login_box = self.login_box.clone();
         let acc_row = self.acc_row.clone();
         let acc_name = self.acc_name.clone();
+        let acc_avatar = self.acc_avatar.clone();
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
             Ok((is_logged, has_bin, name)) => {
                 if !has_bin {
@@ -1008,6 +1014,11 @@ impl StorePageHandle {
                     login_box.set_visible(false);
                     acc_row.set_visible(true);
                     acc_name.set_text(if name.is_empty() { &store } else { &name });
+                    let initial = name.trim().chars().next()
+                        .map(|c| c.to_uppercase().to_string())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| store.trim().chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default());
+                    acc_avatar.set_text(&initial);
                     hint.set_visible(false);
                 } else {
                     badge.set_text("Not logged in.");

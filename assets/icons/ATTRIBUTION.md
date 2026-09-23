@@ -26,12 +26,16 @@ path, symbolic recoloring preserved), system icon theme second.
   (`Open-Wine-Components/umu-launcher`, GPL-3.0) is a CLI tool with no
   artwork directory and no recognizable brand mark, so the row keeps the
   generic `system-run-symbolic` rather than risking an unofficial logo.
-- Epic Games / GOG: PENDIENTE documentado, sin logo empaquetado a propósito.
-  Ambas marcas son propietarias (Epic Games, CD Projekt) sin licencia libre
-  para redistribuir artwork, a diferencia de Lutris/Heroic (GPL). Como
-  aproximación se usan symbolics genéricos distinguibles del bundle propio
-  (`package-x-generic` para Epic, `applications-games` para GOG), mismo
-  criterio que los tabs de Stores.
+- Epic Games / GOG: monochrome SVGs from **Simple Icons**
+  (`simple-icons/simple-icons` @ `icons/epicgames.svg` y `icons/gogdotcom.svg`,
+  adaptadas al bundle como `epicgames-symbolic.svg` / `gogdotcom-symbolic.svg`
+  con `fill` del theme, un solo path, sin recolor extra).
+  - Fuente: https://github.com/simple-icons/simple-icons
+  - Licencia del archivo: CC0 1.0
+    (https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md).
+    Logos de marca con copyright de sus dueños; se usan únicamente para
+    indicar integración (mismo criterio que Steam/Lutris/Heroic), sin
+    endorsement implícito.
 - `steam.png`: official Steam ball icon, Wikimedia Commons
   `File:Steam icon logo.svg` (512px vector, server-rendered to 330px PNG,
   stored at 256px; verified full-color, saturation 0.62). Trademark of

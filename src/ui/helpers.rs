@@ -535,6 +535,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .game-card:hover {{ background-color: {hover}; }}\
              .accent-strip {{ background-color: {strip_color}; border-radius: 0 0 20px 20px; padding: 6px 10px; }}\
              .accent-strip label {{ color: {on_accent}; font-weight: bold; font-size: 12px; }}\
+             .account-avatar {{ background-color: {accent}; color: {on_accent}; border-radius: 50%; min-width: 28px; min-height: 28px; font-size: 13px; font-weight: 800; }}\
              .star-btn {{ color: {text_muted}; background: transparent; border: none; font-size: 20px; }}\
              .star-btn:checked {{ color: #FFD700; }}\
              .close-btn {{ background: transparent; border: none; color: {accent}; font-size: 16px; font-weight: bold; }}\
