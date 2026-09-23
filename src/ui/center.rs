@@ -31,7 +31,7 @@ impl CenterHandle {
         let entries = state.recent_model.entries();
         self.empty_label.set_visible(entries.is_empty());
         for entry in &entries {
-            let card = build_game_card(entry, &state.config, details, &state.selected_game);
+            let card = build_game_card(entry, &state.config, details, &state.selected_game, None, None);
             self.flow.append(&card);
         }
     }
@@ -106,7 +106,7 @@ pub fn build_center(
     recent_inner.append(&empty_label);
     if !entries.is_empty() {
         for entry in &entries {
-            let card = build_game_card(entry, &state.config, details, &state.selected_game);
+            let card = build_game_card(entry, &state.config, details, &state.selected_game, None, None);
             flow.append(&card);
         }
     }

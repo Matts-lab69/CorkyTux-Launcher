@@ -17,6 +17,8 @@ pub fn build_game_card(
     config: &ConfigManager,
     details: &Rc<RefCell<Option<DetailsPanel>>>,
     selected_game: &Rc<RefCell<String>>,
+    badge: Option<String>,
+    on_activate: Option<Rc<dyn Fn()>>,
 ) -> gtk::Button {
     let card = gtk::Button::new();
     card.add_css_class("game-card");
@@ -76,16 +78,30 @@ pub fn build_game_card(
     overlay.set_child(Some(&img));
     overlay.add_overlay(&strip);
 
-    let details_clone = details.clone();
-    let sel = selected_game.clone();
-    let config_clone = config.clone();
-    let game_name = entry.name.clone();
-    card.connect_clicked(move |_| {
-        *sel.borrow_mut() = game_name.clone();
-        if let Some(ref det) = *details_clone.borrow() {
-            det.set_game(&game_name, &config_clone);
-        }
-    });
+    if let Some(text) = badge.as_deref() {
+        let b = gtk::Label::new(Some(text));
+        b.add_css_class("deal-badge");
+        b.set_halign(gtk::Align::Start);
+        b.set_valign(gtk::Align::Start);
+        b.set_margin_top(8);
+        b.set_margin_start(8);
+        overlay.add_overlay(&b);
+    }
+
+    if let Some(cb) = on_activate {
+        card.connect_clicked(move |_| cb());
+    } else {
+        let details_clone = details.clone();
+        let sel = selected_game.clone();
+        let config_clone = config.clone();
+        let game_name = entry.name.clone();
+        card.connect_clicked(move |_| {
+            *sel.borrow_mut() = game_name.clone();
+            if let Some(ref det) = *details_clone.borrow() {
+                det.set_game(&game_name, &config_clone);
+            }
+        });
+    }
 
     card.set_child(Some(&overlay));
     card

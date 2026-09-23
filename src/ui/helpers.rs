@@ -578,6 +578,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .seg:checked {{ background-color: {accent}; color: {on_accent}; }}\
              .filter-bar {{ background-color: {well}; border-radius: 12px; padding: 8px; }}\
              .int-icon {{ color: {text_main}; }}\
+             .deal-badge {{ background-color: {accent}; color: {on_accent}; border-radius: 8px; padding: 4px 10px; font-size: 12px; font-weight: 800; }}\
              expander title {{ color: {text_sec}; }}\
              expander title:hover {{ color: {text_main}; }}\
              dropdown, dropdown > button {{ background-color: {well}; color: {text_main}; }}\
