@@ -1753,10 +1753,6 @@ impl MinecraftView {
             let e = view.set_ram_entry.clone();
             view.set_ram.connect_value_changed(move |s| {
                 let mb = s.value() as u32;
-                // TEMP-LOG (diagnóstico oscilación <1000MB): quitar al confirmar.
-                if mb < 1000 {
-                    eprintln!("TEMP-LOG setram-drag value={:.1}", s.value());
-                }
                 l.set_text(&format!("{} MB", mb));
                 e.set_text(&mb.to_string());
             });
@@ -2575,8 +2571,6 @@ impl MinecraftView {
         self.set_wrapper.set_text(&self.inst_cfg(&inst.id, "Wrapper"));
         self.set_prehook.set_text(&self.inst_cfg(&inst.id, "PreHook"));
         let ram = self.inst_ram(&inst.id);
-        // TEMP-LOG (diagnóstico oscilación): quitar al confirmar.
-        eprintln!("TEMP-LOG render-reset set_ram={} current={:.1}", ram, self.set_ram.value());
         self.set_ram.set_value(ram as f64);
         self.set_ram_lbl.set_text(&format!("{} MB", ram));
         self.set_java.set_text(&self.inst_cfg(&inst.id, "Java"));
@@ -6263,10 +6257,6 @@ impl MinecraftView {
             let re = ram_entry.clone();
             ram.connect_value_changed(move |s| {
                 let mb = s.value() as u32;
-                // TEMP-LOG (diagnóstico oscilación <1000MB): quitar al confirmar.
-                if mb < 1000 {
-                    eprintln!("TEMP-LOG ram-drag value={:.1}", s.value());
-                }
                 l.set_text(&format!("{} MB", mb));
                 re.set_text(&mb.to_string());
             });

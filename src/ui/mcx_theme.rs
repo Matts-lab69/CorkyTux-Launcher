@@ -12,8 +12,6 @@ pub fn install(theme: &ThemeManager) {
     };
     // Re-installable like apply_theme_css: drop the previous provider so
     // accent/mode changes apply live instead of freezing at startup values.
-    // TEMP-LOG (diagnóstico theme-stale): quitar cuando se confirme la causa.
-    eprintln!("TEMP-LOG mcx-install is_dark={} accent={}", theme.is_dark(), theme.accent_id());
     MCX_CSS_PROVIDER.with(|cell| {
         if let Some(provider) = cell.borrow_mut().take() {
             gtk::style_context_remove_provider_for_display(&display, &provider);
