@@ -35,13 +35,20 @@ pub fn build_game_card(
     img.set_hexpand(true);
     img.set_vexpand(true);
     if !entry.banner.is_empty() {
-        if entry.banner.starts_with("http") {
-            // Remote cover (deals/free shelves): async download+cache into
-            // a Picture (load_card_banner is local-files only; load_mod_icon
-            // targets gtk::Image, not gtk::Picture).
+        // Route by local-existence, not URL prefix: load_card_banner is
+        // local-files only and silently drops anything that is not an
+        // existing path (Path::exists), so remote covers of any scheme
+        // (https, protocol-relative, ...) must go to the shared download
+        // + cache loader (load_cover_async uses download_icon_file, the
+        // same cache/retry/webp handling load_mod_icon uses for thumbs).
+        let home = std::env::var("HOME").unwrap_or_default();
+        let local = entry.banner.replace("~", &home);
+        if std::path::Path::new(&local).exists() {
+            if let Some(tex) = helpers::load_card_banner(&entry.banner, CARD_W, CARD_H) {
+                img.set_paintable(Some(&tex));
+            }
+        } else {
             crate::ui::minecraft_view::load_cover_async(&entry.banner, &entry.name, &img, CARD_W * 2);
-        } else if let Some(tex) = helpers::load_card_banner(&entry.banner, CARD_W, CARD_H) {
-            img.set_paintable(Some(&tex));
         }
     }
 
