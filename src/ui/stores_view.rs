@@ -1284,8 +1284,7 @@ impl StorePageHandle {
                 }
                 let tcol = gtk::Box::new(gtk::Orientation::Vertical, 4);
                 tcol.set_hexpand(true);
-                tcol.set_valign(gtk::Align::Start);
-                tcol.set_size_request(-1, 160);
+                tcol.set_valign(gtk::Align::Fill);
                 let tt = gtk::Label::new(Some(&title));
                 tt.set_halign(gtk::Align::Start);
                 tt.set_wrap(true);
@@ -1300,6 +1299,7 @@ impl StorePageHandle {
                     vs.add_css_class("time-label");
                     tcol.append(&vs);
                 }
+                top.append(&tcol);
                 body.append(&top);
                 // Cascade: real description -> catalog version/date -> neutral message.
                 // "Catálogo de Epic" clarifies the date is Epic's own record,
@@ -1341,7 +1341,7 @@ impl StorePageHandle {
                 scr.set_propagate_natural_height(true);
                 scr.set_vexpand(true);
                 scr.set_child(Some(&tv));
-                body.append(&scr);
+                tcol.append(&scr);
                 let brow = gtk::Box::new(gtk::Orientation::Horizontal, 6);
                 brow.set_homogeneous(true);
                 if let Some(url) = info.get("store_url").and_then(|x| x.as_str()) {
