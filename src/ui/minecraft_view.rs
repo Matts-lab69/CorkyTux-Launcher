@@ -579,6 +579,57 @@ pub(crate) fn load_mod_icon(url: &str, project_id: &str, img: &gtk::Image, size:
     load_mod_icon_uncached(url, project_id, img, size, max_px);
 }
 
+/// Blocking download + normalize into the icon cache, shared by the Image
+/// (load_mod_icon) and Picture (load_cover_async) workers. `key` is the
+/// cache namespace (`project_id` for thumbs, `cover-*` for shelf covers).
+/// Returns the cached PNG path, or None (with negative-cache mark) on any
+/// failure. Callers translate None into their own fallback.
+fn download_icon_file(url: &str, key: &str) -> Option<std::path::PathBuf> {
+    let png = icon_cache_path(&format!("{}-icon.png", key));
+    let raw = icon_cache_path(&format!("{}-raw.bin", key));
+    if let Some(parent) = raw.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    let mut dl = false;
+    for _ in 0..2 {
+        dl = std::process::Command::new("curl").args(["-sL", "--fail", "--max-time", "20", "-o", raw.to_str().unwrap_or(""), url]).output().is_ok() && raw.exists();
+        if dl {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(400));
+    }
+    if !dl {
+        icon_neg_mark(key);
+        return None;
+    }
+    let bytes = std::fs::read(&raw).unwrap_or_default();
+    if bytes.len() <= 100 {
+        icon_neg_mark(key);
+        return None;
+    }
+    let is_webp = bytes.len() > 12 && &bytes[8..12] == b"WEBP";
+    let needs_convert = is_webp || url.ends_with(".webp");
+    if needs_convert {
+        let py = std::process::Command::new("python3").args(["-c",
+            &format!("from PIL import Image; Image.open({}).convert('RGBA').save({})",
+                serde_json_to_py_str(raw.to_str().unwrap_or("")),
+                serde_json_to_py_str(png.to_str().unwrap_or("")))]).output();
+        let converted = py.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0;
+        if !converted {
+            let out = std::process::Command::new("ffmpeg").args(["-y", "-v", "error", "-i", raw.to_str().unwrap_or(""), png.to_str().unwrap_or("")]).output();
+            if !(out.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0) {
+                eprintln!("corkytux: icon for {}: download ok but webp conversion failed (needs python3+PIL or ffmpeg installed)", key);
+                icon_neg_mark(key);
+                return None;
+            }
+        }
+        std::fs::remove_file(&raw).ok();
+    } else {
+        std::fs::rename(&raw, &png).ok();
+    }
+    Some(png)
+}
+
 fn load_mod_icon_uncached(url: &str, project_id: &str, img: &gtk::Image, size: i32, max_px: i32) {
     // Cap concurrent downloads: when scrolling fast, extra rows retry
     // shortly instead of spawning hundreds of threads/curl processes.
@@ -594,7 +645,6 @@ fn load_mod_icon_uncached(url: &str, project_id: &str, img: &gtk::Image, size: i
         });
         return;
     }
-    let png = icon_cache_path(&format!("{}-icon.png", project_id));
     let url = url.to_string();
     let pid = project_id.to_string();
     let imgw = img.downgrade();
@@ -609,51 +659,14 @@ fn load_mod_icon_uncached(url: &str, project_id: &str, img: &gtk::Image, size: i
         let _guard = Release;
         // Visible fallback (never a blank row): the idle side below turns
         // this sentinel into a generic symbolic icon.
-        let raw = icon_cache_path(&format!("{}-raw.bin", pid));
-        if let Some(parent) = raw.parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-        let mut dl = false;
-        for _ in 0..2 {
-            dl = std::process::Command::new("curl").args(["-sL", "--fail", "--max-time", "20", "-o", raw.to_str().unwrap_or(""), &url]).output().is_ok() && raw.exists();
-            if dl {
-                break;
+        match download_icon_file(&url, &pid) {
+            Some(png) => {
+                let _ = tx.send(png.display().to_string());
             }
-            std::thread::sleep(std::time::Duration::from_millis(400));
-        }
-        if !dl {
-            icon_neg_mark(&pid);
-            let _ = tx.send("corkytux-fallback".to_string());
-            return;
-        }
-        let bytes = std::fs::read(&raw).unwrap_or_default();
-        if bytes.len() <= 100 {
-            icon_neg_mark(&pid);
-            let _ = tx.send("corkytux-fallback".to_string());
-            return;
-        }
-        let is_webp = bytes.len() > 12 && &bytes[8..12] == b"WEBP";
-        let needs_convert = is_webp || url.ends_with(".webp");
-        if needs_convert {
-            let py = std::process::Command::new("python3").args(["-c",
-                &format!("from PIL import Image; Image.open({}).convert('RGBA').save({})",
-                    serde_json_to_py_str(raw.to_str().unwrap_or("")),
-                    serde_json_to_py_str(png.to_str().unwrap_or("")))]).output();
-            let converted = py.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0;
-            if !converted {
-                let out = std::process::Command::new("ffmpeg").args(["-y", "-v", "error", "-i", raw.to_str().unwrap_or(""), png.to_str().unwrap_or("")]).output();
-                if !(out.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0) {
-                    eprintln!("corkytux: icon for {}: download ok but webp conversion failed (needs python3+PIL or ffmpeg installed)", pid);
-                    icon_neg_mark(&pid);
-                    let _ = tx.send("corkytux-fallback".to_string());
-                    return;
-                }
+            None => {
+                let _ = tx.send("corkytux-fallback".to_string());
             }
-            std::fs::remove_file(&raw).ok();
-        } else {
-            std::fs::rename(&raw, &png).ok();
         }
-        let _ = tx.send(png.display().to_string());
     });
     glib::idle_add_local(move || match rx.try_recv() {
         Ok(path) => {
@@ -710,7 +723,7 @@ pub(crate) fn load_cover_async(url: &str, project_id: &str, img: &gtk::Picture, 
         return;
     }
     let url = url.to_string();
-    let pid = project_id.to_string();
+    let key_t = key.clone();
     let imgw = img.downgrade();
     let (tx, rx) = std::sync::mpsc::channel::<String>();
     std::thread::spawn(move || {
@@ -721,49 +734,9 @@ pub(crate) fn load_cover_async(url: &str, project_id: &str, img: &gtk::Picture, 
             }
         }
         let _guard = Release;
-        let key = format!("cover-{}", safe_id(&pid));
-        let png = icon_cache_path(&format!("{}-icon.png", key));
-        let raw = icon_cache_path(&format!("{}-raw.bin", key));
-        if let Some(parent) = raw.parent() {
-            std::fs::create_dir_all(parent).ok();
+        if let Some(png) = download_icon_file(&url, &key_t) {
+            let _ = tx.send(png.display().to_string());
         }
-        let mut dl = false;
-        for _ in 0..2 {
-            dl = std::process::Command::new("curl").args(["-sL", "--fail", "--max-time", "20", "-o", raw.to_str().unwrap_or(""), &url]).output().is_ok() && raw.exists();
-            if dl {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(400));
-        }
-        if !dl {
-            icon_neg_mark(&key);
-            return;
-        }
-        let bytes = std::fs::read(&raw).unwrap_or_default();
-        if bytes.len() <= 100 {
-            icon_neg_mark(&key);
-            return;
-        }
-        let is_webp = bytes.len() > 12 && &bytes[8..12] == b"WEBP";
-        let needs_convert = is_webp || url.ends_with(".webp");
-        if needs_convert {
-            let py = std::process::Command::new("python3").args(["-c",
-                &format!("from PIL import Image; Image.open({}).convert('RGBA').save({})",
-                    serde_json_to_py_str(raw.to_str().unwrap_or("")),
-                    serde_json_to_py_str(png.to_str().unwrap_or("")))]).output();
-            let converted = py.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0;
-            if !converted {
-                let out = std::process::Command::new("ffmpeg").args(["-y", "-v", "error", "-i", raw.to_str().unwrap_or(""), png.to_str().unwrap_or("")]).output();
-                if !(out.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0) {
-                    icon_neg_mark(&key);
-                    return;
-                }
-            }
-            std::fs::remove_file(&raw).ok();
-        } else {
-            std::fs::rename(&raw, &png).ok();
-        }
-        let _ = tx.send(png.display().to_string());
     });
     glib::idle_add_local(move || match rx.try_recv() {
         Ok(path) => {
