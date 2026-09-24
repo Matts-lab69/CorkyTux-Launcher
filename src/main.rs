@@ -564,7 +564,7 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
             let names = st.game_model.ordered_names();
             let btn = btn.clone();
             let win = win.clone();
-            ui::warnings::check_install_paths_async(&config, names, move |missing| {
+            ui::warnings::check_install_paths_async(&config, names, true, move |missing| {
                 if missing.is_empty() {
                     btn.set_visible(false);
                     helpers::present_msg(
@@ -1008,7 +1008,7 @@ pub(crate) fn refresh_warn_buttons(state: &AppState) {
     let i_btn = state.install_warn_btn.borrow().clone();
     let i_count = state.install_warn_count.borrow().clone();
     if let (Some(btn), Some(count)) = (i_btn, i_count) {
-        ui::warnings::check_install_paths_async(&config, names, move |missing| {
+        ui::warnings::check_install_paths_async(&config, names, false, move |missing| {
             let n = missing.len();
             btn.set_visible(n > 0);
             count.set_text(&n.to_string());

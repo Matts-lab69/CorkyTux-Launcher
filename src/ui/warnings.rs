@@ -241,6 +241,7 @@ pub fn classify_install_path(main_path: &str, exe: &str, steam_id: &str) -> Opti
 
 /// Install-path inputs captured on the GTK main thread (config reads only).
 /// Plain data so the filesystem checks can run on a worker thread.
+#[derive(Clone)]
 pub struct InstallPathInput {
     pub name: String,
     pub main_path: String,
@@ -315,8 +316,9 @@ fn version_strip(name: &str) -> String {
 /// basename is a prefix of it, or their version-stripped stems are equal.
 /// Ambiguous (0 or ≥2) candidates stay warned — never touch, never guess.
 /// Never repairs Locate-fixed paths: those classify Valid, not ExeMissing.
-/// Returns `(game name, candidate full path)`.
-pub fn repair_candidates(inputs: &[InstallPathInput]) -> Vec<(String, String)> {
+/// Returns `(input, candidate full path)` so the apply step can re-validate
+/// against the snapshot (old Executable + MainPath) right before writing.
+pub fn repair_candidates(inputs: &[InstallPathInput]) -> Vec<(InstallPathInput, String)> {
     let mut out = Vec::new();
     for i in inputs {
         if !matches!(
@@ -325,66 +327,114 @@ pub fn repair_candidates(inputs: &[InstallPathInput]) -> Vec<(String, String)> {
         ) {
             continue;
         }
-        let stored = std::path::Path::new(&expand_tilde(&i.exe))
-            .file_name()
-            .map(|s| s.to_string_lossy().to_lowercase())
-            .unwrap_or_default();
-        if stored.is_empty() {
-            continue;
-        }
-        let stored_stripped = version_strip(&stored);
-        let dir = expand_tilde(&i.main_path);
-        let mut candidates = Vec::new();
-        if let Ok(rd) = std::fs::read_dir(&dir) {
-            for entry in rd.flatten() {
-                let Ok(ft) = entry.file_type() else { continue };
-                if !ft.is_file() {
-                    continue;
-                }
-                let fname = entry.file_name().to_string_lossy().to_lowercase();
-                let ext = std::path::Path::new(&fname)
-                    .extension()
-                    .map(|e| e.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                if AUX_EXTS.contains(&ext.as_str()) {
-                    continue;
-                }
-                if fname.starts_with(&stored) || version_strip(&fname) == stored_stripped {
-                    candidates.push(entry.file_name().to_string_lossy().to_string());
-                }
-            }
-        }
-        if candidates.len() == 1 {
-            out.push((i.name.clone(), format!("{}/{}", dir.trim_end_matches('/'), candidates[0])));
+        if let Some(new_exe) = unique_candidate(&i.main_path, &i.exe) {
+            out.push((i.clone(), new_exe));
         }
     }
     out
 }
 
-/// Run the install-path check off the GTK main loop, auto-repairing
-/// unambiguous ExeMissing games along the way (the worker only computes
-/// candidates; the Games.ini write happens on the main loop via the same
-/// Locate-style `set_game_value` path). `done` receives the games that
-/// remain invalid after repairs.
-pub fn check_install_paths_async<F>(config: &ConfigManager, names: Vec<String>, done: F)
-where
+/// Unique matching file for an ExeMissing game inside its (existing)
+/// MainPath: same matching rule as `repair_candidates` (prefix or
+/// version-stripped stem, `AUX_EXTS` excluded). `None` when 0 or ≥2
+/// candidates. Used by the worker to propose repairs AND by the main loop
+/// to re-verify the candidate is still the only one before writing.
+fn unique_candidate(main_path: &str, stored_exe: &str) -> Option<String> {
+    let stored = std::path::Path::new(&expand_tilde(stored_exe))
+        .file_name()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if stored.is_empty() {
+        return None;
+    }
+    let stored_stripped = version_strip(&stored);
+    let dir = expand_tilde(main_path);
+    let mut candidates = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        for entry in rd.flatten() {
+            let Ok(ft) = entry.file_type() else { continue };
+            if !ft.is_file() {
+                continue;
+            }
+            let fname = entry.file_name().to_string_lossy().to_lowercase();
+            let ext = std::path::Path::new(&fname)
+                .extension()
+                .map(|e| e.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if AUX_EXTS.contains(&ext.as_str()) {
+                continue;
+            }
+            if fname.starts_with(&stored) || version_strip(&fname) == stored_stripped {
+                candidates.push(entry.file_name().to_string_lossy().to_string());
+            }
+        }
+    }
+    if candidates.len() == 1 {
+        Some(format!("{}/{}", dir.trim_end_matches('/'), candidates[0]))
+    } else {
+        None
+    }
+}
+
+/// Run the install-path check off the GTK main loop. With `apply_repairs`
+/// the worker also proposes candidates and the main loop writes them via
+/// the same Locate-style `set_game_value` path, re-validating right before
+/// the write (still ExeMissing, Executable unchanged, candidate still the
+/// unique file) and logging one `[CorkyTux] auto-repair:` line per game.
+/// Startup/library refreshes pass `false`: they only detect, so the button
+/// count still shows repairable games until the user actually repairs.
+/// `done` receives the games that remain invalid after repairs.
+pub fn check_install_paths_async<F>(
+    config: &ConfigManager,
+    names: Vec<String>,
+    apply_repairs: bool,
+    done: F,
+) where
     F: Fn(Vec<(String, String)>) + 'static,
 {
     let inputs = collect_inputs(config, &names);
-    let (tx, rx) = std::sync::mpsc::channel::<(Vec<(String, String)>, Vec<(String, String)>)>();
+    let (tx, rx) = std::sync::mpsc::channel::<(
+        Vec<(String, String)>,
+        Vec<(InstallPathInput, String)>,
+    )>();
     let cfg = config.clone();
     std::thread::spawn(move || {
         let invalid = invalid_install_paths(&inputs);
-        let repairs = repair_candidates(&inputs);
+        let repairs = if apply_repairs { repair_candidates(&inputs) } else { Vec::new() };
         let _ = tx.send((invalid, repairs));
     });
     crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
         Ok((mut invalid, repairs)) => {
-            for (name, new_exe) in &repairs {
-                cfg.set_game_value(name, "Executable", new_exe);
+            if apply_repairs {
+                // Re-validate on the main loop right before writing: the user
+                // may have fixed this game (Locate, manual edit, import)
+                // while the worker was scanning. Write only when the game is
+                // STILL ExeMissing, its current Executable still equals the
+                // snapshot's, and the candidate is still the one and only
+                // file on disk.
+                let mut applied = Vec::new();
+                for (input, new_exe) in &repairs {
+                    let cur = cfg.game_value(&input.name, "Executable");
+                    let still_same = cur.as_deref() == Some(input.exe.as_str());
+                    let still_missing = matches!(
+                        classify_install_path(&input.main_path, &input.exe, &input.steam_id),
+                        Some(InstallPathState::ExeMissing)
+                    );
+                    let still_unique = unique_candidate(&input.main_path, &input.exe)
+                        .as_deref()
+                        == Some(new_exe.as_str())
+                        && std::path::Path::new(new_exe).is_file();
+                    if still_same && still_missing && still_unique {
+                        cfg.set_game_value(&input.name, "Executable", new_exe);
+                        eprintln!(
+                            "[CorkyTux] auto-repair: \"{}\" Executable \"{}\" -> \"{}\"",
+                            input.name, input.exe, new_exe
+                        );
+                        applied.push(input.name.clone());
+                    }
+                }
+                invalid.retain(|(name, _)| !applied.contains(name));
             }
-            let repaired: Vec<&str> = repairs.iter().map(|(n, _)| n.as_str()).collect();
-            invalid.retain(|(name, _)| !repaired.contains(&name.as_str()));
             done(invalid);
             glib::ControlFlow::Break
         }

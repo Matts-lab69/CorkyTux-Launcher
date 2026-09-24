@@ -5,6 +5,37 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Set only when the first Games.ini write of this run already snapshotted
+/// the on-disk file (see `save_games_ini`). Process-wide, NOT per instance:
+/// several call sites build a fresh `ConfigManager::new()` per action, and
+/// each instance would otherwise re-backup on its first write.
+static GAMES_BACKED_UP: AtomicBool = AtomicBool::new(false);
+
+/// Keep only the 5 newest `Games.ini.bak-YYYYmmdd-HHMMSS` snapshots next to
+/// Games.ini; delete older ones. Only touches files matching the pattern.
+fn prune_games_backups(games_ini_path: &Path) {
+    let dir = match games_ini_path.parent() {
+        Some(d) => d,
+        None => return,
+    };
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    let mut snaps: Vec<PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with("Games.ini.bak-"))
+                .unwrap_or(false)
+        })
+        .collect();
+    snaps.sort();
+    for extra in snaps.iter().rev().skip(5) {
+        let _ = fs::remove_file(extra);
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct IniSection {
@@ -245,6 +276,31 @@ impl ConfigManager {
         // Atomic write: temp file in the same dir, then rename, so a
         // crash mid-write never leaves a truncated Games.ini behind.
         let path = self.games_ini_path();
+        // First real write of this run: snapshot the on-disk Games.ini to a
+        // timestamped `Games.ini.bak-YYYYmmdd-HHMMSS` (keep the 5 newest).
+        // GAMES_BACKED_UP flips to true ONLY when the copy succeeded; a
+        // missing origin file is no error (the write below just creates it).
+        if !GAMES_BACKED_UP.load(Ordering::SeqCst) {
+            let ts = glib::DateTime::now_local()
+                .and_then(|d| d.format("%Y%m%d-%H%M%S"))
+                .unwrap_or_else(|_| {
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs().to_string())
+                        .unwrap_or_default()
+                });
+            let stem = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let bak = path.with_file_name(format!("{stem}.bak-{ts}"));
+            if path.exists() {
+                match fs::copy(&path, &bak) {
+                    Ok(_) => {
+                        GAMES_BACKED_UP.store(true, Ordering::SeqCst);
+                        prune_games_backups(&path);
+                    }
+                    Err(e) => eprintln!("[CorkyTux] backup Games.ini falló: {}", e),
+                }
+            }
+        }
         let tmp = path.with_file_name(
             format!("{}.tmp", path.file_name().unwrap_or_default().to_string_lossy()));
         let committed = fs::write(&tmp, &data).is_ok() && fs::rename(&tmp, &path).is_ok();
