@@ -196,7 +196,10 @@ pub enum InstallPathState {
 /// all: those are "no path by design" (e.g. emulator/Steam entries) and are
 /// excluded from warnings. The criterion matches the store plugin's
 /// installed check: path set AND folder exists AND (exe empty OR exe exists).
-pub fn classify_install_path(main_path: &str, exe: &str) -> Option<InstallPathState> {
+/// Steam entries may store the installdir *folder* as Executable, and a
+/// missing-folder Steam game is only Valid when the manifest + on-disk
+/// installdir still confirm the install (see `steam_install_confirmed`).
+pub fn classify_install_path(main_path: &str, exe: &str, steam_id: &str) -> Option<InstallPathState> {
     let main = main_path.trim();
     if main.is_empty() {
         return None;
@@ -217,10 +220,21 @@ pub fn classify_install_path(main_path: &str, exe: &str) -> Option<InstallPathSt
         std::path::Path::new(&expanded).join(exe)
     };
     if exe_path.is_file() {
-        Some(InstallPathState::Valid)
-    } else {
-        Some(InstallPathState::ExeMissing)
+        return Some(InstallPathState::Valid);
     }
+    // Steam import stores the installdir folder (which exists) as
+    // Executable for every game — an existing folder is a valid install,
+    // not a missing executable.
+    if exe_path.is_dir() {
+        return Some(InstallPathState::Valid);
+    }
+    // Last-resort Steam evidence: appmanifest "fully installed" + the
+    // installdir folder must still exist on disk (PEAK fails both: its
+    // state flag is set but common/PEAK is gone).
+    if !steam_id.trim().is_empty() && crate::backend::integration::steam_install_confirmed(steam_id) {
+        return Some(InstallPathState::Valid);
+    }
+    Some(InstallPathState::ExeMissing)
 }
 
 /// Install-path inputs captured on the GTK main thread (config reads only).
@@ -229,6 +243,7 @@ pub struct InstallPathInput {
     pub name: String,
     pub main_path: String,
     pub exe: String,
+    pub steam_id: String,
 }
 
 /// Capture inputs for every game that has an install path. Games with an
@@ -241,7 +256,8 @@ pub fn collect_inputs(config: &ConfigManager, names: &[String]) -> Vec<InstallPa
             continue;
         }
         let exe = config.game_value(name, "Executable").unwrap_or_default();
-        out.push(InstallPathInput { name: name.clone(), main_path, exe });
+        let steam_id = config.game_value(name, "SteamID").unwrap_or_default();
+        out.push(InstallPathInput { name: name.clone(), main_path, exe, steam_id });
     }
     out
 }
@@ -253,7 +269,7 @@ pub fn invalid_install_paths(inputs: &[InstallPathInput]) -> Vec<(String, String
         .iter()
         .filter(|i| {
             !matches!(
-                classify_install_path(&i.main_path, &i.exe),
+                classify_install_path(&i.main_path, &i.exe, &i.steam_id),
                 Some(InstallPathState::Valid)
             )
         })
@@ -261,20 +277,113 @@ pub fn invalid_install_paths(inputs: &[InstallPathInput]) -> Vec<(String, String
         .collect()
 }
 
-/// Run the install-path check off the GTK main loop and hand the invalid
-/// list back on the main loop through `done`.
+/// Files that are never the game executable during auto-repair: save states
+/// (NSMB's `.sav` shares the truncated prefix with its `.nds`), images,
+/// docs, archives, launcher metadata.
+const AUX_EXTS: &[&str] = &[
+    "sav", "png", "jpg", "jpeg", "gif", "bmp", "webp", "txt", "log", "md",
+    "json", "ini", "pdf", "tmp", "bak", "db", "desktop", "ico", "zip", "7z",
+    "tar", "gz", "so", "dll",
+];
+
+/// Lowercased basename with version segments (`-1.23.1`, `-v2.0`) dropped so
+/// `OpenChamber-1.23.1-linux-x86_64.AppImage` and the newer
+/// `OpenChamber-2.0.0-linux-x86_64.AppImage` compare equal. A segment counts
+/// as a version only when it is entirely digits/dots (optionally `v`-prefixed).
+fn version_strip(name: &str) -> String {
+    let lower = name.to_lowercase();
+    let mut out = String::new();
+    for seg in lower.split('-') {
+        let t = seg.trim_start_matches('v');
+        let is_version = !t.is_empty()
+            && t.chars().next().map_or(false, |c| c.is_ascii_digit())
+            && t.chars().all(|c| c.is_ascii_digit() || c == '.');
+        if !is_version {
+            if !out.is_empty() {
+                out.push('-');
+            }
+            out.push_str(seg);
+        }
+    }
+    out
+}
+
+/// Auto-repair for ExeMissing games: a UNIQUE candidate file inside the
+/// (existing) MainPath folder. A candidate matches when the stored exe
+/// basename is a prefix of it, or their version-stripped stems are equal.
+/// Ambiguous (0 or ≥2) candidates stay warned — never touch, never guess.
+/// Never repairs Locate-fixed paths: those classify Valid, not ExeMissing.
+/// Returns `(game name, candidate full path)`.
+pub fn repair_candidates(inputs: &[InstallPathInput]) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for i in inputs {
+        if !matches!(
+            classify_install_path(&i.main_path, &i.exe, &i.steam_id),
+            Some(InstallPathState::ExeMissing)
+        ) {
+            continue;
+        }
+        let stored = std::path::Path::new(&expand_tilde(&i.exe))
+            .file_name()
+            .map(|s| s.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        if stored.is_empty() {
+            continue;
+        }
+        let stored_stripped = version_strip(&stored);
+        let dir = expand_tilde(&i.main_path);
+        let mut candidates = Vec::new();
+        if let Ok(rd) = std::fs::read_dir(&dir) {
+            for entry in rd.flatten() {
+                let Ok(ft) = entry.file_type() else { continue };
+                if !ft.is_file() {
+                    continue;
+                }
+                let fname = entry.file_name().to_string_lossy().to_lowercase();
+                let ext = std::path::Path::new(&fname)
+                    .extension()
+                    .map(|e| e.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                if AUX_EXTS.contains(&ext.as_str()) {
+                    continue;
+                }
+                if fname.starts_with(&stored) || version_strip(&fname) == stored_stripped {
+                    candidates.push(entry.file_name().to_string_lossy().to_string());
+                }
+            }
+        }
+        if candidates.len() == 1 {
+            out.push((i.name.clone(), format!("{}/{}", dir.trim_end_matches('/'), candidates[0])));
+        }
+    }
+    out
+}
+
+/// Run the install-path check off the GTK main loop, auto-repairing
+/// unambiguous ExeMissing games along the way (the worker only computes
+/// candidates; the Games.ini write happens on the main loop via the same
+/// Locate-style `set_game_value` path). `done` receives the games that
+/// remain invalid after repairs.
 pub fn check_install_paths_async<F>(config: &ConfigManager, names: Vec<String>, done: F)
 where
     F: Fn(Vec<(String, String)>) + 'static,
 {
     let inputs = collect_inputs(config, &names);
-    let (tx, rx) = std::sync::mpsc::channel::<Vec<(String, String)>>();
+    let (tx, rx) = std::sync::mpsc::channel::<(Vec<(String, String)>, Vec<(String, String)>)>();
+    let cfg = config.clone();
     std::thread::spawn(move || {
-        let _ = tx.send(invalid_install_paths(&inputs));
+        let invalid = invalid_install_paths(&inputs);
+        let repairs = repair_candidates(&inputs);
+        let _ = tx.send((invalid, repairs));
     });
     crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
-        Ok(list) => {
-            done(list);
+        Ok((mut invalid, repairs)) => {
+            for (name, new_exe) in &repairs {
+                cfg.set_game_value(name, "Executable", new_exe);
+            }
+            let repaired: Vec<&str> = repairs.iter().map(|(n, _)| n.as_str()).collect();
+            invalid.retain(|(name, _)| !repaired.contains(&name.as_str()));
+            done(invalid);
             glib::ControlFlow::Break
         }
         Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,

@@ -994,6 +994,12 @@ impl IntegrationManager {
                         version = v.trim().to_string();
                     }
                 }
+                // Hardening note (import-parity): the executable is taken
+                // VERBATIM from the yml (`exe:` / `main_file:` full value,
+                // spaces, parentheses and quotes preserved). No "split on the
+                // last space into exe+args" heuristic exists here or in the
+                // v2 C++ / v1 Java ancestors; command-line arguments only
+                // ever come from explicit argsBefore/argsAfter fields.
                 if !exe.is_empty() || !main_file.is_empty() {
                     let bin = if !exe.is_empty() { exe } else { main_file };
                     return (bin, prefix, version);
@@ -1235,6 +1241,65 @@ fn parse_library_paths(content: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// Steam install confirmation used by the install-path validator.
+///
+/// True only when BOTH hold:
+///  1. an `appmanifest_<appid>.acf` is found in a real steamapps dir
+///     (default `~/.steam/steam/steamapps` plus every `libraryfolders.vdf`
+///     path) with `StateFlags` bit 0x4 ("Fully Installed") set, AND
+///  2. `<steamapps>/common/<installdir>` still exists on disk.
+///
+/// A manifest alone is never enough: PEAK's manifest says installed but its
+/// `common/PEAK` folder is gone, so it stays warned (Locate-only).
+pub fn steam_install_confirmed(appid: &str) -> bool {
+    let appid = appid.trim();
+    if appid.is_empty() {
+        return false;
+    }
+    let steam_dir = home_dir()
+        .unwrap_or_default()
+        .join(".steam")
+        .join("steam")
+        .join("steamapps");
+    // Same library discovery as scan_steam: default dir + libraryfolders.vdf
+    let mut steam_dirs = vec![steam_dir.clone()];
+    for candidate in [
+        steam_dir.join("libraryfolders.vdf"),
+        steam_dir.join("libraryfolders.json"),
+    ] {
+        if let Ok(content) = fs::read_to_string(&candidate) {
+            for lib_path in parse_library_paths(&content) {
+                let expanded = shellexpand::tilde(&lib_path).to_string();
+                let p = PathBuf::from(&expanded).join("steamapps");
+                if p.exists() && !steam_dirs.contains(&p) {
+                    steam_dirs.push(p);
+                }
+            }
+        }
+    }
+    for sd in &steam_dirs {
+        let acf = sd.join(format!("appmanifest_{}.acf", appid));
+        if let Ok(content) = fs::read_to_string(&acf) {
+            let mut flags = 0u64;
+            let mut installdir = String::new();
+            for line in content.lines() {
+                let t = line.trim();
+                if t.starts_with("\"StateFlags\"") {
+                    flags = extract_acf_value(t).parse().unwrap_or(0);
+                } else if t.starts_with("\"installdir\"") {
+                    installdir = extract_acf_value(t);
+                }
+            }
+            if flags & 0x04 != 0 && !installdir.is_empty() {
+                if sd.join("common").join(&installdir).is_dir() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Skip known Steam tool / runtime appids (C++ isSteamTool parity).

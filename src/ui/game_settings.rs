@@ -764,7 +764,8 @@ fn build_install_path_card(
     // control only appears for a deleted/moved folder; a missing executable
     // with the folder still present is handled by the Warnings dialog.
     let exe_now = state.config.game_value(game_name, "Executable").unwrap_or_default();
-    match crate::ui::warnings::classify_install_path(&main_trim, &exe_now) {
+    let steam_id = state.config.game_value(game_name, "SteamID").unwrap_or_default();
+    match crate::ui::warnings::classify_install_path(&main_trim, &exe_now, &steam_id) {
         Some(crate::ui::warnings::InstallPathState::FolderMissing) => {}
         _ => return None,
     }
