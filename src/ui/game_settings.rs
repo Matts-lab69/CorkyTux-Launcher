@@ -162,6 +162,10 @@ fn save_entry(state: &AppState, game: &str, key: &str, entry: &gtk::Entry) {
     let state_c = state.clone();
     entry.connect_changed(move |e| {
         state_c.config.set_game_value(&held, &k, &e.text().to_string());
+        // Prefix path edits update the header warning button/counter live.
+        if k == "PrefixPath" {
+            crate::refresh_warn_buttons(&state_c);
+        }
     });
 }
 
@@ -683,6 +687,7 @@ fn build_run_tab(
                         prefix_cc.set_editable(false);
                         proton_dd.set_sensitive(false);
                         let _ = orig_cc;
+                        crate::refresh_warn_buttons(&state_cc);
                     }
                 }, move || {
                     // C++ cancelSharedPrefix parity: revert the switch.
@@ -701,6 +706,7 @@ fn build_run_tab(
                 state_c.config.set_game_value(&game_c, "PrefixPath", &orig);
                 prefix_e.set_editable(true);
                 proton_d.set_sensitive(true);
+                crate::refresh_warn_buttons(&state_c);
             }
         });
     }
@@ -866,7 +872,7 @@ fn build_install_path_card(
                     );
                     // The game must leave the install-path warning list
                     // without a restart.
-                    crate::refresh_install_warn_btn(&st_cc);
+                    crate::refresh_warn_buttons(&st_cc);
                     glib::ControlFlow::Break
                 }
                 Ok(Err(msg)) => {

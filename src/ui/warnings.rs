@@ -277,3 +277,60 @@ where
         Err(_) => glib::ControlFlow::Break,
     });
 }
+
+// ---------------------------------------------------------------------------
+// Prefix-path validation — same shape as the install-path checks, so both
+// Warnings dialogs and both header buttons come from one shared module.
+// ---------------------------------------------------------------------------
+
+/// Prefix-path inputs captured on the GTK main thread (config reads only).
+pub struct PrefixInput {
+    pub name: String,
+    pub prefix: String,
+}
+
+/// Capture inputs for every game that has a prefix path. Games with an
+/// empty PrefixPath use the launcher default (or none by design) and are
+/// skipped here.
+pub fn collect_prefix_inputs(config: &ConfigManager, names: &[String]) -> Vec<PrefixInput> {
+    let mut out = Vec::new();
+    for name in names {
+        let prefix = config.game_value(name, "PrefixPath").unwrap_or_default();
+        if prefix.trim().is_empty() {
+            continue;
+        }
+        out.push(PrefixInput { name: name.clone(), prefix });
+    }
+    out
+}
+
+/// `(name, prefix)` of games whose prefix path folder no longer exists.
+/// Pure but does blocking filesystem I/O: call from a worker thread.
+pub fn invalid_prefixes(inputs: &[PrefixInput]) -> Vec<(String, String)> {
+    inputs
+        .iter()
+        .filter(|i| !std::path::Path::new(&expand_tilde(&i.prefix)).is_dir())
+        .map(|i| (i.name.clone(), i.prefix.clone()))
+        .collect()
+}
+
+/// Run the prefix-path check off the GTK main loop and hand the invalid
+/// list back on the main loop through `done`.
+pub fn check_prefixes_async<F>(config: &ConfigManager, names: Vec<String>, done: F)
+where
+    F: Fn(Vec<(String, String)>) + 'static,
+{
+    let inputs = collect_prefix_inputs(config, &names);
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<(String, String)>>();
+    std::thread::spawn(move || {
+        let _ = tx.send(invalid_prefixes(&inputs));
+    });
+    crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
+        Ok(list) => {
+            done(list);
+            glib::ControlFlow::Break
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+        Err(_) => glib::ControlFlow::Break,
+    });
+}

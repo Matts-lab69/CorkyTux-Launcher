@@ -63,10 +63,15 @@ pub struct AppState {
     pub plugins: PluginManager,
     pub integration: IntegrationManager,
     pub selected_game: Rc<RefCell<String>>,
-    /// Header entry point for the "Warnings for install path" dialog. Kept
-    /// here so library/path changes can refresh its visibility. Hidden until
-    /// the (off-main-loop) check finds a game with an invalid install path.
+    /// Header entry points for the two Warnings dialogs (prefix path,
+    /// install path). Each button is visible only while its list has at
+    /// least one game; the count label shows how many. Visibility and
+    /// counters are refreshed by refresh_warn_buttons() on startup, after
+    /// path fixes, and after Store library changes.
     pub install_warn_btn: Rc<RefCell<Option<gtk::Button>>>,
+    pub install_warn_count: Rc<RefCell<Option<gtk::Label>>>,
+    pub prefix_warn_btn: Rc<RefCell<Option<gtk::Button>>>,
+    pub prefix_warn_count: Rc<RefCell<Option<gtk::Label>>>,
 }
 
 impl AppState {
@@ -86,6 +91,9 @@ impl AppState {
             proton, plugins, integration,
             selected_game: Rc::new(RefCell::new(String::new())),
             install_warn_btn: Rc::new(RefCell::new(None)),
+            install_warn_count: Rc::new(RefCell::new(None)),
+            prefix_warn_btn: Rc::new(RefCell::new(None)),
+            prefix_warn_count: Rc::new(RefCell::new(None)),
         }
     }
 }
@@ -514,16 +522,40 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     });
     header.pack_end(&settings_btn);
 
-    // "Warnings for install path" entry point (right side, left of Settings).
-    // Visible only when the check finds a game with an invalid install path;
-    // clicking re-checks off the main loop and opens the shared modal.
-    let install_warn_btn = gtk::Button::new();
-    let warn_icon = gtk::Image::from_icon_name("dialog-warning-symbolic");
-    warn_icon.set_pixel_size(16);
-    install_warn_btn.set_child(Some(&warn_icon));
-    install_warn_btn.add_css_class("settings-btn");
-    install_warn_btn.set_tooltip_text(Some("Install path warnings"));
-    install_warn_btn.set_visible(false);
+    // "Warnings" entry points (right side, left of Settings): prefix path
+    // (libadwaita `.warning` colour) and install path (`.error` colour).
+    // Each button is visible only while its list has at least one game (the
+    // count label shows how many); clicking re-checks off the main loop and
+    // opens the shared modal. Visibility/counters update without restart via
+    // refresh_warn_buttons() (wired to path fixes + Store changes).
+    let (prefix_warn_btn, prefix_warn_count) =
+        build_warn_button("corkytux-warning-symbolic", "warning", "Prefix path warnings");
+    let (install_warn_btn, install_warn_count) =
+        build_warn_button("corkytux-error-symbolic", "error", "Install path warnings");
+    {
+        let st = state.clone();
+        let win = window.clone();
+        prefix_warn_btn.connect_clicked(move |btn| {
+            let config = st.config.clone();
+            let names = st.game_model.ordered_names();
+            let btn = btn.clone();
+            let win = win.clone();
+            ui::warnings::check_prefixes_async(&config, names, move |missing| {
+                if missing.is_empty() {
+                    btn.set_visible(false);
+                    helpers::present_msg(
+                        &win,
+                        "Prefix paths OK",
+                        "Every game has a valid prefix path.",
+                    );
+                } else {
+                    let modal = WarningModal::new(WarningKind::PrefixPath);
+                    modal.show_missing(&missing);
+                    modal.present(&win);
+                }
+            });
+        });
+    }
     {
         let st = state.clone();
         let win = window.clone();
@@ -549,7 +581,11 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
         });
     }
     header.pack_end(&install_warn_btn);
+    header.pack_end(&prefix_warn_btn);
     *state.install_warn_btn.borrow_mut() = Some(install_warn_btn.clone());
+    *state.install_warn_count.borrow_mut() = Some(install_warn_count.clone());
+    *state.prefix_warn_btn.borrow_mut() = Some(prefix_warn_btn.clone());
+    *state.prefix_warn_count.borrow_mut() = Some(prefix_warn_count.clone());
 
     // === Connect all 9 action buttons ===
     {
@@ -936,32 +972,74 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     // Auto-install check at startup (also re-armed after list changes).
     maybe_autoinstall_proton(&state, &window);
 
-    // Install-path warning indicator (off the main loop; also refreshed
-    // after library/path changes and after a Store refresh).
-    refresh_install_warn_btn(&state);
+    // Warning indicators for both checks (off the main loop; also refreshed
+    // after library/path changes and after a Store refresh) + focus hook.
+    refresh_warn_buttons(&state);
 
     window
 }
 
-/// Recompute the header install-path warning indicator. The filesystem
-/// checks run on a worker thread; only the button update touches GTK.
-pub(crate) fn refresh_install_warn_btn(state: &AppState) {
-    let btn = match state.install_warn_btn.borrow().clone() {
-        Some(b) => b,
-        None => return,
-    };
+/// Recompute both header warning indicators (prefix path + install path).
+/// The filesystem checks run on worker threads; only the button/counter
+/// updates touch GTK. Called on startup and after any path fix or Store
+/// library change, so the buttons never require a restart.
+pub(crate) fn refresh_warn_buttons(state: &AppState) {
     let config = state.config.clone();
     let names = state.game_model.ordered_names();
-    ui::warnings::check_install_paths_async(&config, names, move |missing| {
-        let n = missing.len();
-        btn.set_visible(n > 0);
-        let tip = match n {
-            0 => "Install path warnings".to_string(),
-            1 => "1 game has an invalid install path".to_string(),
-            _ => format!("{n} games have an invalid install path"),
-        };
-        btn.set_tooltip_text(Some(&tip));
-    });
+
+    let p_btn = state.prefix_warn_btn.borrow().clone();
+    let p_count = state.prefix_warn_count.borrow().clone();
+    if let (Some(btn), Some(count)) = (p_btn, p_count) {
+        let config_c = config.clone();
+        let names_c = names.clone();
+        ui::warnings::check_prefixes_async(&config_c, names_c, move |missing| {
+            let n = missing.len();
+            btn.set_visible(n > 0);
+            count.set_text(&n.to_string());
+            let tip = match n {
+                0 => "Prefix path warnings".to_string(),
+                1 => "1 game has an invalid prefix path".to_string(),
+                _ => format!("{n} games have an invalid prefix path"),
+            };
+            btn.set_tooltip_text(Some(&tip));
+        });
+    }
+
+    let i_btn = state.install_warn_btn.borrow().clone();
+    let i_count = state.install_warn_count.borrow().clone();
+    if let (Some(btn), Some(count)) = (i_btn, i_count) {
+        ui::warnings::check_install_paths_async(&config, names, move |missing| {
+            let n = missing.len();
+            btn.set_visible(n > 0);
+            count.set_text(&n.to_string());
+            let tip = match n {
+                0 => "Install path warnings".to_string(),
+                1 => "1 game has an invalid install path".to_string(),
+                _ => format!("{n} games have an invalid install path"),
+            };
+            btn.set_tooltip_text(Some(&tip));
+        });
+    }
+}
+
+/// Build one header warning button: symbolic icon tinted by the libadwaita
+/// utility class (`.warning` for prefix, `.error` for install path), a
+/// counter label, initially hidden until its check finds games.
+fn build_warn_button(icon_name: &str, color_class: &str, tip: &str) -> (gtk::Button, gtk::Label) {
+    let btn = gtk::Button::new();
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    let icon = gtk::Image::from_icon_name(icon_name);
+    icon.set_pixel_size(16);
+    icon.add_css_class(color_class);
+    let count = gtk::Label::new(None);
+    count.add_css_class(color_class);
+    content.append(&icon);
+    content.append(&count);
+    btn.set_child(Some(&content));
+    btn.add_css_class("settings-btn");
+    btn.set_tooltip_text(Some(tip));
+    btn.set_visible(false);
+    (btn, count)
 }
 
 /// C++ applyScanPlugins parity: after a game is added/imported, scan its
