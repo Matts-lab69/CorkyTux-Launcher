@@ -6,6 +6,7 @@
 *.tar.gz
 build/
 build-release/
+/release/corkytux
 
 # IDE
 .idea/
