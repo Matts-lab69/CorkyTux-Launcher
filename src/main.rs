@@ -458,6 +458,19 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
         }));
     }
 
+    // Window focus return: lightweight installed-status checks on the
+    // loaded Store pages (local registry + disk, no network, debounced,
+    // applied in place), so installs/uninstalls done outside the launcher
+    // update the tiles without pressing Refresh.
+    {
+        let sv_focus = stores_view.clone();
+        let focus = gtk::EventControllerFocus::new();
+        focus.connect_enter(move |_| {
+            sv_focus.schedule_focus_checks();
+        });
+        window.add_controller(focus);
+    }
+
     // QML parity: details floats OVER the content (overlay), so opening
     // it never compresses RECENTLY PLAYED
     let content_overlay = gtk::Overlay::new();

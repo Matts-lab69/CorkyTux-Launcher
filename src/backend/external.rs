@@ -190,6 +190,14 @@ impl StoreManager {
         plugin_process::run_single_json(&Self::exe(), &refs)
     }
 
+    /// Lightweight installed check, local only (store registry + disk
+    /// existence, no network). Returns the same `installed` map the full
+    /// `library` command computes, so the Store tiles can refresh their
+    /// badge/button in place without re-rendering.
+    pub fn installed_status(store: &str) -> Result<serde_json::Value, String> {
+        plugin_process::run_single_json(&Self::exe(), &["installed-status", "--store", store])
+    }
+
     pub fn free_promos() -> Result<serde_json::Value, String> {
         plugin_process::run_single_json(&Self::exe(), &["free-promos"])
     }

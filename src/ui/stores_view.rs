@@ -45,6 +45,9 @@ impl StoresView {
         for h in self.handles.borrow().iter() {
             h.ensure_loaded();
         }
+        // (a) lightweight installed-status re-verify on entry: local
+        // registry + disk, no network, debounced, applied in place.
+        self.schedule_focus_checks();
         if let Some(ds) = self.deals.borrow().get("epic") {
             if ds.list.first_child().is_none() {
                 ds.page.set(1);
@@ -52,6 +55,17 @@ impl StoresView {
                 if let Some(g) = ds.goto.borrow().as_ref() {
                     g(1);
                 }
+            }
+        }
+    }
+
+    /// Window focus returned to the launcher: lightweight installed-status
+    /// checks on every loaded store page (local, no network, in place).
+    /// Pages that were never shown have no tiles to update and are skipped.
+    pub fn schedule_focus_checks(&self) {
+        for h in self.handles.borrow().iter() {
+            if h.loaded.get() {
+                h.schedule_status_check();
             }
         }
     }
@@ -890,6 +904,10 @@ impl StoresView {
             desc_killer: Rc::new(RefCell::new(None)),
             desc_running: Rc::new(std::cell::Cell::new(false)),
             desc_gen: Rc::new(std::cell::Cell::new(0)),
+            tiles: Rc::new(RefCell::new(std::collections::HashMap::new())),
+            status_src: Rc::new(RefCell::new(None)),
+            status_gen: Rc::new(std::cell::Cell::new(0)),
+            status_running: Rc::new(std::cell::Cell::new(false)),
         };
 
         // auth wiring: embedded login (Heroic-style, auto-captures the
@@ -967,6 +985,33 @@ struct DealsState {
     epoch: Rc<std::cell::Cell<u64>>,
 }
 
+/// Live widgets of one library tile that the lightweight installed-status
+/// check updates in place: the badge row (gains/loses the "installed"
+/// label), the Install/Import button label, and nothing else. All edits
+/// happen on the GTK main loop via poll_once_local.
+struct TileStatus {
+    brow: gtk::Box,
+    inst_lbl: Rc<RefCell<Option<gtk::Label>>>,
+    btn: gtk::Button,
+}
+
+impl TileStatus {
+    fn apply_installed(&self, installed: bool) {
+        self.btn.set_label(if installed { "Import" } else { "Install" });
+        if installed {
+            if self.inst_lbl.borrow().is_none() {
+                let ib = gtk::Label::new(Some("installed"));
+                ib.set_opacity(0.6);
+                ib.add_css_class("time-label");
+                self.brow.append(&ib);
+                *self.inst_lbl.borrow_mut() = Some(ib);
+            }
+        } else if let Some(lb) = self.inst_lbl.borrow_mut().take() {
+            self.brow.remove(&lb);
+        }
+    }
+}
+
 #[derive(Clone)]
 struct StorePageHandle {
     state: AppState,
@@ -991,6 +1036,16 @@ struct StorePageHandle {
     desc_killer: Rc<RefCell<Option<ProcessKiller>>>,
     desc_running: Rc<std::cell::Cell<bool>>,
     desc_gen: Rc<std::cell::Cell<u64>>,
+    // Lightweight installed-status overlay. tiles maps app_id -> the live
+    // widgets of the rendered tile so the badge/button can be updated in
+    // place (no re-render, no flicker); status_src holds the debounce
+    // timer; status_gen is bumped on every reschedule so a stale queued
+    // check from an older schedule is dropped; status_running prevents
+    // stacking duplicate checks.
+    tiles: Rc<RefCell<std::collections::HashMap<String, Rc<TileStatus>>>>,
+    status_src: Rc<RefCell<Option<glib::SourceId>>>,
+    status_gen: Rc<std::cell::Cell<u64>>,
+    status_running: Rc<std::cell::Cell<bool>>,
 }
 
 impl StorePageHandle {
@@ -1069,6 +1124,86 @@ impl StorePageHandle {
             self.flow.remove(&c);
         }
         self.lib_status.set_text("");
+        self.tiles.borrow_mut().clear();
+        if let Some(src) = self.status_src.borrow_mut().take() {
+            src.remove();
+        }
+    }
+
+    /// Debounced lightweight installed-status refresh. Every call bumps
+    /// the generation and re-arms a short timer, so rapid-fire triggers
+    /// (page entry + window focus regain) collapse into one check; a
+    /// stale timer from an older generation is dropped.
+    fn schedule_status_check(&self) {
+        let gen = self.status_gen.get() + 1;
+        self.status_gen.set(gen);
+        // Only remove a source that is still pending. glib's SourceId
+        // panics if remove() is called on a source that already fired;
+        // the timer closure below clears the slot the moment it runs, so
+        // the slot only ever holds a live (removable) id here.
+        if let Some(src) = self.status_src.borrow_mut().take() {
+            src.remove();
+        }
+        let vh = self.clone();
+        let id = glib::timeout_add_local(std::time::Duration::from_millis(400), move || {
+            if vh.status_gen.get() == gen {
+                // This source is firing/being destroyed: drop the stored
+                // id *before* running, so a later schedule never tries to
+                // remove() a dead source.
+                *vh.status_src.borrow_mut() = None;
+                vh.run_status_check();
+            }
+            glib::ControlFlow::Break
+        });
+        *self.status_src.borrow_mut() = Some(id);
+    }
+
+    /// Run one local installed-status check off the GTK main loop and
+    /// apply the result in place. Never stacks: while a check is running
+    /// new triggers are ignored (the tiles already render current state).
+    fn run_status_check(&self) {
+        if self.status_running.get() {
+            return;
+        }
+        self.status_running.set(true);
+        let (tx, rx) = std::sync::mpsc::channel::<Result<serde_json::Value, String>>();
+        let store = self.store.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(StoreManager::installed_status(&store));
+        });
+        let vh = self.clone();
+        crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
+            Ok(Ok(doc)) => {
+                vh.status_running.set(false);
+                vh.apply_installed_status(&doc);
+                glib::ControlFlow::Break
+            }
+            Ok(Err(_)) => {
+                // Lightweight check is best-effort; the full library
+                // render carries authoritative errors. Silently keep the
+                // current state rather than toasting on focus events.
+                vh.status_running.set(false);
+                glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(_) => {
+                vh.status_running.set(false);
+                glib::ControlFlow::Break
+            }
+        });
+    }
+
+    /// Apply a plugin `installed-status` payload to the tracked tiles.
+    fn apply_installed_status(&self, doc: &serde_json::Value) {
+        let Some(map) = doc.get("installed").and_then(|x| x.as_object()) else {
+            return;
+        };
+        for (app_id, status) in map {
+            let installed = status.get("installed").and_then(|x| x.as_bool()).unwrap_or(false);
+            if let Some(ts) = self.tiles.borrow().get(app_id) {
+                ts.apply_installed(installed);
+            }
+        }
     }
 
     fn show_embedded_login(&self) {
@@ -1290,11 +1425,13 @@ impl StorePageHandle {
             let badge = gtk::Label::new(Some(if self.store == "epic" { "EPIC" } else { "GOG" }));
             badge.add_css_class("proton-path-badge");
             brow.append(&badge);
+            let inst_lbl: Rc<RefCell<Option<gtk::Label>>> = Rc::new(RefCell::new(None));
             if g.installed {
                 let ib = gtk::Label::new(Some("installed"));
                 ib.set_opacity(0.6);
                 ib.add_css_class("time-label");
                 brow.append(&ib);
+                *inst_lbl.borrow_mut() = Some(ib);
             }
             inner.append(&brow);
             let name = gtk::Label::new(Some(&g.title));
@@ -1311,6 +1448,13 @@ impl StorePageHandle {
             btnrow.set_homogeneous(true);
             let btn = gtk::Button::with_label(if g.installed { "Import" } else { "Install" });
             btn.add_css_class("add-btn");
+            // Track the tile's live widgets so the lightweight
+            // installed-status check can flip badge + button in place
+            // without a full re-render.
+            self.tiles.borrow_mut().insert(
+                g.app_id.clone(),
+                Rc::new(TileStatus { brow: brow.clone(), inst_lbl: inst_lbl.clone(), btn: btn.clone() }),
+            );
             let vh = self.clone();
             let game = g.clone();
             btn.connect_clicked(move |_| vh.install_or_import(&game));
@@ -1570,7 +1714,9 @@ impl StorePageHandle {
                     let ipath = val.get("install_path").and_then(|x| x.as_str()).unwrap_or("").to_string();
                     let exe = val.get("executable").and_then(|x| x.as_str()).unwrap_or("").to_string();
                     vh.import_to_library(&game_c.title, &vh.store, &game_c.app_id, &ipath, &exe, false, false);
-                    vh.refresh_library(false);
+                    // In-place status update instead of a full re-render:
+                    // the tile flips to "installed"/Import without flicker.
+                    vh.schedule_status_check();
                     false
                 }
                 crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
