@@ -1678,6 +1678,19 @@ impl StorePageHandle {
             self.import_to_library(&game.title, &self.store, &game.app_id, &game.install_path, &game.executable, false, false);
             return;
         }
+        if game.stale_registry && self.store == "epic" {
+            // The legendary record points at a folder that is gone; legendary
+            // would silently reuse the OLD install_path (ignoring the base
+            // path) on install. Drop the record first, after confirmation.
+            self.confirm_cleanup_then_install(game);
+            return;
+        }
+        self.start_install(game);
+    }
+
+    // Fresh-install flow shared by every store: progress bar + streaming
+    // plugin events, importing into the native library on success.
+    fn start_install(&self, game: &StoreGame) {
         let (bar, status) = self.progress(&format!("Installing {}", game.title));
         std::fs::create_dir_all(Self::default_games_dir()).ok();
         let rx = StoreManager::spawn_install(self.store.clone(), game.app_id.clone(), Self::default_games_dir());
@@ -1715,6 +1728,70 @@ impl StorePageHandle {
                 }
                 _ => true,
             }
+        });
+    }
+
+    fn confirm_cleanup_then_install(&self, game: &StoreGame) {
+        let dlg = adw::MessageDialog::new(
+            Some(&self.parent),
+            Some("Stale record"),
+            Some(&format!(
+                "The record for {} is obsolete. It will be cleaned and the game reinstalled from scratch.",
+                game.title
+            )),
+        );
+        if let Some(root) = self.parent.root() {
+            if let Ok(win) = root.downcast::<gtk::Window>() {
+                dlg.set_transient_for(Some(&win));
+                dlg.set_modal(true);
+            }
+        }
+        dlg.add_response("cancel", "Cancel");
+        dlg.add_response("clean", "Clean and install");
+        dlg.set_response_appearance("clean", adw::ResponseAppearance::Destructive);
+        dlg.set_default_response(Some("cancel"));
+        dlg.set_close_response("cancel");
+        let vh = self.clone();
+        let game_c = game.clone();
+        dlg.connect_response(None, move |d, resp| {
+            if resp == "clean" {
+                vh.cleanup_then_install(&game_c);
+            }
+            d.close();
+        });
+        dlg.present();
+    }
+
+    fn cleanup_then_install(&self, game: &StoreGame) {
+        let (tx, rx) = std::sync::mpsc::channel::<Result<serde_json::Value, String>>();
+        let store = self.store.clone();
+        let app_id = game.app_id.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(StoreManager::cleanup_stale(&store, &app_id));
+        });
+        let vh = self.clone();
+        let game_c = game.clone();
+        crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
+            Ok(Ok(doc)) => {
+                let cleaned = doc.get("cleaned").and_then(|x| x.as_bool()).unwrap_or(false);
+                let reason = doc.get("reason").and_then(|x| x.as_str()).unwrap_or("");
+                if cleaned || reason == "no_record" {
+                    // Record dropped (or already gone): a fresh install now
+                    // respects the base path instead of the stale folder.
+                    vh.start_install(&game_c);
+                } else {
+                    vh.state_toast("Stale record", "Unexpected state; the game was not installed.");
+                }
+                glib::ControlFlow::Break
+            }
+            Ok(Err(msg)) => {
+                // Guarded (disk unmounted / folder present / lock held) or
+                // a real failure: never install.
+                vh.state_toast("Could not clean the record", &msg);
+                glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(_) => glib::ControlFlow::Break,
         });
     }
 

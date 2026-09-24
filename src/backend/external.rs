@@ -233,6 +233,18 @@ impl StoreManager {
         plugin_process::run_single_json(&Self::exe(), &["uninstall", "--store", store, "--app-id", app_id])
     }
 
+    /// Drop a stale Epic registry entry (legendary record whose install
+    /// folder no longer exists) before reinstalling, so the fresh install
+    /// respects `--base-path` instead of legendary reusing the old path.
+    /// Err carries the plugin's message: guarded cases (disk unmounted,
+    /// folder still present, installed.json lock in use) never install.
+    pub fn cleanup_stale(store: &str, app_id: &str) -> Result<serde_json::Value, String> {
+        plugin_process::run_single_json(
+            &Self::exe(),
+            &["cleanup-stale", "--store", store, "--app-id", app_id],
+        )
+    }
+
     pub fn launch_info(store: &str, app_id: &str) -> Result<serde_json::Value, String> {
         plugin_process::run_single_json(&Self::exe(), &["launch-info", "--store", store, "--app-id", app_id])
     }
