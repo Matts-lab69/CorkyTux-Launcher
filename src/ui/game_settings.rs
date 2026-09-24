@@ -341,6 +341,11 @@ fn build_run_tab(
     cols.set_halign(gtk::Align::Fill);
     page.append(&cols);
 
+    // ---- Install folder card (only when the stored path is invalid) ----
+    if let Some(card) = build_install_path_card(state, game_name, parent) {
+        cols.append(&card);
+    }
+
     // ---- Launch options card ----
     let (opts_frame, opts_inner) = make_frame("Launch options");
     let overrides_entry: Rc<RefCell<Option<gtk::Entry>>> = Rc::new(RefCell::new(None));
@@ -730,6 +735,161 @@ fn build_run_tab(
     }
 
     wrap_scroll(page)
+}
+
+/// "Locate game folder…" control for the Run tab. Only shown when the
+/// game's install path (MainPath) no longer exists on disk (deleted,
+/// moved, or unmounted). A GTK4 FileDialog picks a new folder; it is
+/// accepted only when it contains the game executable (the stored Exe,
+/// or the same relative name). On success Games.ini is rewritten while
+/// leaving TimeSpent/LastPlayed untouched — legendary/Heroic records are
+/// never modified. Existence checks run off the GTK main loop.
+fn build_install_path_card(
+    state: &AppState,
+    game_name: &str,
+    parent: &adw::ApplicationWindow,
+) -> Option<gtk::Frame> {
+    let main_path = state.config.game_value(game_name, "MainPath")?;
+    let main_trim = main_path.trim().to_string();
+    if main_trim.is_empty() {
+        return None;
+    }
+    let expanded_main = expand_tilde(&main_trim);
+    if std::path::Path::new(&expanded_main).exists() {
+        return None;
+    }
+
+    let (frame, inner) = make_frame("Install folder");
+    let warn = gtk::Label::new(Some("The install folder no longer exists on disk."));
+    warn.set_halign(gtk::Align::Start);
+    warn.set_wrap(true);
+    warn.add_css_class("warn-game");
+    inner.append(&warn);
+
+    let path_lbl = gtk::Label::new(Some(&main_trim));
+    path_lbl.set_halign(gtk::Align::Start);
+    path_lbl.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+    path_lbl.set_opacity(0.6);
+    path_lbl.add_css_class("time-label");
+    inner.append(&path_lbl);
+
+    let locate_btn = gtk::Button::with_label("Locate game folder…");
+    locate_btn.add_css_class("add-btn");
+    locate_btn.set_halign(gtk::Align::Start);
+    locate_btn.set_width_request(180);
+    let ok_lbl = gtk::Label::new(Some(""));
+    ok_lbl.set_halign(gtk::Align::Start);
+    ok_lbl.set_wrap(true);
+    ok_lbl.add_css_class("time-label");
+    inner.append(&ok_lbl);
+    inner.append(&locate_btn);
+
+    let old_exe = state.config.game_value(game_name, "Executable").unwrap_or_default();
+    let state_c = state.clone();
+    let game_c = game_name.to_string();
+    let parent_c = parent.clone();
+    let status_c = ok_lbl.clone();
+    let old_main_c = main_trim.clone();
+    locate_btn.connect_clicked(move |btn| {
+        btn.set_sensitive(false);
+        let dlg = gtk::FileDialog::new();
+        dlg.set_title("Locate game folder");
+        // GTK4 async: the callback runs on the main context once the
+        // picker finishes — no blocking wait, UI stays responsive.
+        let st_c = state_c.clone();
+        let g_c = game_c.clone();
+        let p_c = parent_c.clone();
+        let status_lbl = status_c.clone();
+        let btn2 = btn.clone();
+        let old_main_for_exe = old_main_c.clone();
+        let old_exe_for_exe = old_exe.clone();
+        let p_c2 = p_c.clone();
+        dlg.select_folder(Some(&p_c), gio::Cancellable::NONE, move |res| {
+            btn2.set_sensitive(true);
+            let file = match res {
+                Ok(f) => f,
+                Err(_) => return,
+            };
+            let chosen = match file.path() {
+                Some(p) => p,
+                None => return,
+            };
+            let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
+            let chosen_t = chosen.clone();
+            std::thread::spawn(move || {
+                // Off-main-loop existence checks (stat/readdir can block
+                // on slow mounts); the dialog was already accepted above.
+                let dir = std::path::Path::new(&chosen_t);
+                if !dir.is_dir() {
+                    let _ = tx.send(Err("Not a folder.".to_string()));
+                    return;
+                }
+                let rel = relative_exe(&old_main_for_exe, &old_exe_for_exe);
+                let ok = if rel.is_empty() {
+                    // No stored exe: accept any existing folder.
+                    true
+                } else {
+                    dir.join(&rel).is_file()
+                };
+                let _ = tx.send(if ok {
+                    Ok(rel)
+                } else {
+                    Err(format!(
+                        "The selected folder does not contain the game executable ({})",
+                        rel
+                    ))
+                });
+            });
+            let st_cc = st_c.clone();
+            let g_cc = g_c.clone();
+            let status_lbl2 = status_lbl.clone();
+            let chosen2 = chosen.clone();
+            glib::idle_add_local(move || match rx.try_recv() {
+                Ok(Ok(rel)) => {
+                    // Selective, atomic Games.ini update — set_game_value
+                    // only touches this key and save_games_ini writes via
+                    // temp+rename.
+                    st_cc.config.set_game_value(&g_cc, "MainPath", &chosen2.display().to_string());
+                    if !rel.is_empty() {
+                        let new_exe = chosen2.join(&rel).display().to_string();
+                        st_cc.config.set_game_value(&g_cc, "Executable", &new_exe);
+                    }
+                    status_lbl2.set_text(&format!("Install folder updated to {}", chosen2.display()));
+                    helpers::present_msg(
+                        &p_c2,
+                        "Install folder updated",
+                        "The game now points to the new folder. It is ready to launch.",
+                    );
+                    glib::ControlFlow::Break
+                }
+                Ok(Err(msg)) => {
+                    status_lbl2.set_text(&msg);
+                    glib::ControlFlow::Break
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                Err(_) => {
+                    status_lbl2.set_text("Could not validate the folder.");
+                    glib::ControlFlow::Break
+                }
+            });
+        });
+    });
+
+    Some(frame)
+}
+
+/// Relative path of the game executable inside its install folder.
+/// Absolute execs that hang outside MainPath are reduced to their file
+/// name so a relocated folder can still be matched by name.
+fn relative_exe(old_main: &str, exe: &str) -> String {
+    let m = expand_tilde(old_main);
+    let e = expand_tilde(exe);
+    let mp = std::path::Path::new(&m);
+    let ep = std::path::Path::new(&e);
+    if let Ok(rel) = ep.strip_prefix(mp) {
+        return rel.display().to_string();
+    }
+    ep.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
 }
 
 /// True when `path` is empty or matches a registered shared prefix
