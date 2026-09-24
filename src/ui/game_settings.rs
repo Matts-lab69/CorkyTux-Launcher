@@ -754,9 +754,13 @@ fn build_install_path_card(
     if main_trim.is_empty() {
         return None;
     }
-    let expanded_main = expand_tilde(&main_trim);
-    if std::path::Path::new(&expanded_main).exists() {
-        return None;
+    // Shared install-path validator (single source of truth). The Locate
+    // control only appears for a deleted/moved folder; a missing executable
+    // with the folder still present is handled by the Warnings dialog.
+    let exe_now = state.config.game_value(game_name, "Executable").unwrap_or_default();
+    match crate::ui::warnings::classify_install_path(&main_trim, &exe_now) {
+        Some(crate::ui::warnings::InstallPathState::FolderMissing) => {}
+        _ => return None,
     }
 
     let (frame, inner) = make_frame("Install folder");
@@ -860,6 +864,9 @@ fn build_install_path_card(
                         "Install folder updated",
                         "The game now points to the new folder. It is ready to launch.",
                     );
+                    // The game must leave the install-path warning list
+                    // without a restart.
+                    crate::refresh_install_warn_btn(&st_cc);
                     glib::ControlFlow::Break
                 }
                 Ok(Err(msg)) => {

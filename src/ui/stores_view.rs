@@ -1171,6 +1171,7 @@ impl StorePageHandle {
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
             Ok(Ok(games)) => {
                 vh.render_games(&games);
+                crate::refresh_install_warn_btn(&vh.state);
                 glib::ControlFlow::Break
             }
             Ok(Err(e)) => {
@@ -1675,6 +1676,7 @@ impl StorePageHandle {
             }
         }
         self.state.recent_model.refresh(30);
+        crate::refresh_install_warn_btn(&self.state);
         if let Some(ref sb) = *self.sidebar.borrow() {
             sb.apply_current_filter();
         }

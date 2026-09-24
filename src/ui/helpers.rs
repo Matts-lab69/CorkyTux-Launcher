@@ -513,6 +513,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
             .emu-dot-on {{ color: #00E639; font-size: 14px; }}\
             .emu-dot-off {{ color: {text_muted}; font-size: 14px; }}\
             .warn-dot {{ color: {warn_dot}; font-size: 14px; }}\
+            .error-dot {{ font-size: 14px; }}\
             .warn-game {{ color: {text_main}; font-weight: bold; font-size: 13px; }}\
              .recent-frame {{ border: 1px solid {accent}; border-radius: 10px; background-color: transparent; padding: 16px; }}\
              .recent-label {{ color: {text_main}; font-weight: bold; font-size: 24px; }}\
