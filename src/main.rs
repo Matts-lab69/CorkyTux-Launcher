@@ -539,6 +539,7 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                 let vbox = gtk::Box::new(gtk::Orientation::Vertical, 2);
                 let tools = [
                     ("winecfg", "Wine Configuration"),
+                    ("winetricks", "Winetricks"),
                     ("taskmgr", "Task Manager"),
                     ("control", "Control Panel"),
                     ("explorer", "File Explorer"),

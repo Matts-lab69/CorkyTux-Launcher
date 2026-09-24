@@ -1986,6 +1986,11 @@ impl ProtonManager {
             .unwrap_or_default();
         let (proton_name, _) = self.resolve_proton(&wanted)?;
         let prefix = self.ensure_individual_prefix(game_name);
+        let real_prefix = if prefix.ends_with("pfx") {
+            prefix
+        } else {
+            prefix.join("pfx")
+        };
 
         // C++ parity: los tools de Wine (winecfg/taskmgr/control/explorer/cmd)
         // se ejecutan con el binario wine/wine64 real dentro del Proton,
@@ -2015,11 +2020,38 @@ impl ProtonManager {
         }
         let wine_bin = wine_bin.ok_or("No Wine binary found")?;
 
-        // Wine tools run inside the real prefix (compat dir + /pfx).
-        let real_prefix = prefix.join("pfx");
-        let mut cmd = Command::new(&wine_bin);
-        cmd.env("WINEPREFIX", &real_prefix);
-        cmd.arg(tool);
+        let mut cmd = if tool == "winetricks" {
+            // winetricks es un script externo, no un builtin de wine.
+            // Se ejecuta ÉL MISMO, con WINE= apuntando al wine de Proton
+            // para que no use el wine del sistema y corrompa el prefix.
+            let wt = which("winetricks")
+                .ok_or("winetricks no está instalado (sudo pacman -S winetricks / sudo apt install winetricks)")?;
+            // Asegurar prefix inicializado: winetricks falla en prefix vacío
+            if !real_prefix.join("system.reg").exists() {
+                let _ = Command::new(&wine_bin)
+                    .arg("wineboot")
+                    .env("WINEPREFIX", &real_prefix)
+                    .status();
+            }
+            let mut c = Command::new(wt);
+            c.env("WINEPREFIX", &real_prefix);
+            c.env("WINE", &wine_bin);   // ← clave
+            // wineserver vive junto a wine64 en files/bin/
+            if let Some(dir) = wine_bin.parent() {
+                let ws = dir.join("wineserver");
+                if ws.exists() {
+                    c.env("WINESERVER", &ws);
+                }
+            }
+            c.arg("--gui");   // abre la GUI; cambiá el verbo si querés otra cosa
+            c
+        } else {
+            // tools normales (winecfg, taskmgr, control, explorer, cmd)
+            let mut c = Command::new(&wine_bin);
+            c.env("WINEPREFIX", &real_prefix);
+            c.arg(tool);
+            c
+        };
 
         let child = cmd
             .spawn()
@@ -2408,6 +2440,7 @@ impl ProtonManager {
     pub fn find_wine_tools(&self, game_name: &str) -> Vec<(String, String)> {
         let tools = vec![
             ("winecfg", "Wine Configuration"),
+            ("winetricks", "Winetricks"),
             ("taskmgr", "Task Manager"),
             ("control", "Control Panel"),
             ("explorer", "File Explorer"),
