@@ -63,11 +63,6 @@ path, symbolic recoloring preserved), system icon theme second.
       disappears on dark backgrounds. No other recoloring — no theme-driven
       tinting beyond this contrast swap.
     - ProtonDB hex `#F50057`: single asset (`corkytux-protondb.png`).
-      Circular treatment: full `#F50057` circle fill (radius 64/128) with the
-      white glyph centered (glyph bbox 25–102 px, centered at 63.5 on both
-      axes) so it reads on both themes without a `_dark` variant (the loader
-      falls back to the base PNG). Verified vs dark (`#1e1e2e`) and light
-      (`#ffffff`) composites.
   - Fuente: https://github.com/simple-icons/simple-icons
   - Campo `license` en los datos de Simple Icons (`_data/simple-icons.json`,
     dump jsDelivr del 24-sep-2026): `steamdb` → `null`, `protondb` → `null`.
