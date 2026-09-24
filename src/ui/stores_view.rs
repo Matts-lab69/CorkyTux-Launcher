@@ -1535,13 +1535,13 @@ impl StorePageHandle {
 
     fn install_or_import(&self, game: &StoreGame) {
         // `installed` is the plugin-verified flag (registry + folder +
-        // executable on disk). A stale registry entry is therefore not
-        // installed here and falls through to the real Install flow.
+        // executable on disk). Only a verified game is imported, with its
+        // real folder/exe; a stale registry entry or a game the store
+        // cannot verify (e.g. GOG installed outside the launcher) falls
+        // through to the real Install flow. Importing with an empty
+        // install_path is what created broken entries, so it is never
+        // attempted here — `import_to_library` also guards it.
         if game.installed {
-            self.import_to_library(&game.title, &self.store, &game.app_id, &game.install_path, &game.executable, false, false);
-            return;
-        }
-        if self.state.game_model.get_game(&game.title).is_some() {
             self.import_to_library(&game.title, &self.store, &game.app_id, &game.install_path, &game.executable, false, false);
             return;
         }
