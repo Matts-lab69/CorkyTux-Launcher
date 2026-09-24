@@ -900,12 +900,19 @@ impl StoresView {
             status_running: Rc::new(std::cell::Cell::new(false)),
         };
 
-        // auth wiring: embedded login (Heroic-style, auto-captures the
-        // code) — no external browser tabs at all.
+        // auth wiring: embedded login for Epic (inline flow auto-captures the
+        // code); GOG uses the system browser + paste-code flow (WebKitGTK 6.0
+        // can't host Google's SSO popup — the shared web process crashes).
         {
             let vh = view.clone();
             login_btn.connect_clicked(move |_| {
-                vh.show_embedded_login();
+                if vh.store == "gog" {
+                    // cmd_auth (no code) opens the browser and emits
+                    // auth_url; do_login's pump opens the tab + instructions.
+                    vh.do_login("");
+                } else {
+                    vh.show_embedded_login();
+                }
             });
         }
         {
