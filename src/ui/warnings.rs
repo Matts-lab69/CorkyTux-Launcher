@@ -92,8 +92,12 @@ impl WarningModal {
         }
         inner.append(&header_row);
 
+        // Centered title: both WarningKinds share this modal, and the description
+        // is the dialog's heading — centered to line up with the hint and the
+        // OK button below it.
         let title = gtk::Label::new(Some(kind.description()));
-        title.set_halign(gtk::Align::Start);
+        title.set_halign(gtk::Align::Center);
+        title.set_justify(gtk::Justification::Center);
         title.set_wrap(true);
         title.add_css_class("details-title");
         inner.append(&title);
