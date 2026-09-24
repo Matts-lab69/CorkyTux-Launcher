@@ -84,7 +84,9 @@ impl WarningModal {
         inner.set_margin_end(16);
         content.append(&inner);
 
-        let (header_row, x_btn) = crate::ui::helpers::modal_header(kind.title());
+        // Centered title (both WarningKinds share this dialog, and the
+        // description/hint/OK below are centered too).
+        let (header_row, x_btn) = crate::ui::helpers::modal_header_centered(kind.title());
         header_row.set_margin_top(4);
         {
             let dlg = dialog.clone();

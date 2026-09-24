@@ -412,6 +412,38 @@ pub fn modal_header(title: &str) -> (gtk::Box, gtk::Button) {
     (outer, x)
 }
 
+/// Modal title header with a CENTERED title (used by the two Warnings
+/// dialogs, whose description/hint/OK are centered too). Same components
+/// as `modal_header` but the title sits in a CenterBox middle slot; a
+/// 32px spacer mirrors the X button so the title is optically centered.
+/// Returns the container and the X button (caller connects close).
+pub fn modal_header_centered(title: &str) -> (gtk::Box, gtk::Button) {
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    outer.set_halign(gtk::Align::Fill);
+    let row = gtk::CenterBox::new();
+    row.set_halign(gtk::Align::Fill);
+    row.set_valign(gtk::Align::Start);
+    row.set_margin_start(24);
+    row.set_margin_end(16);
+    row.set_margin_top(16);
+    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    spacer.set_width_request(32); // mirror of the X button
+    row.set_start_widget(Some(&spacer));
+    let lbl = gtk::Label::new(Some(title));
+    lbl.add_css_class("modal-title");
+    lbl.set_halign(gtk::Align::Center);
+    lbl.set_valign(gtk::Align::Center);
+    row.set_center_widget(Some(&lbl));
+    let x = dialog_x_button();
+    x.set_valign(gtk::Align::Center);
+    row.set_end_widget(Some(&x));
+    outer.append(&row);
+    let sep = gtk::Separator::new(gtk::Orientation::Horizontal);
+    sep.set_halign(gtk::Align::Fill);
+    outer.append(&sep);
+    (outer, x)
+}
+
 /// Small icon button (folder, etc.) using themed PNG assets.
 pub fn icon_button(name: &str, is_dark: bool, tooltip: &str) -> gtk::Button {
     let btn = gtk::Button::new();
