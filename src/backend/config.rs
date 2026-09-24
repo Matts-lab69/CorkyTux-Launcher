@@ -283,6 +283,7 @@ impl ConfigManager {
         if !GAMES_BACKED_UP.load(Ordering::SeqCst) {
             let ts = glib::DateTime::now_local()
                 .and_then(|d| d.format("%Y%m%d-%H%M%S"))
+                .map(|s| s.to_string())
                 .unwrap_or_else(|_| {
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
