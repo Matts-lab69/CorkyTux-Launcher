@@ -564,6 +564,7 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
             let names = st.game_model.ordered_names();
             let btn = btn.clone();
             let win = win.clone();
+            let st_inner = st.clone();
             ui::warnings::check_install_paths_async(&config, names, true, move |missing| {
                 if missing.is_empty() {
                     btn.set_visible(false);
@@ -577,6 +578,10 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                     modal.show_missing(&missing);
                     modal.present(&win);
                 }
+                // Keep the counters in sync with the post-repair state
+                // (repairs here only write to stderr; the header count
+                // would otherwise stay stale until the next refresh).
+                refresh_warn_buttons(&st_inner);
             });
         });
     }

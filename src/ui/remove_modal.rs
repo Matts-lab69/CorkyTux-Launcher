@@ -108,6 +108,9 @@ pub fn show_remove_modal(
         }
 
         state_clone.game_model.remove_game(&sel);
+        // The removed game must leave the header warning counters without a
+        // restart (Refresh reads from the game model, where it no longer is).
+        crate::refresh_warn_buttons(&state_clone);
         crate::backend::shortcuts::cleanup(&sel);
         state_clone.recent_model.refresh(30);
         *state_clone.selected_game.borrow_mut() = String::new();
