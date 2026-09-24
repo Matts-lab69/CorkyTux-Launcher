@@ -947,6 +947,8 @@ impl StoresView {
                     vh.state_toast("Code required", "Paste the code from the browser first.");
                     return;
                 }
+                vh.auth_hint.set_visible(true);
+                vh.auth_hint.set_text("Validating code…");
                 vh.do_login(&code);
             });
         }
