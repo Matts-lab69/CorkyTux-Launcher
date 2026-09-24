@@ -1243,10 +1243,27 @@ impl StorePageHandle {
     fn do_login(&self, code: &str) {
         let rx = StoreManager::spawn_auth(self.store.clone(), code.to_string());
         let vh = self.clone();
+        // Watchdog guard: Done, Error and the auth_url Custom event disable
+        // it, so "Validating code…" always ends (success, visible error or
+        // visible timeout) and never hangs forever.
+        let guard = Rc::new(std::cell::Cell::new(true));
+        let guard_t = guard.clone();
+        let vh_t = vh.clone();
+        glib::timeout_add_local(std::time::Duration::from_secs(150), move || {
+            if guard_t.replace(false) {
+                vh_t.login_btn.set_sensitive(true);
+                vh_t.auth_hint.set_visible(true);
+                vh_t.auth_hint.set_text("Validation timed out — no response from the login helper. Retry with a fresh code.");
+            }
+            glib::ControlFlow::Break
+        });
         crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
             match ev {
                 crate::backend::plugin_process::PluginEvent::Custom(val) => {
                     if let Some(url) = val.get("url").and_then(|x| x.as_str()) {
+                        // Browser flow: the launcher opens the tab and the
+                        // verification continues manually (paste + Confirm).
+                        guard.set(false);
                         vh.state.integration.open_url(url);
                         vh.auth_hint.set_visible(true);
                         if let Some(instr) = val.get("instructions").and_then(|x| x.as_str()) {
@@ -1258,6 +1275,7 @@ impl StorePageHandle {
                     true
                 }
                 crate::backend::plugin_process::PluginEvent::Done(val) => {
+                    guard.set(false);
                     vh.login_btn.set_sensitive(true);
                     let who = val.get("account").and_then(|x| x.as_str()).unwrap_or("").to_string();
                     vh.state_toast("Logged in", if who.is_empty() { &vh.store } else { &who });
@@ -1265,10 +1283,18 @@ impl StorePageHandle {
                     vh.refresh_library(true);
                     false
                 }
-                crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
+                crate::backend::plugin_process::PluginEvent::Error { message, code, .. } => {
+                    guard.set(false);
                     vh.login_btn.set_sensitive(true);
                     vh.auth_hint.set_visible(true);
-                    vh.auth_hint.set_text(&format!("{} (codes expire fast — open ONE fresh tab and retry)", message));
+                    // Suffix only for real code rejections (die 4): a missing
+                    // binary (5), network (6) or other failures are already
+                    // self-explanatory.
+                    if code == Some(4) {
+                        vh.auth_hint.set_text(&format!("{} (codes expire fast — open ONE fresh tab and retry)", message));
+                    } else {
+                        vh.auth_hint.set_text(&message);
+                    }
                     false
                 }
                 _ => true,

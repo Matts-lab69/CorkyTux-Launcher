@@ -51,7 +51,7 @@ pub enum ProtocolMode {
 pub enum PluginEvent {
     Progress { stage: Option<String>, percent: Option<f64>, extra: serde_json::Value },
     Done(serde_json::Value),
-    Error { message: String, exit_code: Option<i32> },
+    Error { message: String, exit_code: Option<i32>, code: Option<i32> },
     Custom(serde_json::Value),
 }
 
@@ -70,6 +70,10 @@ pub fn classify(value: serde_json::Value) -> PluginEvent {
                 .unwrap_or("error desconocido")
                 .to_string(),
             exit_code: None,
+            // Set by the plugin's die(): lets the UI differentiate error
+            // kinds (e.g. skip the "(codes expire fast…)" suffix when the
+            // binary is missing or there is no network).
+            code: value.get("code").and_then(|v| v.as_i64()).map(|c| c as i32),
         },
         _ => {
             if value.get("ok").is_some() {
@@ -182,6 +186,7 @@ fn spawn_streaming_inner(
                 let _ = tx.send(PluginEvent::Error {
                     message: format!("no se pudo ejecutar {}: {}", exe.display(), e),
                     exit_code: None,
+                    code: None,
                 });
                 return;
             }
@@ -234,6 +239,7 @@ fn spawn_streaming_inner(
                     let _ = tx.send(PluginEvent::Error {
                         message,
                         exit_code: status.code(),
+                        code: None,
                     });
                 }
             }
@@ -244,6 +250,7 @@ fn spawn_streaming_inner(
                 let _ = tx.send(PluginEvent::Error {
                     message: format!("espera del proceso falló: {}", e),
                     exit_code: None,
+                    code: None,
                 });
             }
         }
