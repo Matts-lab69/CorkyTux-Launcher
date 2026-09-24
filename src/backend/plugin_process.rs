@@ -1,7 +1,45 @@
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+
+/// Handle to a streaming plugin child so a background batch (e.g. the
+/// library description re-resolution) can be cancelled from the launcher.
+/// Killing signals SIGTERM; the child self-exits when the launcher dies
+/// via `--ppid`, so the handle is best-effort, not a lifecycle guard.
+#[derive(Clone, Default)]
+pub struct ProcessKiller {
+    pid: Arc<Mutex<Option<u32>>>,
+}
+
+impl ProcessKiller {
+    pub fn new() -> Self {
+        Self { pid: Arc::new(Mutex::new(None)) }
+    }
+
+    /// PID of the managed child, if one is currently registered.
+    pub fn current(&self) -> Option<u32> {
+        *self.pid.lock().unwrap()
+    }
+
+    fn register(&self, child: &Child) {
+        *self.pid.lock().unwrap() = Some(child.id());
+    }
+
+    fn clear(&self) {
+        *self.pid.lock().unwrap() = None;
+    }
+
+    /// SIGTERM the managed child, if any; drops the registration.
+    pub fn kill(&self) {
+        let pid = self.current();
+        self.clear();
+        if let Some(pid) = pid {
+            let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+        }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ProtocolMode {
@@ -110,6 +148,21 @@ pub fn run_single_json(exe: &Path, args: &[&str]) -> Result<serde_json::Value, S
 }
 
 pub fn spawn_streaming(exe: PathBuf, args: Vec<String>) -> mpsc::Receiver<PluginEvent> {
+    spawn_streaming_inner(exe, args, None)
+}
+
+/// Streaming variant that registers the child in a `ProcessKiller` so a
+/// background batch can be cancelled with SIGTERM. Returned alongside the
+/// event channel.
+pub fn spawn_streaming_managed(exe: PathBuf, args: Vec<String>, killer: &ProcessKiller) -> mpsc::Receiver<PluginEvent> {
+    spawn_streaming_inner(exe, args, Some(killer.clone()))
+}
+
+fn spawn_streaming_inner(
+    exe: PathBuf,
+    args: Vec<String>,
+    killer: Option<ProcessKiller>,
+) -> mpsc::Receiver<PluginEvent> {
     let (tx, rx) = mpsc::channel::<PluginEvent>();
     std::thread::spawn(move || {
         let child = Command::new(&exe)
@@ -119,7 +172,12 @@ pub fn spawn_streaming(exe: PathBuf, args: Vec<String>) -> mpsc::Receiver<Plugin
             .stderr(Stdio::piped())
             .spawn();
         let mut child = match child {
-            Ok(c) => c,
+            Ok(c) => {
+                if let Some(k) = &killer {
+                    k.register(&c);
+                }
+                c
+            }
             Err(e) => {
                 let _ = tx.send(PluginEvent::Error {
                     message: format!("no se pudo ejecutar {}: {}", exe.display(), e),
@@ -160,6 +218,9 @@ pub fn spawn_streaming(exe: PathBuf, args: Vec<String>) -> mpsc::Receiver<Plugin
         }
         match child.wait() {
             Ok(status) => {
+                if let Some(k) = &killer {
+                    k.clear();
+                }
                 if let Some(handle) = stderr_handle {
                     stderr_text = handle.join().unwrap_or_default();
                 }
@@ -177,6 +238,9 @@ pub fn spawn_streaming(exe: PathBuf, args: Vec<String>) -> mpsc::Receiver<Plugin
                 }
             }
             Err(e) => {
+                if let Some(k) = &killer {
+                    k.clear();
+                }
                 let _ = tx.send(PluginEvent::Error {
                     message: format!("espera del proceso falló: {}", e),
                     exit_code: None,

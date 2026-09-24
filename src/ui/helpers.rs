@@ -563,6 +563,8 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .dark-btn {{ background-color: #000000; color: #FFFFFF; border: 1.5px solid #FFFFFF; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; font-weight: bold; }}\
             .title-label {{ font-weight: bold; font-size: 16px; color: {text_main}; }}\
              .time-label {{ color: {text_sec}; font-size: 12px; }}\
+             .source-link {{ color: {text_sec}; font-size: 12px; }}\
+             .source-link:hover, .source-link.field {{ text-decoration-line: underline; }}\
              .add-btn {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: {accent}; color: {on_accent}; border: none; font-weight: bold; }}\
              .add-btn:hover {{ opacity: 0.85; }}\
              .settings-btn {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: {well}; color: {text_main}; border: 1.5px solid {accent}; font-weight: bold; }}\
@@ -612,4 +614,36 @@ pub fn apply_theme_css(theme: &ThemeManager) {
         );
         *borrow = Some(provider);
     });
+}
+
+/// "Fuente: X" attribution link. A plain small label; when a URL is given
+/// it becomes a clickable link (pointer cursor, hover underline, opens in
+/// the launcher browser). Wikipedia/Steam pages pass their URL; Epic
+/// passes `None` so it stays plain text.
+pub fn source_link(state: &crate::AppState, label: &str, url: Option<String>, tooltip: Option<&str>) -> gtk::Label {
+    let l = gtk::Label::new(Some(label));
+    l.set_halign(gtk::Align::Start);
+    l.add_css_class("source-link");
+    let Some(u) = url else {
+        return l;
+    };
+    if let Some(t) = tooltip {
+        l.set_tooltip_text(Some(t));
+    } else {
+        l.set_tooltip_text(Some(&u));
+    }
+    l.set_cursor_from_name(Some("pointer"));
+    let lh = l.clone();
+    let motion = gtk::EventControllerMotion::new();
+    motion.connect_enter(move |_, _, _| lh.add_css_class("field"));
+    let lh2 = l.clone();
+    motion.connect_leave(move |_| lh2.remove_css_class("field"));
+    l.add_controller(motion);
+    let st = state.clone();
+    let click = gtk::GestureClick::new();
+    click.connect_released(move |_, _, _, _| {
+        st.integration.open_url(&u);
+    });
+    l.add_controller(click);
+    l
 }

@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use crate::AppState;
 use crate::backend::external::StoreManager;
+use crate::backend::plugin_process::{PluginEvent, ProcessKiller};
 use crate::ui::helpers;
 
 #[derive(Clone)]
@@ -883,6 +884,9 @@ impl StoresView {
             acc_name: acc_name.clone(),
             acc_avatar: acc_avatar.clone(),
             loaded: Rc::new(std::cell::Cell::new(false)),
+            desc_killer: Rc::new(RefCell::new(None)),
+            desc_running: Rc::new(std::cell::Cell::new(false)),
+            desc_gen: Rc::new(std::cell::Cell::new(0)),
         };
 
         // auth wiring: embedded login (Heroic-style, auto-captures the
@@ -930,7 +934,13 @@ impl StoresView {
         }
         {
             let vh = view.clone();
-            refresh_btn.connect_clicked(move |_| vh.refresh_library(false));
+            refresh_btn.connect_clicked(move |_| {
+                if vh.store == "epic" {
+                    vh.refresh_descriptions();
+                } else {
+                    vh.refresh_library(false);
+                }
+            });
         }
         // Full status at page build: --quick keeps `accounts` empty (verified
         // via TEMP-LOG: quick=true => accounts={"epic":""}) so the account
@@ -972,6 +982,12 @@ struct StorePageHandle {
     acc_name: gtk::Label,
     acc_avatar: gtk::Label,
     loaded: Rc<std::cell::Cell<bool>>,
+    // Background description batch (library card "Refresh" on Epic).
+    // ref_cell holds the current process-killer; gen is bumped on every
+    // start/cancel so stale events from a killed batch are ignored.
+    desc_killer: Rc<RefCell<Option<ProcessKiller>>>,
+    desc_running: Rc<std::cell::Cell<bool>>,
+    desc_gen: Rc<std::cell::Cell<u64>>,
 }
 
 impl StorePageHandle {
@@ -1160,6 +1176,79 @@ impl StorePageHandle {
         });
     }
 
+    /// Background batch re-resolution of every library description (Epic).
+    /// The plugin streams `library` (fresh grid data), `progress`
+    /// (done/total/stage) and `done`. Re-pressing Refresh cancels the
+    /// running batch (SIGTERM) and starts a new one; the checker lets the
+    /// kill finish without piling up duplicate work.
+    fn refresh_descriptions(&self) {
+        let gen = self.desc_gen.get() + 1;
+        self.desc_gen.set(gen);
+        let mut killer = self.desc_killer.borrow_mut();
+        if let Some(k) = killer.take() {
+            k.kill();
+        }
+        drop(killer);
+        self.desc_running.set(true);
+        self.lib_status.set_text("Actualizando descripciones…");
+        let (rx, k) = StoreManager::spawn_refresh_library(self.store.clone(), "spanish".to_string());
+        *self.desc_killer.borrow_mut() = Some(k);
+        let vh = self.clone();
+        crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
+            if vh.desc_gen.get() != gen {
+                return false;
+            }
+            match ev {
+                PluginEvent::Custom(val) => {
+                    if val.get("type").and_then(|x| x.as_str()) == Some("library") {
+                        let games = val.get("games")
+                            .and_then(|x| x.as_array()).cloned().unwrap_or_default()
+                            .into_iter()
+                            .map(|g| StoreGame {
+                                app_id: g.get("app_id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                title: g.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                version: g.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                installed: g.get("installed").and_then(|x| x.as_bool()).unwrap_or(false),
+                                cover: g.get("cover").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                description: g.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                            })
+                            .collect::<Vec<_>>();
+                        vh.render_games(&games);
+                    }
+                    true
+                }
+                PluginEvent::Progress { extra, .. } => {
+                    let done = extra.get("done").and_then(|x| x.as_u64()).unwrap_or(0);
+                    let total = extra.get("total").and_then(|x| x.as_u64()).unwrap_or(0);
+                    let stage = extra.get("stage").and_then(|x| x.as_str()).unwrap_or("");
+                    vh.lib_status.set_text(&format!(
+                        "Actualizando descripciones {}/{} · {stage}",
+                        done, total
+                    ));
+                    true
+                }
+                PluginEvent::Done(val) => {
+                    vh.desc_running.set(false);
+                    *vh.desc_killer.borrow_mut() = None;
+                    let updated = val.get("updated").and_then(|x| x.as_u64()).unwrap_or(0);
+                    let total = val.get("total").and_then(|x| x.as_u64()).unwrap_or(0);
+                    let msg = format!("{updated} actualizadas de {total}");
+                    vh.lib_status.set_text(&format!("Descripciones actualizadas · {msg}"));
+                    vh.state_toast("Descripciones actualizadas", &msg);
+                    false
+                }
+                PluginEvent::Error { message, .. } => {
+                    vh.desc_running.set(false);
+                    *vh.desc_killer.borrow_mut() = None;
+                    vh.lib_status.set_text(&format!("Error: {message}"));
+                    vh.state_toast("No se pudieron actualizar las descripciones", &message);
+                    false
+                }
+                _ => true,
+            }
+        });
+    }
+
     fn render_games(&self, games: &[StoreGame]) {
         while let Some(c) = self.flow.first_child() {
             self.flow.remove(&c);
@@ -1249,14 +1338,12 @@ impl StorePageHandle {
             let d = dlg.clone();
             x_btn.connect_clicked(move |_| { d.close(); });
         }
-        self.load_game_info(&body, game, &dlg, false);
+        self.load_game_info(&body, game, &dlg);
         dlg.present(Some(&self.parent));
     }
 
-    /// Loads plugin info into the modal body, clearing it first. `force`
-    /// is the "Refrescar descripción" path that ignores any saved or
-    /// negative entry and re-runs the cascade.
-    fn load_game_info(&self, body: &gtk::Box, game: &StoreGame, dlg: &adw::Dialog, force: bool) {
+    /// Loads plugin info into the modal body, clearing it first.
+    fn load_game_info(&self, body: &gtk::Box, game: &StoreGame, dlg: &adw::Dialog) {
         while let Some(c) = body.first_child() {
             body.remove(&c);
         }
@@ -1264,12 +1351,7 @@ impl StorePageHandle {
         let (tx, rx) = std::sync::mpsc::channel::<Result<serde_json::Value, String>>();
         let (store, app) = (self.store.clone(), game.app_id.clone());
         std::thread::spawn(move || {
-            let res = if force {
-                StoreManager::game_info_refresh(&store, &app)
-            } else {
-                StoreManager::game_info(&store, &app)
-            };
-            let _ = tx.send(res.map_err(|e| e.to_string()));
+            let _ = tx.send(StoreManager::game_info(&store, &app).map_err(|e| e.to_string()));
         });
         let vh = self.clone();
         let game_c = game.clone();
@@ -1374,9 +1456,9 @@ impl StorePageHandle {
                 scr.set_vexpand(true);
                 scr.set_child(Some(&tv));
                 tcol.append(&scr);
-                // Source attribution: show the source name for real
-                // descriptions, with a link back to the source page when
-                // the plugin provided one (Steam store page / Wikipedia).
+                // Source attribution: a single "Fuente: X" link. Steam/Wikipedia
+                // get a clickable label (hand cursor, hover underline,
+                // opens the source page); Epic stays plain text.
                 let desc_src = info.get("description_source").and_then(|x| x.as_str()).unwrap_or("");
                 if has_desc && !desc_src.is_empty() && desc_src != "fallback" {
                     let label = match desc_src {
@@ -1384,39 +1466,15 @@ impl StorePageHandle {
                         "wikipedia" => "Fuente: Wikipedia",
                         _ => "Fuente: Epic Store",
                     };
-                    match info.get("source_url").and_then(|x| x.as_str()) {
-                        Some(u) if !u.is_empty() => {
-                            let att = gtk::Button::with_label(label);
-                            att.add_css_class("settings-btn");
-                            att.set_halign(gtk::Align::Start);
-                            let st = self.state.clone();
-                            let url = u.to_string();
-                            att.connect_clicked(move |_| { st.integration.open_url(&url); });
-                            tcol.append(&att);
-                        }
-                        _ => {
-                            let att = gtk::Label::new(Some(label));
-                            att.set_halign(gtk::Align::Start);
-                            att.add_css_class("time-label");
-                            tcol.append(&att);
-                        }
-                    }
+                    let url = info.get("source_url").and_then(|x| x.as_str())
+                        .filter(|u| !u.is_empty())
+                        .map(str::to_string);
+                    let tip = match desc_src {
+                        "wikipedia" => Some("Texto de Wikipedia — CC BY-SA"),
+                        _ => None,
+                    };
+                    tcol.append(&helpers::source_link(&self.state, label, url, tip));
                 }
-                // "Refrescar descripción" (Epic only): re-runs the cascade ignoring
-        // any saved/negative entry; a network failure keeps the old text.
-        if self.store == "epic" {
-            let brow2 = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-            brow2.set_halign(gtk::Align::Start);
-            let refresh = gtk::Button::with_label("Refrescar descripción");
-            refresh.add_css_class("settings-btn");
-            let vh = self.clone();
-            let b2 = body.clone();
-            let gc = game_c.clone();
-            let dd = dd0.clone();
-            refresh.connect_clicked(move |_| vh.load_game_info(&b2, &gc, &dd, true));
-            brow2.append(&refresh);
-            body.append(&brow2);
-        }
         let brow = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         brow.set_homogeneous(true);
         if let Some(url) = info.get("store_url").and_then(|x| x.as_str()) {

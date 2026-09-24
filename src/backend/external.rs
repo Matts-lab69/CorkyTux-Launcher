@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::mpsc;
 
-use super::plugin_process::{self, PluginEvent};
+use super::plugin_process::{self, PluginEvent, ProcessKiller};
 
 fn exe(plugin_id: &str, entry: &str) -> PathBuf {
     plugin_process::plugin_exe(plugin_id, entry)
@@ -233,12 +233,25 @@ impl StoreManager {
         plugin_process::run_single_json(&Self::exe(), &["game-info", "--store", store, "--app-id", app_id])
     }
 
-    /// Re-runs the description cascade ignoring any saved/negative entry
-    /// (the modal's "Refrescar descripción" button).
-    pub fn game_info_refresh(store: &str, app_id: &str) -> Result<serde_json::Value, String> {
-        plugin_process::run_single_json(
-            &Self::exe(),
-            &["game-info", "--store", store, "--app-id", app_id, "--force-description"])
+    /// Spawns the plugin's background re-resolution of Epic library
+    /// descriptions (the library card's "Refresh"). The plugin streams
+    /// `library` (grid data), `progress` (done/total/stage) and `done`
+    /// events, and can be cancelled via the returned `ProcessKiller`.
+    pub fn spawn_refresh_library(
+        store: String,
+        lang: String,
+    ) -> (mpsc::Receiver<PluginEvent>, ProcessKiller) {
+        let killer = ProcessKiller::new();
+        let rx = plugin_process::spawn_streaming_managed(
+            Self::exe(),
+            vec![
+                "refresh-library".to_string(),
+                "--store".to_string(), store,
+                "--lang".to_string(), lang,
+            ],
+            &killer,
+        );
+        (rx, killer)
     }
 
     pub fn heroic_scan() -> Result<serde_json::Value, String> {
