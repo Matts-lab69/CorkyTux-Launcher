@@ -56,18 +56,25 @@ path, symbolic recoloring preserved), system icon theme second.
 - `corkytux-steamdb.png` / `corkytux-steamdb_dark.png` /
   `corkytux-protondb.png`: SteamDB and ProtonDB logos from **Simple Icons**
   (`simple-icons/simple-icons` @ `icons/steamdb.svg` y `icons/protondb.svg`),
-  rasterized to 128px PNG with the Simple Icons brand hex per icon:
+  rasterized to 128px PNG:
     - SteamDB hex `#000000`: the light theme uses the brand black
       (`corkytux-steamdb_dark.png`); the dark theme needs a contrast variant
       (`corkytux-steamdb.png`, white `#FFFFFF`) because the brand black
       disappears on dark backgrounds. No other recoloring — no theme-driven
       tinting beyond this contrast swap.
-    - ProtonDB hex `#F50057`: single asset (`corkytux-protondb.png`), the
-      brand magenta reads on both themes; no `_dark` variant needed (the
-      loader falls back to the base PNG).
+    - ProtonDB hex `#F50057`: single asset (`corkytux-protondb.png`).
+      Circular treatment: full `#F50057` circle fill (radius 64/128) with the
+      white glyph centered (glyph bbox 25–102 px, centered at 63.5 on both
+      axes) so it reads on both themes without a `_dark` variant (the loader
+      falls back to the base PNG). Verified vs dark (`#1e1e2e`) and light
+      (`#ffffff`) composites.
   - Fuente: https://github.com/simple-icons/simple-icons
-  - Licencia del archivo: CC0 1.0
-    (https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md).
+  - Campo `license` en los datos de Simple Icons (`_data/simple-icons.json`,
+    dump jsDelivr del 24-sep-2026): `steamdb` → `null`, `protondb` → `null`.
+    `license: null` significa que aplica la licencia por defecto del proyecto,
+    CC0 1.0
+    (https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md),
+    que es la que se declara aquí para el arte vectorial.
     SteamDB and ProtonDB are trademarks of their respective owners; the
     logos are used solely to indicate the integration (same criterion as
     Steam/Lutris/Heroic entries), without implying endorsement.
