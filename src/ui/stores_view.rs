@@ -900,19 +900,14 @@ impl StoresView {
             status_running: Rc::new(std::cell::Cell::new(false)),
         };
 
-        // auth wiring: embedded login for Epic (inline flow auto-captures the
-        // code); GOG uses the system browser + paste-code flow (WebKitGTK 6.0
-        // can't host Google's SSO popup — the shared web process crashes).
+        // auth wiring: embedded WebKit login window for both stores — Epic
+        // via its inline flow, GOG via auth.gog.com/auth (reCAPTCHA-friendly
+        // session) with Google SSO popups blocked in the plugin. The
+        // "Or paste code manually" row below stays as a manual fallback.
         {
             let vh = view.clone();
             login_btn.connect_clicked(move |_| {
-                if vh.store == "gog" {
-                    // cmd_auth (no code) opens the browser and emits
-                    // auth_url; do_login's pump opens the tab + instructions.
-                    vh.do_login("");
-                } else {
-                    vh.show_embedded_login();
-                }
+                vh.show_embedded_login();
             });
         }
         {
