@@ -1607,9 +1607,6 @@ pub(crate) fn maybe_autoinstall_proton(state: &AppState, parent: &adw::Applicati
 }
 
 fn main() {
-    // TEMP-LOG (control de diagnóstico): quitar al confirmar. Este dispara
-    // sin interacción, así que su ausencia en stderr == binario viejo.
-    eprintln!("TEMP-LOG main control: arrancando CorkyTux");
     // Desktop/app-menu shortcut entry: launch the game headless and exit.
     // The child survives the parent exit, so the game keeps running while
     // the launcher itself never opens a window.

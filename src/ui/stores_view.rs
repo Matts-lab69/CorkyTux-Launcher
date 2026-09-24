@@ -550,14 +550,6 @@ impl StoresView {
                                 let no_det: Rc<RefCell<Option<crate::ui::details_panel::DetailsPanel>>> = Rc::new(RefCell::new(None));
                                 let no_sel: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
                                 for p in arr {
-                                    // TEMP-LOG (diagnóstico covers/precios): quitar al confirmar.
-                                    static KEYS_ONCE: std::sync::Once = std::sync::Once::new();
-                                    KEYS_ONCE.call_once(|| {
-                                        if let Some(o) = p.as_object() {
-                                            let keys: Vec<&String> = o.keys().collect();
-                                            eprintln!("TEMP-LOG deal keys={:?}", keys);
-                                        }
-                                    });
                                     let t = match p.get("title").and_then(|x| x.as_str()) {
                                         Some(s) if !s.is_empty() => s.to_string(),
                                         _ => continue,
@@ -572,8 +564,6 @@ impl StoresView {
                                     let base = p.get("base_price").and_then(|x| x.as_str()).unwrap_or("").to_string();
                                     let ends = p.get("ends").and_then(|x| x.as_str()).unwrap_or("").to_string();
                                     let u = p.get("store_url").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                                    // TEMP-LOG (diagnóstico covers/precios): quitar al confirmar.
-                                    eprintln!("TEMP-LOG deal raw title={} cover={} price={} base={} pct={}", t, cover, price, base, pct);
                                     let entry = crate::backend::game_model::GameEntry {
                                         name: t.clone(),
                                         banner: cover.clone(),
@@ -963,10 +953,9 @@ impl StoresView {
                 }
             });
         }
-        // Full status at page build: --quick keeps `accounts` empty (verified
-        // via TEMP-LOG: quick=true => accounts={"epic":""}) so the account
-        // row would fall back to the store literal ("epic"). Non-quick fills
-        // the real displayName (e.g. "Matyy_y").
+        // Full status at page build: --quick keeps `accounts` empty (quick=true
+        // => accounts={"epic":""}) so the account row would fall back to the
+        // store literal ("epic"). Non-quick fills the real displayName (e.g. "Matyy_y").
         view.refresh_auth(false);
         (page, view)
     }
@@ -1059,7 +1048,6 @@ impl StorePageHandle {
         let store = self.store.clone();
         std::thread::spawn(move || {
             let st = StoreManager::status(quick).unwrap_or_default();
-            eprintln!("TEMP-LOG refresh_auth store={} quick={} status={}", store, quick, st);
             let logged = st.get("logged").cloned().unwrap_or_default();
             let bins = st.get("bins").cloned().unwrap_or_default();
             let accs = st.get("accounts").cloned().unwrap_or_default();
