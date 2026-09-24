@@ -14,6 +14,9 @@ struct StoreGame {
     title: String,
     version: String,
     installed: bool,
+    stale_registry: bool,
+    install_path: String,
+    executable: String,
     cover: String,
     description: String,
 }
@@ -1156,6 +1159,9 @@ impl StorePageHandle {
                         title: g.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                         version: g.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                         installed: g.get("installed").and_then(|x| x.as_bool()).unwrap_or(false),
+                        stale_registry: g.get("stale_registry").and_then(|x| x.as_bool()).unwrap_or(false),
+                        install_path: g.get("install_path").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                        executable: g.get("executable").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                         cover: g.get("cover").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                         description: g.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                     }).collect::<Vec<_>>()
@@ -1209,6 +1215,9 @@ impl StorePageHandle {
                                 title: g.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                                 version: g.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                                 installed: g.get("installed").and_then(|x| x.as_bool()).unwrap_or(false),
+                                stale_registry: g.get("stale_registry").and_then(|x| x.as_bool()).unwrap_or(false),
+                                install_path: g.get("install_path").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                executable: g.get("executable").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                                 cover: g.get("cover").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                                 description: g.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                             })
@@ -1525,8 +1534,15 @@ impl StorePageHandle {
     }
 
     fn install_or_import(&self, game: &StoreGame) {
-        if game.installed || self.state.game_model.get_game(&game.title).is_some() {
-            self.import_to_library(&game.title, &self.store, &game.app_id, "", "", false, false);
+        // `installed` is the plugin-verified flag (registry + folder +
+        // executable on disk). A stale registry entry is therefore not
+        // installed here and falls through to the real Install flow.
+        if game.installed {
+            self.import_to_library(&game.title, &self.store, &game.app_id, &game.install_path, &game.executable, false, false);
+            return;
+        }
+        if self.state.game_model.get_game(&game.title).is_some() {
+            self.import_to_library(&game.title, &self.store, &game.app_id, &game.install_path, &game.executable, false, false);
             return;
         }
         let (bar, status) = self.progress(&format!("Installing {}", game.title));
@@ -1568,10 +1584,6 @@ impl StorePageHandle {
     }
 
     fn import_to_library(&self, title: &str, store: &str, app_id: &str, install_path: &str, exe: &str, eac: bool, battleye: bool) {
-        if !install_path.is_empty() && !std::path::Path::new(install_path).exists() {
-            self.state_toast("Not found on disk", &format!("{} is gone — reinstall it first.", install_path));
-            return;
-        }
         let name = if self.state.game_model.get_game(title).is_some() {
             format!("{} ({})", title, if store == "epic" { "Epic" } else { "GOG" })
         } else {
@@ -1581,11 +1593,18 @@ impl StorePageHandle {
             self.state_toast("Already in library", &name);
             return;
         }
-        let main_path = if install_path.is_empty() {
-            format!("{}/{}", Self::default_games_dir(), app_id)
-        } else {
-            install_path.to_string()
-        };
+        // Never create a broken entry from an empty install folder. A
+        // verified installed game always arrives with its real path; a
+        // stale registry entry must go through Install instead.
+        if install_path.trim().is_empty() {
+            self.state_toast("No install path", &format!("{} has no verified install folder. Install it first, then import.", title));
+            return;
+        }
+        if !std::path::Path::new(install_path).exists() {
+            self.state_toast("Not found on disk", &format!("{} is gone — reinstall it first.", install_path));
+            return;
+        }
+        let main_path = install_path.to_string();
         // Empty exe: leave empty so `legendary launch` uses the manifest
         // default (a directory path here would break direct launches too).
         let executable = if exe.is_empty() {
