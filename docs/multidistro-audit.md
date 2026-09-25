@@ -500,6 +500,45 @@ del logo. **El asset se deja intacto** y la afirmación de
 `assets/icons/ATTRIBUTION.md` de que son "unmodified copies" sigue siendo
 cierta.
 
+## Verificación del enlace de emuladores (2026-09-25)
+
+Revisión estática de la cadena completa, sin ejecutar el plugin. **El linkeo
+funciona correctamente.** La cadena es:
+
+1. `emulator-manager corky-list` → `get_source()` / `get_path()` /
+   `get_launch_args()` y `settings` desde el catálogo `EMULATORS`.
+2. `list_emulators_in()` (`plugins.rs:828-847`) lee `path` de forma
+   incondicional y `source` del campo explícito del plugin, con inferencia de
+   compatibilidad para backends antiguos. `native = (source == "linked")`.
+3. `Set as linked` → `link_emulator_in(dir, emu.name, emu.path)`
+   (`settings.rs:2645`). `emu.name` es la clave del catálogo y `emu.path` el
+   resultado de `shutil.which` del plugin, así que los dos coinciden.
+4. `link_emulator()` (plugin, línea 341) valida `os.path.isfile` **y**
+   `os.access(X_OK)`, y rellena `launch_args`, `description` y `extensions`
+   desde `EMULATORS` cuando no se pasan explícitamente. Por eso volver a
+   enlazar melonDS o Dolphin recupera `-e {rom}` y sus extensiones: la
+   información no se pierde.
+5. `get_source()` vuelve a leer `linked.json` y devuelve `"linked"`; la fila
+   queda con el badge `Linked`.
+
+Además `link_emulator` es **auto-sanable**: si la ruta enlazada deja de existir
+o de ser ejecutable, `get_source()` no devuelve `"linked"` sino que cae a
+`"system"` o `"none"`, y la fila vuelve a ser accionable.
+
+### Observación: el enlace es una puerta de un solo sentido
+
+`show_btn` (`settings.rs:2572`) solo incluye `system | appimage | none`. Una
+fila `linked` **no tiene botón**, y `corky-unlink` / `unlink_emulator()`
+existen en el plugin pero **no se invocan desde ningún sitio del código Rust**
+(`grep` de `unlink` en `src/`: cero resultados). Es coherente con la decisión de
+diseño de compactar la fila `linked`, pero significa que la única forma de
+desenlazar desde el launcher es romper el enlace moviendo o borrando el
+binario, o editando `linked.json` a mano.
+
+**No verificado por ejecución:** la comprobación es de código, no funcional. Un
+test real exigiría invocar `emulator-manager corky-link`, que es un script y
+queda fuera de la autorización actual.
+
 ## Binario en uso (2026-09-25)
 
 `~/.local/share/applications/corkytux.desktop` lanza
