@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::{self, glib};
+use gtk::{self};
 
 use crate::backend::import_move::{Blocker, ImportMode, Preflight};
 use crate::ui::helpers;
@@ -27,7 +27,7 @@ const DESC_TEST: &str = "Registers the game with its current paths, as they are.
 ///
 /// `pf` was already computed by the caller (`import_move::preflight`), which
 /// only reads: nothing here touches the disk or rechecks anything.
-pub fn ask<F>(parent: &gtk::ApplicationWindow, label: &str, pf: &Preflight, on_done: F)
+pub fn ask<F>(parent: &adw::ApplicationWindow, label: &str, pf: &Preflight, on_done: F)
 where
     F: Fn(Option<ImportMode>) + 'static,
 {
@@ -189,15 +189,17 @@ where
         let finish = finish.clone();
         cancel.connect_clicked(move |_| {
             finish(None);
-            d.close();
+            let _ = d.close();
         });
     }
     {
         let d = dlg.clone();
         let finish = finish.clone();
+        // close() devuelve bool: el let _ lo descarta para que el
+        // closure devuelva ().
         x_btn.connect_clicked(move |_| {
             finish(None);
-            d.close();
+            let _ = d.close();
         });
     }
     {
@@ -207,16 +209,15 @@ where
         go.connect_clicked(move |_| {
             let mode = chosen.get().unwrap_or(ImportMode::Test);
             finish(Some(mode));
-            d.close();
+            let _ = d.close();
         });
     }
     {
         // Escape or any other close: None unless it was confirmed.
+        // adw::Dialog no es un gtk::Window y no tiene close-request: la
+        // senal es "closed", sin valor de retorno.
         let finish = finish.clone();
-        dlg.connect_close_request(move |_| {
-            finish(None);
-            glib::Propagation::Proceed
-        });
+        dlg.connect_closed(move |_| finish(None));
     }
 
     dlg.present(Some(parent));
@@ -225,7 +226,7 @@ where
 /// Indeterminate progress dialog for a move. `cp -a` does not report bytes,
 /// so the caller pulses the bar from its polling loop and sets the total when
 /// the move finishes.
-pub fn progress(parent: &gtk::ApplicationWindow, title: &str) -> (gtk::ProgressBar, gtk::Label) {
+pub fn progress(parent: &adw::ApplicationWindow, title: &str) -> (gtk::ProgressBar, gtk::Label) {
     let dlg = adw::Dialog::new();
     dlg.set_title(title);
     dlg.set_content_width(400);
@@ -252,11 +253,15 @@ pub fn progress(parent: &gtk::ApplicationWindow, title: &str) -> (gtk::ProgressB
     dlg.set_child(Some(&content));
     {
         let d = dlg.clone();
-        x_btn.connect_clicked(move |_| d.close());
+        x_btn.connect_clicked(move |_| {
+            let _ = d.close();
+        });
     }
     {
         let d = dlg.clone();
-        hide.connect_clicked(move |_| d.close());
+        hide.connect_clicked(move |_| {
+            let _ = d.close();
+        });
     }
     dlg.present(Some(parent));
     (bar, status)

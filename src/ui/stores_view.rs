@@ -1958,7 +1958,9 @@ impl StorePageHandle {
         let game_c = game.clone();
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
             Ok(pf) => {
-                vh.ask_import_mode(&game_c, cands, pf);
+                // cands se clona: el closure es FnMut y puede correr mas de
+                // una vez, asi que no se puede mover la captura.
+                vh.ask_import_mode(&game_c, cands.clone(), pf);
                 glib::ControlFlow::Break
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
@@ -1969,6 +1971,11 @@ impl StorePageHandle {
     fn ask_import_mode(&self, game: &StoreGame, cands: Vec<MoveCandidate>, pf: Preflight) {
         let vh = self.clone();
         let game_c = game.clone();
+        // Duenos para el closure: ask toma &pf como argumento hermano y el
+        // closure tiene que seguir siendo Fn, asi que duena copias y clona
+        // por invocacion.
+        let cands_c = cands.clone();
+        let pf_c = pf.clone();
         import_manager::ask(&self.parent, &game.title, &pf, move |mode| {
             let Some(mode) = mode else { return };
             if mode == ImportMode::Test {
@@ -1984,7 +1991,7 @@ impl StorePageHandle {
                 );
                 return;
             }
-            vh.start_move(&game_c, cands, pf, mode);
+            vh.start_move(&game_c, cands_c.clone(), pf_c.clone(), mode);
         });
     }
 

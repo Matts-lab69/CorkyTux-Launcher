@@ -144,13 +144,19 @@ fn bulk_import_via_manager<F>(
             let parent_a = parent_poll.clone();
             let cands_a = cands_poll.clone();
             let dir_a = dir_poll.clone();
+            // Clones para el closure: ask toma &parent_a/&pf como argumentos
+            // hermanos, asi que el closure move no puede duenar los
+            // originales; duena las copias y clona por invocacion para
+            // seguir siendo Fn.
+            let parent_a2 = parent_a.clone();
+            let pf2 = pf.clone();
             import_manager::ask(&parent_a, &label_poll, &pf, move |mode| {
                 let Some(mode) = mode else { return };
                 let ready_b = ready_a.clone();
-                let parent_b = parent_a.clone();
+                let parent_b = parent_a2.clone();
                 let cands_b = cands_a.clone();
                 let dir_b = dir_a.clone();
-                let pf_b = pf.clone();
+                let pf_b = pf2.clone();
 
                 if mode == ImportMode::Test {
                     ready_b(MovedPaths::new(), String::new());
@@ -257,7 +263,9 @@ fn import_scanned_entries(
         let (main_path, prefix_path) = match moved.get(&entry.name) {
             Some((p, pre)) => (
                 p.to_string_lossy().to_string(),
-                pre.clone().unwrap_or_else(|| entry.prefix.clone()),
+                pre.as_ref()
+                    .map(|q| q.to_string_lossy().to_string())
+                    .unwrap_or_else(|| entry.prefix.clone()),
             ),
             None => (entry.path.clone(), entry.prefix.clone()),
         };
@@ -2020,9 +2028,12 @@ pub fn show_settings_modal(
                 let dx = det_c.clone();
                 let srcx = source.clone();
                 let entsx = entries.clone();
+                // pc se usa como argumento (&pc) y dentro del closure (&pc2):
+                // el closure es move y necesita dueno, asi que se clona.
+                let pc2 = pc.clone();
                 bulk_import_via_manager(&pc, &label, cands, move |moved, note| {
                     import_scanned_entries(
-                        &entsx, &srcx, &moved, &note, &st, &sc, &pc, &sbx, &chx, &dx,
+                        &entsx, &srcx, &moved, &note, &st, &sc, &pc2, &sbx, &chx, &dx,
                     );
                 });
                 return;
@@ -2077,6 +2088,9 @@ pub fn show_settings_modal(
         let sb_c = sidebar.clone();
         let ch_c = center.clone();
         let det_c = details.clone();
+        // Fuera del closure: un closure move que mencionara `parent` dentro
+        // capturaria la referencia y dejaria de ser 'static.
+        let parent_cc = parent.clone();
         scan.connect_clicked(move |_| {
             status_c.set_text("Scanning Heroic…");
             let (tx, rx) = std::sync::mpsc::channel::<Result<serde_json::Value, String>>();
@@ -2088,7 +2102,7 @@ pub fn show_settings_modal(
             let sb_cc = sb_c.clone();
             let ch_cc = ch_c.clone();
             let det_cc = det_c.clone();
-            let parent_cc = parent.clone();
+            let parent_c2 = parent_cc.clone();
             glib::idle_add_local(move || match rx.try_recv() {
                 Ok(Ok(doc)) => {
                     let cands = heroic_candidates(&doc, &state_c);
@@ -2099,7 +2113,7 @@ pub fn show_settings_modal(
                     let label = format!("{} Heroic games", cands.len());
                     let st = state_c.clone();
                     let sc = status_cc.clone();
-                    let pc = parent_cc.clone();
+                    let pc = parent_c2.clone();
                     let sbx = sb_cc.clone();
                     let chx = ch_cc.clone();
                     let dx = det_cc.clone();
