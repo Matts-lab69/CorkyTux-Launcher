@@ -143,7 +143,7 @@ Detalle completo, con `archivo:línea` y fix mínimo, en
 [`docs/multidistro-audit.md`](docs/multidistro-audit.md) (42 hallazgos del
 triage: 6 críticos, 30 degradantes, 6 cosméticos). Auditoría estática: no se
 compiló ni ejecutó la app. Numeración heredada del triage original.
-**Críticos pendientes: 2** (C01, C03); C08 a medias.
+**Crítico pendiente: 1** (C03); C08 a medias.
 
 ### ~~C14 — `prefix_in_use` falla abierta sin `pgrep`~~ — **CORREGIDO**
 Era el único hallazgo con riesgo de pérdida de datos: sin `pgrep` (NixOS,
@@ -189,12 +189,27 @@ con el juego corriendo.
   y `which` (`integration.rs:27`, `proton.rs:597,822`, sustituible por una
   búsqueda en `PATH`).
 
-### C01 — Rutas de Steam hardcodeadas: overlay roto en Flatpak/Snap
-`proton.rs:335-340` (`steam_client_path`) y `proton.rs:940-942,1035-1037`
-(`gameoverlayrenderer.so`) usan solo `~/.steam/steam`, mientras
-`proton.rs:480-485` sí lista las cuatro raíces. Con Steam Flatpak el toggle de
-overlay queda activo y no inyecta nada, sin aviso.
-- **Fix:** un único helper `steam_roots(home)` con las cuatro raíces.
+### C01 — Rutas de Steam hardcodeadas: overlay roto en Flatpak/Snap — **CORREGIDO**
+`steam_client_path()` y los dos resolvers del overlay usaban solo
+`~/.steam/steam`, mientras `find_steam_runtime` sí listaba las cuatro raíces.
+Con Steam Flatpak o Snap, el toggle del overlay quedaba activo y no inyectaba
+nada, sin aviso.
+
+- **Fix aplicado:** `steam_roots(home)` es la única lista (las cuatro
+  variantes) y la consumen `steam_client_path_for()`,
+  `find_steam_runtime` y `steam_overlay_preload()`.
+- `~/.steam/steam` va primero porque es la ruta que ya usaba
+  `STEAM_COMPAT_CLIENT_INSTALL_PATH` y, en una instalación normal, es un enlace
+  a `.local/share/Steam`: no cambia el comportamiento de nadie. Si ninguna raíz
+  existe, el fallback sigue siendo `~/.steam/steam` (Proton usa la variable
+  aunque no haya Steam).
+- `steam_overlay_preload()` sustituye a los dos bloques duplicados (rumbo y
+  no-rumbo), recorre todas las raíces y conserva el `':'` inicial que no pisa
+  un `LD_PRELOAD` heredado.
+- **Hardcode extra que salió al implementarlo:** `legendary_launch_cmd` fijaba
+  `STEAM_COMPAT_CLIENT_INSTALL_PATH` por su cuenta, así que arreglar solo
+  `steam_client_path()` no cubría el lanzamiento vía Heroic. Ahora usa
+  `steam_client_path_for()`, y la lista queda en un único sitio.
 
 ### C03 — `component_status` solo reconoce tokens x86 y sondea dos binarios de GameMode
 `proton.rs:617-628` parsea `ldconfig -p` buscando `x86-64`/`lib64` e

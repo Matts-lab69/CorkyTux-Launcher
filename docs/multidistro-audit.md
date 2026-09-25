@@ -30,9 +30,9 @@ Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE (los cinco de
 | **Total** | **42** |
 
 Cuentas del triage original, conservadas como registro. **Estado actual:** de
-los 6 críticos, **C14, C10 y C09 están corregidos**, y **C08 lo está en su
-parte de `timeout` (8 de 12 sitios)**; quedan abiertos C01 y C03. Ningún
-degradante ni cosmético se ha tocado.
+los 6 críticos, **C14, C10, C09 y C01 están corregidos**, y **C08 lo está en su
+parte de `timeout` (8 de 12 sitios)**. **Queda abierto C03**, más el resto de
+C08. Ningún degradante ni cosmético se ha tocado.
 
 Definiciones:
 
@@ -48,13 +48,15 @@ Definiciones:
 
 ### C01 — Rutas de Steam hardcodeadas: el overlay no existe en Steam Flatpak/Snap
 
+**Estado: CORREGIDO.**
+
 - `src/backend/proton.rs:335-340` — `steam_client_path()` construye
   `~/.steam/steam` sin variantes.
 - `src/backend/proton.rs:940-942` y `1035-1037` — el `gameoverlayrenderer.so`
   del overlay se busca en `~/.steam/steam/ubuntu12_32` y
   `~/.steam/steam/ubuntu12_64`.
 - Contraste: `src/backend/proton.rs:480-485` (`find_steam_runtime`) **sí**
-  enumera las cuatro raíces, incluida
+  enumeraba las cuatro raíces, incluida
   `~/.var/app/com.valvesoftware.Steam/.steam/steam`.
 
 **Impacto:** con Steam instalado como Flatpak o Snap, el usuario activa
@@ -62,12 +64,29 @@ Definiciones:
 overlay nunca se inyecta. No hay error ni aviso: pérdida silenciosa de una
 función que el usuario cree activa.
 
-**Causa raíz:** la lista de raíces de Steam está duplicada en tres sitios y
-solo uno la mantiene actualizada.
+**Causa raíz:** la lista de raíces de Steam estaba duplicada en tres sitios y
+solo uno la mantenía actualizada.
 
-**Fix:** extraer un único helper `steam_roots(home) -> Vec<PathBuf>` (las
-cuatro de `find_steam_runtime`) y consumirlo en `steam_client_path()`,
-`prefix_path()` y los dos resolvers de `gameoverlayrenderer.so`.
+**Fix aplicado:** `steam_roots(home)` es ahora la única lista, con las cuatro
+variantes (`~/.steam/steam`, `~/.local/share/Steam`,
+`~/.var/app/com.valvesoftware.Steam/data/Steam` y
+`~/.var/app/com.valvesoftware.Steam/.steam/steam`). La consumen:
+
+1. `steam_client_path_for(home)` — la primera raíz que exista, con fallback a
+   `~/.steam/steam` para cuando no hay Steam instalado (Proton usa la variable
+   igualmente). `~/.steam/steam` va primero porque es la ruta que ya usaba
+   `STEAM_COMPAT_CLIENT_INSTALL_PATH` y, en una instalación normal, es un
+   enlace a `.local/share/Steam`: no cambia el comportamiento de nadie.
+2. `find_steam_runtime` — ahora itera el resolver en vez de su propia lista.
+3. `steam_overlay_preload(home)` — sustituye a los dos bloques de overlay
+   duplicados (rumbo y no-rumbo) y recorre **todas** las raíces, no solo la
+   primera. Mantiene el `':'` inicial que no pisa un `LD_PRELOAD` heredado.
+
+**Hardcode extra que salió al implementarlo:** `legendary_launch_cmd` fijaba
+`STEAM_COMPAT_CLIENT_INSTALL_PATH` por su cuenta (línea 185-186), así que
+arreglar solo `steam_client_path()` no cubría el lanzamiento vía Heroic. Ahora
+usa `steam_client_path_for()`. Con esto la lista quedó en **un** sitio, que era
+el origen real del hallazgo.
 
 ### C03 — `component_status` solo reconoce tokens x86 y consulta dos binarios distintos de GameMode
 
@@ -367,10 +386,10 @@ Requiere que el usuario abra la app; el agente no la ejecuta.
    `ldconfig`/`pgrep`/`pidof`/`which`; el de `ldconfig` se resuelve con C03.
 3. **C10** — **hecho**: `lutris_data_roots()` compartido por escaneo y artwork.
 4. **C09** — **hecho**: `asset_arch_ok()` filtra por `std::env::consts::ARCH`.
-5. **C01** — depende del helper compartido de rutas de Steam del punto 2.
-6. **C03** — requiere decidir antes qué significa "32-bit" en aarch64, para no
-   cambiar el contrato de `ComponentStatus` a ciegas. Cerrarlo también elimina
-   el `ldconfig` de C08.
+5. **C01** — **hecho**: `steam_roots()` compartido por los cuatro consumidores.
+6. **C03** — el único crítico abierto. Requiere decidir antes qué significa
+   "32-bit" en aarch64, para no cambiar el contrato de `ComponentStatus` a
+   ciegas. Cerrarlo también elimina el `ldconfig` de C08.
 7. El resto de degradantes por lotes. El siguiente con mejor relación
    esfuerzo/impacto es **D05**: la API ya publica `digest: sha256:…`, así que
    verificar la descarga es directamente implementable. Después, D12, D13, D19

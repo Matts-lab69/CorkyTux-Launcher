@@ -183,7 +183,7 @@ impl ProtonManager {
         // (Heroic sets them too); without them proton exits silently.
         cmd.env("STEAM_COMPAT_DATA_PATH", actual_prefix);
         cmd.env("STEAM_COMPAT_CLIENT_INSTALL_PATH",
-                PathBuf::from(&home).join(".steam/steam"));
+                Self::steam_client_path_for(std::path::Path::new(&home)));
         // protonfixes derives the game id from SteamAppId first; without it
         // it parses digits out of DATA_PATH and dies on name-based prefixes.
         if let Some(sid) = game.get("steamid").cloned() {
@@ -332,11 +332,81 @@ impl ProtonManager {
         std::fs::write(&reg, out.join("\n") + "\n").is_ok()
     }
 
+    /// Instala de Steam que hay que probar, en orden de preferencia.
+    ///
+    /// Antes esta lista solo vivía en `find_steam_runtime`, mientras
+    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` y los dos resolvers del overlay
+    /// hardcodeaban `~/.steam/steam`. Con Steam instalado como Flatpak o Snap,
+    /// el interruptor del overlay quedaba activo en la ficha del juego y no
+    /// inyectaba nada: pérdida silenciosa de una función que el usuario creía
+    /// activa. Un único sitio, cuatro variantes.
+    ///
+    /// `~/.steam/steam` va primero porque es la ruta que ya usaba
+    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH`, y en una instalación normal es un
+    /// enlace a `.local/share/Steam`: no cambia el comportamiento de nadie.
+    /// No se filtran por existencia para que cada llamador pueda elegir entre
+    /// "primer candidateo" y "recorrerlos todos".
+    fn steam_roots(home: &std::path::Path) -> Vec<std::path::PathBuf> {
+        vec![
+            home.join(".steam/steam"),
+            home.join(".local/share/Steam"),
+            // Flatpak: `data/Steam` es el home real del proceso sandboxeado y
+            // `.steam/steam` es el enlace que Steam crea ahí.
+            home.join(".var/app/com.valvesoftware.Steam/data/Steam"),
+            home.join(".var/app/com.valvesoftware.Steam/.steam/steam"),
+        ]
+    }
+
+    /// Valor de `LD_PRELOAD` para el overlay de Steam, o `None` si no hay
+    /// ningún `gameoverlayrenderer.so` que pre-cargar.
+    ///
+    /// El `':'` inicial no pisa un `LD_PRELOAD` heredado de la sesión; es la
+    /// convención que ya usaban los dos call sites que esto sustituye.
+    fn steam_overlay_preload(home: &std::path::Path) -> Option<String> {
+        let mut found: Vec<PathBuf> = Vec::new();
+        for root in Self::steam_roots(home) {
+            for dir in ["ubuntu12_32", "ubuntu12_64"] {
+                // `is_file` y no `exists`: el `.so` suele ser un enlace, y lo
+                // que importa es que se pueda pre-cargar.
+                let so = root.join(dir).join("gameoverlayrenderer.so");
+                if so.is_file() && !found.contains(&so) {
+                    found.push(so);
+                }
+            }
+        }
+        let mut value = String::new();
+        for so in found {
+            if let Some(s) = so.to_str() {
+                if !value.is_empty() {
+                    value.push(':');
+                }
+                value.push_str(s);
+            }
+        }
+        if value.is_empty() {
+            None
+        } else {
+            Some(format!(":{}", value))
+        }
+    }
+
+    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` para un `home` dado: la primera raíz
+    /// que exista, o la ruta histórica si ninguna (Proton la usa incluso sin
+    /// Steam instalado).
+    ///
+    /// Es `pub` porque `legendary_launch_cmd` necesita la misma ruta y no tiene
+    /// `&self`; antes la reconstruía por su cuenta y quedaba fuera de la lista
+    /// de variantes.
+    pub fn steam_client_path_for(home: &std::path::Path) -> PathBuf {
+        Self::steam_roots(home)
+            .into_iter()
+            .find(|p| p.exists())
+            .unwrap_or_else(|| home.join(".steam/steam"))
+    }
+
+    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` del usuario actual.
     pub fn steam_client_path(&self) -> PathBuf {
-        home_dir()
-            .unwrap_or_default()
-            .join(".steam")
-            .join("steam")
+        Self::steam_client_path_for(&home_dir().unwrap_or_default())
     }
 
     pub fn proton_paths(&self) -> Vec<PathBuf> {
@@ -477,13 +547,7 @@ impl ProtonManager {
             "SteamLinuxRuntime_soldier"
         };
 
-        let roots = [
-            home.join(".local/share/Steam"),
-            home.join(".steam/steam"),
-            home.join(".var/app/com.valvesoftware.Steam/data/Steam"),
-            home.join(".var/app/com.valvesoftware.Steam/.steam/steam"),
-        ];
-        for root in &roots {
+        for root in Self::steam_roots(&home) {
             for candidate in [
                 root.join("ubuntu12_32/steam-runtime/run.sh"),
                 root.join("ubuntu12_64/steam-runtime/run.sh"),
@@ -935,21 +999,8 @@ impl ProtonManager {
             final_cmd.env_remove("UMU_LOG");
             // Steam Overlay: LD_PRELOAD injection for umu path too.
             if steam_overlay {
-                let home = std::env::var("HOME").unwrap_or_default();
-                let overlay32 = std::path::PathBuf::from(&home)
-                    .join(".steam/steam/ubuntu12_32/gameoverlayrenderer.so");
-                let overlay64 = std::path::PathBuf::from(&home)
-                    .join(".steam/steam/ubuntu12_64/gameoverlayrenderer.so");
-                let mut preload = String::new();
-                if overlay32.exists() {
-                    preload.push_str(overlay32.to_str().unwrap_or(""));
-                }
-                if overlay64.exists() {
-                    if !preload.is_empty() { preload.push(':'); }
-                    preload.push_str(overlay64.to_str().unwrap_or(""));
-                }
-                if !preload.is_empty() {
-                    preload.insert(0, ':');
+                let home = home_dir().unwrap_or_default();
+                if let Some(preload) = Self::steam_overlay_preload(&home) {
                     final_cmd.env("LD_PRELOAD", &preload);
                     final_cmd.env("ENABLE_VK_LAYER_VALVE_steam_overlay_1", "1");
                     final_cmd.env("SteamOverlayGameId", &fake_steam_id);
@@ -1030,21 +1081,8 @@ impl ProtonManager {
             // use Steamworks features (invite friends, lobbies, etc.)
             // cannot show the Steam overlay or the invite dialog.
             if steam_overlay {
-                let home = std::env::var("HOME").unwrap_or_default();
-                let overlay32 = PathBuf::from(&home)
-                    .join(".steam/steam/ubuntu12_32/gameoverlayrenderer.so");
-                let overlay64 = PathBuf::from(&home)
-                    .join(".steam/steam/ubuntu12_64/gameoverlayrenderer.so");
-                let mut preload = String::new();
-                if overlay32.exists() {
-                    preload.push_str(overlay32.to_str().unwrap_or(""));
-                }
-                if overlay64.exists() {
-                    if !preload.is_empty() { preload.push(':'); }
-                    preload.push_str(overlay64.to_str().unwrap_or(""));
-                }
-                if !preload.is_empty() {
-                    preload.insert(0, ':');
+                let home = home_dir().unwrap_or_default();
+                if let Some(preload) = Self::steam_overlay_preload(&home) {
                     final_cmd.env("LD_PRELOAD", &preload);
                     final_cmd.env("ENABLE_VK_LAYER_VALVE_steam_overlay_1", "1");
                     final_cmd.env("SteamOverlayGameId", &fake_steam_id);
