@@ -111,6 +111,10 @@ impl ProtonManager {
 
     fn heroic_legendary_bin() -> Option<PathBuf> {
         let home = std::env::var("HOME").unwrap_or_default();
+        // Esto NO es la raíz de plugins: es el `CONFIG_DIR` del plugin
+        // heroic-store, donde él descarga sus binarios de terceros. El script
+        // del plugin vive en `plugins_base_dir()` (~/.local/share). Ver el
+        // contrato de las dos raíces en `plugin_process::plugins_base_dir`.
         let owned = PathBuf::from(&home)
             .join(".config/CorkyTux/plugins/heroic-store/bin/legendary");
         if owned.is_file() {

@@ -16,6 +16,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
 libc = "0.2"
+# Solo la usa src/bin/webdriver_login.rs. Descomprime el Chromium que se
+# descarga al primer uso. No se usa el `unzip` del sistema a proposito: seria un
+# segundo modo de fallo sobre una descarga de 188 MB, y aqui el binario tiene
+# que funcionar o el login no funciona.
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 
 [profile.release]

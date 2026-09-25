@@ -165,13 +165,27 @@ impl StoreManager {
         plugin_process::run_single_json(&Self::exe(), &refs)
     }
 
-    pub fn spawn_login_window(store: String) -> mpsc::Receiver<PluginEvent> {
+    /// Pide al plugin la URL de autenticación de la tienda, sin código.
+    ///
+    /// El plugin responde con un evento `auth_url` que lleva la URL y las
+    /// instrucciones; abrir el navegador es cosa del launcher, no del plugin, y
+    /// desde la 1.0.8 el plugin ya no llama a `webbrowser.open` para que la
+    /// pestaña se abra exactamente una vez.
+    ///
+    /// Sustituye a `spawn_login_window`, que levantaba un WebKit embebido:
+    /// Arkose Labs/FunCaptcha de Epic lo bloquea, y GOG tiene fricción similar.
+    /// La vía viable es el navegador del sistema.
+    pub fn spawn_auth_begin(store: String) -> mpsc::Receiver<PluginEvent> {
         plugin_process::spawn_streaming(
             Self::exe(),
-            vec!["login-window".to_string(), "--store".to_string(), store],
+            vec!["auth".to_string(), "--store".to_string(), store],
         )
     }
 
+    /// `login-window` del plugin queda sin uso en el launcher a propósito: es
+    /// el webview PyGObject que Arkose bloquea. El camino vivo es
+    /// [`Self::spawn_auth_begin`] (navegador del sistema) seguido de
+    /// [`Self::spawn_auth`] con el código.
     pub fn spawn_auth(store: String, code: String) -> mpsc::Receiver<PluginEvent> {
         let mut args = vec!["auth".to_string(), "--store".to_string(), store];
         if !code.is_empty() {
@@ -779,6 +793,9 @@ impl MinecraftManager {
 
     pub fn running_pids() -> Vec<(String, i32)> {
         let home = std::env::var("HOME").unwrap_or_default();
+        // `CONFIG_DIR` del plugin (locks en vivo), no su ejecutable: este esta
+        // en `plugins_base_dir()`. Ver el contrato en
+        // `plugin_process::plugins_base_dir`.
         let locks = std::path::PathBuf::from(home)
             .join(".config/CorkyTux/plugins/minecraft-launcher/locks");
         let mut out = Vec::new();

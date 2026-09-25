@@ -344,15 +344,6 @@ impl StoresView {
         login_btn.add_css_class("settings-btn");
         auth_row.append(&login_btn);
         login_box.append(&auth_row);
-        let code_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let code_entry = gtk::Entry::new();
-        code_entry.set_placeholder_text(Some("Or paste code manually"));
-        code_entry.set_hexpand(true);
-        code_row.append(&code_entry);
-        let code_btn = gtk::Button::with_label("Confirm code");
-        code_btn.add_css_class("add-btn");
-        code_row.append(&code_btn);
-        login_box.append(&code_row);
         auth_inner.append(&login_box);
         // logged-in session row: avatar + name + logout
         let acc_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -903,14 +894,17 @@ impl StoresView {
             status_running: Rc::new(std::cell::Cell::new(false)),
         };
 
-        // auth wiring: embedded WebKit login window for both stores — Epic
-        // via its inline flow, GOG via auth.gog.com/auth (reCAPTCHA-friendly
-        // session) with Google SSO popups blocked in the plugin. The
-        // "Or paste code manually" row below stays as a manual fallback.
+        // auth wiring: login automatizado en un Firefox real, para ambas
+        // tiendas. El plugin devuelve la URL (`auth` sin código → evento
+        // `auth_url`) y a partir de ahí se la pasa a `webdriver_login`, que
+        // abre su propia ventana, espera al login y devuelve el código. No hay
+        // webview embebido porque el SSO de Google se cuelga en WebKitGTK, y
+        // no hay modal de código: el código se captura solo o se explica por qué
+        // no se pudo.
         {
             let vh = view.clone();
             login_btn.connect_clicked(move |_| {
-                vh.show_embedded_login();
+                vh.begin_browser_login();
             });
         }
         {
@@ -933,21 +927,6 @@ impl StoresView {
                     Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
                     Err(_) => glib::ControlFlow::Break,
                 });
-            });
-        }
-        {
-            let vh = view.clone();
-            let code_e = code_entry.clone();
-            code_btn.connect_clicked(move |_| {
-                let code = code_e.text().to_string().trim().to_string();
-                code_e.set_text("");
-                if code.is_empty() {
-                    vh.state_toast("Code required", "Paste the code from the browser first.");
-                    return;
-                }
-                vh.auth_hint.set_visible(true);
-                vh.auth_hint.set_text("Validating code…");
-                vh.do_login(&code);
             });
         }
         {
@@ -1201,39 +1180,125 @@ impl StorePageHandle {
         }
     }
 
-    fn show_embedded_login(&self) {
-        // Login window runs in the plugin (PyGObject WebKit): it grabs the
-        // code automatically, no copy-paste, no duplicate browser tabs.
-        let rx = StoreManager::spawn_login_window(self.store.clone());
+    /// Login automatizado en un navegador real, sin paso manual.
+    ///
+    /// El plugin emite la URL (`auth` sin código → evento `auth_url`) y a partir
+    /// de ahí no interviene: el launcher se la pasa a `webdriver_login`, que
+    /// abre su propia ventana de Chromium, espera a que la persona termine de
+    /// autenticarse y devuelve el código por stdout.
+    ///
+    /// Chromium y no el navegador del sistema, y no Firefox: el hCaptcha de
+    /// Epic rechaza el reto si `navigator.webdriver` es `true`, y cualquier
+    /// Firefox gobernado por WebDriver lo pone en `true` sin forma de
+    /// desactivarlo. Chromium lanzado a mano por CDP deja el valor en `false`.
+    /// El comentario de `src/bin/webdriver_login.rs` tiene la tabla completa.
+    ///
+    /// No hay ruta manual. Ni modal de código, ni copiar y pegar, ni se le pide
+    /// al usuario que desactive nada. Si el login no se puede completar, se
+    /// dice por qué y el botón "Log in" vuelve a quedar pulsable.
+    fn begin_browser_login(&self) {
+        self.login_btn.set_sensitive(false);
+        let rx = StoreManager::spawn_auth_begin(self.store.clone());
         let vh = self.clone();
         vh.auth_hint.set_visible(true);
-        vh.auth_hint.set_text("Login window opened — sign in there, the code is captured automatically.");
-        crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
-            match ev {
-                crate::backend::plugin_process::PluginEvent::Custom(val) => {
-                    if val.get("type").and_then(|x| x.as_str()) == Some("code") {
-                        if let Some(code) = val.get("code").and_then(|x| x.as_str()) {
-                            if !code.is_empty() {
-                                vh.do_login(code);
-                            }
-                        }
-                    }
-                    true
+        vh.auth_hint.set_text("Preparing the browser login…");
+        crate::backend::plugin_process::pump_to_idle(rx, move |ev| match ev {
+            PluginEvent::Custom(val) => {
+                if val.get("type").and_then(|x| x.as_str()) != Some("auth_url") {
+                    return true;
                 }
-                crate::backend::plugin_process::PluginEvent::Done(val) => {
-                    if let Some(code) = val.get("code").and_then(|x| x.as_str()) {
-                        if !code.is_empty() {
-                            vh.do_login(code);
-                        }
-                    }
-                    false
-                }
-                crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
+                let url = val.get("url").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                if url.is_empty() {
+                    vh.login_btn.set_sensitive(true);
                     vh.auth_hint.set_visible(true);
-                    vh.auth_hint.set_text(&format!("Login window: {}", message));
-                    false
+                    vh.auth_hint.set_text("The store helper did not return a login URL.");
+                    return false;
                 }
-                _ => true,
+                vh.auth_hint.set_text("Opening a login window — sign in there.");
+                vh.watch_login_helper(url);
+                false
+            }
+            PluginEvent::Done(val) => {
+                // El plugin ya quedó autenticado (p. ej. una sesión viva).
+                let who = val
+                    .get("account")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                vh.login_btn.set_sensitive(true);
+                vh.auth_hint.set_visible(true);
+                let msg = if who.is_empty() {
+                    "Already logged in.".to_string()
+                } else {
+                    format!("Logged in as {}", who)
+                };
+                vh.auth_hint.set_text(&msg);
+                vh.refresh_auth(false);
+                vh.refresh_library(false);
+                false
+            }
+            PluginEvent::Error { message, .. } => {
+                vh.login_btn.set_sensitive(true);
+                vh.auth_hint.set_visible(true);
+                vh.auth_hint.set_text(&format!("Login could not start: {}", message));
+                false
+            }
+            _ => true,
+        });
+    }
+
+    /// Lanza `webdriver_login` en segundo plano y espera a que devuelva el código.
+    ///
+    /// El helper es un proceso aparte a propósito: hablar WebDriver es asíncrono
+    /// y el launcher es síncrono, así que meter ese runtime en el binario
+    /// principal significaría arrastrar tokio/hyper a toda la app. Aquí solo se
+    /// leen sus stdout y su código de salida.
+    ///
+    /// El watchdog cubre el caso de que el proceso muera sin escribir nada. El
+    /// límite de tiempo del login lo pone el propio helper (180 s), que además
+    /// devuelve en su mensaje la última URL que vio; el de aquí es un margen.
+    fn watch_login_helper(&self, url: String) {
+        let rx = spawn_login_helper(url);
+        let vh = self.clone();
+        let guard = Rc::new(std::cell::Cell::new(true));
+        let guard_t = guard.clone();
+        let vh_t = vh.clone();
+        glib::timeout_add_local(std::time::Duration::from_secs(210), move || {
+            if guard_t.replace(false) {
+                vh_t.login_btn.set_sensitive(true);
+                vh_t.auth_hint.set_visible(true);
+                vh_t.auth_hint.set_text(
+                    "The browser login helper stopped responding. Press Log in to try again.",
+                );
+            }
+            glib::ControlFlow::Break
+        });
+        crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
+            Ok(Ok(code)) => {
+                guard.set(false);
+                vh.auth_hint.set_visible(true);
+                vh.auth_hint.set_text("Got the code — signing in…");
+                vh.do_login(&code);
+                glib::ControlFlow::Break
+            }
+            Ok(Err((why, detail))) => {
+                guard.set(false);
+                vh.login_btn.set_sensitive(true);
+                vh.auth_hint.set_visible(true);
+                vh.auth_hint
+                    .set_text(&login_failure_message(&why, &detail));
+                glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(_) => {
+                guard.set(false);
+                vh.login_btn.set_sensitive(true);
+                vh.auth_hint.set_visible(true);
+                vh.auth_hint.set_text(&login_failure_message(
+                    "session",
+                    "the helper process ended without giving a code",
+                ));
+                glib::ControlFlow::Break
             }
         });
     }
@@ -1241,9 +1306,9 @@ impl StorePageHandle {
     fn do_login(&self, code: &str) {
         let rx = StoreManager::spawn_auth(self.store.clone(), code.to_string());
         let vh = self.clone();
-        // Watchdog guard: Done, Error and the auth_url Custom event disable
-        // it, so "Validating code…" always ends (success, visible error or
-        // visible timeout) and never hangs forever.
+        // Watchdog guard: Done and Error disable it, so "Validating code…"
+        // always ends (success, visible error or visible timeout) and never
+        // hangs forever.
         let guard = Rc::new(std::cell::Cell::new(true));
         let guard_t = guard.clone();
         let vh_t = vh.clone();
@@ -1257,21 +1322,7 @@ impl StorePageHandle {
         });
         crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
             match ev {
-                crate::backend::plugin_process::PluginEvent::Custom(val) => {
-                    if let Some(url) = val.get("url").and_then(|x| x.as_str()) {
-                        // Browser flow: the launcher opens the tab and the
-                        // verification continues manually (paste + Confirm).
-                        guard.set(false);
-                        vh.state.integration.open_url(url);
-                        vh.auth_hint.set_visible(true);
-                        if let Some(instr) = val.get("instructions").and_then(|x| x.as_str()) {
-                            vh.auth_hint.set_text(&format!("Tab opened — use THAT tab (don't click Log in again). {}", instr));
-                        } else {
-                            vh.auth_hint.set_text("Tab opened — use THAT tab (don't click Log in again).");
-                        }
-                    }
-                    true
-                }
+                crate::backend::plugin_process::PluginEvent::Custom(_) => true,
                 crate::backend::plugin_process::PluginEvent::Done(val) => {
                     guard.set(false);
                     vh.login_btn.set_sensitive(true);
@@ -2113,5 +2164,162 @@ impl StorePageHandle {
         }
         dlg.present(Some(&self.parent));
         (bar, status)
+    }
+}
+
+
+/// Ejecuta `webdriver_login` y devuelve su código, o el motivo del fallo.
+///
+/// Vive en un hilo propio porque el helper puede tardar hasta 180 s: el hilo
+/// se queda esperando en `output()` y el bucle de GTK sigue respondiendo igual.
+///
+/// La causa de que el proceso se quede colgado sin escribir nada la cubre el
+/// watchdog del llamador, no este `wait()`.
+fn spawn_login_helper(
+    url: String,
+) -> std::sync::mpsc::Receiver<Result<String, (String, String)>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(run_login_helper(&url));
+    });
+    rx
+}
+
+fn run_login_helper(url: &str) -> Result<String, (String, String)> {
+    let bin = login_helper_path().map_err(|e| ("helper".to_string(), e))?;
+    // stderr va a un archivo, no a una tubería: así no puede haber interbloqueo
+    // por descriptores llenos y además queda el registro para diagnosticar.
+    let log = login_helper_log_path();
+    let stderr = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&log)
+        .ok();
+
+    let out = std::process::Command::new(&bin)
+        .arg(url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(stderr.map_or_else(std::process::Stdio::null, std::process::Stdio::from))
+        .output()
+        .map_err(|e| {
+            (
+                "helper".to_string(),
+                format!("could not start {}: {}", bin.display(), e),
+            )
+        })?;
+
+    if !out.status.success() {
+        let raw = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        // El helper responde `ERRO:<motivo>:<mensaje>`. Se separan los dos
+        // campos para poder dar un mensaje distinto por causa.
+        let (why, msg) = match raw.strip_prefix("ERRO:") {
+            Some(rest) => match rest.split_once(':') {
+                Some((w, m)) => (w.to_string(), m.to_string()),
+                None => (rest.to_string(), String::new()),
+            },
+            None => (
+                "helper".to_string(),
+                if raw.is_empty() {
+                    format!("exited with {} (see {})", out.status, log.display())
+                } else {
+                    raw
+                },
+            ),
+        };
+        return Err((why, msg));
+    }
+
+    let code = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if code.is_empty() {
+        return Err((
+            "session".to_string(),
+            "the helper finished without giving a code".to_string(),
+        ));
+    }
+    Ok(code)
+}
+
+/// Dónde está el binario helper.
+///
+/// Vive al lado del launcher: en desarrollo los dos están en `target/debug/` y
+/// en una instalación los dos en `~/.local/share/corkytux/`. El override por
+/// entorno existe para poder probar otro binario sin recompilar.
+fn login_helper_path() -> Result<PathBuf, String> {
+    if let Ok(custom) = std::env::var("CORKYTUX_LOGIN_HELPER") {
+        let p = PathBuf::from(custom);
+        if p.is_file() {
+            return Ok(p);
+        }
+        return Err(format!("CORKYTUX_LOGIN_HELPER is not a file: {}", p.display()));
+    }
+    let name = "webdriver_login";
+    let mut tried: Vec<String> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let p = dir.join(name);
+            if p.is_file() {
+                return Ok(p);
+            }
+            tried.push(p.display().to_string());
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let p = PathBuf::from(home).join(".local/share/corkytux").join(name);
+        if p.is_file() {
+            return Ok(p);
+        }
+        tried.push(p.display().to_string());
+    }
+    Err(format!(
+        "the store login helper ({}) is missing; looked in: {}",
+        name,
+        tried.join(", ")
+    ))
+}
+
+/// Registro de stderr del helper, para poder diagnosticar un login fallido.
+fn login_helper_log_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    let dir = PathBuf::from(home).join(".local/share/corkytux/logs");
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join("login-helper.log")
+}
+
+/// Traduce el motivo de fallo del helper a un mensaje accionable.
+///
+/// Cada motivo que el helper puede devolver tiene su propio mensaje, y todos
+/// dicen qué hacer y terminan pidiendo reintentar. Ninguno sugiere desactivar
+/// nada: el perfil que usa el helper es efímero y no carga las extensiones ni
+/// las protecciones del navegador del usuario.
+fn login_failure_message(why: &str, detail: &str) -> String {
+    let base = match why {
+        "chrome" => "CorkyTux could not prepare the browser it uses to show the login \
+                     window. On first use it downloads its own Chromium, so this usually \
+                     means the download was blocked or there is no disk space. Press Log in \
+                     to retry."
+            .to_string(),
+        "timeout" => "The sign-in did not finish in 3 minutes. Press Log in to try again. \
+                      If the window is still open, finish signing in there before retrying."
+            .to_string(),
+        "nav" => "The store's login page could not be opened. Check your connection and \
+                  press Log in to retry."
+            .to_string(),
+        "session" => "The browser opened but CorkyTux could not attach to it. Close any \
+                      browser window that is already showing a store login and press Log in \
+                      to retry."
+            .to_string(),
+        "cancelado" => "The login was cancelled and the browser was closed. Press Log in \
+                        to start again."
+            .to_string(),
+        _ => "The automated store login failed. Press Log in to retry.".to_string(),
+    };
+    // El detalle solo se añade si aporta algo: el motivo de un timeout ya
+    // incluye la última URL vista, que es lo que hace falta para diagnosticar.
+    if detail.trim().is_empty() {
+        base
+    } else {
+        format!("{} ({})", base, detail.trim())
     }
 }

@@ -308,3 +308,16 @@ Consecuencia: con `XDG_DATA_HOME` puesto se veían las carátulas y se importaba
 4. **Ícono del store (BUG B)**: en la sidebar, el botón junto a "Your Library"
    debe volver al glyph de instalación moderna (caja+flecha), no candado.
 4. Re-render de iconos tras cualquier cambio de tema/íconos en el futuro.
+5. **Ciclo logout → re-login de Epic y GOG**: el login quedó confirmado por
+   UI en las dos tiendas (`logged: epic/gog = true`, token de Epic escrito en
+   `~/.config/legendary/user.json`, token de GOG en `gogdl_auth.json`), pero
+   **nadie probó desloguearse y volver a entrar**. Sin comprobar que
+   `logout` invalida el token y que un `Log in` posterior vuelve a canjear
+   sin dejar restos del intento anterior.
+6. **Login de GOG de principio a fin**: el canje y el refresh se corrigieron y
+   se verificaron contra un token ya almacenado, pero el intento completo
+   (navegar → capturar → canjear → verificar) se confirmó solo tras reintentar
+   con el token del intento anterior, no en una única pasada limpia.
+7. **Tamaño final de los iconos de acción y el ciclo Play↔Stop** en tema
+   claro y oscuro: el fix de escalado y de tinta está aplicado pero sin
+   verificación visual.

@@ -129,3 +129,35 @@ Se verificó además que el resto del logo tiene el mismo aspecto que cualquier
 otro icono de la fila: el `GtkPicture` lo escala a 40×40 con
 `ContentFit::Contain` sin deformar, porque el paintable es cuadrado
 (512×512) y el logo ocupa de 449×509 px dentro de él.
+
+## Chromium (binario de terceros, no un icono)
+
+`webdriver_login` (el binario que hace el login de Epic/GOG) necesita un
+navegador real donde la persona escriba su contraseña. Descarga Chrome for
+Testing la primera vez y lo usa siempre en un perfil efímero que borra al
+terminar.
+
+- Versión fijada: **154.0.8037.57** (`src/bin/webdriver_login.rs`, constantes
+  `CHROME_VERSION` y `CHROME_URL`)
+- Origen: <https://googlechromelabs.github.io/chrome-for-testing/>
+  (`chrome-linux64.zip`, ~188 MB comprimido)
+- Licencia: **términos de servicio de Google**. Chrome for Testing se
+  distribuye bajo los términos de Google Chrome, no bajo una licencia de
+  proyecto. Se redistribute sin modificar.
+- Se guarda en `~/.local/share/corkytux/chrome-<version>/`
+
+Se prefiere el Chromium del sistema si ya está en el `PATH`, para no descargar
+188 MB cuando no hace falta. La descarga embebida existe para no depender de
+root: el paquete de Gentoo exigiría privilegios que un producto que se instala
+en `~/.local` no puede pedir.
+
+**Por qué Chromium y no Firefox.** Se implementó primero con Firefox por
+geckodriver y no funciona: el hCaptcha de Epic rechaza el reto ya resuelto
+porque `navigator.webdriver` es `true`, y Marionette fuerza ese valor desde C++
+sin que ningún pref lo cambie. Chromium lanzado a mano —sin
+`--enable-automation` ni headless, conectado solo por CDP— deja el valor en
+`false`. La tabla de mediciones está en el comentario de módulo de
+`src/bin/webdriver_login.rs`.
+
+Este proyecto no incluye ni modifica código de Chromium; solo lo descarga y lo
+lanza.

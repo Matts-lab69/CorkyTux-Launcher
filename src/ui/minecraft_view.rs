@@ -47,6 +47,10 @@ struct AddonRow {
     project_id: String,
 }
 
+/// `CONFIG_DIR` del plugin minecraft-launcher: sus datos, no su ejecutable.
+///
+/// El script del plugin vive en `plugins_base_dir()` (~/.local/share). Ver el
+/// contrato de las dos raíces en `plugin_process::plugins_base_dir`.
 fn mc_root() -> std::path::PathBuf {
     std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
         .join(".config/CorkyTux/plugins/minecraft-launcher")

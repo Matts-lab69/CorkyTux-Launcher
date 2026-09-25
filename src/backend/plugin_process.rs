@@ -85,6 +85,22 @@ pub fn classify(value: serde_json::Value) -> PluginEvent {
     }
 }
 
+/// Raíz de los **ejecutables** de los plugins.
+///
+/// Ojo con esto, porque hay dos raíces de plugins y confundirlas rompe el
+/// login de las tiendas:
+///
+/// * `~/.local/share/CorkyTux/plugins/<id>/` — lo de aquí. El script que el
+///   launcher instala y ejecuta. Es la única copia que corre.
+/// * `~/.config/CorkyTux/plugins/<id>/` — el `CONFIG_DIR` del propio plugin,
+///   su estado mutable: `bin/legendary`, `bin/gogdl`, `installs.json`,
+///   `accounts.json`, locks, cachés. La usan `proton.rs`, `minecraft_view.rs`
+///   y `external.rs`, y está bien: son datos, no código.
+///
+/// Antes estas dos se cruzaban y el script del pluginvivía en las dos, así que
+/// un cambio a mano caía en la copia muerta y el launcher seguía ejecutando la
+/// vieja. Para cuando toques el código de un plugin, edita el repo del plugin
+/// y reinstálalo; no parchees la copia instalada.
 pub fn plugins_base_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     PathBuf::from(home).join(".local").join("share").join("CorkyTux").join("plugins")

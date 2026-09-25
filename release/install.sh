@@ -170,6 +170,24 @@ log "Binary: ${INSTALL_DIR}/corkytux"
 ln -sf "${INSTALL_DIR}/corkytux" "${BIN_DIR}/corkytux"
 log "Symlink: ${BIN_DIR}/corkytux"
 
+# Helper del login de Epic/GOG. Va al lado de corkytux porque el launcher lo
+# busca ahi (el override CORKYTUX_LOGIN_HELPER es solo para pruebas). No lleva
+# symlink: no se ejecuta a mano, y asi no aparece en el PATH del usuario.
+HELPER=""
+for candidate in "${SCRIPT_DIR}/webdriver_login" "${SCRIPT_DIR}/release/webdriver_login"; do
+  if [[ -f "$candidate" ]] && file "$candidate" | grep -q 'ELF'; then
+    HELPER="$candidate"
+    break
+  fi
+done
+if [[ -n "$HELPER" ]]; then
+  install -m 0755 "$HELPER" "${INSTALL_DIR}/webdriver_login"
+  log "Store login helper: ${INSTALL_DIR}/webdriver_login"
+else
+  warn "webdriver_login not found: the Epic/GOG sign-in will not work."
+  warn "See docs/BUILD.md to build it from source."
+fi
+
 # UI assets (the launcher loads themed icons from INSTALL_DIR/assets)
 ASSETS=""
 for candidate in "${SCRIPT_DIR}/assets" "${SCRIPT_DIR}/release/assets"; do
