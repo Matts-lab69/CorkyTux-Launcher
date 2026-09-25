@@ -2228,21 +2228,21 @@ impl ProtonManager {
             return Err("No downloadable releases found".into());
         }
         // Recorte del catalogo. La API viene newest-first, asi que truncar
-        // es quedarse con lo mas reciente: 20 GE, 10 CachyOS + 10 v3. Las
+        // es quedarse con lo mas reciente: 10 GE, 5 CachyOS + 5 v3. Las
         // instaladas viven en otra lista (scan de disco) y no se tocan; el
         // auto-install de GE toma .next() (la mas nueva) y no se afecta.
         if source == "ge" {
-            releases.truncate(20);
+            releases.truncate(10);
         } else if source == "cachyos" {
             let mut normal_n = 0;
             let mut v3_n = 0;
             releases.retain(|(t, _)| {
                 if t.ends_with("-v3") {
                     v3_n += 1;
-                    v3_n <= 10
+                    v3_n <= 5
                 } else {
                     normal_n += 1;
-                    normal_n <= 10
+                    normal_n <= 5
                 }
             });
         }
