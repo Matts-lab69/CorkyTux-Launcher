@@ -2178,7 +2178,14 @@ impl ProtonManager {
             if tag.is_empty() {
                 continue;
             }
-            let mut dl: Option<String> = None;
+            // Sabores por asset: CachyOS publica x86_64 y x86_64_v3 en el
+            // mismo release (verificado contra la API real). El codigo
+            // anterior se quedaba con el primero y el v3 no existia en el
+            // catalogo. El tag del v3 lleva sufijo para que la UI muestre
+            // dos filas distinguibles; la extraccion no colisiona porque
+            // cada tar trae su propio top-level distinto (verificado).
+            let mut dl_normal: Option<String> = None;
+            let mut dl_v3: Option<String> = None;
             for asset in rel
                 .get("assets")
                 .and_then(|v| v.as_array())
@@ -2197,16 +2204,47 @@ impl ProtonManager {
                     && !url.is_empty()
                     && !Self::is_foreign_arch(name)
                 {
-                    dl = Some(url.to_string());
-                    break;
+                    if name.contains("x86_64_v3") {
+                        if dl_v3.is_none() {
+                            dl_v3 = Some(url.to_string());
+                        }
+                    } else if dl_normal.is_none() {
+                        dl_normal = Some(url.to_string());
+                    }
                 }
             }
-            if let Some(download_url) = dl {
-                releases.push((tag, download_url));
+            if let Some(download_url) = dl_normal {
+                releases.push((tag.clone(), download_url));
+            }
+            // Solo CachyOS emite v3: GE-Proton publica un unico tarball por
+            // release y su comportamiento queda identico al actual.
+            if source == "cachyos" {
+                if let Some(download_url) = dl_v3 {
+                    releases.push((format!("{}-v3", tag), download_url));
+                }
             }
         }
         if releases.is_empty() {
             return Err("No downloadable releases found".into());
+        }
+        // Recorte del catalogo. La API viene newest-first, asi que truncar
+        // es quedarse con lo mas reciente: 20 GE, 10 CachyOS + 10 v3. Las
+        // instaladas viven en otra lista (scan de disco) y no se tocan; el
+        // auto-install de GE toma .next() (la mas nueva) y no se afecta.
+        if source == "ge" {
+            releases.truncate(20);
+        } else if source == "cachyos" {
+            let mut normal_n = 0;
+            let mut v3_n = 0;
+            releases.retain(|(t, _)| {
+                if t.ends_with("-v3") {
+                    v3_n += 1;
+                    v3_n <= 10
+                } else {
+                    normal_n += 1;
+                    normal_n <= 10
+                }
+            });
         }
         Self::write_releases_cache(source, &releases);
         Ok(releases)
