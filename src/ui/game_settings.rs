@@ -3,6 +3,7 @@ use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::backend::import_move::nested_in;
 use crate::backend::proton::ProtonManager;
 use crate::ui::helpers;
 use crate::AppState;
@@ -855,6 +856,7 @@ fn build_install_path_card(
             let g_cc = g_c.clone();
             let status_lbl2 = status_lbl.clone();
             let chosen2 = chosen.clone();
+            let old_main_cc = old_main_c.clone();
             glib::idle_add_local(move || match rx.try_recv() {
                 Ok(Ok(rel)) => {
                     // Selective, atomic Games.ini update — set_game_value
@@ -865,7 +867,12 @@ fn build_install_path_card(
                         let new_exe = chosen2.join(&rel).display().to_string();
                         st_cc.config.set_game_value(&g_cc, "Executable", &new_exe);
                     }
-                    status_lbl2.set_text(&format!("Install folder updated to {}", chosen2.display()));
+                    let mut done_msg =
+                        format!("Install folder updated to {}", chosen2.display());
+                    if let Some(note) = nested_prefix_note(&st_cc, &g_cc, &old_main_cc) {
+                        done_msg.push_str(&format!("\n{}", note));
+                    }
+                    status_lbl2.set_text(&done_msg);
                     helpers::present_msg(
                         &p_c2,
                         "Install folder updated",
@@ -904,6 +911,25 @@ fn relative_exe(old_main: &str, exe: &str) -> String {
         return rel.display().to_string();
     }
     ep.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+}
+
+/// `Some(note)` when the previous install folder lived inside the stored
+/// PrefixPath: moving MainPath does not move the prefix, so the game may
+/// fail to launch until the prefix is updated too. `None` when there is no
+/// stored prefix (emulator entries) or no nesting.
+fn nested_prefix_note(state: &AppState, game: &str, old_main: &str) -> Option<String> {
+    let prefix = state.config.game_value(game, "PrefixPath").unwrap_or_default();
+    if prefix.trim().is_empty() {
+        return None;
+    }
+    if nested_in(std::path::Path::new(&expand_tilde(old_main)), std::path::Path::new(&expand_tilde(&prefix))) {
+        Some(format!(
+            "Note: the previous folder was inside its Wine prefix ({}). The prefix still points at the old location — update Prefix path in the Run tab if the game fails to launch.",
+            prefix
+        ))
+    } else {
+        None
+    }
 }
 
 /// True when `path` is empty or matches a registered shared prefix
