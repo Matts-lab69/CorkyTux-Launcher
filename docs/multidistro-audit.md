@@ -432,17 +432,30 @@ Requiere que el usuario abra la app; el agente no la ejecuta.
 
    ### Lo que el conteo variable implica
 
-   El número de avisos **cambia entre ejecuciones idénticas** (7 → 5 → 1), y
-   además **no crece con el uso**: la cuarta ejecución, ya con el binario
-   reinstalado, emitió uno solo. Un defecto determinista —un asset de tamaño 0,
-   una ruta de código fija— daría un conteo constante. Que varíe y además
-   decrezca apunta a una **condición de temporización o de primer frame** (un
-   widget con asignación 0 mientras el layout se asienta), y no a un bug de
-   dibujo determinista en el código de la app.
+   El número de avisos **cambia entre ejecuciones**: 7, 5, 1 y 8, en cuatro
+   arranques. No hay tendencia ni correlación con el uso: es ruido. Un defecto
+   determinista —un asset de tamaño 0, una ruta de código fija— daría un conteo
+   constante, así que la causa es una **condición de temporización o de primer
+   frame**, no un bug de dibujo determinista.
+
+   **Corrección de una inferencia previa:** con solo las dos primeras muestras
+   (7 y 5) se tendía a concluir que el conteo decrecía y que la cuarta
+   ejecución, con 1 aviso, lo confirmaba. La quinta muestra (8) lo refuta. No
+   hay decrecimiento; la varianza es simplemente alta y no debe leerse como
+   tendencia.
 
    Quedan 46 reglas `border-radius` en el CSS, que es el disparador conocido
    restante cuando un rectángulo redondeado se calcula sobre una asignación de
    ancho o alto 0.
+
+   **Hipótesis abierta, sin confirmar:** el salto de 1 a 8 avisos ocurrió en
+   la ejecución inmediatamente posterior a sustituir `GtkImage` por
+   `GtkPicture` en las filas de emulador. Si el número de emuladores listados
+   fuera 8, encajaría con un aviso por fila —un `GtkPicture` con
+   `can_shrink` recibiendo una asignación 0 en un frame intermedio. No se ha
+   confirmado: los conteos previos (7, 5, 1) ya variaban sin `GtkPicture`, así
+   que la correlación con una sola muestra no prueba nada. Habría que contar
+   las filas y comparar.
 
    **Para cerrarlo de verdad** hace falta aislar en ejecución (GTK Inspector
    sobre el primer frame, o bisect del orden de construcción de widgets), lo
