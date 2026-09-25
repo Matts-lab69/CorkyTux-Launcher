@@ -2476,10 +2476,21 @@ fn rebuild_emu_rows(
         icon_slot.set_height_request(48);
         let icon_texture = emulator_icon_path(&emu.name).and_then(|path| helpers::load_texture(&path));
         if let Some(texture) = icon_texture {
-            let icon = gtk::Image::new();
-            icon.set_paintable(Some(&texture));
-            icon.set_pixel_size(40);
-            icon.set_size_request(40, 40);
+            // GtkPicture, no GtkImage. `GtkImage:pixel-size` solo actua sobre
+            // imagenes de tipo ICON_NAME (documentado en el GIR de GTK), asi
+            // que puesto sobre un *paintable* era un no-op. Los SVG de Papirus
+            // son de 48x48, de modo que la textura tenia su tamano natural
+            // completo y `set_size_request(40, 40)` —que fija un minimo, no un
+            // maximo— no podia encogerla: la imagen llenaba el slot y
+            // `Align::Center` se quedaba sin espacio donde actuar. Por eso el
+            // centrado no se notaba. `can_shrink` + `ContentFit::Contain` si
+            // respetan los 40x40, y al ser el paintable cuadrado se encaja sin
+            // deformarse.
+            let icon = gtk::Picture::for_paintable(&texture);
+            icon.set_can_shrink(true);
+            icon.set_content_fit(gtk::ContentFit::Contain);
+            icon.set_width_request(40);
+            icon.set_height_request(40);
             icon.set_halign(gtk::Align::Center);
             icon.set_valign(gtk::Align::Center);
             icon_slot.append(&icon);
