@@ -2472,6 +2472,10 @@ fn rebuild_emu_rows(
         } else {
             let is_appimage = emu.source == "appimage";
             let is_none = emu.source == "none" || emu.source.is_empty();
+            // A system-detected emulator already works via PATH; offering
+            // "Install" there would download a redundant AppImage. Instead
+            // offer pinning the detected path to an explicit linked entry.
+            let is_pin = emu.source == "system";
             let btn = if emu.source.is_empty() {
                 // Legacy backend fallback: honour installed directly.
                 gtk::Button::with_label(if emu.installed {
@@ -2482,6 +2486,7 @@ fn rebuild_emu_rows(
             } else {
                 gtk::Button::with_label(match emu.source.as_str() {
                     "appimage" => "Remove",
+                    "system" => "Set as linked",
                     _ => "Install",
                 })
             };
@@ -2492,8 +2497,12 @@ fn rebuild_emu_rows(
             if remove_c {
                 btn.add_css_class("danger-btn");
             }
-            btn.set_width_request(80);
+            btn.set_width_request(if is_pin { 120 } else { 80 });
             let name_c = emu.name.clone();
+            // emu.path is the detected binary (shutil.which result for
+            // system emulators): pinning passes it straight to corky-link,
+            // no file picker needed.
+            let path_c = emu.path.clone();
             // For legacy backend fall back to installed; otherwise use source to
             // decide the action (only appimage can be removed; none can be installed).
             let state_c = state.clone();
@@ -2504,9 +2513,12 @@ fn rebuild_emu_rows(
                 let tx2 = tx_c.clone();
                 let dir = state_c.plugins.plugins_dir();
                 let name2 = name_c.clone();
+                let path2 = path_c.clone();
                 std::thread::spawn(move || {
                     let res = if remove_c {
                         crate::backend::plugins::PluginManager::remove_emulator_in(&dir, &name2)
+                    } else if is_pin {
+                        crate::backend::plugins::PluginManager::link_emulator_in(&dir, &name2, &path2)
                     } else {
                         crate::backend::plugins::PluginManager::install_emulator_in(&dir, &name2)
                     };

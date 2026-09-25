@@ -824,6 +824,44 @@ impl PluginManager {
         }
     }
 
+    pub fn link_emulator(&self, name: &str, path: &str) -> Result<String, String> {
+        Self::link_emulator_in(&self.plugins_dir(), name, path)
+    }
+
+    /// Thread-safe (no self). Pins an already-detected binary (typically a
+    /// `system` emulator found via PATH) to an explicit linked.json entry,
+    /// so it survives PATH changes as long as the file itself exists.
+    pub fn link_emulator_in(dir: &Path, name: &str, path: &str) -> Result<String, String> {
+        let exe = Self::emulator_manager_exe_in(dir);
+        if !exe.exists() {
+            return Err("Emulator Manager plugin not installed".into());
+        }
+        let output = Command::new(&exe)
+            .args(["corky-link", name, path])
+            .output()
+            .map_err(|e| format!("Link failed: {}", e))?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(if err.is_empty() {
+                format!("Link failed for {}", name)
+            } else {
+                err
+            });
+        }
+        let v: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
+        let ok = v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
+        let msg = v.get("message").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        if ok {
+            Ok(if msg.is_empty() { name.to_string() } else { msg })
+        } else {
+            Err(if msg.is_empty() {
+                format!("Link failed for {}", name)
+            } else {
+                msg
+            })
+        }
+    }
+
     pub fn remove_emulator(&self, name: &str) -> Result<String, String> {
         Self::remove_emulator_in(&self.plugins_dir(), name)
     }
