@@ -410,9 +410,42 @@ Requiere que el usuario abra la app; el agente no la ejecuta.
    sin centrar, casi siempre es que se está ejecutando un binario anterior al
    fix (ver "Binario en uso" más abajo), no que el CSS falle.
 3. `Found in system` estático y `Set as linked` clickeable en la misma fila.
-4. Aviso `*** BUG *** In pixman_region32_init_rect: Invalid rectangle passed`:
-   se reprodujo 7 veces al arrancar el build de `0b388df`; la causa sigue sin
-   confirmar y no es crítica.
+4. Aviso `*** BUG *** In pixman_region32_init_rect: Invalid rectangle passed`.
+   Refinado el 2026-09-25 con dos ejecuciones del build de `0b388df`:
+   **7 avisos** en el primer arranque y **5 en el segundo**, con el mismo
+   binario y los mismos assets.
+
+   ### Lo que sí se ha descartado por lectura
+
+   - **Carga de texturas con dimensión 0**: todos los caminos de
+     `helpers.rs` están guardingados —`nw/nh … .max(1)` en `load_texture`
+     (`helpers.rs:162-163`), `if w <= 0 || h <= 0 { return None }` en
+     `load_card_banner` (`helpers.rs:178`), y `Pixbuf::new(...)?` que falla
+     en vez de crear una superficie vacía.
+   - **`background-image` sobre un widget vacío**: las 6 reglas CSS que lo
+     mencionan (`helpers.rs:570,571,597,650,652,653`) son todas
+     `background-image: none`, es decir **quitan** fondo. Ninguna lo añade.
+   - **La ruta de adopción de sesión**: `adopt_session()`
+     (`proton.rs:1516-1532`) solo escribe estado y hace un `eprintln`; no
+     crea widgets. El log aparece antes de los avisos por orden de arranque,
+     no por causalidad.
+
+   ### Lo que el conteo variable implica
+
+   El número de avisos **cambia entre ejecuciones idénticas** (7 → 5). Un
+   defecto determinista —un asset de tamaño 0, una ruta de código fija— daría
+   un conteo constante. Que varíe apunta a una **condición de temporización o
+   de primer frame** (un widget con asignación 0 mientras el layout se asienta),
+   y no a un bug de dibujo determinista en el código de la app.
+
+   Quedan 46 reglas `border-radius` en el CSS, que es el disparador conocido
+   restante cuando un rectángulo redondeado se calcula sobre una asignación de
+   ancho o alto 0.
+
+   **Para cerrarlo de verdad** hace falta aislar en ejecución (GTK Inspector
+   sobre el primer frame, o bisect del orden de construcción de widgets), lo
+   que excede la autorización actual de "compila y abre". Hasta entonces se
+   queda como cosmético: la app funciona y el aviso no impide nada.
 
 ## Medición del centrado de los iconos (2026-09-25)
 
