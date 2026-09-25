@@ -2516,6 +2516,9 @@ fn rebuild_emu_rows(
             if is_none && !emu.native {
                 btn.add_css_class("add-btn");
             }
+            if is_pin {
+                btn.add_css_class("emu-link-action");
+            }
             let remove_c = if emu.source.is_empty() { emu.installed } else { is_appimage };
             if remove_c {
                 btn.add_css_class("danger-btn");
