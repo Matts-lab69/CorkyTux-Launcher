@@ -2447,31 +2447,20 @@ fn rebuild_emu_rows(
         icon.set_xalign(0.5);
         icon.set_yalign(0.5);
         row.append(&icon);
-        // Trailing state suffix kept inline with the name (as today).
-        let badge = if emu.source.is_empty() {
-            if emu.native { " (native)" } else if emu.installed { " (installed)" } else { "" }
-        } else {
-            match emu.source.as_str() {
-                "linked" => " (linked)",
-                "system" => " (system)",
-                "appimage" => " (appimage)",
-                _ => "",
-            }
-        };
-        // Line 1: name + optional status badge side by side.
-        let name_lbl = gtk::Label::new(Some(&format!("{}{}", emu.name, badge)));
+        // The name is the canonical identity; state is rendered separately.
+        let name_lbl = gtk::Label::new(Some(&emu.name));
         name_lbl.add_css_class("details-title");
         name_lbl.set_halign(gtk::Align::Start);
         name_lbl.set_hexpand(true);
         name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        // Status-only states (linked/system/native) render as a badge next to
-        // the name (line 1) instead of a separate slot in the row.
+        // Linked/native states render as a compact badge next to the name
+        // (line 1); system is represented by its actionable warning below.
         let status_text: Option<&str> = if emu.source.is_empty() {
             if emu.native { Some("Linked") } else { None }
         } else {
             match emu.source.as_str() {
                 "linked" => Some("Linked"),
-                "system" => Some("System"),
+                "system" => None,
                 _ => None,
             }
         };
@@ -2483,7 +2472,7 @@ fn rebuild_emu_rows(
         if let Some(label) = status_text {
             let badge_w = gtk::Label::new(Some(label));
             badge_w.add_css_class("proton-path-badge");
-            badge_w.add_css_class("status-badge");
+            badge_w.add_css_class("emu-status-pill");
             badge_w.set_valign(gtk::Align::Center);
             line1.append(&badge_w);
         }
@@ -2507,9 +2496,10 @@ fn rebuild_emu_rows(
             st.set_text(s);
         }
         row.append(&st);
-        // system rows keep a functional action next to the badge: pin the
-        // detected PATH to an explicit linked entry (corky-link). linked is
-        // terminal (badge only); appimage/none/legacy get a button only.
+        // System rows replace the state badge with one functional warning
+        // action: pin the detected PATH to an explicit linked entry
+        // (corky-link). Linked is terminal (badge only); appimage/none/legacy
+        // get a button only.
         let is_appimage = emu.source == "appimage";
         let is_none = emu.source == "none" || emu.source.is_empty();
         let is_pin = emu.source == "system";
@@ -2529,7 +2519,7 @@ fn rebuild_emu_rows(
             } else {
                 gtk::Button::with_label(match emu.source.as_str() {
                     "appimage" => "Remove",
-                    "system" => "Set as linked",
+                    "system" => "Found in system - link it?",
                     _ => "Install",
                 })
             };
@@ -2538,12 +2528,13 @@ fn rebuild_emu_rows(
             }
             if is_pin {
                 btn.add_css_class("emu-link-action");
+                btn.add_css_class("emu-system-link-action");
             }
             let remove_c = if emu.source.is_empty() { emu.installed } else { is_appimage };
             if remove_c {
                 btn.add_css_class("danger-btn");
             }
-            btn.set_width_request(if is_pin { 120 } else { 80 });
+            btn.set_width_request(if is_pin { 220 } else { 80 });
             let name_c = emu.name.clone();
             // emu.path is the detected binary (shutil.which result for
             // system emulators): pinning passes it straight to corky-link,
