@@ -1,0 +1,557 @@
+# CorkyTux: sistema visual de Settings > Emulators
+
+## Estado del documento
+
+- Estado: **opción B aprobada** para `Set as linked`; las tres resoluciones del review quedaron especificadas en este documento (flujo `Working…` y doble click, slot estable, contraste 3:1 con los 10 acentos). Falta el ok final del usuario sobre esta versión antes de tocar CSS o código.
+- Alcance: jerarquía, espaciado y tratamiento visual de las filas de emuladores, con foco en la acción `Set as linked`.
+- Fuentes verificadas: `src/ui/settings.rs`, `rebuild_emu_rows` (`2411-2552`) y handler `EmuOp` (`1916-1932`); `src/backend/theme.rs`, tokens de tema (`190-250`) y paleta de acentos (`77-90`); `src/ui/helpers.rs`, CSS de aplicación (`457-644`).
+- Cambios de esta versión: decisión B; especificación funcional del flujo `Working…` y doble click; decisión de slot estable; garantía de contraste 3:1 para borde/foco con los 10 acentos; registro de pendientes fuera de alcance (sección final).
+- Sección "Lista de emuladores instalables (catálogo)": **opción 1+3 fijada como única viva** (botón estado-consciente + compactación de filas resueltas), con matriz estado → dot/badge/label/clase/ancho. Las opciones A/B/C y las variantes 2/3 fueron movidas al apéndice "Opciones evaluadas y descartadas" (trazabilidad, no se borran). Pendientes abiertos: veredicto legal de íconos (slot gated), mapa `tag → familia` (no aplica a lista plana) y hueco de estado vacío (sin plugin vs sin resultados de filtro). Los bloques CSS citados son especificación, no se aplicaron a código.
+- Los bloques CSS de este documento son una especificación de diseño. No fueron aplicados a código ni a estilos.
+
+## Decisiones fijas y valores por defecto
+
+**Decisiones fijas**
+
+- La jerarquía separa disponibilidad, identidad, estado, feedback operacional y acción.
+- El badge comunica estado; el botón comunica una acción.
+- No se crean colores fuera de los tokens existentes; los derivados (como `{accent_ui}`) se calculan en la generación de CSS, no se hardcodean.
+- `Working…` no reemplaza al badge que describe el `source`.
+- La acción conserva semántica de `gtk::Button`, teclado y foco.
+- El label de estado es un slot estable y está siempre presente en la fila (sección "Slot estable").
+- Durante la operación el botón queda insensible; el doble click no produce una segunda operación (sección "Flujo `Working…` y doble click").
+- El borde/foco de la acción usa `{accent_ui}`: en claro `color-mix(in srgb, {text_main} 30%, {accent})`; en oscuro `{accent}` (sección "Contraste 3:1").
+
+**Defaults propuestos, pendientes de aprobación**
+
+- Adwaita Sans como cara nominal heredada de libadwaita.
+- Centrado vertical sobre un ritmo visual de 36 px.
+- Sin animación ornamental ni cross-fade de badges.
+- Opción B aprobada; pendiente el ok sobre el documento actualizado antes de implementar.
+
+## Objetivo
+
+Hacer que cada fila se lea de izquierda a derecha como una frase operacional inequívoca:
+
+1. disponibilidad;
+2. identidad del emulador;
+3. estado actual de su fuente;
+4. acción disponible.
+
+La regla central es que el badge responda `¿de dónde viene?` y el botón responda `¿qué puedo hacer ahora?`. `Set as linked` no debe parecer otro estado ni duplicar visualmente el badge `System` que ya lo acompaña.
+
+## Tesis de diseño
+
+Una fila debe sentirse como un control compacto y confiable: superficie limpia, tipografía nativa, ritmo de 4/8 px y un solo acento semántico por función. El estado conserva una cápsula pequeña y transparente; la acción conserva un objetivo táctil de 36 px, pero cambia de superficie, radio, peso o borde para pesar más que el estado sin competir con una acción primaria como `Install`.
+
+## Base tipográfica
+
+- Familia: mantener la tipografía nativa de GTK/libadwaita, con **Adwaita Sans** como cara nominal y el fallback del sistema. Esta decisión local no debe introducir una familia nueva mediante CSS.
+- Identidad de la fila: `.details-title`, 16 px, bold, `text_main`.
+- Acción: 14 px, bold.
+- Estado de proceso `Working…`: `.time-label`, 12 px, `text_sec`.
+- Badge: `.proton-path-badge`, 11 px, bold.
+- Punto de disponibilidad: 14 px, `emu-dot-on` u `emu-dot-off`.
+- No usar una segunda familia, mayúsculas decorativas ni texto itálico.
+
+## Tokens existentes
+
+### Superficies y texto
+
+| Token | Tema claro | Tema oscuro | Uso en la fila |
+| --- | --- | --- | --- |
+| `bg` | `#F4F1F8` | `#000000` | Fondo general de la app. |
+| `panel` | `#FFFFFF` | `#121212` | Panel de Settings y superficie de la tarjeta que contiene la lista. |
+| `card` | `#FFFFFF` | `#181818` | Superficie de tarjeta. |
+| `well` | `#ECE8F2` | `#181818` | Fondo de control secundario. |
+| `hover` | `#E3DCEE` | `#282828` | Hover de fila o botón. |
+| `border` | `#D8D0E3` | `#282828` | Bordes neutros. |
+| `text_main` | `#241F2E` | `#E0E0E0` | Nombre y etiquetas de acciones. |
+| `text_sec` | `#5B5468` | `#AAAAAA` | `Working…` y metadatos secundarios. |
+| `text_muted` | `#8A8296` | `#777777` | Punto no disponible. |
+
+El punto disponible conserva su color propio `#00E639`. El patrón destructivo conserva `#E5484D`; no se usa para `Set as linked`.
+
+### Accent configurable
+
+| ID | Accent | Valor base |
+| --- | --- | --- |
+| 0 | green | `#1db954` |
+| 1 | blue | `#1E88E5` |
+| 2 | cyan | `#00BCD4` |
+| 3 | purple | `#AB47BC` |
+| 4 | pink | `#EC407A` |
+| 5 | red | `#EF5350` |
+| 6 | orange | `#FFA726` |
+| 7 | yellow | `#FFEE58` |
+| 8 | teal | `#26A69A` |
+| 9 | indigo | `#5C6BC0` |
+
+- El usuario actual tiene `Accent=9`, indigo `#5C6BC0`.
+- En tema oscuro, `{accent}` usa el valor base.
+- En tema claro, `{accent}` usa `darken(hex, 0.22)`.
+- `on_accent` es `#FFFFFF` en oscuro y `text_main` (`#241F2E`) en claro.
+- Las especificaciones siguientes deben seguir usando `{accent}`; no se debe hardcodear el indigo ni el resultado del oscurecimiento. El borde derivado `{accent_ui}` responde a esta misma regla: se calcula, no se hardcodea.
+
+### Vocabulario de componentes ya existente
+
+| Componente o patrón | Uso establecido | Decisión para esta fila |
+| --- | --- | --- |
+| `.add-btn` | 14 px bold, 36 px de alto, radio 20 px, fondo accent y `on_accent`. | Reservado para `Install`, la única acción primaria. |
+| `.settings-btn` | 14 px bold, `well`, borde accent de 1.5 px y radio 20 px. | Candidato directo para la opción A. |
+| `.danger-btn` | Relleno rojo translúcido, borde `#E5484D`, texto del mismo color y 36 px. | Reservado para `Remove`. |
+| `.proton-path-badge` + `.status-badge` | Texto accent de 11 px, borde de 1 px, radio 10 px y altura de 36 px. | Exclusivo del estado `System` o `Linked`. |
+| `.action-btn` | 11 px bold, radio 18 px y `action_bg` (`#242424` en oscuro, `well` en claro). | No usar para esta acción: su escala corresponde más a una barra compacta. |
+| `.filter-btn` | `well`, con checked en `hover`, texto accent y borde accent. | No usar: checked comunica selección de filtro, no acción de vínculo. |
+| `.icon-ghost` y `.source-link` | Indicadores transparentes o textuales. | Son referencias visuales para la opción C, no clases para reutilizar sin ajustes. |
+| `.destructive-action` | Geometría de 36 px, 14 px bold, padding horizontal de 16 px y radio 20 px. | Aporta ritmo, no color destructivo. |
+| `.dark-btn` | Botón negro con borde blanco. | Excluido: tendría demasiado peso para una acción opcional. |
+| `.mc-account > button`, `.import-mode:checked`, filas selected/hover | Ya combinan `well`, `hover` y `color-mix` con accent para distinguir superficies y estados. | Confirman que un relleno tenue es un patrón propio del producto, no una invención local. |
+
+## Estructura real verificada
+
+`rebuild_emu_rows` crea un `gtk::Box` horizontal por emulador, con estas propiedades:
+
+- separación horizontal: 8 px;
+- margen superior e inferior de cada fila: 2 px;
+- lista vertical: separación 4 px, por lo que la separación visual efectiva entre filas vecinas es de 8 px;
+- margen inicial de la lista: 16 px;
+- orden actual de hijos: punto, label de identidad/contenido, estado operacional opcional, badge de estado opcional y botón opcional;
+- el label flexible usa `.details-title`, `hexpand`, alineación al inicio y elipsado al final;
+- el estado operacional usa `.time-label` y reserva 12 caracteres; con el slot estable este label existe siempre, vacío en reposo (ver sección "Slot estable");
+- el badge usa `.proton-path-badge` más `.status-badge`;
+- `Set as linked` reserva 120 px de ancho; las demás acciones reservan 80 px.
+
+El label de identidad actual concatena nombre, un sufijo opcional de `source`, separador `—` y descripción. Para este sistema visual se trata como un único bloque de identidad/contenido. El badge separado es el ancla canónica de estado. Este documento no decide una refactorización de ese texto.
+
+## Matriz semántica de la fila
+
+| Source | Señal de disponibilidad | Badge de estado | Acción |
+| --- | --- | --- | --- |
+| `linked` | punto encendido | `Linked` | ninguna; estado terminal |
+| `system` | punto encendido | `System` | `Set as linked` |
+| `appimage` | según disponibilidad reportada | ninguno | `Remove` |
+| `none` o vacío, no nativo | punto apagado si no está instalado | ninguno | `Install` o `Remove` según `installed` |
+| nativo, source vacío | punto encendido | `Linked` | ninguna |
+
+`Working…` describe una operación en curso, no el `source`. Por eso debe permanecer en su propio label `.time-label` antes del badge. El badge `System` no se reemplaza mientras corre la acción.
+
+## Sistema de fila
+
+### Jerarquía visual
+
+Orden de lectura recomendado:
+
+```text
+[dot] [identidad flexible] [Working… opcional] [badge de estado] [acción]
+```
+
+- **Dot:** señal secundaria y redundante de disponibilidad. No debe ser el único indicador del estado.
+- **Identidad:** bloque principal flexible. Es lo que primero se lee y lo último que debe recortarse.
+- **Working…:** feedback transitorio en `text_sec`; no usa un segundo badge.
+- **Badge:** vocabulario de estado, no control. Se mantiene transparente, con texto accent, borde de 1 px, radio de 10 px y 11 px bold. La combinación con `.status-badge` conserva una altura de 36 px y 16 px horizontales.
+- **Acción:** último elemento de la fila, con etiqueta imperativa explícita, objetivo táctil de 36 px y 14 px bold.
+
+### Espaciado y alineación
+
+- Mantener 8 px entre dot, identidad, estado operacional, badge y acción.
+- No agregar márgenes individuales alrededor del badge o del botón: la separación del `gtk::Box` ya resuelve el ritmo.
+- Centrar verticalmente todos los hijos sobre una altura visual mínima de 36 px.
+- Mantener el label de identidad con expansión horizontal y elipsado final.
+- Mantener 120 px para `Set as linked`; primero debe recortarse el contenido descriptivo, nunca el texto de la acción.
+- Mantener `Working…` en un slot estable para evitar saltos de layout durante la operación.
+
+### Regla contra dos cápsulas accent iguales
+
+En una misma fila no se permiten dos chips accent con el mismo lenguaje visual:
+
+1. `System` o `Linked` siempre es el estado: fondo transparente, 11 px, radio 10 px, borde accent de 1 px.
+2. Una acción en forma de cápsula debe usar 14 px bold, radio 20 px y, como mínimo, una diferencia clara de superficie o peso respecto del badge.
+3. `Install` conserva `.add-btn` y es la única acción primaria con fondo accent sólido.
+4. `Remove` conserva `.danger-btn`: contorno rojo con relleno translúcido.
+5. `Set as linked` nunca usa rojo y nunca replica exactamente `.proton-path-badge`.
+6. La forma del texto `Set as linked` no debe cambiar el significado del badge: incluso si se presenta como enlace, sigue siendo un `gtk::Button` nativo para conservar teclado, foco y semántica.
+7. El borde accent de la acción usa el token derivado `{accent_ui}` (sección "Contraste 3:1"); el badge conserva `{accent}`. La diferencia de contorno ya distingue la acción del estado, además del relleno y del tamaño.
+
+### Estado transitorio y no-animación
+
+- No animar el cambio de badge ni la altura de la fila. Los cambios de hover/focus y la aparición de `Working…` son inmediatos y utilitarios.
+- `Working…` no se convierte en spinner ni duplica el mensaje del badge.
+
+### Flujo `Working…` y doble click (especificación funcional)
+
+Comportamiento actual verificado en el código:
+
+- El click inserta `"Working…"` en el mapa `emu_status` y lanza un thread que envía `EmuOp` al terminar (`settings.rs:2531-2547`).
+- No hay rebuild intermedio: la fila solo se reconstruye al recibir el resultado (`settings.rs:1916-1932`). Por eso hoy `Working…` prácticamente nunca se llega a ver y el botón permanece sensible durante toda la operación.
+- El handler de `EmuOp` (éxito o error) limpia el mapa `emu_status`, escribe feedback en el label de estado global y reconstruye la lista (`settings.rs:1916-1932`).
+
+Especificación del mecanismo a implementar:
+
+1. **Reposo:** botón sensible con label `Set as linked`; el slot estable está vacío; badge `System` visible.
+2. **Click (síncrono, antes del thread):**
+   a. Guard de reentrada: `if !b.is_sensitive() { return; }`.
+   b. `b.set_sensitive(false)`.
+   c. `set_text("Working…")` en el label de la fila (mutación directa del widget capturado en el closure).
+   d. Mantener el insert en `emu_status` para continuidad si ocurre un rebuild a mitad de operación.
+   e. Thread + envío de `EmuOp` sin cambios respecto del código actual.
+3. **Doble click antes de la respuesta:** el segundo click no dispara nada. GTK4 no despacha eventos de puntero a widgets insensibles, y `set_sensitive(false)` se aplica dentro del primer handler, antes de evaluarse el segundo press. El guard del punto 2 cubre además un `activate()` programático.
+4. **Rebuild a mitad de operación:** si un refresco de la lista (`settings.rs:1649`) recrea la fila mientras corre la operación, el botón nuevo nace deshabilitado: al construir una fila `system`, si `emu_status` contiene `"Working…"` para ese emulador, `btn.set_sensitive(false)`. El lock es así rebuild-proof y no depende de la vida del widget clickeado.
+5. **Re-activación (cómo y cuándo):** el botón deshabilitado no se re-habilita en el mismo widget; el widget se descarta y la recuperación la decide el resultado vía el rebuild de `EmuOp`:
+   - En éxito, `emu_status` se limpia y la lista nueva convierte la fila en `Linked` (badge solo, sin botón; estado terminal).
+   - En error, `emu_status` se limpia, el mensaje va al status global y la fila vuelve a `System` con un botón nuevo, sensible, label `Set as linked`.
+   No existe una ruta donde un botón viejo se re-habilite.
+6. **Durante la operación el badge `System` permanece visible;** el feedback no lo reemplaza (decisión fija).
+7. **Feedback:** `Working…` es visible desde el click hasta el rebuild del resultado. En éxito, el label de estado global ya muestra el mensaje del resultado.
+
+### Slot estable (decisión)
+
+**Decisión: reservar el ancho siempre** — el label de estado existe en toda fila, por defecto vacío; no se acepta el corrimiento de layout.
+
+- Hoy el label se crea solo si el mapa tiene entrada (`settings.rs:2463-2468`): en reposo no existe y, al aparecer `Working…`, la identidad se encoge y el badge/botón se corren a la izquierda.
+- **Mecanismo:** crear siempre el label con `set_width_chars(12)` (el valor ya usado) y texto vacío en reposo; el click solo hace `set_text("Working…")` y el resultado vuelve a `set_text("")`.
+- **Por qué:**
+  1. El slot estable ya está prometido en este documento y es la base de la mutación directa del flujo anterior.
+  2. Mantiene la columna de badges y botones alineada entre filas; la lista se escanea por columnas.
+  3. Evita que el objetivo de la acción se mueva mientras el usuario espera el resultado.
+- **Costo aceptado:** un hueco vacío de ~12 caracteres en reposo por fila; acotado porque `Working…` ocupa 9 caracteres a 12 px, por lo que el hueco no excede el tamaño ya previsto.
+- **Alternativa rechazada** (aceptar el corrimiento): rompe la alineación entre filas, contradice la promesa del documento y mueve el target durante la operación.
+
+### Contraste 3:1 del borde y foco con los 10 acentos
+
+Problema (hallazgo mayor del review): el borde/foco en `{accent}` no garantiza 3:1 (WCAG 1.4.11, no-texto/componentes) con todos los acentos en tema claro. Concretamente, el amarillo ya oscurecido al 22% (`#c6b944`) da **2.01:1** contra el panel `#FFFFFF`; sin el darken previo sería aún más claro (≈1.2:1).
+
+Resolución:
+
+- Se define un token derivado **`{accent_ui}`** para el borde y el foco de la acción, calculado en la generación de CSS (los estilos se construyen en runtime en `helpers.rs` con el accent vigente; no se hardcodea ningún hex):
+  - Tema claro: `color-mix(in srgb, {text_main} 30%, {accent})` — donde `{accent}` ya es `darken(hex, 0.22)`.
+  - Tema oscuro: `{accent}` sin mezcla: los diez acentos base ya cumplen ≥3.85:1 contra el panel `#121212`.
+- El 30% (y no el mínimo matemático de 25%) da margen para la superficie de fondo de ventana `#F4F1F8` y para el anti-aliasing del render.
+- `color-mix` ya se usa en la app (`.danger-btn`, `.import-mode:checked`), por lo que la versión de GTK en uso lo soporta; la regla es universal y cubre los 10 acentos sin tabla en runtime.
+
+Verificación en tema claro (accent oscurecido 22%, mezclado 30% con `text_main`):
+
+| Accent | Valor base | `{accent}` claro | Borde `{accent_ui}` | vs `#FFFFFF` | vs `#F4F1F8` |
+| --- | --- | --- | --- | --- | --- |
+| green | `#1db954` | `#169041` | `#1a6e3b` | 6.29 | 5.63 |
+| blue | `#1E88E5` | `#176ab2` | `#1b538a` | 7.92 | 7.09 |
+| cyan | `#00BCD4` | `#0092a5` | `#0b6f81` | 5.83 | 5.21 |
+| purple | `#AB47BC` | `#853792` | `#683074` | 9.28 | 8.30 |
+| pink | `#EC407A` | `#b8315f` | `#8c2c50` | 8.10 | 7.25 |
+| red | `#EF5350` | `#ba403e` | `#8d3639` | 7.72 | 6.91 |
+| orange | `#FFA726` | `#c6821d` | `#956422` | 5.09 | 4.55 |
+| yellow | `#FFEE58` | `#c6b944` | `#958b3d` | 3.48 | 3.11 |
+| teal | `#26A69A` | `#1d8178` | `#1f6462` | 6.87 | 6.14 |
+| indigo | `#5C6BC0` | `#475395` | `#3c4376` | 9.31 | 8.32 |
+
+Todos ≥3.1:1. En oscuro el mínimo es indigo/purple con 3.85:1 contra `#121212`.
+
+Aplicación a la opción B: el borde de 1.5 px usa `{accent_ui}`; el relleno 14%/22% conserva `{accent}` (es decorativo detrás de un texto `text_main` y no constituye el contorno del control); el indicador de foco nativo de GTK se mantiene.
+
+## Opciones para `Set as linked`
+
+### Opción A: Cápsula anclada
+
+**Reutilizar clase:** `.settings-btn`.
+
+**Descripción visual:** una píldora neutra con superficie `well`, borde accent de 1.5 px, texto `text_main`, radio 20 px y 14 px bold. El badge `System` queda transparente; la acción gana peso por su fondo lleno, su radio más redondeado, su borde más grueso y su texto más grande.
+
+**Regla CSS existente:**
+
+```css
+.settings-btn {
+  font-size: 14px;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 20px;
+  background-color: {well};
+  color: {text_main};
+  border: 1.5px solid {accent};
+  font-weight: bold;
+}
+
+.settings-btn:hover {
+  background-color: {hover};
+}
+```
+
+**Claro:** fondo `#ECE8F2` sobre panel `#FFFFFF`, texto `#241F2E` y borde accent oscurecido. La diferencia de superficie es clara aunque el accent sea de luminancia baja.
+
+**Oscuro:** fondo `#181818` sobre panel `#121212`, texto `#E0E0E0` y borde del accent vigente. En el accent actual, el borde usa `#5C6BC0`.
+
+**Durante `Working…`:** la cápsula permanece en el mismo lugar, se desactiva y el feedback aparece separado en `text_sec`. El badge no se convierte en un indicador giratorio ni se duplica el mensaje.
+
+**Pros:**
+
+- máxima coherencia con componentes ya usados;
+- objetivo táctil y foco nativos sin crear una familia nueva de estilos;
+- `text_main` ofrece mejor contraste que depender del color accent para la etiqueta;
+- es fácil de reconocer como botón.
+
+**Contras:**
+
+- sigue habiendo dos siluetas redondeadas adyacentes; se distinguen por relleno, no por eliminación de la segunda cápsula;
+- el borde accent puede dar a la acción un aspecto similar al de un filtro o control de configuración;
+- reutilizar una clase llamada `settings-btn` documenta estilo, no intención específica de fila.
+
+### Opción B: Cápsula activa
+
+**Clase nueva propuesta:** `.emu-link-action`.
+
+**Descripción visual:** una acción táctil con relleno translúcido accent, borde accent de 1.5 px (token derivado `{accent_ui}`, sección "Contraste 3:1") y texto `text_main`. El badge continúa vacío/transparente; la acción queda claramente rellena. El texto no usa accent para mantener legibilidad con todos los acentos, especialmente los amarillos y claros.
+
+**Regla CSS propuesta:**
+
+```css
+.emu-link-action {
+  font-size: 14px;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 20px;
+  background-color: color-mix(in srgb, {accent} 14%, transparent);
+  border: 1.5px solid {accent_ui};
+  color: {text_main};
+  font-weight: bold;
+}
+
+.emu-link-action:hover {
+  background-color: color-mix(in srgb, {accent} 22%, transparent);
+}
+
+.emu-link-action:disabled {
+  background-color: color-mix(in srgb, {accent} 8%, transparent);
+  border-color: {text_muted};
+  color: {text_muted};
+}
+```
+
+`{accent_ui}` se deriva en la generación de CSS: `color-mix(in srgb, {text_main} 30%, {accent})` en claro, `{accent}` en oscuro (sección "Contraste 3:1"). No se debe eliminar el indicador de foco nativo de GTK.
+
+**Claro:** el relleno tenue se compone sobre `#FFFFFF`; el accent se oscurece automáticamente 22%; el borde usa `{accent_ui}` (mezcla 30% con `text_main`) y el texto permanece `#241F2E`. El botón se ve como una superficie lavada por el accent, no como otro contorno vacío.
+
+**Oscuro:** el relleno tenue se compone sobre `#121212`; el texto es `#E0E0E0` y el borde usa el accent sin oscurecer (todos los acentos cumplen ≥3.85:1). Para indigo actual, el borde es `#5C6BC0` y el relleno queda dentro de la misma familia tonal.
+
+**Durante `Working…`:** el botón queda insensible y su estado `:disabled` lo comunica; el label transitorio precede al badge `System`, por lo que se lee `identidad -> Working… -> System -> acción`. El mecanismo completo (guard de doble click, lock rebuild-proof y re-activación por resultado) está especificado en la sección "Flujo `Working…` y doble click".
+
+**Pros:**
+
+- mejor equilibrio entre descubribilidad y jerarquía: se ve accionable sin parecer tan primaria como `Install`;
+- no duplica el badge porque una cápsula está vacía y la otra tiene relleno;
+- mantiene el texto de acción en `text_main`, por lo que la legibilidad no depende de la luminancia del accent;
+- reutiliza el lenguaje ya aceptado de `color-mix` en `.import-mode:checked` y `.danger-btn`;
+- el borde `{accent_ui}` garantiza 3:1 con los 10 acentos en ambos temas.
+
+**Contras:**
+
+- el relleno al 14% puede ser sutil para acentos claros, especialmente en tema claro (mitigado por el borde `{accent_ui}` bien contrastado);
+- requiere una clase localizada para evitar cambiar el significado de `.settings-btn` en toda la app;
+- el comportamiento de doble click y re-activación depende de la especificación funcional, no solo del CSS.
+
+### Opción C: Link ghost accesible
+
+**Clase nueva propuesta:** `.emu-link-ghost`.
+
+**Descripción visual:** la fila termina con un texto de 14 px bold, sin cápsula permanente. El label usa `text_sec` para mantener contraste; en hover pasa a `text_main` y se subraya, mientras el foco puede delinearse con `{accent}`. Visualmente queda `badge + enlace`, sin dos cápsulas. Sigue siendo un `gtk::Button`, no una etiqueta clickeable.
+
+**Regla CSS propuesta:**
+
+```css
+.emu-link-ghost {
+  background-color: transparent;
+  border: none;
+  color: {text_sec};
+  font-size: 14px;
+  font-weight: bold;
+  min-height: 36px;
+  padding: 0 8px;
+}
+
+.emu-link-ghost:hover {
+  color: {text_main};
+  text-decoration-line: underline;
+}
+
+.emu-link-ghost:focus {
+  outline: 1.5px solid {accent};
+  outline-offset: 2px;
+}
+```
+
+**Claro:** texto `#5B5468` sobre `#FFFFFF`; hover `#241F2E` y contorno con accent oscurecido. No se fuerza texto accent permanente porque el amarillo y otros acentos claros no ofrecen una garantía de contraste consistente.
+
+**Oscuro:** texto `#AAAAAA` sobre `#121212`; hover `#E0E0E0` y contorno con el accent vigente. Para indigo actual, el foco usa `#5C6BC0`.
+
+**Durante `Working…`:** el enlace permanece en su lugar y se desactiva. El espacio de 36 px mantiene el objetivo táctil aunque no haya fondo permanente.
+
+**Pros:**
+
+- es la solución más limpia y la que elimina por completo la competencia entre dos cápsulas;
+- reduce ruido visual en una lista que puede contener muchas filas;
+- mantiene el foco visible y un objetivo de 36 px;
+- el texto de la acción mantiene contraste con `text_sec`/`text_main` en ambos temas.
+
+**Contras:**
+
+- tiene menos peso visual y puede leerse como enlace estático si no se reconoce el texto imperativo;
+- un hover necesario para descubrir el indicador de enlace puede ser insuficiente en touchpad o teclado;
+- la ausencia de fondo hace que `Set as linked` se mezcle más con `Remove` si las demás acciones no siguen una jerarquía estricta;
+- no conviene reutilizar `.source-link` directamente: está diseñado como label de 12 px. `.icon-ghost` solo tampoco sirve porque elimina la altura táctil.
+
+## Comparación
+
+| Criterio | A: Cápsula anclada | B: Cápsula activa | C: Link ghost |
+| --- | --- | --- | --- |
+| Claridad como botón | alta | alta | media |
+| Separación frente al badge | media-alta | alta | muy alta |
+| Jerarquía frente a `Install` | correcta | correcta | correcta, más discreta |
+| Contraste de etiqueta | alto con `text_main` | alto con `text_main` | alto con `text_sec`/`text_main` |
+| Coherencia con tokens | máxima | alta | alta |
+| Ruido visual | medio | medio-bajo | mínimo |
+| Riesgo principal | dos cápsulas todavía visibles | relleno sutil con acentos claros | baja descubribilidad |
+
+## Decisión
+
+**Opción elegida: B, `.emu-link-action`, con texto `{text_main}` y borde `{accent_ui}`.**
+
+Es el mejor equilibrio para una acción opcional pero real:
+
+1. **Semántica:** el badge `System` sigue siendo exclusivamente estado; `Set as linked` es claramente una acción.
+2. **No duplicación:** el badge queda transparente y la acción tiene relleno, 14 px bold, radio 20 px y borde de 1.5 px. No hay dos cápsulas gemelas.
+3. **Jerarquía:** `Install` conserva el único accent sólido; `Set as linked` es secundaria pero descubrible; `Remove` conserva el lenguaje destructivo.
+4. **Accesibilidad:** el contenido de la acción no depende del contraste del accent; el objetivo mide 36 px, el control sigue siendo un botón nativo con teclado y foco, y el borde `{accent_ui}` garantiza 3:1 con los 10 acentos en ambos temas.
+5. **Coherencia:** deriva de tokens y patrones ya existentes sin introducir un color, una fuente, un radio global ni una animación nueva.
+6. **Accent actual:** indigo funciona bien como borde y relleno tenue en ambos temas mediante la misma regla dinámica; no se codifica a mano y la garantía de contraste cubre los 10 acentos, no solo el vigente.
+
+Las opciones A y C quedan documentadas como alternativas comparadas; no se eliminan del documento para conservar la trazabilidad de la decisión.
+
+## Riesgo deliberado y mitigación
+
+El riesgo de la opción B es que el relleno tenue de accent se perciba como otra selección cerca del badge. La mitigación es deliberada y acotada:
+
+- el badge no tiene relleno;
+- la acción usa 14 px frente a 11 px del badge;
+- la acción usa radio 20 px frente a 10 px;
+- la acción tiene borde de 1.5 px frente a 1 px;
+- el label de la acción usa `text_main`, no accent;
+- solo `Install` recibe un relleno accent sólido;
+- el borde de la acción usa `{accent_ui}` (≥3:1 con los 10 acentos) mientras el badge conserva `{accent}`; el contorno de la acción es más profundo pero permanece dentro de la familia accent.
+
+## Criterios de aceptación para una implementación futura
+
+- La fila conserva el orden, los espaciados y el objetivo existentes.
+- El estado y la acción nunca aparecen como dos badges idénticos.
+- `System` permanece visible durante `Working…`.
+- La acción se desactiva durante la operación y se restaura al responder.
+- Éxito produce una fila `Linked` sin acción; error restaura `Set as linked` y muestra feedback separado.
+- Todas las clases propuestas interpolan tokens existentes; no aparece un hex adicional.
+- El foco de teclado permanece visible y la acción conserva un objetivo táctil de al menos 36 px.
+- El doble click en `Set as linked` no produce una segunda operación: guard de reentrada + `set_sensitive(false)` síncrono + lock rebuild-proof cuando el mapa contiene `Working…`.
+- `Working…` es visible desde el click hasta el rebuild del resultado, no solo al final.
+- El label de estado existe en todas las filas (slot estable); el layout no se corre al aparecer el feedback.
+- El borde de la acción cumple ≥3:1 con los 10 acentos en claro y oscuro (regla `{accent_ui}`).
+- `.emu-link-action` define `:disabled` (relleno 8%, borde y texto `text_muted`).
+
+## Decisión final
+
+- Opción elegida: **B, `.emu-link-action`**, únicamente para `Set as linked`.
+- Las tres resoluciones del review quedaron especificadas en este documento: flujo `Working…` y doble click, slot estable, y contraste 3:1 con los 10 acentos.
+- Pendiente: ok del usuario sobre esta versión del documento antes de tocar CSS o código. Con el ok, la implementación cubre: CSS de `.emu-link-action` (incluido `:disabled`), token derivado `{accent_ui}` en la generación de estilos, label de estado estable en `rebuild_emu_rows`, y mecanismo de lock en el handler de click.
+
+## Lista de emuladores instalables (catálogo)
+
+### Contexto y alcance
+
+Esta sección es **spec de diseño, no implementación**. Ninguno de los patrones propuestos fue aplicado a código ni a estilos.
+
+Es la misma función `rebuild_emu_rows` (`settings.rs:2411-2570`), pero en su modo catálogo: cuando `emulator-manager` reporta el catálogo (`corky-list`, `plugins.rs:721-789`) y la mayoría de las entradas están en source `none`, toda la lista termina en un botón `Install` idéntico. Con nada instalado, las 10 entradas (Azahar, Cemu, Desmume, DuckStation, Mupen64Plus, PCSX2, PPSSPP, RPCS3, Ryujinx, Vita3K) se diferencian solo por el nombre; la fila no jerarquiza, no agrupa y no ofrece exploración.
+
+Objetivos de esta propuesta: jerarquía (nombre ≠ descripción), exploración (búsqueda), contexto (consola/generación) y un slot estable para el ícono del emulador, **condicionado al veredicto legal de licencias** (pendiente; el slot se reserva de todos modos para que el layout nunca cambie).
+
+### Estado actual verificado
+
+- Fila actual: `gtk::Box` horizontal, separación 8 px, márgenes verticales 2 px:
+  `[•] [identidad única] [slot estable] [badge opcional] [acción]`.
+- El label de identidad concatena `"Nombre (badge) — descripción"` con `.details-title` (16 px bold, `text_main`): la descripción hereda exactamente el peso y tamaño del nombre. Es un solo bloque no jerarquizado (`settings.rs:2452-2461`).
+- Sin instalación, no hay badge (`status_text` es `None` para source `none`) y el slot estable queda vacío; la fila visible es `•  Nombre — descripción  [Install]`.
+- Botón `Install`: `.add-btn` (relleno accent sólido, 36 px, radio 20 px), ancho fijo 80 px, idéntico en las 10 filas (`settings.rs:2516-2523`).
+- Orden alfabético por nombre impuesto en `plugins.rs:787`. Sin agrupación, sin búsqueda, sin ícono, sin `ScrolledWindow` propia (hereda el scroll de la página).
+- Datos disponibles: `EmuInfo` (`plugins.rs:79-87`) trae `name`, `path`, `description`, `installed`, `native`, `source`, `settings`. **No hay categoría de consola, ni versión, ni URL de proyecto, ni ícono.** `RegistryEntry` (registry de plugins) tampoco.
+
+### Restricciones de datos
+
+- La consola/generación **no viaja en los datos**: hay que derivarla del lado de la UI. Recomendado: mapa estático `tag → familia` (mismo patrón que ya usa `integration.rs:51-68` para `runner → nombre`). Alternativa rechazada en esta iteración: pedir un campo nuevo al backend (toca el plugin `emulator-manager`, fuera del alcance del repo).
+- El ícono tampoco viaja y depende del veredicto legal: el slot se reserva en la opción viva y se rellena recién si el veredicto lo permite. El fallback mientras tanto es un marcador tipográfico determinista (monograma de la inicial) en la misma geometría, para que el layout no cambie entre sin-ícono y con-ícono.
+
+### Recomendaciones HIG de GNOME aplicadas
+
+1. **Patrón de filas de lista (List Rows):** texto primario (nombre) + texto secundario (descripción/metadata) en dos líneas con pesos distintos, alineación izquierda, elipsis final. La fila actual viola esto al meter todo en una línea bold.
+2. **Búsqueda como punto de entrada** para listas largas: `GtkSearchEntry` es ya parte de la app (busca en el sidebar y otras vistas) y el tema ya define `.search-entry` y `.filter-bar`. Para un catálogo que va a crecer, el filtro en vivo por nombre/descripción es el control HIG de entrada.
+3. **Agrupación con encabezados de sección** cuando hay categorías reconocibles: en este catálogo las familias son evidentes (Nintendo vs Sony), lo que permite encabezados de grupo en lugar de una lista plana.
+4. **Ícono como elemento líder** de 32 px cuando el contenido es reconocible por identidad visual; la geometría del slot es fija para no empujar el texto.
+5. **Columna de acciones alineada a la derecha** con ancho consistente (120 px `Set as linked`, 80 px `Install`/`Remove`): ya se cumple; se conserva.
+6. **Estado vacío explícito** tras un filtro sin resultados (mensaje en `.time-label`), y `hint` inicial que hoy dice solo `"No emulators reported by emulator-manager."`.
+7. Virtualización (`GtkListView`) queda anotada como mejora futura para catálogos de cientos de ítems; para ~10-40 la construcción manual actual (`rebuild_emu_rows`) es aceptable y consistente con el resto de la app.
+
+### Decisiones transversales de la fila (fijadas)
+
+1. **Dividir el label combinado en dos líneas:** línea 1 nombre en `.details-title` (16 px bold), línea 2 descripción en `.time-label` (12 px, `text_sec`, una línea con elipsis). La sección anterior no decidía esta refactorización para la fila de `Set as linked`; **esta sección sí la decide para el catálogo de instalables**.
+2. **Slot de ícono líder estable de 32 px (gated):** reservado siempre. Mientras no haya veredicto o asset, muestra un monograma determinista (primera letra del nombre) en disco de 32 px, fondo `well`, borde `border`, texto `.details-title` 16 px `text_main`. Si el veredicto lo permite, el asset sirve en la misma geometría; el texto y la columna de acciones no se mueven.
+3. **Búsqueda por nombre/descripción** como control superior (`.search-entry` + `.filter-bar`, ya definidos): la opción viva es lista plana con filtro, sin agrupación.
+4. **Columna de acciones alineada** y vocabulario de botones sin cambios (`.add-btn`, `.emu-link-action`, `.danger-btn`); ancho fijo por estado para evitar jitter.
+
+### Opción viva: 1+3 — Botón estado-consciente + compactación
+
+**Estructura:**
+
+```text
+[filtro de búsqueda (GtkSearchEntry, .search-entry)]
+[•] [icon 32px]  Nombre                      (.details-title, bold 16)
+                 Descripción — una línea      (.time-label, 12, ellipsis)
+                                              [Install] (.add-btn, 80px)
+```
+
+**Descripción visual:** lista plana de dos líneas (decisiones transversales), con un botón cuyo **label y clase mutan con el estado de la fila** (estado-consciente) y filas resueltas **sin acción pendiente que colapsan a badge** (compactación). La píldora solo aparece donde hay acción real: pendientes, operaciones en vuelo y removibles. La columna de acciones permanece alineada con ancho fijo por estado, sin jitter.
+
+**Matriz estado → (dot, badge, texto del botón, clase CSS, ancho fijo):**
+
+| Estado | Dot | Badge | Texto del botón | Clase CSS | Ancho fijo |
+| --- | --- | --- | --- | --- | --- |
+| `none`/empty sin instalar | off | — | `Install` | `.add-btn` | 80 px |
+| `EmuOp` en vuelo (Installing) | según estado previo | — | `Installing…` | `.add-btn` + **nueva regla** `.add-btn:disabled` | 96 px |
+| `appimage` instalado | on | `Installed` (`.status-badge` + `.proton-path-badge`) | `Remove` | `.danger-btn` | 80 px |
+| `system` detectado | on | `System` (badge) | `Set as linked` | `.emu-link-action` | 120 px |
+| `linked` / native | on | `Linked` (badge) | sin botón (compactada) | — | — |
+| `EmuOp(Err)` con recuperación | según estado previo | — | `Retry` (o re-expuesto `Install`/`Remove` según el estado previo) | `.emu-link-action` | 96 px |
+
+**Slot estable (12 chars, siempre presente):** durante la operación el slot muestra `Working…` (`set_width_chars(12)` ya implementado, `settings.rs:2465-2467`); en reposo queda vacío. `Working…` convive con el badge y no lo reemplaza ni empuja el layout. El label del botón (`Installing…`) es complementario, no duplicado.
+
+**Clases:** se reutilizan `.add-btn`, `.danger-btn`, `.emu-link-action`, `.status-badge`, `.proton-path-badge`, `.details-title`, `.time-label`, `.search-entry`/`.filter-bar`, `.seg-*`. **Nueva regla (justificada):** `.add-btn:disabled` — hoy `.add-btn` no define estado deshabilitado y cae al default gris de GTK rompiendo la consistencia de la cápsula accent; `Installing…` conserva así la capa visual primaria de la acción. La regla replica la de `.emu-link-action:disabled` (`helpers.rs:615`): relleno accent al 8%, borde `{text_muted}`, texto `{text_muted}`.
+
+### Apéndice: Opciones evaluadas y descartadas (trazabilidad)
+
+- **Opción A — Fila de dos líneas con búsqueda:** su estructura quedó absorbida como base transversal de la 1+3 (dos líneas + filtro); descartada como propuesta independiente porque no define el tratamiento de estados del botón.
+- **Opción B — Encabezados por familia:** descartada; requiere mapa `tag → familia` y helper nuevo (`.catalog-group`) y, con 10 ítems, el overhead vertical de encabezados no compensa.
+- **Opción C — Pestañas de familia + búsqueda:** descartada; es la de más estados y sobre-ingeniería para un catálogo de 10-12; retomable solo si el catálogo crece.
+- **Opción 2 — Acción imperativa estable + estado en slot/badge:** descartada; cumple estrictamente "badge=estado, botón=acción" pero conserva el muro de `Install` en los pendientes, síntoma que 1+3 corrige.
+- **Opción 3 — Compactación (sola):** descartada como opción única; su técnica (colapsar filas resueltas a badge) queda integrada en 1+3.
+
+**Comparación (referencia):**
+
+| Criterio | A: Dos líneas + búsqueda | B: Encabezados familia | C: Pestañas + búsqueda | 1+3 (viva) |
+| --- | --- | --- | --- | --- |
+| Corrección de jerarquía | alta | alta | alta | alta |
+| Contexto de consola | nulo | alto | alto | nulo (mitigado por búsqueda) |
+| Muro de `Install` | persiste | persiste | persiste | eliminado (labels + compactación) |
+| Datos nuevos necesarios | ninguno | mapa `tag→familia` | mapa `tag→familia` | ninguno |
+| Clases nuevas de tema | ninguna | 1 helper (`.catalog-group`) | ninguna | 1 regla nueva (`.add-btn:disabled`) |
+
+### Pendientes de esta sección (abiertos)
+
+- **Slot de ícono 32 px con monograma, gated al veredicto legal de licencias** (investigación en curso): el slot se reserva siempre; mientras no haya veredicto o asset, monograma determinista. Este pendiente permanece abierto: decide si el slot se rellena con assets de marca o se queda con monograma.
+- **Mapa `tag → familia`**: **no aplica a la opción viva** (lista plana con filtro, sin agrupación). Permanece abierto únicamente si el catálogo crece y se retoma B o C del apéndice.
+- **Hueco de estado vacío**: el hint actual de la lista (`"No emulators reported by emulator-manager."`) no distingue "sin plugin reportado" de "sin resultados de filtro"; definir un estado vacío explícito para cada caso (la opción viva incluye búsqueda, así que "sin resultados de filtro" es un estado alcanzable).
+
+## Pendientes registrados (fuera de alcance)
+
+- **Contraste del badge `System`/`Linked`:** el mismo riesgo que resolvió la sección "Contraste 3:1" existe preexistente en el vocabulario de estado: el texto y el borde del badge usan `{accent}` y, con acentos claros en tema claro, caen por debajo de 3:1 (amarillo oscurecido 22%: 2.01:1 contra `#FFFFFF`). No se corrige en esta iteración; queda registrado para una tarea futura de contraste del vocabulario de badges.
+- **Botón Wine:** pendiente la captura del usuario y la confirmación del tema (claro/oscuro) para diagnosticar el defecto visual reportado; las causas de código ya fueron descartadas.
