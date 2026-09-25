@@ -10,8 +10,6 @@
 //! elige el modo despues de ver los blockers, y solo entonces se decide que
 //! se mueve de verdad. `execute` es el unico punto que toca el disco.
 
-#![allow(dead_code)] // comandos 2-5 (UI) aun no llaman a todo esto; se quita al final
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
@@ -51,6 +49,9 @@ pub enum Blocker {
     NotEnoughSpace { need_bytes: u64, free_bytes: u64 },
     SharedPrefix { label: String, shared_with: Vec<String> },
     SourceMissing { label: String, path: PathBuf },
+    /// Original retirado a `.corkytux-old`, pero la sesion murio antes de
+    /// poner el symlink. El original esta entero en `path`.
+    OrphanedOriginal { label: String, path: PathBuf },
 }
 
 impl Blocker {
@@ -69,6 +70,9 @@ impl Blocker {
             }
             Blocker::SourceMissing { label, path } => {
                 format!("no existe la carpeta de {} ({})", label, path.display())
+            }
+            Blocker::OrphanedOriginal { label, path } => {
+                format!("{} tiene un original sin terminar de mover en {}", label, path.display())
             }
         }
     }
@@ -166,20 +170,6 @@ pub struct ExecPlan {
     pub test_only: Vec<String>,
 }
 
-/// Resumen para pintar el dialogo antes de confirmar.
-#[derive(Clone, Debug, Default)]
-pub struct Summary {
-    pub permanent: usize,
-    pub in_group: Vec<(String, Vec<String>)>,
-    pub in_test: Vec<String>,
-}
-
-impl Summary {
-    pub fn has_shared(&self) -> bool {
-        !self.in_group.is_empty()
-    }
-}
-
 /// Resultado por juego. La UI decide que hacer con los exitos.
 #[derive(Clone, Debug)]
 pub enum MoveOutcome {
@@ -193,6 +183,9 @@ impl MoveOutcome {
         !matches!(self, MoveOutcome::Failed(_))
     }
 
+    /// Sin llamador todavia: accesor simetrico a `Blocker::message`, se deja
+    /// para depurar resultados sin reconstruir el enum.
+    #[allow(dead_code)]
     pub fn message(&self) -> Option<&str> {
         match self {
             MoveOutcome::Clean => None,
@@ -425,7 +418,17 @@ pub fn preflight(cands: &[MoveCandidate], games_dir: &Path) -> Preflight {
         .collect();
 
     // Fase B: checks por candidato.
+    // Deteccion de crash de una sesion anterior: si hay un .corkytux-old
+    // huerfano, nada mas se calcula para ese juego.
+    let orphans: BTreeMap<String, PathBuf> = find_orphaned_originals(cands).into_iter().collect();
     for c in cands {
+        if let Some(old) = orphans.get(&c.label) {
+            blockers.push(Blocker::OrphanedOriginal {
+                label: c.label.clone(),
+                path: old.clone(),
+            });
+            continue;
+        }
         if !c.install_path.exists() {
             blockers.push(Blocker::SourceMissing {
                 label: c.label.clone(),
@@ -786,30 +789,6 @@ pub fn plan_for_mode(
 
     ep.test_only.sort();
     ep
-}
-
-/// Resumen para el dialogo: que va en permanente, que va en grupo, que queda
-/// en test.
-pub fn summary_for_ui(ep: &ExecPlan) -> Summary {
-    let in_group: Vec<(String, Vec<String>)> = ep
-        .groups
-        .iter()
-        .map(|g| {
-            (
-                g.group_id.clone(),
-                g.members.iter().map(|m| m.candidate.label.clone()).collect(),
-            )
-        })
-        .collect();
-    let permanent = ep.singles.len() + in_group.iter().map(|(_, ms)| ms.len()).sum::<usize>();
-    let mut in_test = ep.test_only.clone();
-    in_test.sort();
-    in_test.dedup();
-    Summary {
-        permanent,
-        in_group,
-        in_test,
-    }
 }
 
 /// Orphans de una sesion anterior interrumpida entre el rename y el symlink.
