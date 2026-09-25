@@ -411,9 +411,9 @@ Requiere que el usuario abra la app; el agente no la ejecuta.
    fix (ver "Binario en uso" más abajo), no que el CSS falle.
 3. `Found in system` estático y `Set as linked` clickeable en la misma fila.
 4. Aviso `*** BUG *** In pixman_region32_init_rect: Invalid rectangle passed`.
-   Refinado el 2026-09-25 con dos ejecuciones del build de `0b388df`:
-   **7 avisos** en el primer arranque y **5 en el segundo**, con el mismo
-   binario y los mismos assets.
+   Refinado el 2026-09-25 con tres ejecuciones: **7 avisos**, luego **5**, luego
+   **1** — mismo binario, mismos assets, y la última ya con el binario
+   reinstalado sobre el del lanzador.
 
    ### Lo que sí se ha descartado por lectura
 
@@ -432,11 +432,13 @@ Requiere que el usuario abra la app; el agente no la ejecuta.
 
    ### Lo que el conteo variable implica
 
-   El número de avisos **cambia entre ejecuciones idénticas** (7 → 5). Un
-   defecto determinista —un asset de tamaño 0, una ruta de código fija— daría
-   un conteo constante. Que varíe apunta a una **condición de temporización o
-   de primer frame** (un widget con asignación 0 mientras el layout se asienta),
-   y no a un bug de dibujo determinista en el código de la app.
+   El número de avisos **cambia entre ejecuciones idénticas** (7 → 5 → 1), y
+   además **no crece con el uso**: la cuarta ejecución, ya con el binario
+   reinstalado, emitió uno solo. Un defecto determinista —un asset de tamaño 0,
+   una ruta de código fija— daría un conteo constante. Que varíe y además
+   decrezca apunta a una **condición de temporización o de primer frame** (un
+   widget con asignación 0 mientras el layout se asienta), y no a un bug de
+   dibujo determinista en el código de la app.
 
    Quedan 46 reglas `border-radius` en el CSS, que es el disparador conocido
    restante cuando un rectángulo redondeado se calcula sobre una asignación de
