@@ -30,8 +30,8 @@ Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE (los cinco de
 | **Total** | **42** |
 
 Cuentas del triage original, conservadas como registro. **Estado actual:** de
-los 6 críticos, **C14 está corregido** y **C08 está corregido en su parte de
-`timeout` (8 de 12 sitios)**; los otros 4 críticos siguen abiertos. Ningún
+los 6 críticos, **C14 y C10 están corregidos**, y **C08 lo está en su parte de
+`timeout` (8 de 12 sitios)**; los otros 3 críticos siguen abiertos. Ningún
 degradante ni cosmético se ha tocado.
 
 Definiciones:
@@ -172,28 +172,50 @@ checksum publicado en el release en lugar de solo `size >= 100`.
 
 ### C10 — El escaneo de Lutris ignora `XDG_DATA_HOME` y Lutris Flatpak, en el mismo archivo que sí los respeta
 
+**Estado: CORREGIDO.**
+
 - `src/backend/integration.rs:852-857` — `pga.db` en
   `~/.local/share/lutris/pga.db` hardcodeado.
 - `src/backend/integration.rs:871-876` — `games/` en
   `~/.local/share/lutris/games` hardcodeado.
 - Contrasto, **450 líneas antes en el mismo archivo**:
-  `src/backend/integration.rs:395-397` sí resuelve `XDG_DATA_HOME` con fallback
-  a `~/.local/share`, y `403-407` sí añade la ruta Flatpak de Lutris.
+  `src/backend/integration.rs:395-397` sí resolvía `XDG_DATA_HOME` con fallback
+  a `~/.local/share`, y `403-407` sí añadía la ruta Flatpak de Lutris.
 
 **Impacto:**
 
 1. Con `XDG_DATA_HOME` configurado (habitual en setups de tiling) Lutris
-   instala en `~/data/lutris`: la UI resuelve bien las carátulas (línea 399)
-   pero el escaneo de juegos mira `~/.local/share/lutris` y no encuentra nada.
-   El resultado es "carátulas sí, juegos no", que parece un bug de Lutris y no
-   de CorkyTux.
+   instala en `~/data/lutris`: la UI resolvía bien las carátulas (línea 399)
+   pero el escaneo de juegos miraba `~/.local/share/lutris` y no encontraba
+   nada. El resultado es "carátulas sí, juegos no", que parece un bug de
+   Lutris y no de CorkyTux.
 2. Con Lutris como Flatpak, `~/.var/app/net.lutris.Lutris/data/lutris` se
-   usa para artwork pero nunca para `pga.db` ni para `games/`: se importa 0
-   juegos.
+   usaba para artwork pero nunca para `pga.db` ni para `games/`: se importaba
+   0 juegos.
 
-**Fix:** un único resolvedor `lutris_data_dirs(home) -> Vec<PathBuf>` que
-devuelva `[xdg/lutris, flatpak/lutris, ~/.local/share/lutris]`, consumido por
-el escaneo y por el artwork.
+**Fix aplicado:** un único resolver `lutris_data_roots(home)` que devuelve las
+raíces de datos de Lutris en orden de preferencia, consumido por el escaneo y
+por el artwork:
+
+1. `$XDG_DATA_HOME` si es absoluto y no vacío (un valor vacío o relativo se
+   ignora en vez de construir rutas bajo el CWD), con el default del spec
+   `~/.local/share` como fallback.
+2. `~/.var/app/net.lutris.Lutris/data`, que es donde el sandbox Flatpak
+   reescribe el home del proceso.
+
+De cada raíz cuelga `lutris/` (base de datos, juegos, carátulas) e
+`icons/hicolor/...` (iconos de apps), así que ambos consumidores derivan sus
+rutas del mismo sitio.
+
+Se corrigió además un tercer hardcode del mismo tipo que el triage no había
+listado: `lutris_yml_info()` volvía a construir `~/.local/share/lutris/games`
+por su cuenta, así que arreglar solo `scan_lutris` no bastaba. Ahora recibe el
+`games_dir` del llamador, y la capa SQLite lo deriva de `db.parent()`, que por
+construcción pertenece a la misma raíz que la base de datos.
+
+Como ahora se recorren varias raíces, `scan_lutris` deduplica por `slug` (la
+primera raíz gana) para que un juego no aparezca dos veces durante una
+migración a Flatpak a medias.
 
 ### C14 — `prefix_in_use` falla abierta cuando `pgrep` no existe
 
@@ -315,10 +337,11 @@ Requiere que el usuario abra la app; el agente no la ejecuta.
 2. ~~**C08**, y en particular el `timeout(1)` de `plugins.rs:727`~~ —
    **hecho**: `output_with_timeout()` cubre los 8 sitios. Quedan 5 sitios de
    `ldconfig`/`pgrep`/`pidof`/`which`; el de `ldconfig` se resuelve con C03.
-3. **C09** y **C10** — independientes, acotados y sin riesgo de datos.
-4. **C01** — depende del helper compartido de rutas de Steam del punto 2.
-5. **C03** — requiere decidir antes qué significa "32-bit" en aarch64, para no
+3. **C10** — **hecho**: `lutris_data_roots()` compartido por escaneo y artwork.
+4. **C09** — acotado y sin riesgo de datos.
+5. **C01** — depende del helper compartido de rutas de Steam del punto 2.
+6. **C03** — requiere decidir antes qué significa "32-bit" en aarch64, para no
    cambiar el contrato de `ComponentStatus` a ciegas. Cerrarlo también elimina
    el `ldconfig` de C08.
-6. El resto de degradantes por lotes, empezando por los que tocan datos o
+7. El resto de degradantes por lotes, empezando por los que tocan datos o
    superficie de entrada: D05, D12, D13, D19, D22.

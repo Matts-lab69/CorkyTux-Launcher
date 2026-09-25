@@ -9,6 +9,43 @@ fn home_dir() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
 }
 
+/// Raíces de datos donde Lutris guarda juegos, carátulas e iconos.
+///
+/// Un único resolver para el escaneo y para el artwork. Antes cada uno tenía su
+/// propia lista: el artwork honraba `XDG_DATA_HOME` y la ruta Flatpak, y el
+/// escaneo de juegos usaba `~/.local/share/lutris` fijo. Con `XDG_DATA_HOME`
+/// puesto, las carátulas aparecían y se importaban 0 juegos; con Lutris Flatpak,
+/// igual.
+///
+/// De cada raíz cuelga `lutris/` (base de datos, juegos, carátulas) e
+/// `icons/hicolor/...` (iconos de apps). Solo se devuelven raíces que existen.
+fn lutris_data_roots(home: &Path) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    // 1) Nativo. `XDG_DATA_HOME` vacio o relativo no es valido segun el spec:
+    // se ignora para no construir rutas bajo el CWD.
+    if let Some(xdg) = std::env::var("XDG_DATA_HOME")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+    {
+        if xdg.exists() && !roots.contains(&xdg) {
+            roots.push(xdg);
+        }
+    } else {
+        let xdg = home.join(".local").join("share");
+        if xdg.exists() {
+            roots.push(xdg);
+        }
+    }
+    // 2) Flatpak: el sandbox reescribe el home del proceso a `~/.var/app/<id>`.
+    let flatpak = home.join(".var/app/net.lutris.Lutris/data");
+    if flatpak.exists() && !roots.contains(&flatpak) {
+        roots.push(flatpak);
+    }
+    roots
+}
+
 fn cached_icon_valid(path: &Path) -> bool {
     path.is_file()
         && gdk_pixbuf::Pixbuf::from_file(path).map(|pb| {
@@ -392,20 +429,10 @@ impl IntegrationManager {
         }
 
         if (banner.is_none() || icon.is_none()) && !game_name.is_empty() {
-            let xdg = std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
-                home.join(".local").join("share").display().to_string()
-            });
-            let mut lutris_dirs = Vec::new();
-            let native = PathBuf::from(&xdg).join("lutris");
-            if native.exists() {
-                lutris_dirs.push(native);
-            }
-            let flatpak = home
-                .join(".var/app/net.lutris.Lutris/data/lutris");
-            if flatpak.exists() {
-                lutris_dirs.push(flatpak);
-            }
-            for dir in &lutris_dirs {
+            // Mismo resolver que usa el escaneo de juegos, para que carátula e
+            // importación nunca discrepen sobre dónde vive Lutris.
+            for root in lutris_data_roots(&home) {
+                let dir = root.join("lutris");
                 if banner.is_none() {
                     for sub in ["coverart", "banners"] {
                         let src = dir.join(sub).join(format!("{}.jpg", slug));
@@ -419,7 +446,8 @@ impl IntegrationManager {
                     }
                 }
                 if icon.is_none() {
-                    let h = PathBuf::from(&xdg)
+                    // `icons/` cuelga de la raíz de datos, no de `lutris/`.
+                    let h = root
                         .join("icons/hicolor/128x128/apps")
                         .join(format!("lutris_{}.png", slug));
                     if h.is_file() {
@@ -860,14 +888,13 @@ impl IntegrationManager {
     }
 
     pub fn scan_lutris(&self) -> Vec<IntegrationEntry> {
+        let roots = lutris_data_roots(&home_dir().unwrap_or_default());
         // 1) Preferred: Lutris SQLite database pga.db (no new deps: sqlite3 CLI)
-        let db = home_dir()
-            .unwrap_or_default()
-            .join(".local")
-            .join("share")
-            .join("lutris")
-            .join("pga.db");
-        if db.exists() {
+        for root in &roots {
+            let db = root.join("lutris").join("pga.db");
+            if !db.exists() {
+                continue;
+            }
             let found = self.scan_lutris_db(&db);
             if !found.is_empty() {
                 return found;
@@ -879,19 +906,40 @@ impl IntegrationManager {
             return via_cli;
         }
         // 3) Last resort: per-game yml directories
-        let mut results = Vec::new();
-        let lutris_dir = home_dir()
-            .unwrap_or_default()
-            .join(".local")
-            .join("share")
-            .join("lutris")
-            .join("games");
-        if !lutris_dir.exists() {
-            return results;
+        let mut results: Vec<IntegrationEntry> = Vec::new();
+        for root in &roots {
+            let lutris_dir = root.join("lutris").join("games");
+            if !lutris_dir.exists() {
+                continue;
+            }
+            self.collect_lutris_yml_dir(&lutris_dir, &mut results);
         }
+        // Un mismo juego puede estar en mas de una raiz (p.ej. migracion a
+        // Flatpak a medias): el slug manda, la primera raiz gana.
+        let mut seen: Vec<String> = Vec::new();
+        results.retain(|e| {
+            let key = if e.slug.is_empty() {
+                e.name.clone()
+            } else {
+                e.slug.clone()
+            };
+            if seen.contains(&key) {
+                false
+            } else {
+                seen.push(key);
+                true
+            }
+        });
+        results.sort_by(|a, b| a.name.cmp(&b.name));
+        results
+    }
+
+    /// Lee los `<config>.yml` de un directorio `games/` de Lutris y los anade a
+    /// `out`. Aislado para que `scan_lutris` pueda recorrer varias raices.
+    fn collect_lutris_yml_dir(&self, lutris_dir: &Path, out: &mut Vec<IntegrationEntry>) {
         // Flat <config>.yml files (e.g. blasphemous-1787265174.yml), NOT
         // per-slug dirs: reuse the same yml parser as the DB tier.
-        if let Ok(entries) = fs::read_dir(&lutris_dir) {
+        if let Ok(entries) = fs::read_dir(lutris_dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.is_file()
@@ -909,7 +957,7 @@ impl IntegrationManager {
                     if !content.contains("exe:") && !content.contains("main_file:") {
                         continue;
                     }
-                    let (bin, prefix, version) = self.lutris_yml_info(stem, slug);
+                    let (bin, prefix, version) = self.lutris_yml_info(lutris_dir, stem, slug);
                     if bin.is_empty() {
                         continue;
                     }
@@ -940,7 +988,7 @@ impl IntegrationManager {
                             break;
                         }
                     }
-                    results.push(IntegrationEntry {
+                    out.push(IntegrationEntry {
                         name,
                         path: path_str,
                         source: "lutris".into(),
@@ -955,15 +1003,20 @@ impl IntegrationManager {
                 }
             }
         }
-        results.sort_by(|a, b| a.name.cmp(&b.name));
-        results
     }
 
-    /// Parse a Lutris game yml (`~/.local/share/lutris/games/<config>.yml`):
-    /// returns (exe_or_main_file, prefix, wine_version).
-    fn lutris_yml_info(&self, configpath: &str, slug: &str) -> (String, String, String) {
-        let home = home_dir().unwrap_or_default();
-        let games_dir = home.join(".local").join("share").join("lutris").join("games");
+    /// Parse a Lutris game yml (`<lutris>/games/<config>.yml`): returns
+    /// (exe_or_main_file, prefix, wine_version).
+    ///
+    /// `games_dir` lo pasa el llamador porque puede no ser
+    /// `~/.local/share/lutris/games`: con `XDG_DATA_HOME` movido o con Lutris
+    /// Flatpak, ese path fijo no es donde vive nada.
+    fn lutris_yml_info(
+        &self,
+        games_dir: &Path,
+        configpath: &str,
+        slug: &str,
+    ) -> (String, String, String) {
         // configpath IS the file stem (<config>.yml); fall back to <slug>.yml
         // or the newest <slug>-*.yml.
         let mut candidates = Vec::new();
@@ -972,7 +1025,7 @@ impl IntegrationManager {
         }
         if !slug.trim().is_empty() {
             candidates.push(games_dir.join(format!("{}.yml", slug.trim())));
-            if let Ok(entries) = fs::read_dir(&games_dir) {
+            if let Ok(entries) = fs::read_dir(games_dir) {
                 let mut prefixed: Vec<_> = entries
                     .flatten()
                     .map(|e| e.path())
@@ -1052,8 +1105,14 @@ impl IntegrationManager {
             let playtime: f64 = cols.get(8).and_then(|s| s.trim().parse().ok()).unwrap_or(0.0);
             // Steam-service games carry their AppID (Steam art + launch).
             let appid = if service == "steam" { service_id } else { String::new() };
-            // Real binary/prefix/proton live in the game yml.
-            let (yml_exe, yml_prefix, yml_version) = self.lutris_yml_info(&configpath, &slug);
+            // Real binary/prefix/proton live in the game yml, en el `games/` que
+            // cuelga de la MISMA raiz que esta base de datos.
+            let games_dir = db
+                .parent()
+                .map(|lutris| lutris.join("games"))
+                .unwrap_or_default();
+            let (yml_exe, yml_prefix, yml_version) =
+                self.lutris_yml_info(&games_dir, &configpath, &slug);
             let executable = if !yml_exe.is_empty() {
                 yml_exe
             } else {

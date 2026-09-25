@@ -143,7 +143,7 @@ Detalle completo, con `archivo:línea` y fix mínimo, en
 [`docs/multidistro-audit.md`](docs/multidistro-audit.md) (42 hallazgos del
 triage: 6 críticos, 30 degradantes, 6 cosméticos). Auditoría estática: no se
 compiló ni ejecutó la app. Numeración heredada del triage original.
-**Críticos pendientes: 4** (C01, C03, C09, C10); C08 a medias.
+**Críticos pendientes: 3** (C01, C03, C09); C08 a medias.
 
 ### ~~C14 — `prefix_in_use` falla abierta sin `pgrep`~~ — **CORREGIDO**
 Era el único hallazgo con riesgo de pérdida de datos: sin `pgrep` (NixOS,
@@ -214,13 +214,24 @@ validación del tarball es `size >= 100` (línea 448-452).
 - **Fix:** filtrar por `std::env::consts::ARCH`, error explícito si no hay
   asset válido, y verificar checksum publicado.
 
-### C10 — El escaneo de Lutris ignora `XDG_DATA_HOME` y Lutris Flatpak
-`integration.rs:852-857` y `871-876` hardcodean `~/.local/share/lutris`, cuando
-**el mismo archivo** en `395-407` sí resuelve `XDG_DATA_HOME` y sí añade
-`~/.var/app/net.lutris.Lutris/data/lutris` para el artwork. Resultado: con
-`XDG_DATA_HOME` puesto, las carátulas se ven pero se importan 0 juegos; con
-Lutris Flatpak, lo mismo.
-- **Fix:** un único `lutris_data_dirs(home)` consumido por escaneo y artwork.
+### C10 — El escaneo de Lutris ignora `XDG_DATA_HOME` y Lutris Flatpak — **CORREGIDO**
+El artwork (450 líneas antes en el mismo archivo) sí honraba `XDG_DATA_HOME` y
+la ruta Flatpak, pero el escaneo de juegos usaba `~/.local/share/lutris` fijo.
+Consecuencia: con `XDG_DATA_HOME` puesto se veían las carátulas y se importaban
+0 juegos; con Lutris Flatpak, lo mismo.
+
+- **Fix aplicado:** `lutris_data_roots(home)` devuelve las raíces de datos en
+  orden de preferencia — `$XDG_DATA_HOME` si es absoluto y no vacío (con
+  `~/.local/share` como default del spec) y
+  `~/.var/app/net.lutris.Lutris/data` (home del sandbox Flatpak) — y lo
+  consumen tanto el escaneo (`pga.db` y `games/`) como el artwork
+  (`coverart`/`banners` e `icons/hicolor/128x128/apps`).
+- **Hardcode extra que salió al implementarlo:** `lutris_yml_info()` volvía a
+  construir `~/.local/share/lutris/games` por su cuenta, así que arreglar solo
+  `scan_lutris` no bastaba. Ahora recibe el `games_dir` del llamador, y la capa
+  SQLite lo deriva de `db.parent()`.
+- `scan_lutris` deduplica por slug entre raíces: un juego no aparece dos veces
+  durante una migración a Flatpak a medias.
 
 ## Hallazgos nuevos (anotados, NO arreglados)
 
