@@ -29,6 +29,10 @@ Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE (los cinco de
 | Cosmético | 6 |
 | **Total** | **42** |
 
+Cuentas del triage original, conservadas como registro. **Estado actual:** de
+los 6 críticos, **C14 está corregido** (ver su sección); los otros 5 siguen
+abiertos. Ningún degradante ni cosmético se ha tocado.
+
 Definiciones:
 
 - **Crítico**: función rota de forma silenciosa o acción de usuario imposible
@@ -99,7 +103,7 @@ Reparto verificado:
 | --- | --- |
 | `timeout` | `plugins.rs:552`, `plugins.rs:620`, `plugins.rs:690`, `plugins.rs:727`, `integration.rs:601`, `integration.rs:609`, `integration.rs:666`, `proton.rs:1314` |
 | `ldconfig` | `proton.rs:617` |
-| `pgrep` | `import_move.rs:353`, `import_move.rs:363`, `proton.rs:261` |
+| `pgrep` | ~~`import_move.rs:353`, `import_move.rs:363`~~ (corregido en C14), `proton.rs:261` |
 | `pidof` | `proton.rs:825` |
 | `which` | `integration.rs:27`, `proton.rs:597`, `proton.rs:822` |
 
@@ -113,14 +117,15 @@ modos de fallo distintos:
 - **Falla silenciosa** — `plugins.rs:727`: si `timeout` no existe,
   `Command::new` falla, la función cae en `_ => return Vec::new()` y la
   pestaña de Emuladores queda vacía **sin ningún mensaje de error**.
-- **Falla abierta y peligrosa** — `import_move.rs:353` (C14): un prefix en uso
-  se declara libre.
+- **Falla abierta y peligrosa** — un prefix en uso se declaraba libre (C14;
+  ya corregido, pero el patrón sigue latente en `proton.rs:261`).
 - **Falla ruidosa** — `plugins.rs:552/620/690` e `integration.rs:601`: el
   usuario ve un error que no menciona la causa real.
 
 **Fix:** sustituir `timeout(1)` por un helper en proceso (`spawn` +
-`try_wait` con deadline + `kill`), y hacer que la ausencia de `pgrep`/
-`ldconfig` sea un estado explícito, nunca un `false` silencioso.
+`try_wait` con deadline + `kill`), y hacer que la ausencia de `ldconfig` sea
+un estado explícito, nunca un `false` silencioso. La parte de `pgrep` ya está
+hecha: `import_move.rs` lee `/proc` directamente.
 
 ### C09 — El registro de plugins elige el primer `.tar.gz` sin filtrar por arquitectura
 
@@ -166,7 +171,10 @@ el escaneo y por el artwork.
 
 ### C14 — `prefix_in_use` falla abierta cuando `pgrep` no existe
 
-- `src/backend/import_move.rs:351-374`.
+**Estado: CORREGIDO** (ver "Fix aplicado" al final de la sección; el resto de
+críticos sigue abierto).
+
+- `src/backend/import_move.rs:351-374` (versión auditada).
 - Línea 353-356: si `Command::new("pgrep")` falla, `running = false` y la
   función devuelve `false` (prefix libre).
 - Línea 360-361: `lock.exists()` — `wineserver.lock` es un socket unix; un
@@ -188,9 +196,30 @@ el escaneo y por el artwork.
 - Con el path del prefix escrito de otra forma en la config (por ejemplo
   `..` o un symlink), el substring no matchea y vuelve el primer caso.
 
-**Fix:** invertir el default (sin `pgrep` = *bloquear* con aviso, no *liberar*),
-comparar contra `norm(prefix)`, y tratar un socket sin proceso vivo como
-obsoleto en lugar de como "en uso".
+**Fix aplicado:** se sustituyó el booleano por un tri-estado
+`PrefixUsage { Busy, Free, Unknown }` y se eliminó la dependencia de `pgrep`:
+
+1. `wineserver_pids()` enumera `/proc/*/comm` directamente. Sin `pgrep` no
+   hay falso "libre", y de paso desaparece una de las 12 llamadas de C08. Se
+   compara `comm` por subcadena, no por igualdad, para no perder variantes
+   como `wineserver-preloader`; el nombre de CorkyTux no contiene
+   `wineserver`, así que no hay autocompresión.
+2. `wineprefix_of(pid)` lee `WINEPREFIX` de `/proc/<pid>/environ`, que es la
+   atribución **exacta**: wineserver recibe el prefix por entorno, nunca por
+   línea de comandos, así que el substring sobre `pgrep -af` no era fiable.
+3. Ambos lados pasan por `norm()`, que canonicaliza, así que la comparación ya
+   no depende de cómo esté escrito el path en la configuración.
+4. Un `wineserver.lock` obsoleto ya no bloquea nada: el estado se decide por
+   procesos vivos, no por la presencia del socket.
+5. Si hay wineservers vivos pero su entorno es ilegible (otro usuario,
+   procfs con `hidepid`), el resultado es `Unknown` y se **bloquea** con el
+   nuevo `Blocker::UsageUndeterminable` en vez de arriesgar los datos. La UI
+   lo renderiza sin cambios: `import_manager.rs` usa `b.message()` de forma
+   genérica.
+
+El `Fix:` del triage original ("invertir el default y normalizar el path") se
+cumple, pero con mejor base: la atribución por `/proc` sustituye al heuristic
+en lugar de solo parchearlo.
 
 ---
 
@@ -253,15 +282,15 @@ Requiere que el usuario abra la app; el agente no la ejecuta.
 4. Aviso `*** BUG *** In pixman_region32_init_rect: Invalid rectangle passed`:
    causa no confirmada, aplazada por no ser crítica.
 
-## Orden de corrección sugerido
+## Orden de corrección
 
-1. **C14** — único hallazgo con riesgo de pérdida de datos. El fix es
-   invertir el default y normalizar el path; son pocas líneas.
+1. ~~**C14**~~ — **hecho**: tri-estado `PrefixUsage` + atribución por
+   `/proc/<pid>/environ` en vez de `pgrep`.
 2. **C08**, y en particular el `timeout(1)` de `plugins.rs:727` — sustituirlo
    por un timeout en proceso es el arreglo con mejor relación esfuerzo/impacto
-   de toda la auditoría: una sola función nueva y desaparecen ocho
-   dependencias de `timeout` a la vez, incluida la que deja la pestaña de
-   Emuladores vacía sin error.
+   de lo que queda: una sola función nueva y desaparecen ocho dependencias de
+   `timeout` a la vez, incluida la que deja la pestaña de Emuladores vacía sin
+   error. El fix de C14 ya cubre `import_move.rs`.
 3. **C09** y **C10** — independientes, acotados y sin riesgo de datos.
 4. **C01** — depende del helper compartido de rutas de Steam del punto 2.
 5. **C03** — requiere decidir antes qué significa "32-bit" en aarch64, para no

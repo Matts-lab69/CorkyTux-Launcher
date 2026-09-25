@@ -52,6 +52,9 @@ pub enum Blocker {
     /// Original retirado a `.corkytux-old`, pero la sesion murio antes de
     /// poner el symlink. El original esta entero en `path`.
     OrphanedOriginal { label: String, path: PathBuf },
+    /// No se pudo comprobar si el prefix esta en uso, asi que no se mueve.
+    /// Bloquea a proposito: se prefiere un import pendiente a perder datos.
+    UsageUndeterminable { label: String, path: PathBuf },
 }
 
 impl Blocker {
@@ -74,6 +77,11 @@ impl Blocker {
             Blocker::OrphanedOriginal { label, path } => {
                 format!("{} tiene un original sin terminar de mover en {}", label, path.display())
             }
+            Blocker::UsageUndeterminable { label, path } => format!(
+                "no se pudo comprobar si {} esta en uso ({}); cierra los juegos de Wine e reintenta",
+                label,
+                path.display()
+            ),
         }
     }
 }
@@ -345,31 +353,105 @@ pub fn free_bytes(path: &Path) -> std::io::Result<u64> {
     Ok(avail.saturating_mul(bsize))
 }
 
-/// ¿Hay un wineserver vivo sosteniendo este prefix? Mismo criterio que
-/// `proton.rs` (lock + pgrep), mas una segunda comprobacion sobre la linea de
-/// proceso por si el lock no llegara a escribirse.
-pub fn prefix_in_use(prefix: &Path) -> bool {
-    let lock = prefix.join("wineserver.lock");
-    let running = match Command::new("pgrep").arg("-f").arg("wineserver").output() {
-        Ok(o) => o.status.success(),
-        Err(_) => false,
-    };
-    if !running {
-        return false;
-    }
-    if lock.exists() {
-        return true;
-    }
-    match Command::new("pgrep").arg("-af").arg("wineserver").output() {
-        Ok(o) => {
-            let want = prefix.display().to_string();
-            if want.is_empty() {
-                return false;
-            }
-            let text = String::from_utf8_lossy(&o.stdout);
-            text.lines().any(|l| l.contains(&want))
+/// Estado de ocupacion de un prefix segun los procesos vivos del sistema.
+///
+/// `Unknown` existe para que "no se pudo comprobar" nunca se confunda con
+/// "esta libre": mover un prefix con el juego corriendo pierde datos, asi que
+/// ante duda el import se bloquea.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrefixUsage {
+    /// Hay un wineserver sosteniendo ESTE prefix.
+    Busy,
+    /// Comprobado con certeza: ningun wineserver apunta a este prefix.
+    Free,
+    /// No se pudo determinar. No tratar como libre.
+    Unknown,
+}
+
+/// PIDs cuyo nombre de proceso es `wineserver`, leidos de `/proc`.
+///
+/// Se evita `pgrep` a proposito: viene de procps, no de POSIX, y no existe en
+/// el PATH por defecto de NixOS ni en contenedores minimos. Con `pgrep` ausente
+/// la version anterior devolvia "prefix libre" y el import movia directorios en
+/// uso.
+///
+/// `comm` se compara por subcadena, no por igualdad, para no perder variantes
+/// (`wineserver-preloader`). El prefijo `wineserver` no aparece en el nombre de
+/// CorkyTux ni de ningun proceso suyo, asi que no hay autocompresion. Un
+/// proceso que coincida pero no exponga `WINEPREFIX` se cuenta como
+/// inatribuible, que bloquea en vez de liberar.
+fn wineserver_pids() -> Option<Vec<u32>> {
+    let entries = std::fs::read_dir("/proc").ok()?;
+    let mut pids = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if name.is_empty() || !name.bytes().all(|b| b.is_ascii_digit()) {
+            continue;
         }
-        Err(_) => false,
+        // El proceso puede desaparecer entre readdir y read.
+        let Ok(pid) = name.parse::<u32>() else { continue };
+        let comm = std::fs::read(format!("/proc/{}/comm", pid)).unwrap_or_default();
+        if String::from_utf8_lossy(&comm).contains("wineserver") {
+            pids.push(pid);
+        }
+    }
+    Some(pids)
+}
+
+/// `WINEPREFIX` declarado por el proceso, leido de `/proc/<pid>/environ`.
+///
+/// Es la atribucion exacta: wineserver no lleva el prefix en su linea de
+/// comandos (lo recibe por entorno), asi que comparar `/proc/<pid>/cmdline`
+/// con el prefix no era fiable.
+fn wineprefix_of(pid: u32) -> Option<PathBuf> {
+    let raw = std::fs::read(format!("/proc/{}/environ", pid)).ok()?;
+    for entry in raw.split(|b| *b == 0) {
+        if entry.is_empty() {
+            continue;
+        }
+        if let Ok(s) = std::str::from_utf8(entry) {
+            if let Some(value) = s.strip_prefix("WINEPREFIX=") {
+                if !value.is_empty() {
+                    return Some(PathBuf::from(value));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// ¿Hay un wineserver vivo sosteniendo este prefix?
+///
+/// Mismo criterio que `proton.rs` (lock + pgrep), pero sin depender de `pgrep`
+/// y con atribucion exacta por `WINEPREFIX`.
+pub fn prefix_usage(prefix: &Path) -> PrefixUsage {
+    let Some(pids) = wineserver_pids() else {
+        // Sin /proc no hay forma de comprobarlo: nunca se asume libre.
+        return PrefixUsage::Unknown;
+    };
+    if pids.is_empty() {
+        return PrefixUsage::Free;
+    }
+    let want = norm(prefix);
+    let mut unattributed = 0usize;
+    for pid in pids {
+        match wineprefix_of(pid) {
+            Some(found) => {
+                if norm(&found) == want {
+                    return PrefixUsage::Busy;
+                }
+            }
+            // Un wineserver vivo al que no se puede leer el entorno (otro
+            // usuario, procfs con hidepid) impide afirmar que este prefix
+            // esta libre: se bloquea con aviso en vez de arriesgar los datos.
+            None => unattributed += 1,
+        }
+    }
+    if unattributed > 0 {
+        PrefixUsage::Unknown
+    } else {
+        PrefixUsage::Free
     }
 }
 
@@ -437,11 +519,25 @@ pub fn preflight(cands: &[MoveCandidate], games_dir: &Path) -> Preflight {
             continue;
         }
         if let Some(p) = &c.prefix_path {
-            if p.exists() && prefix_in_use(p) {
-                blockers.push(Blocker::GameRunning {
-                    label: c.label.clone(),
-                });
-                continue;
+            if p.exists() {
+                match prefix_usage(p) {
+                    PrefixUsage::Busy => {
+                        blockers.push(Blocker::GameRunning {
+                            label: c.label.clone(),
+                        });
+                        continue;
+                    }
+                    // Fallo cerrado: sin prueba de que el prefix este libre,
+                    // no se mueve.
+                    PrefixUsage::Unknown => {
+                        blockers.push(Blocker::UsageUndeterminable {
+                            label: c.label.clone(),
+                            path: p.clone(),
+                        });
+                        continue;
+                    }
+                    PrefixUsage::Free => {}
+                }
             }
         }
 
@@ -696,9 +792,24 @@ pub fn plan_for_mode(
         // partir un prefix compartido entre dos sitios es justo el bug que
         // estamos previniendo.
         let mut bad: Option<String> = None;
-        if !g.prefix_path.as_os_str().is_empty() && prefix_in_use(&g.prefix_path) {
-            bad = Some(format!("el prefix compartido {} esta en uso", g.prefix_path.display()));
-        } else {
+        if !g.prefix_path.as_os_str().is_empty() {
+            match prefix_usage(&g.prefix_path) {
+                PrefixUsage::Busy => {
+                    bad = Some(format!(
+                        "el prefix compartido {} esta en uso",
+                        g.prefix_path.display()
+                    ));
+                }
+                PrefixUsage::Unknown => {
+                    bad = Some(format!(
+                        "no se pudo comprobar si el prefix compartido {} esta en uso",
+                        g.prefix_path.display()
+                    ));
+                }
+                PrefixUsage::Free => {}
+            }
+        }
+        if bad.is_none() {
             for m in &members {
                 if !m.install_path.exists() {
                     bad = Some(format!("no existe la carpeta de {}", m.label));

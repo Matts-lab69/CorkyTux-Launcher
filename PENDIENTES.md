@@ -137,33 +137,46 @@ Commits: `361d6c8` (asunto a) y `6b6ed24` (asunto b)
   el `scr` (texto completo sin scroll porque cabe); desc >300 capa en 300 con
   scroll; `top` `allocH=160` (banner visible); `body` 334/362, `content` 421.
 
-## Auditoría multi-distro (6 críticos, SIN arreglar)
+## Auditoría multi-distro (6 críticos; C14 ya corregido)
 
 Detalle completo, con `archivo:línea` y fix mínimo, en
-[`docs/multidistro-audit.md`](docs/multidistro-audit.md) (42 hallazgos: 6
-críticos, 30 degradantes, 6 cosméticos). Auditoría estática: no se compiló ni
-ejecutó la app. Numeración heredada del triage original.
+[`docs/multidistro-audit.md`](docs/multidistro-audit.md) (42 hallazgos del
+triage: 6 críticos, 30 degradantes, 6 cosméticos). Auditoría estática: no se
+compiló ni ejecutó la app. Numeración heredada del triage original.
+**Pendientes: 5 de 6.**
 
-### C14 — `prefix_in_use` falla abierta sin `pgrep` (**pérdida de datos**)
-`src/backend/import_move.rs:351-374`
-- `Command::new("pgrep")` falla → `running = false` → el prefix se declara
-  **libre** y el import permanente lo mueve con el juego corriendo.
-- `wineserver.lock` es un socket unix: uno que quedó de una sesión muerta
-  bloquea el import permanentemente sin explicación.
-- El fallback compara `prefix.display()` como substring crudo, sin el `norm()`
-  que sí usa el agrupado de prefixos compartidos.
-- **Fix:** invertir el default (sin `pgrep` = bloquear con aviso, no liberar),
-  comparar contra `norm(prefix)` y tratar socket sin proceso vivo como
-  obsoleto. Es el arreglo más prioritario de la auditoría.
+### ~~C14 — `prefix_in_use` falla abierta sin `pgrep`~~ — **CORREGIDO**
+Era el único hallazgo con riesgo de pérdida de datos: sin `pgrep` (NixOS,
+contenedores) el prefix se declaraba **libre** y el import permanente lo movía
+con el juego corriendo.
 
-### C08 — Dependencia dura de binarios externos en 12 sitios
+- **Fix aplicado:** `prefix_usage() -> PrefixUsage { Busy, Free, Unknown }`
+  en vez del booleano. `wineserver_pids()` lee `/proc/*/comm` y
+  `wineprefix_of(pid)` lee `WINEPREFIX` de `/proc/<pid>/environ`, que es la
+  atribución exacta (wineserver nunca lleva el prefix en su línea de comandos,
+  así que el substring sobre `pgrep -af` no era fiable). Ambos lados pasan por
+  `norm()`.
+- **Falla cerrada:** si hay wineservers vivos cuyo entorno es ilegible (otro
+  usuario, procfs con `hidepid`), sale `Unknown` y se bloquea con el nuevo
+  `Blocker::UsageUndeterminable`, en vez de arriesgar los datos. La UI lo
+  muestra sin cambios: `import_manager.rs` usa `b.message()` de forma genérica.
+- **Efecto colateral bueno:** desaparecen 2 de las 12 llamadas a `pgrep` de C08.
+- **Efecto secundario:** un `wineserver.lock` obsoleto ya no bloquea el import
+  para siempre; el estado se decide por procesos vivos, no por el socket.
+- `wineserver_pids()`/`wineprefix_of()` quedan privados al módulo;
+  `prefix_in_use` se elimina (sus dos únicos llamadores están en el mismo
+  archivo).
+
+### C08 — Dependencia dura de binarios externos en 12 sitios (quedan 11)
 `timeout` (×8: `plugins.rs:552,620,690,727`, `integration.rs:601,609,666`,
-`proton.rs:1314`), `ldconfig` (`proton.rs:617`), `pgrep` (×3), `pidof`
+`proton.rs:1314`), `ldconfig` (`proton.rs:617`), `pgrep` (queda `proton.rs:261`;
+las 2 de `import_move.rs` ya no existen), `pidof`
 (`proton.rs:825`), `which` (×3). Son de coreutils/procps, no POSIX: faltan en
 NixOS y en contenedores mínimos. El peor caso es `plugins.rs:727`: sin
 `timeout`, la lista de emuladores sale **vacía y sin error**.
 - **Fix:** timeout en proceso (`spawn` + `try_wait` con deadline + `kill`) y
-  que la ausencia de `pgrep`/`ldconfig` sea un estado explícito.
+  que la ausencia de `ldconfig` sea un estado explícito. La parte de `pgrep`
+  ya está resuelta por el fix de C14.
 
 ### C01 — Rutas de Steam hardcodeadas: overlay roto en Flatpak/Snap
 `proton.rs:335-340` (`steam_client_path`) y `proton.rs:940-942,1035-1037`
