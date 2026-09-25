@@ -6,7 +6,7 @@
 - Alcance: jerarquía, espaciado y tratamiento visual de las filas de emuladores, con foco en la acción `Set as linked`.
 - Fuentes verificadas: `src/ui/settings.rs`, `rebuild_emu_rows` (`2411-2552`) y handler `EmuOp` (`1916-1932`); `src/backend/theme.rs`, tokens de tema (`190-250`) y paleta de acentos (`77-90`); `src/ui/helpers.rs`, CSS de aplicación (`457-644`).
 - Cambios de esta versión: decisión B; especificación funcional del flujo `Working…` y doble click; decisión de slot estable; garantía de contraste 3:1 para borde/foco con los 10 acentos; registro de pendientes fuera de alcance (sección final).
-- Sección "Lista de emuladores instalables (catálogo)": **opción 1+3 fijada como única viva** (botón estado-consciente + compactación de filas resueltas), con matriz estado → dot/badge/label/clase/ancho. La fila se alinea al estilo de tarjeta de lista de contenido (Prism/Modrinth): clase nueva `.emu-row-card` (borde neutro + fondo panel) y slot de ícono cuadrado 48 px `.emu-row-icon` (monograma gated al veredicto legal); botones y matriz de estados sin cambios. Las opciones A/B/C y las variantes 2/3 fueron movidas al apéndice "Opciones evaluadas y descartadas" (trazabilidad, no se borran). Pendientes abiertos: veredicto legal de íconos (slot gated), mapa `tag → familia` (no aplica a lista plana) y hueco de estado vacío (sin plugin vs sin resultados de filtro). Los bloques CSS citados son especificación, no se aplicaron a código.
+- Sección "Lista de emuladores instalables (catálogo)": **opción 1+3 fijada como única viva** (botón estado-consciente + compactación de filas resueltas), con matriz estado → badge/label/clase/ancho (columna `Dot` eliminada por decisión del usuario al implementar la fila). La fila se alinea al estilo de tarjeta de lista de contenido (Prism/Modrinth): clase nueva `.emu-row-card` (borde neutro + fondo panel) y slot de ícono cuadrado 48 px `.emu-row-icon` (monograma gated al veredicto legal); botones y badge/texto/clase/ancho de la matriz sin cambios. Las opciones A/B/C y las variantes 2/3 fueron movidas al apéndice "Opciones evaluadas y descartadas" (trazabilidad, no se borran). Pendientes abiertos: veredicto legal de íconos (slot gated), mapa `tag → familia` (no aplica a lista plana), hueco de estado vacío (sin plugin vs sin resultados de filtro) y clases `emu-dot-on`/`emu-dot-off` huérfanas (candidatas a eliminar). Los bloques CSS citados son especificación, no se aplicaron a código hasta su implementación.
 - Los bloques CSS de este documento son una especificación de diseño. No fueron aplicados a código ni a estilos.
 
 ## Decisiones fijas y valores por defecto
@@ -51,7 +51,7 @@ Una fila debe sentirse como un control compacto y confiable: superficie limpia, 
 - Acción: 14 px, bold.
 - Estado de proceso `Working…`: `.time-label`, 12 px, `text_sec`.
 - Badge: `.proton-path-badge`, 11 px, bold.
-- Punto de disponibilidad: 14 px, `emu-dot-on` u `emu-dot-off`.
+- ~~Punto de disponibilidad: 14 px, `emu-dot-on` u `emu-dot-off`.~~ **Obsoleto**: el dot `[•]` se eliminó de la fila por decisión del usuario (ver matriz y pendientes de la sección catálogo); las clases quedaron sin uso, candidatas a eliminar.
 - No usar una segunda familia, mayúsculas decorativas ni texto itálico.
 
 ## Tokens existentes
@@ -506,16 +506,16 @@ Objetivos de esta propuesta: jerarquía (nombre ≠ descripción), exploración 
 ```text
 [filtro de búsqueda (GtkSearchEntry, .search-entry)]
 [ .emu-row-card ]
-  [•] [48px icon]   Nombre                    (.details-title, bold 16, 1 línea, ellipsis)
-      [monograma]   Descripción — una línea    (.time-label, 12, ellipsis)
-                                         [slot 12ch]  [Install] (.add-btn)
+  [48px icon]   Nombre                    (.details-title, bold 16, 1 línea, ellipsis)
+  [monograma]   Descripción — una línea    (.time-label, 12, ellipsis)
+                                      [slot 12ch]  [Install] (.add-btn)
 ```
 
 **Descripción visual:** lista plana de tarjetas de dos líneas (decisiones transversales), con un botón cuyo **label y clase mutan con el estado de la fila** (estado-consciente) y filas resueltas **sin acción pendiente que colapsan a badge** (compactación). La píldora solo aparece donde hay acción real: pendientes, operaciones en vuelo y removibles. La columna de acciones permanece alineada con ancho fijo por estado, sin jitter.
 
 ### Estilo de fila: tarjeta tipo lista de contenido (Prism/Modrinth)
 
-La fila adopta el patrón visual de las listas de contenido de launchers de Minecraft Java (Prism Launcher / Modrinth): tarjeta plana con borde neutro, esquinas redondeadas y fondo de panel que separa cada emulador. **Solo cambia el envase de la fila**: botones, dot, badges, slot estable y la matriz de la opción viva 1+3 quedan intactos (sección siguiente). No se copian los botones de la referencia (`View` / `Versions` / `Install`): esas acciones no existen en `EmuOp`; tampoco se agrega checkbox de selección (`EmuInfo` no lo tiene) ni campo author (no existe en `EmuInfo`).
+La fila adopta el patrón visual de las listas de contenido de launchers de Minecraft Java (Prism Launcher / Modrinth): tarjeta plana con borde neutro, esquinas redondeadas y fondo de panel que separa cada emulador. **Solo cambia el envase de la fila**: botones, badges, slot estable y la matriz de la opción viva 1+3 quedan intactos (sección siguiente). El dot `[•]` se elimina de esta fila por decisión del usuario (el estado usable ya se refleja en el badge de la línea 1 y el tipo de botón); las clases `emu-dot-on`/`emu-dot-off` quedan sin uso, candidatas a eliminar. No se copian los botones de la referencia (`View` / `Versions` / `Install`): esas acciones no existen en `EmuOp`; tampoco se agrega checkbox de selección (`EmuInfo` no lo tiene) ni campo author (no existe en `EmuInfo`).
 
 **Nueva regla `.emu-row-card`** (marco de la fila):
 
@@ -531,7 +531,7 @@ La fila adopta el patrón visual de las listas de contenido de launchers de Mine
 
 Justificación de la clase nueva: ninguna clase existente modela una tarjeta de fila neutra. Reutilizar `.mc-row` (lista de contenido de Minecraft) o `.game-row` acoplaría el catálogo de emuladores al estilo de otra sección: si mañana cambia el listado de mods, el de emuladores cambiaría sin relación. Una clase localizada sigue el precedente de `.emu-link-action` (creada para el launcher en vez de reutilizar vocabulario ajeno).
 
-**Bloque de texto (dos líneas, sin campo author):** línea 1 el nombre en `.details-title` (bold 16, single-line, ellipsize); línea 2 la descripción en `.time-label` (12, `text_sec`, single-line, ellipsize). Es la separación que hoy falta: el label actual concatena `"Nombre (badge) — descripción"` en un único `.details-title` (`settings.rs:2452-2461`). El dot de disponibilidad `[•]` se conserva como primer elemento (es parte de la matriz de estados), no se reemplaza por checkbox.
+**Bloque de texto (dos líneas, sin campo author):** línea 1 el nombre en `.details-title` (bold 16, single-line, ellipsize); línea 2 la descripción en `.time-label` (12, `text_sec`, single-line, ellipsize). Es la separación que hoy falta: el label actual concatena `"Nombre (badge) — descripción"` en un único `.details-title` (`settings.rs:2452-2461`). El dot de disponibilidad `[•]` **se elimina** de la fila (decisión del usuario): el estado usable ya se refleja en el badge de la línea 1 y el tipo de botón; no se reemplaza por checkbox. Las clases `emu-dot-on`/`emu-dot-off` quedan sin uso (pendiente menor: candidatas a eliminar).
 
 **Slot de ícono (48 px, elegido):**
 
@@ -547,16 +547,16 @@ Justificación de la clase nueva: ninguna clase existente modela una tarjeta de 
 
 Por qué 48 px (rango pedido 48-56): es el tamaño de las miniaturas de las listas de contenido Prism/Modrinth, la analogía de la referencia; el catálogo mueve 10-12 ítems planos con búsqueda, así que 48 px da presencia al slot sin inflar la altura de fila (56 px costaría densidad de lectura al hacer scroll); y convive con el slot estable de 12 chars: la identidad de dos líneas se lee completa y el monograma (inicial del emulador, ~18-20 px bold) queda legible como fallback legalmente seguro. **Alineación:** el slot se ancla arriba de la fila (`valign: start`); el bloque de texto y la columna de acciones quedan centrados verticalmente respecto a la altura de la tarjeta. **Estable ante el asset real:** si el informe de licencias permite hornear el logo, el asset sirve en la misma geometría de 48 px y el layout no se mueve.
 
-**Matriz estado → (dot, badge, texto del botón, clase CSS, ancho fijo):**
+**Matriz estado → (badge, texto del botón, clase CSS, ancho fijo):** la columna `Dot` fue **eliminada** de la matriz y de la fila por decisión del usuario: el estado usable ya se refleja en el badge de la línea 1 y el tipo de botón. Las clases `emu-dot-on`/`emu-dot-off` quedaron sin uso (pendiente menor: candidatas a eliminar).
 
-| Estado | Dot | Badge | Texto del botón | Clase CSS | Ancho fijo |
-| --- | --- | --- | --- | --- | --- |
-| `none`/empty sin instalar | off | — | `Install` | `.add-btn` | 80 px |
-| `EmuOp` en vuelo (Installing) | según estado previo | — | `Installing…` | `.add-btn` + **nueva regla** `.add-btn:disabled` | 96 px |
-| `appimage` instalado | on | `Installed` (`.status-badge` + `.proton-path-badge`) | `Remove` | `.danger-btn` | 80 px |
-| `system` detectado | on | `System` (badge) | `Set as linked` | `.emu-link-action` | 120 px |
-| `linked` / native | on | `Linked` (badge) | sin botón (compactada) | — | — |
-| `EmuOp(Err)` con recuperación | según estado previo | — | `Retry` (o re-expuesto `Install`/`Remove` según el estado previo) | `.emu-link-action` | 96 px |
+| Estado | Badge | Texto del botón | Clase CSS | Ancho fijo |
+| --- | --- | --- | --- | --- |
+| `none`/empty sin instalar | — | `Install` | `.add-btn` | 80 px |
+| `EmuOp` en vuelo (Installing) | — | `Installing…` | `.add-btn` + **nueva regla** `.add-btn:disabled` | 96 px |
+| `appimage` instalado | `Installed` (`.status-badge` + `.proton-path-badge`) | `Remove` | `.danger-btn` | 80 px |
+| `system` detectado | `System` (badge) | `Set as linked` | `.emu-link-action` | 120 px |
+| `linked` / native | `Linked` (badge) | sin botón (compactada) | — | — |
+| `EmuOp(Err)` con recuperación | — | `Retry` (o re-expuesto `Install`/`Remove` según el estado previo) | `.emu-link-action` | 96 px |
 
 **Slot estable (12 chars, siempre presente):** durante la operación el slot muestra `Working…` (`set_width_chars(12)` ya implementado, `settings.rs:2465-2467`); en reposo queda vacío. `Working…` convive con el badge y no lo reemplaza ni empuja el layout. El label del botón (`Installing…`) es complementario, no duplicado.
 
@@ -583,6 +583,7 @@ Por qué 48 px (rango pedido 48-56): es el tamaño de las miniaturas de las list
 ### Pendientes de esta sección (abiertos)
 
 - **Asset real del ícono gated al veredicto de licencias; mientras tanto, monograma** (investigación en curso): el slot de 48 px (`.emu-row-icon`) se reserva siempre y permanece estable; el monograma determinista (inicial del emulador) es el fallback legalmente seguro hasta que el informe de licencias decida si los assets de marca pueden hornearse en la misma geometría.
+- **Clases `emu-dot-on` / `emu-dot-off` huérfanas (candidatas a eliminar)**: tras la decisión del usuario de eliminar el dot `[•]` de la fila, las clases quedaron definidas en `helpers.rs:553-554` pero sin uso en código, y la mención del punto de disponibilidad en la "Base tipográfica" (sección de `Set as linked`) quedó obsoleta. No se borran todavía: como su folclore de contraste (verde `#00E639` / `text_muted`) es compartido, se marcan como candidatas a eliminar en una limpieza futura.
 - **Mapa `tag → familia`**: **no aplica a la opción viva** (lista plana con filtro, sin agrupación). Permanece abierto únicamente si el catálogo crece y se retoma B o C del apéndice.
 - **Hueco de estado vacío**: el hint actual de la lista (`"No emulators reported by emulator-manager."`) no distingue "sin plugin reportado" de "sin resultados de filtro"; definir un estado vacío explícito para cada caso (la opción viva incluye búsqueda, así que "sin resultados de filtro" es un estado alcanzable).
 

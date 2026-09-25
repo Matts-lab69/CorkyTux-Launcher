@@ -2427,18 +2427,27 @@ fn rebuild_emu_rows(
         return;
     }
     for emu in &list {
+        // Card-style row (DESIGN.md: fila tipo lista de contenido MC):
+        // [icon 48px][nombre+badge / descripcion][slot 12ch][accion].
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        row.set_margin_top(2);
-        row.set_margin_bottom(2);
-        let usable = emu.installed || emu.native || matches!(emu.source.as_str(), "linked" | "system");
-        let dot = gtk::Label::new(Some("●"));
-        dot.set_tooltip_text(Some(if usable { "Available" } else { "Not installed" }));
-        if usable {
-            dot.add_css_class("emu-dot-on");
-        } else {
-            dot.add_css_class("emu-dot-off");
-        }
-        row.append(&dot);
+        row.add_css_class("emu-row-card");
+        // Icon slot: square 48x48; monogram fallback (first letter) until the
+        // license verdict allows baking real assets. Geometry stays stable.
+        let initial = emu
+            .name
+            .chars()
+            .next()
+            .map(|c| c.to_uppercase().collect::<String>())
+            .unwrap_or_default();
+        let icon = gtk::Label::new(Some(&initial));
+        icon.add_css_class("emu-row-icon");
+        icon.set_valign(gtk::Align::Start);
+        icon.set_width_request(48);
+        icon.set_height_request(48);
+        icon.set_xalign(0.5);
+        icon.set_yalign(0.5);
+        row.append(&icon);
+        // Trailing state suffix kept inline with the name (as today).
         let badge = if emu.source.is_empty() {
             if emu.native { " (native)" } else if emu.installed { " (installed)" } else { "" }
         } else {
@@ -2449,28 +2458,14 @@ fn rebuild_emu_rows(
                 _ => "",
             }
         };
-        let name_lbl = gtk::Label::new(Some(&format!(
-            "{}{} — {}",
-            emu.name,
-            badge,
-            emu.description
-        )));
+        // Line 1: name + optional status badge side by side.
+        let name_lbl = gtk::Label::new(Some(&format!("{}{}", emu.name, badge)));
         name_lbl.add_css_class("details-title");
         name_lbl.set_halign(gtk::Align::Start);
         name_lbl.set_hexpand(true);
         name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        row.append(&name_lbl);
-        // Stable status slot: the label always exists (empty when idle) so
-        // "Working…" appears in place and badge/button never shift. Ver DESIGN.md.
-        let st = gtk::Label::new(None);
-        st.add_css_class("time-label");
-        st.set_width_chars(12);
-        if let Some(s) = emu_status.borrow().get(&emu.name) {
-            st.set_text(s);
-        }
-        row.append(&st);
-        // Status-only states (linked/system/native) render as a badge: a
-        // disabled button washes out to near-invisible in light theme.
+        // Status-only states (linked/system/native) render as a badge next to
+        // the name (line 1) instead of a separate slot in the row.
         let status_text: Option<&str> = if emu.source.is_empty() {
             if emu.native { Some("Linked") } else { None }
         } else {
@@ -2480,13 +2475,38 @@ fn rebuild_emu_rows(
                 _ => None,
             }
         };
+        let text_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        text_box.set_halign(gtk::Align::Fill);
+        text_box.set_hexpand(true);
+        let line1 = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        line1.append(&name_lbl);
         if let Some(label) = status_text {
-            let badge = gtk::Label::new(Some(label));
-            badge.add_css_class("proton-path-badge");
-            badge.add_css_class("status-badge");
-            badge.set_valign(gtk::Align::Center);
-            row.append(&badge);
+            let badge_w = gtk::Label::new(Some(label));
+            badge_w.add_css_class("proton-path-badge");
+            badge_w.add_css_class("status-badge");
+            badge_w.set_valign(gtk::Align::Center);
+            line1.append(&badge_w);
         }
+        text_box.append(&line1);
+        // Line 2: description only when present (no ghost line).
+        if !emu.description.is_empty() {
+            let desc = gtk::Label::new(Some(&emu.description));
+            desc.add_css_class("time-label");
+            desc.set_halign(gtk::Align::Start);
+            desc.set_hexpand(true);
+            desc.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            text_box.append(&desc);
+        }
+        row.append(&text_box);
+        // Stable status slot: the label always exists (empty when idle) so
+        // "Working…" appears in place and badge/button never shift. Ver DESIGN.md.
+        let st = gtk::Label::new(None);
+        st.add_css_class("time-label");
+        st.set_width_chars(12);
+        if let Some(s) = emu_status.borrow().get(&emu.name) {
+            st.set_text(s);
+        }
+        row.append(&st);
         // system rows keep a functional action next to the badge: pin the
         // detected PATH to an explicit linked entry (corky-link). linked is
         // terminal (badge only); appimage/none/legacy get a button only.
