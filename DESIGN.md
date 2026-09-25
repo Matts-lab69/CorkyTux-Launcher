@@ -2,22 +2,22 @@
 
 ## Estado del documento
 
-- Estado: **actualización visual de la fila implementada**: el nombre ya no lleva sufijos de estado; `Linked` conserva una píldora compacta; `System` se comunica con una única acción roja que sustituye el badge separado y el botón `Set as linked`. El flujo `Working…`, el slot estable y el mapping de acciones permanecen intactos.
+- Estado: **actualización visual de la fila implementada**: el nombre ya no lleva sufijos de estado; `Linked` conserva una píldora compacta; `System` conserva el badge junto al nombre, muestra un aviso rojo estático `Found in system` y mantiene el botón `Set as linked` como única acción clickeable. El flujo `Working…`, el slot estable y el mapping de acciones permanecen intactos.
 - Alcance: jerarquía, espaciado y tratamiento visual de las filas de emuladores, con foco en la identidad, el estado y las acciones disponibles.
-- Fuentes verificadas: `src/ui/settings.rs`, `rebuild_emu_rows` (`2411-2552`) y handler `EmuOp` (`1916-1932`); `src/backend/theme.rs`, tokens de tema (`190-250`) y paleta de acentos (`77-90`); `src/ui/helpers.rs`, CSS de aplicación (`457-644`).
-- Cambios de esta versión: nombre canónico sin paréntesis; `.emu-status-pill` para `Linked`/nativo; acción `Found in system - link it?` con variante roja suave `.emu-system-link-action`; el callback de `Set as linked` no cambia. La decisión A mantiene la píldora `Linked`; B hace que el recuadro rojo reemplace la acción secundaria sin duplicarla; C usa estilo soft.
-- Sección "Lista de emuladores instalables (catálogo)": **opción 1+3 fijada como la única viva** (botón estado-consciente + compactación de filas resueltas), con matriz estado → badge/label/clase/ancho (columna `Dot` eliminada por decisión del usuario al implementar la fila). La fila se alinea al estilo de tarjeta de lista de contenido (Prism/Modrinth): clase nueva `.emu-row-card` (borde neutro + fondo panel) y slot de ícono cuadrado 48 px `.emu-row-icon` (11 SVG de Papirus; monograma para Azahar). Las opciones A/B/C y las variantes 2/3 permanecen como trazabilidad; las referencias normativas se actualizan en las secciones de matriz y flujo.
-- Los 11 iconos de emulador confirmados se cargan desde `assets/icons/emulators/`; Azahar conserva el monograma. No se toca la lógica de estados ni los handlers en esta actualización.
+- Fuentes verificadas: `src/ui/settings.rs`, `rebuild_emu_rows` y el handler `EmuOp`; `src/backend/theme.rs`, tokens de tema y paleta de acentos; `src/ui/helpers.rs`, CSS de aplicación; `assets/icons/ATTRIBUTION.md` para las licencias de los assets.
+- Cambios de esta versión: nombre canónico sin paréntesis; `.emu-status-pill` para `Linked`/`System`/nativo; aviso estático `.emu-system-notice` sin hover, cursor ni callback; botón `Set as linked` con `.emu-link-action`; el callback `link_emulator_in` no cambia. Las secciones de opciones A/B/C se conservan como trazabilidad histórica, pero la implementación vigente es badge + aviso estático + botón.
+- Sección "Lista de emuladores instalables (catálogo)": **opción 1+3 fijada como la única viva** (botón estado-consciente + compactación de filas resueltas), con matriz estado → badge/label/clase/ancho. La fila se alinea al estilo de tarjeta de lista de contenido (Prism/Modrinth): clase `.emu-row-card` y slot de ícono cuadrado 48 px `.emu-row-icon` (11 SVG de Papirus; el logo oficial de Azahar queda atribuido pero el resolver conserva el monograma).
+- No se toca la lógica de estados, la matriz estado→acción ni los handlers en esta actualización.
 
 ## Decisiones fijas y valores por defecto
 
 **Decisiones fijas**
 
 - La jerarquía separa disponibilidad, identidad, estado, feedback operacional y acción.
-- El badge comunica estado; el botón comunica una acción. `Linked` conserva la píldora pequeña; `System` usa una única acción roja que comunica a la vez el hallazgo y la acción de vincular.
+- El badge comunica estado; el aviso rojo comunica un hallazgo; el botón comunica la acción. `Linked` conserva la píldora pequeña; `System` conserva su badge y usa el aviso estático `Found in system` separado de `Set as linked`.
 - No se crean colores fuera de los tokens existentes; los derivados (como `{accent_ui}`) se calculan en la generación de CSS, no se hardcodean.
-- `Working…` no reemplaza la señal que describe el `source`: ni la píldora `Linked` ni la acción de `System`.
-- La acción conserva semántica de `gtk::Button`, teclado y foco.
+- `Working…` no reemplaza la señal que describe el `source`: ni la píldora de estado ni el aviso de `System` desaparecen durante la operación.
+- La acción conserva semántica de `gtk::Button`, teclado y foco; el aviso es un `gtk::Label` sin señal de puntero.
 - El label de estado es un slot estable y está siempre presente en la fila (sección "Slot estable").
 - Durante la operación el botón queda insensible; el doble click no produce una segunda operación (sección "Flujo `Working…` y doble click").
 - El borde/foco de la acción usa `{accent_ui}`: en claro `color-mix(in srgb, {text_main} 30%, {accent})`; en oscuro `{accent}` (sección "Contraste 3:1").
@@ -27,7 +27,7 @@
 - Adwaita Sans como cara nominal heredada de libadwaita.
 - Centrado vertical sobre un ritmo visual de 36 px.
 - Sin animación ornamental ni cross-fade de badges.
-- Opción B aprobada; pendiente el ok sobre el documento actualizado antes de implementar.
+- La opción vigente es la composición final: badge `System` + aviso rojo estático + botón `.emu-link-action`; las opciones A/B/C quedan como trazabilidad.
 
 ## Objetivo
 
@@ -38,7 +38,7 @@ Hacer que cada fila se lea de izquierda a derecha como una frase operacional ine
 3. estado actual de su fuente;
 4. acción disponible.
 
-La regla central es que la señal de estado responda `¿de dónde viene?` y el botón responda `¿qué puedo hacer ahora?`. `Linked` usa una píldora pequeña; `System` no duplica un badge: el botón rojo `Found in system - link it?` es la única señal accionable de esa fila.
+La regla central es que la señal de estado responda `¿de dónde viene?` y el botón responda `¿qué puedo hacer ahora?`. `Linked` usa una píldora pequeña; `System` conserva su badge, muestra el aviso estático `Found in system` y termina en el botón `Set as linked`.
 
 ## Tesis de diseño
 
@@ -70,7 +70,7 @@ Una fila debe sentirse como un control compacto y confiable: superficie limpia, 
 | `text_sec` | `#5B5468` | `#AAAAAA` | `Working…` y metadatos secundarios. |
 | `text_muted` | `#8A8296` | `#777777` | Punto no disponible. |
 
-El punto disponible conserva su color propio `#00E639`. El patrón destructivo conserva `#E5484D`; `Remove` lo usa como acción destructiva y la acción de vínculo de `System` lo usa como aviso suave, sin ser un badge de estado separado.
+El patrón destructivo conserva `#E5484D`; `Remove` lo usa como acción destructiva y el aviso estático de `System` lo usa como advertencia, sin ser un badge ni un control clickeable.
 
 ### Accent configurable
 
@@ -101,7 +101,8 @@ El punto disponible conserva su color propio `#00E639`. El patrón destructivo c
 | `.settings-btn` | 14 px bold, `well`, borde accent de 1.5 px y radio 20 px. | Candidato directo para la opción A. |
 | `.danger-btn` | Relleno rojo translúcido, borde `#E5484D`, texto del mismo color y 36 px. | Reservado para `Remove`. |
 | `.proton-path-badge` + `.emu-status-pill` | Texto accent de 11 px, borde de 1 px, radio 10 px, `min-height: 20px` y padding reducido. | Píldora compacta para `Linked`/nativo. |
-| `.emu-link-action` + `.emu-system-link-action` | Conserva la geometría de acción (14 px, 36 px, radio 20) y cambia a borde/texto/fondo rojo suave (`#E5484D`). | Variante localizada para la única acción `System`; reutiliza la estructura base y no altera `Remove`. |
+| `.emu-link-action` | Acción táctil de 14 px, 36 px, radio 20 y relleno accent translúcido. | Se usa en `Set as linked`; no altera `Remove` ni `Install`. |
+| `.emu-system-notice` | `gtk::Label` estático de 14 px, 36 px, radio 8, fondo/borde/texto rojo suave (`#E5484D`). | Comunica `Found in system`; no tiene `:hover`, `:disabled`, cursor ni `connect_clicked`. |
 | `.action-btn` | 11 px bold, radio 18 px y `action_bg` (`#242424` en oscuro, `well` en claro). | No usar para esta acción: su escala corresponde más a una barra compacta. |
 | `.filter-btn` | `well`, con checked en `hover`, texto accent y borde accent. | No usar: checked comunica selección de filtro, no acción de vínculo. |
 | `.icon-ghost` y `.source-link` | Indicadores transparentes o textuales. | Son referencias visuales para la opción C, no clases para reutilizar sin ajustes. |
@@ -117,20 +118,20 @@ El punto disponible conserva su color propio `#00E639`. El patrón destructivo c
 - margen superior e inferior de cada fila: 2 px;
 - lista vertical: separación 4 px, por lo que la separación visual efectiva entre filas vecinas es de 8 px;
 - margen inicial de la lista: 16 px;
-- orden actual de hijos: icono, bloque de texto (nombre + badge opcional, descripción), slot operacional y acción opcional;
-- el label flexible usa `.details-title`, `hexpand`, alineación al inicio y elipsado al final; el nombre ya no concatena sufijos `(system)`, `(linked)`, `(native)`, `(appimage)` ni `(installed)`;
+- orden actual de hijos: icono, bloque de texto (nombre + badge opcional, descripción), slot operacional, aviso opcional y acción opcional;
+- el label flexible usa `.details-title`, alineación al inicio y elipsado al final; el nombre ya no concatena sufijos `(system)`, `(linked)`, `(native)`, `(appimage)` ni `(installed)`;
 - el estado operacional usa `.time-label` y reserva 12 caracteres; con el slot estable este label existe siempre, vacío en reposo (ver sección "Slot estable");
-- `Linked`/nativo usa `.proton-path-badge` más `.emu-status-pill`; `System` no crea una etiqueta separada y delega la señal en la acción roja;
-- `Found in system - link it?` reserva 220 px de ancho; las demás acciones reservan 80 px.
+- `Linked`/`System`/nativo usa `.proton-path-badge` más `.emu-status-pill`; el aviso `System` es un label estático separado y el botón sigue siendo un `gtk::Button`;
+- `Found in system` reserva 140 px; `Set as linked` reserva 120 px; las demás acciones reservan 80 px.
 
-El nombre es la identidad canónica y se muestra solo, con `.details-title`; la descripción ocupa la segunda línea con `.time-label`. La señal de estado se renderiza aparte: `Linked` como píldora compacta y `System` como acción roja única.
+El nombre es la identidad canónica y se muestra solo, con `.details-title`; la descripción ocupa la segunda línea con `.time-label`. La señal de estado se renderiza aparte: `Linked` y `System` como píldora compacta, `System` además como aviso no interactivo y `Set as linked` como acción.
 
 ## Matriz semántica de la fila
 
 | Source | Señal de disponibilidad | Badge/etiqueta | Acción |
 | --- | --- | --- | --- |
 | `linked` | punto encendido | `Linked` (`.proton-path-badge` + `.emu-status-pill`) | ninguna; estado terminal |
-| `system` | punto encendido | —; el hallazgo se integra en la acción | `Found in system - link it?` (`.emu-link-action` + `.emu-system-link-action`, 220 px) |
+| `system` | punto encendido | `System` (`.proton-path-badge` + `.emu-status-pill`) + aviso estático `Found in system` (`.emu-system-notice`, 140 px) | `Set as linked` (`.emu-link-action`, 120 px) |
 | `appimage` | según disponibilidad reportada | — | `Remove` |
 | `none` o vacío, no nativo | punto apagado si no está instalado | — | `Install` o `Remove` según `installed` |
 | nativo, source vacío | punto encendido | `Linked` (`.proton-path-badge` + `.emu-status-pill`) | ninguna |
@@ -144,36 +145,36 @@ El nombre es la identidad canónica y se muestra solo, con `.details-title`; la 
 Orden de lectura recomendado:
 
 ```text
-[icono 48px] [identidad flexible + badge opcional] [descripción] [Working…] [acción]
+[icono 48px] [identidad flexible + badge] [descripción] [Working…] [aviso estático] [acción]
 ```
 
 - **Dot:** eliminado de esta fila; la señal accionable o la ausencia de botón comunican el estado.
 - **Identidad:** bloque principal flexible. Es lo que primero se lee y lo último que debe recortarse.
 - **Working…:** feedback transitorio en `text_sec`; no usa un segundo badge.
 - **Linked:** vocabulario de estado en una píldora pequeña, transparente, con texto accent, borde de 1 px, radio de 10 px, 11 px bold y altura mínima de 20 px.
-- **System:** no tiene badge separado; la acción roja soft es la señal accionable y sustituye a `Set as linked` sin duplicar controles.
+- **System:** conserva la píldora de estado junto al nombre; el aviso `Found in system` es estático y no tiene affordance; `Set as linked` es la única acción clickeable.
 - **Acción:** último elemento de la fila, con etiqueta imperativa explícita, objetivo táctil de 36 px y 14 px bold.
 
 ### Espaciado y alineación
 
 - Mantener 8 px entre los hijos de la fila; el `gtk::Box` resuelve el ritmo.
-- No agregar márgenes individuales alrededor de la píldora o del botón.
-- Centrar verticalmente los hijos sobre una altura visual mínima de 36 px.
+- No agregar márgenes individuales alrededor de la píldora, el aviso o el botón.
+- Centrar verticalmente los hijos sobre una altura visual mínima de 36 px; el slot de icono y el `GtkImage` usan `Center` en ambos ejes.
 - Mantener el label de identidad con expansión horizontal y elipsado final.
-- Reservar 220 px para `Found in system - link it?`; el texto de la acción no debe recortarse. Las demás acciones conservan 80 px.
+- Reservar 140 px para el aviso `Found in system` y 120 px para `Set as linked`; el texto de ambas piezas no debe recortarse. Las demás acciones conservan 80 px.
 - Mantener `Working…` en un slot estable de 12 caracteres para evitar saltos de layout durante la operación.
 
 ### Regla contra dos cápsulas accent iguales
 
 En una misma fila no se permiten dos chips con el mismo lenguaje visual:
 
-1. `Linked`/nativo es la única píldora de estado: fondo transparente, 11 px, radio 10 px, borde accent de 1 px y altura mínima de 20 px.
+1. `Linked`/`System`/nativo usa una única píldora de estado junto al nombre: fondo transparente, 11 px, radio 10 px, borde accent de 1 px y altura mínima de 20 px.
 2. Una acción en forma de cápsula debe usar 14 px bold, radio 20 px y distinguishse por su superficie o peso.
 3. `Install` conserva `.add-btn` y es la única acción primaria con fondo accent sólido.
 4. `Remove` conserva `.danger-btn`: contorno rojo con relleno translúcido.
-5. `System` no conserva un badge separado: `Found in system - link it?` es una única acción roja soft (`color-mix` al 14%, borde/texto `#E5484D`) y reutiliza la geometría de `.emu-link-action` mediante `.emu-system-link-action`.
-6. El texto de la acción sigue siendo un `gtk::Button` nativo para conservar teclado, foco y semántica; el handler existente no se duplica.
-7. El borde accent de las acciones no se mezcla con el rojo de advertencia: `System` usa la variante roja localizada y las demás acciones conservan sus clases.
+5. `System` añade un aviso `.emu-system-notice` estático; no es badge, botón, enlace ni elemento con hover.
+6. `Set as linked` sigue siendo un `gtk::Button` nativo para conservar teclado, foco y semántica; el handler existente no se duplica.
+7. El borde accent de las acciones no se mezcla con el rojo de advertencia: el aviso usa `#E5484D` y el botón conserva `.emu-link-action`.
 
 ### Estado transitorio y no-animación
 
@@ -184,13 +185,13 @@ En una misma fila no se permiten dos chips con el mismo lenguaje visual:
 
 Comportamiento actual verificado en el código:
 
-- El click inserta `"Working…"` en el mapa `emu_status` y lanza un thread que envía `EmuOp` al terminar (`settings.rs:2531-2547`).
-- No hay rebuild intermedio: la fila solo se reconstruye al recibir el resultado (`settings.rs:1916-1932`). Por eso hoy `Working…` prácticamente nunca se llega a ver y el botón permanece sensible durante toda la operación.
-- El handler de `EmuOp` (éxito o error) limpia el mapa `emu_status`, escribe feedback en el label de estado global y reconstruye la lista (`settings.rs:1916-1932`).
+- El click del botón inserta `"Working…"` en el mapa `emu_status`, actualiza el label estable de la fila y lanza un thread que envía `EmuOp` al terminar.
+- El aviso `Found in system` y el badge `System` permanecen visibles; el aviso no tiene callback.
+- El handler de `EmuOp` (éxito o error) limpia el mapa `emu_status`, escribe feedback en el label de estado global y reconstruye la lista.
 
-Especificación del mecanismo a implementar:
+Mecanismo vigente:
 
-1. **Reposo:** botón sensible con label `Found in system - link it?`; el slot estable está vacío; no hay badge `System` separado.
+1. **Reposo:** `System` muestra badge `System`, aviso estático `Found in system`, slot estable vacío y botón sensible `Set as linked`.
 2. **Click (síncrono, antes del thread):**
    a. Guard de reentrada: `if !b.is_sensitive() { return; }`.
    b. `b.set_sensitive(false)`.
@@ -201,7 +202,7 @@ Especificación del mecanismo a implementar:
 4. **Rebuild a mitad de operación:** si un refresco de la lista (`settings.rs:1649`) recrea la fila mientras corre la operación, el botón nuevo nace deshabilitado: al construir una fila `system`, si `emu_status` contiene `"Working…"` para ese emulador, `btn.set_sensitive(false)`. El lock es así rebuild-proof y no depende de la vida del widget clickeado.
 5. **Re-activación (cómo y cuándo):** el botón deshabilitado no se re-habilita en el mismo widget; el widget se descarta y la recuperación la decide el resultado vía el rebuild de `EmuOp`:
    - En éxito, `emu_status` se limpia y la lista nueva convierte la fila en `Linked` (badge solo, sin botón; estado terminal).
-   - En error, `emu_status` se limpia, el mensaje va al status global y la fila vuelve a `System` con un botón nuevo, sensible, label `Found in system - link it?`.
+   - En error, `emu_status` se limpia, el mensaje va al status global y la fila vuelve a `System` con badge, aviso y botón nuevo sensible `Set as linked`.
    No existe una ruta donde un botón viejo se re-habilite.
 6. **Durante la operación la acción `System` permanece visible y se deshabilita;** el feedback no la reemplaza.
 7. **Feedback:** `Working…` es visible desde el click hasta el rebuild del resultado. En éxito, el label de estado global ya muestra el mensaje del resultado.
@@ -210,8 +211,8 @@ Especificación del mecanismo a implementar:
 
 **Decisión: reservar el ancho siempre** — el label de estado existe en toda fila, por defecto vacío; no se acepta el corrimiento de layout.
 
-- Hoy el label se crea solo si el mapa tiene entrada (`settings.rs:2463-2468`): en reposo no existe y, al aparecer `Working…`, la identidad se encoge y el badge/botón se corren a la izquierda.
-- **Mecanismo:** crear siempre el label con `set_width_chars(12)` (el valor ya usado) y texto vacío en reposo; el click solo hace `set_text("Working…")` y el resultado vuelve a `set_text("")`.
+- El label se crea siempre con `set_width_chars(12)` y texto vacío en reposo; el click solo hace `set_text("Working…")` y el resultado vuelve a reconstruir la fila con el slot vacío.
+- **Mecanismo:** el label conserva el mismo `set_width_chars(12)` y el rebuild gestiona el estado vacío después del resultado.
 - **Por qué:**
   1. El slot estable ya está prometido en este documento y es la base de la mutación directa del flujo anterior.
   2. Mantiene la columna de badges y botones alineada entre filas; la lista se escanea por columnas.
@@ -248,11 +249,11 @@ Verificación en tema claro (accent oscurecido 22%, mezclado 30% con `text_main`
 
 Todos ≥3.1:1. En oscuro el mínimo es indigo/purple con 3.85:1 contra `#121212`.
 
-Aplicación a la opción B: el borde de 1.5 px usa `{accent_ui}`; el relleno 14%/22% conserva `{accent}` (es decorativo detrás de un texto `text_main` y no constituye el contorno del control); el indicador de foco nativo de GTK se mantiene.
+Aplicación al botón `Set as linked`: el borde de 1.5 px usa `{accent_ui}`; el relleno 14%/22% conserva `{accent}` (es decorativo detrás de un texto `text_main` y no constituye el contorno del control); el indicador de foco nativo de GTK se mantiene. El aviso rojo de `System` no usa este token porque no es interactivo.
 
 ## Opciones para `Set as linked`
 
-> Las opciones A/B/C siguientes son exploración histórica anterior a la actualización visual. La decisión vigente está en "Estado del documento" y en la matriz de la sección de flujo: `Linked` conserva la píldora compacta; `System` usa una única acción roja soft con el texto `Found in system - link it?`.
+> Las opciones A/B/C siguientes son exploración histórica anterior a la actualización visual. La decisión vigente está en "Estado del documento" y en la matriz de la sección de flujo: `Linked` conserva la píldora compacta; `System` conserva badge + aviso estático `Found in system` y el botón `Set as linked`.
 
 ### Opción A: Cápsula anclada
 
@@ -415,22 +416,22 @@ Aplicación a la opción B: el borde de 1.5 px usa `{accent_ui}`; el relleno 14%
 
 ## Decisión
 
-**Opción elegida: B, `.emu-link-action`, con texto `{text_main}` y borde `{accent_ui}`.**
+**Composición vigente: badge `System` + aviso estático `Found in system` + botón B (`.emu-link-action`) con texto `Set as linked`.**
 
-Es el mejor equilibrio para una acción opcional pero real:
+Es el mejor equilibrio entre estado, advertencia y acción:
 
-1. **Semántica:** el badge `System` sigue siendo exclusivamente estado; `Set as linked` es claramente una acción.
-2. **No duplicación:** el badge queda transparente y la acción tiene relleno, 14 px bold, radio 20 px y borde de 1.5 px. No hay dos cápsulas gemelas.
+1. **Semántica:** el badge `System` comunica estado; el label rojo comunica el hallazgo; `Set as linked` comunica la acción y conserva su callback.
+2. **No duplicación:** el aviso no es un segundo botón ni tiene affordance; el botón conserva texto, foco y semántica nativos.
 3. **Jerarquía:** `Install` conserva el único accent sólido; `Set as linked` es secundaria pero descubrible; `Remove` conserva el lenguaje destructivo.
-4. **Accesibilidad:** el contenido de la acción no depende del contraste del accent; el objetivo mide 36 px, el control sigue siendo un botón nativo con teclado y foco, y el borde `{accent_ui}` garantiza 3:1 con los 10 acentos en ambos temas.
-5. **Coherencia:** deriva de tokens y patrones ya existentes sin introducir un color, una fuente, un radio global ni una animación nueva.
-6. **Accent actual:** indigo funciona bien como borde y relleno tenue en ambos temas mediante la misma regla dinámica; no se codifica a mano y la garantía de contraste cubre los 10 acentos, no solo el vigente.
+4. **Accesibilidad:** el contenido del botón no depende del contraste del accent; el objetivo mide 36 px y el borde `{accent_ui}` mantiene el contraste del control.
+5. **Aviso:** `.emu-system-notice` es un `gtk::Label` estático de 36 px, sin `:hover`, cursor ni `connect_clicked`.
+6. **Coherencia:** el slot de icono sigue siendo 48 px y usa `Center`; no se altera `Install`/`Remove`, la matriz estado→acción ni `Working…`.
 
-Las opciones A y C quedan documentadas como alternativas comparadas; no se eliminan del documento para conservar la trazabilidad de la decisión.
+Las opciones A y C quedan documentadas como alternativas históricas; no se eliminan del documento para conservar la trazabilidad de la decisión.
 
 ## Riesgo deliberado y mitigación
 
-El riesgo de la opción B es que el relleno tenue de accent se perciba como otra selección cerca del badge. La mitigación es deliberada y acotada:
+El riesgo principal es que el aviso rojo se perciba como una acción. La mitigación es deliberada y acotada: el aviso es un `gtk::Label` sin hover, cursor ni callback, y el botón conserva el lenguaje `.emu-link-action`.
 
 - el badge no tiene relleno;
 - la acción usa 14 px frente a 11 px del badge;
@@ -444,7 +445,7 @@ El riesgo de la opción B es que el relleno tenue de accent se perciba como otra
 
 - La fila conserva el orden, los espaciados y el objetivo existentes.
 - El estado y la acción nunca aparecen como dos badges idénticos.
-- `System` permanece visible durante `Working…`.
+- `System` permanece visible durante `Working…`, con badge, aviso estático y botón en la misma geometría.
 - La acción se desactiva durante la operación y se restaura al responder.
 - Éxito produce una fila `Linked` sin acción; error restaura `Set as linked` y muestra feedback separado.
 - Todas las clases propuestas interpolan tokens existentes; no aparece un hex adicional.
@@ -457,9 +458,9 @@ El riesgo de la opción B es que el relleno tenue de accent se perciba como otra
 
 ## Decisión final
 
-- Opción elegida: **B, `.emu-link-action`**, únicamente para `Set as linked`.
-- Las tres resoluciones del review quedaron especificadas en este documento: flujo `Working…` y doble click, slot estable, y contraste 3:1 con los 10 acentos.
-- Pendiente: ok del usuario sobre esta versión del documento antes de tocar CSS o código. Con el ok, la implementación cubre: CSS de `.emu-link-action` (incluido `:disabled`), token derivado `{accent_ui}` en la generación de estilos, label de estado estable en `rebuild_emu_rows`, y mecanismo de lock en el handler de click.
+- Composición vigente: badge `System`, aviso estático `.emu-system-notice` y botón `.emu-link-action` con texto `Set as linked`.
+- Las resoluciones del review quedan especificadas en este documento: flujo `Working…` y doble click, slot estable, contraste 3:1 con los 10 acentos y separación explícita entre aviso y acción.
+- La implementación cubre CSS de `.emu-link-action` y `.emu-system-notice`, token derivado `{accent_ui}`, label de estado estable, lock rebuild-proof y handler `link_emulator_in` sin duplicación.
 
 ## Lista de emuladores instalables (catálogo)
 
@@ -467,18 +468,18 @@ El riesgo de la opción B es que el relleno tenue de accent se perciba como otra
 
 Esta sección conserva la especificación del catálogo y su trazabilidad; la implementación actual de la fila está en `rebuild_emu_rows` y en las clases descritas arriba.
 
-Es la misma función `rebuild_emu_rows` (`settings.rs:2411-2570`), pero en su modo catálogo: cuando `emulator-manager` reporta el catálogo (`corky-list`, `plugins.rs:721-789`) y la mayoría de las entradas están en source `none`, toda la lista termina en un botón `Install` idéntico. Con nada instalado, las 10 entradas (Azahar, Cemu, Desmume, DuckStation, Mupen64Plus, PCSX2, PPSSPP, RPCS3, Ryujinx, Vita3K) se diferencian solo por el nombre; la fila no jerarquiza, no agrupa y no ofrece exploración.
+Es la misma función `rebuild_emu_rows`, pero en su modo catálogo: cuando `emulator-manager` reporta el catálogo y la mayoría de las entradas están en source `none`, la lista mantiene el botón `Install` para pendientes y compacta las filas resueltas. El filtro por nombre/descripción y la identidad visual de cada fila siguen siendo parte de la opción viva.
 
-Objetivos de esta propuesta: jerarquía (nombre ≠ descripción), exploración (búsqueda), contexto (consola/generación) y un slot estable para el ícono del emulador. El slot usa los 11 SVG verificados de Papirus; Azahar mantiene el monograma porque no tiene un icono confirmado.
+Objetivos de esta propuesta: jerarquía (nombre ≠ descripción), exploración (búsqueda), contexto (consola/generación) y un slot estable para el ícono del emulador. El slot usa los 11 SVG verificados de Papirus; el logo oficial de Azahar está disponible y atribuido, pero el resolver conserva el monograma por el alcance de esta actualización.
 
 ### Estado actual verificado
 
 - Fila actual: `gtk::Box` horizontal, separación 8 px, márgenes verticales 2 px:
-  `[icono 48px] [nombre + badge opcional] [descripción] [slot estable] [acción]`.
+  `[icono 48px] [nombre + badge] [descripción] [slot estable] [aviso estático opcional] [acción]`.
 - El nombre usa solo `emu.name` con `.details-title` (16 px bold, `text_main`); ya no concatena sufijos de `source`. La descripción se mantiene en la segunda línea con `.time-label`.
-- `Linked`/nativo muestra `Linked` en una píldora de 20 px; `System` no muestra badge y expone una única acción roja; `none` no muestra badge.
-- Botón `Install`: `.add-btn` (relleno accent sólido, 36 px, radio 20 px), ancho fijo 80 px, idéntico en las 10 filas (`settings.rs:2516-2523`).
-- Orden alfabético por nombre impuesto en `plugins.rs:787`. Sin agrupación, sin búsqueda, con ícono Papirus cuando existe y sin `ScrolledWindow` propia (hereda el scroll de la página).
+- `Linked`/nativo muestra `Linked` en una píldora de 20 px; `System` muestra `System` en una píldora y un aviso rojo estático; `none` no muestra badge.
+- Botón `Install`: `.add-btn` (relleno accent sólido, 36 px, radio 20 px), ancho fijo 80 px. `Set as linked`: `.emu-link-action`, ancho 120 px.
+- Orden alfabético por nombre impuesto en `plugins.rs:787`. El filtro por nombre/descripción precede a la lista; cada fila usa un ícono Papirus cuando existe y hereda el scroll de la página.
 - Datos disponibles: `EmuInfo` (`plugins.rs:79-87`) trae `name`, `path`, `description`, `installed`, `native`, `source`, `settings`. **No hay categoría de consola, ni versión, ni URL de proyecto, ni campo de ícono;** la UI resuelve el asset por nombre. `RegistryEntry` (registry de plugins) tampoco.
 
 ### Restricciones de datos
@@ -492,16 +493,16 @@ Objetivos de esta propuesta: jerarquía (nombre ≠ descripción), exploración 
 2. **Búsqueda como punto de entrada** para listas largas: `GtkSearchEntry` es ya parte de la app (busca en el sidebar y otras vistas) y el tema ya define `.search-entry` y `.filter-bar`. Para un catálogo que va a crecer, el filtro en vivo por nombre/descripción es el control HIG de entrada.
 3. **Agrupación con encabezados de sección** cuando hay categorías reconocibles: en este catálogo las familias son evidentes (Nintendo vs Sony), lo que permite encabezados de grupo en lugar de una lista plana.
 4. **Ícono como elemento líder**: la HIG parte de 32 px para contenido reconocible por identidad visual; esta sección escala deliberadamente el slot a 48 px para alinear la fila con las listas de contenido Prism/Modrinth (justificación en "Estilo de fila: tarjeta"). La geometría del slot es fija para no empujar el texto.
-5. **Columna de acciones alineada a la derecha** con ancho consistente (220 px `Found in system - link it?`, 80 px `Install`/`Remove`): ya se cumple; se conserva.
+5. **Columna de acciones alineada a la derecha** con ancho consistente (140 px para el aviso `Found in system`, 120 px para `Set as linked`, 80 px para `Install`/`Remove`): ya se cumple; se conserva.
 6. **Estado vacío explícito** tras un filtro sin resultados (mensaje en `.time-label`), y `hint` inicial que hoy dice solo `"No emulators reported by emulator-manager."`.
 7. Virtualización (`GtkListView`) queda anotada como mejora futura para catálogos de cientos de ítems; para ~10-40 la construcción manual actual (`rebuild_emu_rows`) es aceptable y consistente con el resto de la app.
 
 ### Decisiones transversales de la fila (fijadas)
 
 1. **Dividir el label combinado en dos líneas:** línea 1 nombre en `.details-title` (16 px bold), línea 2 descripción en `.time-label` (12 px, `text_sec`, una línea con elipsis). La refactorización queda aplicada en `rebuild_emu_rows`.
-2. **Slot de ícono líder estable de 48 px, cuadrado y alineado arriba de la fila:** reservado siempre. Los 11 emuladores con SVG verificado usan el asset dentro de la misma geometría; Azahar o un asset ausente muestran un monograma determinista (primera letra del nombre) en un slot cuadrado de 48 px, fondo `well`, borde `border`, texto centrado. El texto y la columna de acciones no se mueven. Tamaño elegido: 48 px; justificación en "Estilo de fila: tarjeta".
+2. **Slot de ícono líder estable de 48 px, cuadrado y centrado vertical y horizontalmente:** reservado siempre. Los 11 emuladores con SVG verificado usan el asset dentro de la misma geometría; el `GtkImage` mide 40×40 y usa `Center`; Azahar o un asset ausente muestran un monograma determinista. El texto y la columna de acciones no se mueven. Tamaño elegido: 48 px; justificación en "Estilo de fila: tarjeta".
 3. **Búsqueda por nombre/descripción** como control superior (`.search-entry` + `.filter-bar`, ya definidos): la opción viva es lista plana con filtro, sin agrupación.
-4. **Columna de acciones alineada** y vocabulario de botones sin cambios salvo la presentación de `System`: `.add-btn`, `.emu-link-action` + `.emu-system-link-action` y `.danger-btn`; ancho fijo por estado para evitar jitter.
+4. **Columna de acciones alineada** y vocabulario de botones sin cambios salvo la presentación de `System`: `.add-btn`, `.emu-link-action`, `.emu-system-notice` y `.danger-btn`; ancho fijo por estado para evitar jitter.
 
 ### Opción viva: 1+3 — Botón estado-consciente + compactación
 
@@ -510,9 +511,9 @@ Objetivos de esta propuesta: jerarquía (nombre ≠ descripción), exploración 
 ```text
 [filtro de búsqueda (GtkSearchEntry, .search-entry)]
 [ .emu-row-card ]
-  [48px icon]   Nombre                    (.details-title, bold 16, 1 línea, ellipsis)
-  [monograma si no hay SVG]   Descripción — una línea    (.time-label, 12, ellipsis)
-                                      [slot 12ch]  [Install] (.add-btn)
+  [48px icon]   Nombre + badge            (.details-title, bold 16, 1 línea, ellipsis)
+  [SVG o monograma]   Descripción — una línea    (.time-label, 12, ellipsis)
+                                      [slot 12ch]  [Found in system]  [Set as linked]
 ```
 
 **Descripción visual:** lista plana de tarjetas de dos líneas (decisiones transversales), con un botón cuyo **label y clase mutan con el estado de la fila** (estado-consciente) y filas resueltas **sin acción pendiente que colapsan a badge** (compactación). La píldora solo aparece donde hay acción real: pendientes, operaciones en vuelo y removibles. La columna de acciones permanece alineada con ancho fijo por estado, sin jitter.
@@ -549,7 +550,7 @@ Justificación de la clase nueva: ninguna clase existente modela una tarjeta de 
 }
 ```
 
-Por qué 48 px (rango pedido 48-56): es el tamaño de las miniaturas de las listas de contenido Prism/Modrinth, la analogía de la referencia; el catálogo mueve 10-12 ítems planos con búsqueda, así que 48 px da presencia al slot sin inflar la altura de fila (56 px costaría densidad de lectura al hacer scroll); y convive con el slot estable de 12 chars: la identidad de dos líneas se lee completa y el monograma (inicial del emulador, ~18-20 px bold) queda legible como fallback para Azahar o si falta un asset. **Alineación:** el slot se ancla arriba de la fila (`valign: start`); el bloque de texto y la columna de acciones quedan centrados verticalmente respecto a la altura de la tarjeta. **Estable ante el asset real:** los SVG verificados se sirven en la misma geometría de 48 px y el layout no se mueve.
+Por qué 48 px (rango pedido 48-56): es el tamaño de las miniaturas de las listas de contenido Prism/Modrinth, la analogía de la referencia; el catálogo mueve 10-12 ítems planos con búsqueda, así que 48 px da presencia al slot sin inflar la altura de fila (56 px costaría densidad de lectura al hacer scroll); y convive con el slot estable de 12 chars: la identidad de dos líneas se lee completa y el monograma (inicial del emulador, ~18-20 px bold) queda legible como fallback para Azahar o si falta un asset. **Alineación:** el slot usa `Center` en ambos ejes y el `GtkImage` mide 40×40 dentro del slot de 48 px; el bloque de texto y la columna de acciones quedan centrados verticalmente respecto a la altura de la tarjeta. **Estable ante el asset real:** los SVG verificados se sirven en la misma geometría y el layout no se mueve.
 
 **Matriz estado → (badge, texto del botón, clase CSS, ancho fijo):** la columna `Dot` fue **eliminada** de la matriz y de la fila por decisión del usuario: el estado usable se refleja en la píldora compacta o en la acción. Las clases `emu-dot-on`/`emu-dot-off` quedaron sin uso (pendiente menor: candidatas a eliminar).
 
@@ -558,13 +559,13 @@ Por qué 48 px (rango pedido 48-56): es el tamaño de las miniaturas de las list
 | `none`/empty sin instalar | — | `Install` | `.add-btn` | 80 px |
 | `EmuOp` en vuelo (Installing) | — | `Installing…` | `.add-btn` + **nueva regla** `.add-btn:disabled` | 96 px |
 | `appimage` instalado | — | `Remove` | `.danger-btn` | 80 px |
-| `system` detectado | —; el hallazgo se integra en la acción | `Found in system - link it?` | `.emu-link-action` + `.emu-system-link-action` | 220 px |
+| `system` detectado | `System` + aviso `Found in system` (estático) | `Set as linked` | `.emu-link-action` + `.emu-system-notice` | 120 px + 140 px |
 | `linked` / native | `Linked` (`.proton-path-badge` + `.emu-status-pill`) | sin botón (compactada) | — | — |
 | `EmuOp(Err)` con recuperación | — | `Retry` (o re-expuesto `Install`/`Remove` según el estado previo) | `.emu-link-action` | 96 px |
 
 **Slot estable (12 chars, siempre presente):** durante la operación el slot muestra `Working…` (`set_width_chars(12)` ya implementado, `settings.rs:2465-2467`); en reposo queda vacío. `Working…` convive con la píldora o la acción y no empuja el layout. El label del botón (`Installing…`) es complementario, no duplicado.
 
-**Clases:** se reutilizan `.add-btn`, `.danger-btn`, `.emu-link-action`, `.proton-path-badge`, `.details-title`, `.time-label`, `.search-entry`/`.filter-bar`, `.seg-*`. **Nuevas reglas (justificadas):** `.emu-status-pill` (variante localizada de geometría para no cambiar `.status-badge` global), `.emu-system-link-action` (override rojo soft sobre la geometría de `.emu-link-action` para la acción única de `System`), `.emu-row-card` (envase de la fila) y `.emu-row-icon` (slot de ícono 48 px), ambas en "Estilo de fila: tarjeta"; y `.add-btn:disabled` — hoy `.add-btn` no define estado deshabilitado y cae al default gris de GTK rompiendo la consistencia de la cápsula accent; `Installing…` conserva así la capa visual primaria de la acción. La regla replica la de `.emu-link-action:disabled` (`helpers.rs:615`): relleno accent al 8%, borde `{text_muted}`, texto `{text_muted}`.
+**Clases:** se reutilizan `.add-btn`, `.danger-btn`, `.emu-link-action`, `.proton-path-badge`, `.details-title`, `.time-label`, `.search-entry`/`.filter-bar`, `.seg-*`. **Nuevas reglas (justificadas):** `.emu-status-pill` (badge compacto), `.emu-system-notice` (label rojo estático sin affordance), `.emu-row-card` (envase de la fila) y `.emu-row-icon` (slot de ícono 48 px), ambas en "Estilo de fila: tarjeta"; y `.add-btn:disabled` para `Installing…`. La regla `.emu-link-action:disabled` conserva el estado disabled del botón durante `Working…`.
 
 ### Apéndice: Opciones evaluadas y descartadas (trazabilidad)
 
@@ -586,7 +587,7 @@ Por qué 48 px (rango pedido 48-56): es el tamaño de las miniaturas de las list
 
 ### Pendientes de esta sección (abiertos)
 
-- **Asset real del ícono:** completado para los 11 emuladores con SVG verificado en Papirus; los archivos viven en `assets/icons/emulators/` y la atribución GPL-3.0 está en `assets/icons/ATTRIBUTION.md`. El slot de 48 px (`.emu-row-icon`) permanece estable; Azahar y cualquier asset ausente conservan el monograma.
+- **Asset real del ícono:** completado para los 11 emuladores con SVG verificado en Papirus y el logo oficial de Azahar (CC BY 4.0) está descargado y atribuido en `assets/icons/ATTRIBUTION.md`. El slot de 48 px (`.emu-row-icon`) permanece estable; el resolver sigue usando el monograma para Azahar hasta una decisión de activación separada.
 - **Clases `emu-dot-on` / `emu-dot-off` huérfanas (candidatas a eliminar)**: tras la decisión del usuario de eliminar el dot `[•]` de la fila, las clases quedaron definidas en `helpers.rs:553-554` pero sin uso en código, y la mención del punto de disponibilidad en la "Base tipográfica" (sección de `Set as linked`) quedó obsoleta. No se borran todavía: como su folclore de contraste (verde `#00E639` / `text_muted`) es compartido, se marcan como candidatas a eliminar en una limpieza futura.
 - **Mapa `tag → familia`**: **no aplica a la opción viva** (lista plana con filtro, sin agrupación). Permanece abierto únicamente si el catálogo crece y se retoma B o C del apéndice.
 - **Hueco de estado vacío**: el hint actual de la lista (`"No emulators reported by emulator-manager."`) no distingue "sin plugin reportado" de "sin resultados de filtro"; definir un estado vacío explícito para cada caso (la opción viva incluye búsqueda, así que "sin resultados de filtro" es un estado alcanzable).
