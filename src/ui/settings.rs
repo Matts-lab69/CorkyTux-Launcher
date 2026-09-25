@@ -2470,8 +2470,8 @@ fn rebuild_emu_rows(
         // deterministic monogram for Azahar or unavailable assets.
         let icon_slot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         icon_slot.add_css_class("emu-row-icon");
-        icon_slot.set_halign(gtk::Align::Start);
-        icon_slot.set_valign(gtk::Align::Start);
+        icon_slot.set_halign(gtk::Align::Center);
+        icon_slot.set_valign(gtk::Align::Center);
         icon_slot.set_width_request(48);
         icon_slot.set_height_request(48);
         let icon_texture = emulator_icon_path(&emu.name).and_then(|path| helpers::load_texture(&path));
@@ -2479,6 +2479,7 @@ fn rebuild_emu_rows(
             let icon = gtk::Image::new();
             icon.set_paintable(Some(&texture));
             icon.set_pixel_size(40);
+            icon.set_size_request(40, 40);
             icon.set_halign(gtk::Align::Center);
             icon.set_valign(gtk::Align::Center);
             icon_slot.append(&icon);
@@ -2504,7 +2505,7 @@ fn rebuild_emu_rows(
         name_lbl.set_halign(gtk::Align::Start);
         name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
         // Linked and System states render as compact badges next to the name
-        // (line 1); System keeps its actionable warning to the right.
+        // (line 1); System keeps its static warning to the right.
         let status_text: Option<&str> = if emu.source.is_empty() {
             if emu.native { Some("Linked") } else { None }
         } else {
@@ -2549,10 +2550,10 @@ fn rebuild_emu_rows(
             st.set_text(s);
         }
         row.append(&st);
-        // System rows replace the state badge with one functional warning
-        // action: pin the detected PATH to an explicit linked entry
-        // (corky-link). Linked is terminal (badge only); appimage/none/legacy
-        // get a button only.
+        // System rows keep a static warning beside the explicit action: the
+        // detected PATH is informational, while `Set as linked` remains the
+        // only clickable control. Linked is terminal (badge only);
+        // appimage/none/legacy get a button only.
         let is_appimage = emu.source == "appimage";
         let is_none = emu.source == "none" || emu.source.is_empty();
         let is_pin = emu.source == "system";
@@ -2562,6 +2563,14 @@ fn rebuild_emu_rows(
             matches!(emu.source.as_str(), "system" | "appimage" | "none")
         };
         if show_btn {
+            if is_pin {
+                let notice = gtk::Label::new(Some("Found in system"));
+                notice.add_css_class("emu-system-notice");
+                notice.set_halign(gtk::Align::Center);
+                notice.set_valign(gtk::Align::Center);
+                notice.set_width_request(140);
+                row.append(&notice);
+            }
             let btn = if emu.source.is_empty() {
                 // Legacy backend fallback: honour installed directly.
                 gtk::Button::with_label(if emu.installed {
@@ -2572,7 +2581,7 @@ fn rebuild_emu_rows(
             } else {
                 gtk::Button::with_label(match emu.source.as_str() {
                     "appimage" => "Remove",
-                    "system" => "Found in system - link it?",
+                    "system" => "Set as linked",
                     _ => "Install",
                 })
             };
@@ -2581,13 +2590,12 @@ fn rebuild_emu_rows(
             }
             if is_pin {
                 btn.add_css_class("emu-link-action");
-                btn.add_css_class("emu-system-link-action");
             }
             let remove_c = if emu.source.is_empty() { emu.installed } else { is_appimage };
             if remove_c {
                 btn.add_css_class("danger-btn");
             }
-            btn.set_width_request(if is_pin { 220 } else { 80 });
+            btn.set_width_request(if is_pin { 120 } else { 80 });
             let name_c = emu.name.clone();
             // emu.path is the detected binary (shutil.which result for
             // system emulators): pinning passes it straight to corky-link,
