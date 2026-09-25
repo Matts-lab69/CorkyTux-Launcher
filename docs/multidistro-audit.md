@@ -30,8 +30,9 @@ Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE (los cinco de
 | **Total** | **42** |
 
 Cuentas del triage original, conservadas como registro. **Estado actual:** de
-los 6 críticos, **C14 está corregido** (ver su sección); los otros 5 siguen
-abiertos. Ningún degradante ni cosmético se ha tocado.
+los 6 críticos, **C14 está corregido** y **C08 está corregido en su parte de
+`timeout` (8 de 12 sitios)**; los otros 4 críticos siguen abiertos. Ningún
+degradante ni cosmético se ha tocado.
 
 Definiciones:
 
@@ -97,13 +98,17 @@ se usa al lanzar).
 
 ### C08 — Dependencia dura de binarios externos (`timeout`, `ldconfig`, `pgrep`, `pidof`, `which`) en 12 sitios
 
-Reparto verificado:
+**Estado: PARCIALMENTE CORREGIDO.** Los 8 usos de `timeout` están eliminados
+(ver "Fix aplicado"); quedan 5 sitios de `ldconfig`, `pgrep`, `pidof` y
+`which`.
+
+Reparto verificado en el triage:
 
 | Binario | Call sites |
 | --- | --- |
-| `timeout` | `plugins.rs:552`, `plugins.rs:620`, `plugins.rs:690`, `plugins.rs:727`, `integration.rs:601`, `integration.rs:609`, `integration.rs:666`, `proton.rs:1314` |
+| `timeout` | **corregidos**: `plugins.rs:552`, `plugins.rs:620`, `plugins.rs:690`, `plugins.rs:727`, `integration.rs:601`, `integration.rs:609`, `integration.rs:666`, `proton.rs:1314` |
 | `ldconfig` | `proton.rs:617` |
-| `pgrep` | ~~`import_move.rs:353`, `import_move.rs:363`~~ (corregido en C14), `proton.rs:261` |
+| `pgrep` | **corregidos** los 2 de `import_move.rs` (C14); queda `proton.rs:261` |
 | `pidof` | `proton.rs:825` |
 | `which` | `integration.rs:27`, `proton.rs:597`, `proton.rs:822` |
 
@@ -122,10 +127,31 @@ modos de fallo distintos:
 - **Falla ruidosa** — `plugins.rs:552/620/690` e `integration.rs:601`: el
   usuario ve un error que no menciona la causa real.
 
-**Fix:** sustituir `timeout(1)` por un helper en proceso (`spawn` +
-`try_wait` con deadline + `kill`), y hacer que la ausencia de `ldconfig` sea
-un estado explícito, nunca un `false` silencioso. La parte de `pgrep` ya está
-hecha: `import_move.rs` lee `/proc` directamente.
+**Fix aplicado (`timeout`):** `plugin_process::output_with_timeout()` sustituye
+a `timeout(1)` con las mismas ocho llamadas:
+
+1. `spawn` + `try_wait` en bucle de 25 ms contra un `Instant` de corte; al
+   agotarlo, `kill` + `wait`. Sin dormir más que el intervalo de sondeo, y sin
+   depender de ningún binario externo.
+2. stdout y stderr se leen en hilos propios para que un plugin que llene el
+   buffer del pipe no se bloquee a sí mismo esperando su salida.
+3. `join_reader()` une esos lectores **con un margen de 2 s**: si el plugin
+   dejó nietos con el pipe abierto, el `join` directo habría colgado la
+   interfaz, algo que la versión anterior no cubría.
+4. El timeout devuelve un error con el límite de segundos en el mensaje, en
+   vez del código 124 de `timeout(1)` que los llamadores no interpretaban.
+5. `list_emulators_in` sigue devolviendo lista vacía —es el contrato de sus
+   4 llamadores, y cambiarlo tocaría la UI—, pero ahora deja el motivo en
+   `stderr` (`[emu] corky-list …`) para que un fallo sea diagnosticable.
+
+De paso, `wineserver -k` en `proton.rs:1317` deja de perder `ws.to_str()`:
+se pasa el `PathBuf` directo, así que un prefix no-UTF8 ya no degrada a
+programa vacío.
+
+**Fix pendiente:** eliminar `ldconfig`, `pgrep`, `pidof` y `which` de los 5
+sitios que quedan. `ldconfig` se puede evitar con `std::env::consts::ARCH`
+(que es justo lo que pide C03) y `which`/`pidof` se pueden sustituir por una
+búsqueda en `PATH` y por `/proc`, respectivamente.
 
 ### C09 — El registro de plugins elige el primer `.tar.gz` sin filtrar por arquitectura
 
@@ -286,14 +312,13 @@ Requiere que el usuario abra la app; el agente no la ejecuta.
 
 1. ~~**C14**~~ — **hecho**: tri-estado `PrefixUsage` + atribución por
    `/proc/<pid>/environ` en vez de `pgrep`.
-2. **C08**, y en particular el `timeout(1)` de `plugins.rs:727` — sustituirlo
-   por un timeout en proceso es el arreglo con mejor relación esfuerzo/impacto
-   de lo que queda: una sola función nueva y desaparecen ocho dependencias de
-   `timeout` a la vez, incluida la que deja la pestaña de Emuladores vacía sin
-   error. El fix de C14 ya cubre `import_move.rs`.
+2. ~~**C08**, y en particular el `timeout(1)` de `plugins.rs:727`~~ —
+   **hecho**: `output_with_timeout()` cubre los 8 sitios. Quedan 5 sitios de
+   `ldconfig`/`pgrep`/`pidof`/`which`; el de `ldconfig` se resuelve con C03.
 3. **C09** y **C10** — independientes, acotados y sin riesgo de datos.
 4. **C01** — depende del helper compartido de rutas de Steam del punto 2.
 5. **C03** — requiere decidir antes qué significa "32-bit" en aarch64, para no
-   cambiar el contrato de `ComponentStatus` a ciegas.
+   cambiar el contrato de `ComponentStatus` a ciegas. Cerrarlo también elimina
+   el `ldconfig` de C08.
 6. El resto de degradantes por lotes, empezando por los que tocan datos o
    superficie de entrada: D05, D12, D13, D19, D22.

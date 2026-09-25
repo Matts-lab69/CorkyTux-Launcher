@@ -99,6 +99,124 @@ pub fn plugin_available(plugin_id: &str, entry: &str) -> bool {
     exe.exists()
 }
 
+/// Salida de un proceso terminado dentro de su limite de tiempo.
+///
+/// `std::process::Output` no se puede construir a mano en stable, asi que este
+/// tipo expone lo que los llamadores necesitan: codigo de salida y los dos
+/// streams.
+#[derive(Debug, Clone)]
+pub struct TimedOutput {
+    pub success: bool,
+    pub code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+/// Margen para vaciar los pipes tras salir el hijo. Un nieto que herede el
+/// stdout lo mantendria abierto para siempre; sin este margen, el `join`
+/// colgaria la interfaz.
+const PIPE_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Une un lector de pipe con margen: si no termina a tiempo se cede su
+/// resultado y el hilo se queda desprendido en vez de bloquear al llamador.
+fn join_reader(h: std::thread::JoinHandle<String>) -> String {
+    let deadline = std::time::Instant::now() + PIPE_GRACE;
+    while !h.is_finished() {
+        if std::time::Instant::now() >= deadline {
+            return String::new();
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    h.join().unwrap_or_default()
+}
+
+/// Ejecuta `cmd` capturando stdout y stderr, y lo mata si pasa de `limit`.
+///
+/// Sustituye a `timeout(1)`. Ese binario viene de coreutils, no de POSIX, y no
+/// existe en el PATH por defecto de NixOS ni en contenedores minimos; cuando
+/// faltaba, cada llamador caia en una rama distinta: la mayoria mostraba un
+/// error que no mencionaba la causa, pero `list_emulators_in` devolvia una
+/// lista vacia sin avisar.
+///
+/// `cmd` se queda con stdout y stderr en pipe aunque el llamador los hubiera
+/// puesto a null. Misma semantica de muerte que `timeout(1)` sin
+/// `--foreground`: solo se senala al hijo directo, no al grupo de procesos.
+pub fn output_with_timeout(
+    cmd: &mut Command,
+    limit: std::time::Duration,
+) -> Result<TimedOutput, String> {
+    use std::io::Read;
+
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("No se pudo ejecutar el proceso: {}", e))?;
+
+    // Los streams se leen en hilos aparte: si el plugin llena el buffer del pipe
+    // (64 KiB) mientras esperamos su salida, ambos lados se bloquearian.
+    let mut out_handle = child.stdout.take().map(|mut s| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = s.read_to_end(&mut buf);
+            String::from_utf8_lossy(&buf).to_string()
+        })
+    });
+    let mut err_handle = child.stderr.take().map(|mut s| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = s.read_to_end(&mut buf);
+            String::from_utf8_lossy(&buf).to_string()
+        })
+    });
+
+    let deadline = std::time::Instant::now() + limit;
+    let mut timed_out = false;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(Ok(status)),
+            Ok(None) => {}
+            Err(e) => break Some(Err(e)),
+        }
+        if std::time::Instant::now() >= deadline {
+            timed_out = true;
+            break None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    };
+
+    if timed_out {
+        let _ = child.kill();
+        let _ = child.wait();
+        // Con margen, no con `join` a secas: si el plugin dejo nietos con el
+        // pipe abierto, el join directo colgaria en lugar de devolver el error.
+        if let Some(h) = out_handle.take() {
+            let _ = join_reader(h);
+        }
+        if let Some(h) = err_handle.take() {
+            let _ = join_reader(h);
+        }
+        return Err(format!(
+            "el proceso excedio el limite de {} s y fue terminado",
+            limit.as_secs()
+        ));
+    }
+
+    let status = match status {
+        Some(Ok(status)) => status,
+        Some(Err(e)) => return Err(format!("espera del proceso falló: {}", e)),
+        None => return Err("espera del proceso falló".to_string()),
+    };
+    let stdout = out_handle.map(join_reader).unwrap_or_default();
+    let stderr = err_handle.map(join_reader).unwrap_or_default();
+    Ok(TimedOutput {
+        success: status.success(),
+        code: status.code(),
+        stdout,
+        stderr,
+    })
+}
+
 fn parse_final_doc(body: &str) -> Option<serde_json::Value> {
     let mut last: Option<serde_json::Value> = None;
     let mut final_doc: Option<serde_json::Value> = None;

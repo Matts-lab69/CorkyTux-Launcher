@@ -1304,62 +1304,63 @@ impl ProtonManager {
         {
             return Ok((String::new(), 0));
         }
-            // C++ parity: wineserver -k with WINEPREFIX kills the whole wine
-            // tree for this prefix; killing the wrapper alone leaves the
-            // game running.
-            let prefix = self.imp().session_prefix.borrow().clone();
-            let proton_dir = self.imp().session_proton_dir.borrow().clone();
-            if !prefix.is_empty() && !proton_dir.is_empty() {
-                if let Some(ws) = find_wineserver(Path::new(&proton_dir)) {
-                    let _ = Command::new("timeout")
-                        .args(["5", ws.to_str().unwrap_or(""), "-k"])
-                        .env("WINEPREFIX", &prefix)
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .status();
+        // C++ parity: wineserver -k with WINEPREFIX kills the whole wine
+        // tree for this prefix; killing the wrapper alone leaves the
+        // game running.
+        let prefix = self.imp().session_prefix.borrow().clone();
+        let proton_dir = self.imp().session_proton_dir.borrow().clone();
+        if !prefix.is_empty() && !proton_dir.is_empty() {
+            if let Some(ws) = find_wineserver(Path::new(&proton_dir)) {
+                // Limite en proceso: `timeout(1)` no esta garantizado en
+                // NixOS ni en contenedores minimos, y sin el no se ejecuta
+                // `wineserver -k`, con lo que el arbol de Wine sobrevive.
+                let _ = super::plugin_process::output_with_timeout(
+                    Command::new(ws).arg("-k").env("WINEPREFIX", &prefix),
+                    std::time::Duration::from_secs(5),
+                );
+            }
+        }
+        // AppImages mount (dwarfs/fuse) + fork helpers beside the direct
+        // child: kill everything whose command line is the AppImage,
+        // then lazy-unmount its stale FUSE mount, if any.
+        if self.imp().session_appimage.get() {
+            let game = self.imp().session_game.borrow().clone();
+            if !game.is_empty() {
+                if let Some(exe) = super::ConfigManager::new().game_value(&game, "Executable") {
+                    Self::stop_appimage_tree(&exe);
                 }
             }
-            // AppImages mount (dwarfs/fuse) + fork helpers beside the direct
-            // child: kill everything whose command line is the AppImage,
-            // then lazy-unmount its stale FUSE mount, if any.
-            if self.imp().session_appimage.get() {
-                let game = self.imp().session_game.borrow().clone();
-                if !game.is_empty() {
-                    if let Some(exe) = super::ConfigManager::new().game_value(&game, "Executable") {
-                        Self::stop_appimage_tree(&exe);
-                    }
-                }
-                self.imp().session_appimage.set(false);
-            }
-            // Best-effort: the wrapper may already have exited once
-            // wineserver -k tore the tree down; time must still bank.
-            // Adopted sessions (no child) fall back to the watch pattern.
-            if let Some(mut c) = child {
-                let _ = c.kill();
-            } else {
-                let watch = self.imp().session_watch.borrow().clone();
-                if !watch.trim().is_empty() {
-                    let _ = Command::new(Self::tool_path("pkill"))
-                        .args(["-9", "-f", &watch])
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .status();
-                }
-            }
-            self.imp().game_running.set(false);
-            let secs = self
-                .imp()
-                .session_start
-                .borrow_mut()
-                .take()
-                .map(|t| t.elapsed().as_secs())
-                .unwrap_or(0);
-            let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
-            *self.imp().session_prefix.borrow_mut() = String::new();
-            *self.imp().session_proton_dir.borrow_mut() = String::new();
             self.imp().session_appimage.set(false);
-            *self.imp().session_watch.borrow_mut() = String::new();
-            Ok((game, secs))
+        }
+        // Best-effort: the wrapper may already have exited once
+        // wineserver -k tore the tree down; time must still bank.
+        // Adopted sessions (no child) fall back to the watch pattern.
+        if let Some(mut c) = child {
+            let _ = c.kill();
+        } else {
+            let watch = self.imp().session_watch.borrow().clone();
+            if !watch.trim().is_empty() {
+                let _ = Command::new(Self::tool_path("pkill"))
+                    .args(["-9", "-f", &watch])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+        }
+        self.imp().game_running.set(false);
+        let secs = self
+            .imp()
+            .session_start
+            .borrow_mut()
+            .take()
+            .map(|t| t.elapsed().as_secs())
+            .unwrap_or(0);
+        let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
+        *self.imp().session_prefix.borrow_mut() = String::new();
+        *self.imp().session_proton_dir.borrow_mut() = String::new();
+        self.imp().session_appimage.set(false);
+        *self.imp().session_watch.borrow_mut() = String::new();
+        Ok((game, secs))
     }
 
     pub fn is_game_running(&self) -> bool {

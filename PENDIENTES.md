@@ -143,7 +143,7 @@ Detalle completo, con `archivo:línea` y fix mínimo, en
 [`docs/multidistro-audit.md`](docs/multidistro-audit.md) (42 hallazgos del
 triage: 6 críticos, 30 degradantes, 6 cosméticos). Auditoría estática: no se
 compiló ni ejecutó la app. Numeración heredada del triage original.
-**Pendientes: 5 de 6.**
+**Críticos pendientes: 4** (C01, C03, C09, C10); C08 a medias.
 
 ### ~~C14 — `prefix_in_use` falla abierta sin `pgrep`~~ — **CORREGIDO**
 Era el único hallazgo con riesgo de pérdida de datos: sin `pgrep` (NixOS,
@@ -167,16 +167,27 @@ con el juego corriendo.
   `prefix_in_use` se elimina (sus dos únicos llamadores están en el mismo
   archivo).
 
-### C08 — Dependencia dura de binarios externos en 12 sitios (quedan 11)
-`timeout` (×8: `plugins.rs:552,620,690,727`, `integration.rs:601,609,666`,
-`proton.rs:1314`), `ldconfig` (`proton.rs:617`), `pgrep` (queda `proton.rs:261`;
-las 2 de `import_move.rs` ya no existen), `pidof`
-(`proton.rs:825`), `which` (×3). Son de coreutils/procps, no POSIX: faltan en
-NixOS y en contenedores mínimos. El peor caso es `plugins.rs:727`: sin
-`timeout`, la lista de emuladores sale **vacía y sin error**.
-- **Fix:** timeout en proceso (`spawn` + `try_wait` con deadline + `kill`) y
-  que la ausencia de `ldconfig` sea un estado explícito. La parte de `pgrep`
-  ya está resuelta por el fix de C14.
+### C08 — Dependencia dura de binarios externos — **PARCIALMENTE CORREGIDO**
+**Hecho: los 8 usos de `timeout`.** Quedan 5 sitios de `ldconfig`, `pgrep`,
+`pidof` y `which`.
+
+- **Fix aplicado:** `plugin_process::output_with_timeout()` (`spawn` +
+  `try_wait` en bucle de 25 ms contra un `Instant` de corte, `kill` + `wait`
+  al agotarlo). Cubre `plugins.rs:552,620,690,727`,
+  `integration.rs:601,609,666` y `proton.rs:1314`. Sin binarios externos.
+- Los streams se leen en hilos propios, para que un plugin que llene el buffer
+  del pipe no se bloquee esperando su salida, y se unen **con margen de 2 s**:
+  si el plugin dejó nietos con el pipe abierto, el `join` directo habría
+  colgado la interfaz, cosa que `timeout(1)` + `.output()` tampoco cubría.
+- `list_emulators_in` sigue devolviendo lista vacía (contrato de sus 4
+  llamadores; cambiarlo tocaría la UI) pero ahora registra el motivo en stderr
+  como `[emu] corky-list …`, así un fallo ya es diagnosticable.
+- Efecto colateral: `wineserver -k` en `proton.rs` deja de perder
+  `ws.to_str()`, así que un prefix no-UTF8 ya no degrada a programa vacío.
+- **Fix pendiente:** `ldconfig` (`proton.rs:617`, se resuelve con C03),
+  `pgrep` (`proton.rs:261`), `pidof` (`proton.rs:825`, sustituible por `/proc`)
+  y `which` (`integration.rs:27`, `proton.rs:597,822`, sustituible por una
+  búsqueda en `PATH`).
 
 ### C01 — Rutas de Steam hardcodeadas: overlay roto en Flatpak/Snap
 `proton.rs:335-340` (`steam_client_path`) y `proton.rs:940-942,1035-1037`

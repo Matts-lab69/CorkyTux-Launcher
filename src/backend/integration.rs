@@ -3,7 +3,7 @@ use gtk::prelude::*;
 use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 fn home_dir() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
@@ -598,20 +598,29 @@ impl IntegrationManager {
         ));
         fs::create_dir_all(&tmp).ok();
         let ico = tmp.join("icon.ico");
-        let st = Command::new("timeout")
-            .args(["15", "icoextract", &expanded, ico.to_str().unwrap_or("")])
-            .status();
-        if !matches!(st, Ok(s) if s.success() && ico.is_file()) {
+        // Limite en proceso: `timeout(1)` no existe en NixOS ni en
+        // contenedores minimos, y `icoextract` colgado es un riesgo real con
+        // .ico hechos a mano.
+        let st = super::plugin_process::output_with_timeout(
+            Command::new("icoextract")
+                .arg(&expanded)
+                .arg(ico.to_str().unwrap_or("")),
+            std::time::Duration::from_secs(15),
+        );
+        if !matches!(st, Ok(s) if s.success && ico.is_file()) {
             fs::remove_dir_all(&tmp).ok();
             return None;
         }
         let png = tmp.join("icon.png");
-        let st = Command::new("timeout")
-            .args(["15", "ffmpeg", "-y", "-i", ico.to_str().unwrap_or(""), png.to_str().unwrap_or("")])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if !matches!(st, Ok(s) if s.success() && png.is_file()) {
+        let st = super::plugin_process::output_with_timeout(
+            Command::new("ffmpeg")
+                .arg("-y")
+                .arg("-i")
+                .arg(ico.to_str().unwrap_or(""))
+                .arg(png.to_str().unwrap_or("")),
+            std::time::Duration::from_secs(15),
+        );
+        if !matches!(st, Ok(s) if s.success && png.is_file()) {
             fs::remove_dir_all(&tmp).ok();
             return None;
         }
@@ -663,22 +672,25 @@ impl IntegrationManager {
         ));
         let icon_abs = shellexpand_tilde(icon_path);
         let out_str = tmp.to_str().unwrap_or("").to_string();
-        let ok = Command::new("timeout")
-            .args(["30", "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#101014:s=1024x576"])
-            .arg("-i")
-            .arg(&icon_abs)
-            .args([
-                "-filter_complex",
-                "[1:v]scale=w=500:h=500:force_original_aspect_ratio=decrease[ic];\
-                     [0:v][ic]overlay=(W-w)/2:(H-h)/2",
-                "-frames:v", "1", "-q:v", "2",
-            ])
-            .arg(&out_str)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+        let ok = super::plugin_process::output_with_timeout(
+            Command::new("ffmpeg")
+                .args(["-y", "-f", "lavfi", "-i", "color=c=#101014:s=1024x576"])
+                .arg("-i")
+                .arg(&icon_abs)
+                .args([
+                    "-filter_complex",
+                    "[1:v]scale=w=500:h=500:force_original_aspect_ratio=decrease[ic];\
+                         [0:v][ic]overlay=(W-w)/2:(H-h)/2",
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "2",
+                ])
+                .arg(&out_str),
+            std::time::Duration::from_secs(30),
+        )
+        .map(|s| s.success)
+        .unwrap_or(false);
         if !ok {
             std::fs::remove_file(&tmp).ok();
             return None;

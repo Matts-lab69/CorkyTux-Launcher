@@ -494,17 +494,21 @@ impl PluginManager {
         dir.join("dll-overrides-automator").join("dll-overrides-automator")
     }
 
-    fn run_json(cmd: &mut Command) -> Result<serde_json::Value, String> {
-        let output = cmd
-            .output()
-            .map_err(|e| format!("Plugin failed to start: {}", e))?;
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    /// Corre un plugin y devuelve su documento JSON final. `limit_secs` es el
+    /// limite de tiempo; se aplica en proceso, sin depender de `timeout(1)`.
+    fn run_json(cmd: &mut Command, limit_secs: u64) -> Result<serde_json::Value, String> {
+        let output = super::plugin_process::output_with_timeout(
+            cmd,
+            std::time::Duration::from_secs(limit_secs),
+        )
+        .map_err(|e| format!("Plugin failed to start: {}", e))?;
+        if !output.success {
+            let err = output.stderr.trim().to_string();
             // Scripts print usage/help to stdout on arg errors; surface it.
-            let out = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let out = output.stdout.trim().to_string();
             let msg = if !err.is_empty() { err } else { out };
             return Err(if msg.is_empty() {
-                "Plugin returned an error".into()
+                format!("Plugin returned an error (code {:?})", output.code)
             } else if msg.len() > 300 {
                 msg[..300].to_string()
             } else {
@@ -513,7 +517,7 @@ impl PluginManager {
         }
         // Installers stream {"type": "progress", ...} lines before the final
         // document: parse per line and take the final result object.
-        let body = String::from_utf8_lossy(&output.stdout);
+        let body = &output.stdout;
         let mut last: Option<serde_json::Value> = None;
         let mut final_doc: Option<serde_json::Value> = None;
         for line in body.lines() {
@@ -549,15 +553,15 @@ impl PluginManager {
         if !exe.exists() {
             return Err("Dependency Installer plugin not installed".into());
         }
-        let mut cmd = Command::new("timeout");
-        cmd.arg("120").arg(&exe).arg("scan").arg(game_dir);
+        let mut cmd = Command::new(&exe);
+        cmd.arg("scan").arg(game_dir);
         if !prefix.is_empty() {
             cmd.arg("--prefix").arg(prefix);
         }
         if !proton.is_empty() {
             cmd.arg("--proton").arg(proton);
         }
-        let v = Self::run_json(&mut cmd)?;
+        let v = Self::run_json(&mut cmd, 120)?;
         if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) != true {
             let e = v.get("error").and_then(|x| x.as_str()).unwrap_or("scan failed");
             return Err(e.to_string());
@@ -617,19 +621,15 @@ impl PluginManager {
             .any(|d| matches!(d.as_str(), "dotnet48" | "dotnet472" | "dotnet40" | "dotnet20" | "dotnet35sp1"));
         let timeout_secs = if has_dotnet { 1800 } else { 300 };
 
-        let mut cmd = Command::new("timeout");
-        cmd.arg(timeout_secs.to_string())
-            .arg(&exe)
-            .arg("install")
-            .arg("--prefix")
-            .arg(prefix);
+        let mut cmd = Command::new(&exe);
+        cmd.arg("install").arg("--prefix").arg(prefix);
         if !proton.is_empty() {
             cmd.arg("--proton").arg(proton);
         }
         for d in dep_ids {
             cmd.arg(d);
         }
-        let v = Self::run_json(&mut cmd)?;
+        let v = Self::run_json(&mut cmd, timeout_secs)?;
 
         if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) != true {
             if let Some(e) = v.get("error").and_then(|x| x.as_str()) {
@@ -687,9 +687,9 @@ impl PluginManager {
         if !exe.exists() {
             return Err("DLL Overrides Automator plugin not installed".into());
         }
-        let mut cmd = Command::new("timeout");
-        cmd.arg("120").arg(&exe).arg("scan").arg(game_dir);
-        let v = Self::run_json(&mut cmd)?;
+        let mut cmd = Command::new(&exe);
+        cmd.arg("scan").arg(game_dir);
+        let v = Self::run_json(&mut cmd, 120)?;
         if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) != true {
             let e = v.get("error").and_then(|x| x.as_str()).unwrap_or("scan failed");
             return Err(e.to_string());
@@ -718,26 +718,51 @@ impl PluginManager {
     }
 
     /// Thread-safe (no self): queries `emulator-manager corky-list`.
+    ///
+    /// El limite de 15 s se aplica en proceso. Antes lo ponia `timeout(1)`, que
+    /// no existe en el PATH por defecto de NixOS ni en contenedores minimos: si
+    /// faltaba, esta funcion caia en la rama `_` y la pestana de Emuladores se
+    /// quedaba vacia sin ningun aviso. Los fallos se siguen reportando como
+    /// lista vacia porque es el contrato de los llamadores, pero ahora el motivo
+    /// queda en stderr para poder diagnosticarlo.
     pub fn list_emulators_in(dir: &Path) -> Vec<EmuInfo> {
         let exe = Self::emulator_manager_exe_in(dir);
         if !exe.exists() {
             return Vec::new();
         }
         // Guarded so a stuck manager can never freeze the UI thread.
-        let output = Command::new("timeout")
-            .arg("15")
-            .arg(&exe)
-            .arg("corky-list")
-            .output();
-        let output = match output {
-            Ok(o) if o.status.success() => o,
-            _ => return Vec::new(),
+        let mut cmd = Command::new(&exe);
+        cmd.arg("corky-list");
+        let output = match super::plugin_process::output_with_timeout(
+            &mut cmd,
+            std::time::Duration::from_secs(15),
+        ) {
+            Ok(o) if o.success => o,
+            Ok(o) => {
+                eprintln!(
+                    "[emu] corky-list salio con codigo {:?}: {}",
+                    o.code,
+                    o.stderr.trim()
+                );
+                return Vec::new();
+            }
+            Err(e) => {
+                eprintln!("[emu] corky-list fallo: {}", e);
+                return Vec::new();
+            }
         };
-        let v: serde_json::Value = match serde_json::from_slice(&output.stdout) {
+        let v: serde_json::Value = match serde_json::from_str(&output.stdout) {
             Ok(v) => v,
-            Err(_) => return Vec::new(),
+            Err(e) => {
+                eprintln!("[emu] corky-list devolvio JSON invalido: {}", e);
+                return Vec::new();
+            }
         };
         if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) != true {
+            eprintln!(
+                "[emu] corky-list reporto ok=false: {}",
+                v.get("error").and_then(|e| e.as_str()).unwrap_or("sin detalle")
+            );
             return Vec::new();
         }
         let plugins_dir = dir.display().to_string();
