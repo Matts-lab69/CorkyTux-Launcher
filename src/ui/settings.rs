@@ -2408,6 +2408,41 @@ enum PluginTabMsg {
     EmuOp(Result<String, String>),
 }
 
+fn emulator_icon_path(name: &str) -> Option<String> {
+    let key = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    let filename = match key.as_str() {
+        "cemu" => "cemu.svg",
+        "desmume" => "desmume.svg",
+        "dolphin" | "dolphinemulator" => "dolphin-emu.svg",
+        "duckstation" => "duckstation.svg",
+        "mupen64plus" | "mupen64plusqt" => "mupen64plus-qt.svg",
+        "pcsx2" | "pcsx2qt" => "PCSX2.svg",
+        "ppsspp" => "ppsspp.svg",
+        "rpcs3" => "rpcs3.svg",
+        "ryujinx" => "ryujinx.svg",
+        "vita3k" => "vita3k.svg",
+        "melonds" => "net.kuribo64.melonDS.svg",
+        _ => return None,
+    };
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    let installed = PathBuf::from(home)
+        .join(".local/share/corkytux/assets/icons/emulators")
+        .join(filename);
+    if installed.is_file() {
+        return Some(installed.to_string_lossy().into_owned());
+    }
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("assets/icons/emulators")
+        .join(filename);
+    source
+        .is_file()
+        .then(|| source.to_string_lossy().into_owned())
+}
+
 fn rebuild_emu_rows(
     emu_box: &gtk::Box,
     state: &AppState,
@@ -2431,22 +2466,38 @@ fn rebuild_emu_rows(
         // [icon 48px][nombre+badge / descripcion][slot 12ch][accion].
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.add_css_class("emu-row-card");
-        // Icon slot: square 48x48; monogram fallback (first letter) until the
-        // license verdict allows baking real assets. Geometry stays stable.
-        let initial = emu
-            .name
-            .chars()
-            .next()
-            .map(|c| c.to_uppercase().collect::<String>())
-            .unwrap_or_default();
-        let icon = gtk::Label::new(Some(&initial));
-        icon.add_css_class("emu-row-icon");
-        icon.set_valign(gtk::Align::Start);
-        icon.set_width_request(48);
-        icon.set_height_request(48);
-        icon.set_xalign(0.5);
-        icon.set_yalign(0.5);
-        row.append(&icon);
+        // Icon slot: square 48x48; bundled Papirus artwork when mapped,
+        // deterministic monogram for Azahar or unavailable assets.
+        let icon_slot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        icon_slot.add_css_class("emu-row-icon");
+        icon_slot.set_halign(gtk::Align::Start);
+        icon_slot.set_valign(gtk::Align::Start);
+        icon_slot.set_width_request(48);
+        icon_slot.set_height_request(48);
+        let icon_texture = emulator_icon_path(&emu.name).and_then(|path| helpers::load_texture(&path));
+        if let Some(texture) = icon_texture {
+            let icon = gtk::Image::new();
+            icon.set_paintable(Some(&texture));
+            icon.set_pixel_size(40);
+            icon.set_halign(gtk::Align::Center);
+            icon.set_valign(gtk::Align::Center);
+            icon_slot.append(&icon);
+        } else {
+            let initial = emu
+                .name
+                .chars()
+                .next()
+                .map(|c| c.to_uppercase().collect::<String>())
+                .unwrap_or_default();
+            let icon = gtk::Label::new(Some(&initial));
+            icon.add_css_class("emu-row-monogram");
+            icon.set_halign(gtk::Align::Fill);
+            icon.set_valign(gtk::Align::Fill);
+            icon.set_xalign(0.5);
+            icon.set_yalign(0.5);
+            icon_slot.append(&icon);
+        }
+        row.append(&icon_slot);
         // The name is the canonical identity; state is rendered separately.
         let name_lbl = gtk::Label::new(Some(&emu.name));
         name_lbl.add_css_class("details-title");

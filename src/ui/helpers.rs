@@ -619,6 +619,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
                .emu-system-link-action:disabled {{ background-color: color-mix(in srgb, #E5484D 8%, transparent); border-color: {text_muted}; color: {text_muted}; }}\
              .emu-row-card {{ background-color: {panel}; border: 1px solid {border}; border-radius: 6px; padding: 8px 10px; margin: 2px 0; }}\
              .emu-row-icon {{ background-color: {well}; border: 1px solid {border}; border-radius: 6px; min-width: 48px; min-height: 48px; font-size: 20px; font-weight: bold; color: {text_main}; }}\
+             .emu-row-monogram {{ font-size: 20px; font-weight: bold; color: {text_main}; }}\
             .settings-title {{ color: {text_main}; font-size: 18px; font-weight: bold; }}\
             .settings-tab-bar {{ background-color: {tab_bar_bg}; border: 1px solid {border}; border-radius: 14px; min-height: 44px; }}\
             .settings-tab {{ background-color: transparent; color: {text_sec}; border: none; border-radius: 0; padding: 4px 6px; font-size: 11px; font-weight: bold; min-height: 38px; min-width: 64px; }}\

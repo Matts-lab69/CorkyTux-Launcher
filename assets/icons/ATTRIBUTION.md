@@ -73,3 +73,21 @@ path, symbolic recoloring preserved), system icon theme second.
     SteamDB and ProtonDB are trademarks of their respective owners; the
     logos are used solely to indicate the integration (same criterion as
     Steam/Lutris/Heroic entries), without implying endorsement.
+
+# Bundled emulator icons (Papirus)
+
+The files in `emulators/` are unmodified copies of the 48 px application
+icons from **Papirus icon theme**:
+
+- Source: https://github.com/PapirusDevelopmentTeam/papirus-icon-theme
+- Commit: `bf539287ef5dc18529424a02cccee76175920a6f`
+- Upstream directory: `Papirus/48x48/apps/`
+- License: GPL-3.0-only (the repository `LICENSE`)
+  (https://github.com/PapirusDevelopmentTeam/papirus-icon-theme/blob/bf539287ef5dc18529424a02cccee76175920a6f/LICENSE)
+
+Bundled files: `cemu.svg`, `desmume.svg`, `dolphin-emu.svg`, `duckstation.svg`,
+`mupen64plus-qt.svg`, `PCSX2.svg`, `ppsspp.svg`, `rpcs3.svg`, `ryujinx.svg`,
+`vita3k.svg`, and `net.kuribo64.melonDS.svg`.
+
+They are used only to identify the corresponding emulator. Azahar has no
+verified Papirus icon and keeps the project monogram fallback.

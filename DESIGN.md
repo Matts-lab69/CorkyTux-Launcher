@@ -6,8 +6,8 @@
 - Alcance: jerarquía, espaciado y tratamiento visual de las filas de emuladores, con foco en la identidad, el estado y las acciones disponibles.
 - Fuentes verificadas: `src/ui/settings.rs`, `rebuild_emu_rows` (`2411-2552`) y handler `EmuOp` (`1916-1932`); `src/backend/theme.rs`, tokens de tema (`190-250`) y paleta de acentos (`77-90`); `src/ui/helpers.rs`, CSS de aplicación (`457-644`).
 - Cambios de esta versión: nombre canónico sin paréntesis; `.emu-status-pill` para `Linked`/nativo; acción `Found in system - link it?` con variante roja suave `.emu-system-link-action`; el callback de `Set as linked` no cambia. La decisión A mantiene la píldora `Linked`; B hace que el recuadro rojo reemplace la acción secundaria sin duplicarla; C usa estilo soft.
-- Sección "Lista de emuladores instalables (catálogo)": **opción 1+3 fijada como la única viva** (botón estado-consciente + compactación de filas resueltas), con matriz estado → badge/label/clase/ancho (columna `Dot` eliminada por decisión del usuario al implementar la fila). La fila se alinea al estilo de tarjeta de lista de contenido (Prism/Modrinth): clase nueva `.emu-row-card` (borde neutro + fondo panel) y slot de ícono cuadrado 48 px `.emu-row-icon` (monograma gated al veredicto legal). Las opciones A/B/C y las variantes 2/3 permanecen como trazabilidad; las referencias normativas se actualizan en las secciones de matriz y flujo.
-- Los iconos de marca siguen pendientes de veredicto legal; mientras tanto se conserva el monograma. No se toca la lógica de estados ni los handlers en esta actualización.
+- Sección "Lista de emuladores instalables (catálogo)": **opción 1+3 fijada como la única viva** (botón estado-consciente + compactación de filas resueltas), con matriz estado → badge/label/clase/ancho (columna `Dot` eliminada por decisión del usuario al implementar la fila). La fila se alinea al estilo de tarjeta de lista de contenido (Prism/Modrinth): clase nueva `.emu-row-card` (borde neutro + fondo panel) y slot de ícono cuadrado 48 px `.emu-row-icon` (11 SVG de Papirus; monograma para Azahar). Las opciones A/B/C y las variantes 2/3 permanecen como trazabilidad; las referencias normativas se actualizan en las secciones de matriz y flujo.
+- Los 11 iconos de emulador confirmados se cargan desde `assets/icons/emulators/`; Azahar conserva el monograma. No se toca la lógica de estados ni los handlers en esta actualización.
 
 ## Decisiones fijas y valores por defecto
 
@@ -469,7 +469,7 @@ Esta sección conserva la especificación del catálogo y su trazabilidad; la im
 
 Es la misma función `rebuild_emu_rows` (`settings.rs:2411-2570`), pero en su modo catálogo: cuando `emulator-manager` reporta el catálogo (`corky-list`, `plugins.rs:721-789`) y la mayoría de las entradas están en source `none`, toda la lista termina en un botón `Install` idéntico. Con nada instalado, las 10 entradas (Azahar, Cemu, Desmume, DuckStation, Mupen64Plus, PCSX2, PPSSPP, RPCS3, Ryujinx, Vita3K) se diferencian solo por el nombre; la fila no jerarquiza, no agrupa y no ofrece exploración.
 
-Objetivos de esta propuesta: jerarquía (nombre ≠ descripción), exploración (búsqueda), contexto (consola/generación) y un slot estable para el ícono del emulador, **condicionado al veredicto legal de licencias** (pendiente; el slot se reserva de todos modos para que el layout nunca cambie).
+Objetivos de esta propuesta: jerarquía (nombre ≠ descripción), exploración (búsqueda), contexto (consola/generación) y un slot estable para el ícono del emulador. El slot usa los 11 SVG verificados de Papirus; Azahar mantiene el monograma porque no tiene un icono confirmado.
 
 ### Estado actual verificado
 
@@ -478,13 +478,13 @@ Objetivos de esta propuesta: jerarquía (nombre ≠ descripción), exploración 
 - El nombre usa solo `emu.name` con `.details-title` (16 px bold, `text_main`); ya no concatena sufijos de `source`. La descripción se mantiene en la segunda línea con `.time-label`.
 - `Linked`/nativo muestra `Linked` en una píldora de 20 px; `System` no muestra badge y expone una única acción roja; `none` no muestra badge.
 - Botón `Install`: `.add-btn` (relleno accent sólido, 36 px, radio 20 px), ancho fijo 80 px, idéntico en las 10 filas (`settings.rs:2516-2523`).
-- Orden alfabético por nombre impuesto en `plugins.rs:787`. Sin agrupación, sin búsqueda, sin ícono, sin `ScrolledWindow` propia (hereda el scroll de la página).
-- Datos disponibles: `EmuInfo` (`plugins.rs:79-87`) trae `name`, `path`, `description`, `installed`, `native`, `source`, `settings`. **No hay categoría de consola, ni versión, ni URL de proyecto, ni ícono.** `RegistryEntry` (registry de plugins) tampoco.
+- Orden alfabético por nombre impuesto en `plugins.rs:787`. Sin agrupación, sin búsqueda, con ícono Papirus cuando existe y sin `ScrolledWindow` propia (hereda el scroll de la página).
+- Datos disponibles: `EmuInfo` (`plugins.rs:79-87`) trae `name`, `path`, `description`, `installed`, `native`, `source`, `settings`. **No hay categoría de consola, ni versión, ni URL de proyecto, ni campo de ícono;** la UI resuelve el asset por nombre. `RegistryEntry` (registry de plugins) tampoco.
 
 ### Restricciones de datos
 
 - La consola/generación **no viaja en los datos**: hay que derivarla del lado de la UI. Recomendado: mapa estático `tag → familia` (mismo patrón que ya usa `integration.rs:51-68` para `runner → nombre`). Alternativa rechazada en esta iteración: pedir un campo nuevo al backend (toca el plugin `emulator-manager`, fuera del alcance del repo).
-- El ícono tampoco viaja y depende del veredicto legal: el slot se reserva en la opción viva y se rellena recién si el veredicto lo permite. El fallback mientras tanto es un marcador tipográfico determinista (monograma de la inicial) en la misma geometría, para que el layout no cambie entre sin-ícono y con-ícono.
+- El ícono no viaja en los datos: la UI mantiene un mapa estático `nombre normalizado → archivo SVG` bajo `assets/icons/emulators/`. El fallback es un marcador tipográfico determinista (monograma de la inicial) para Azahar o un asset no disponible, en la misma geometría.
 
 ### Recomendaciones HIG de GNOME aplicadas
 
@@ -499,7 +499,7 @@ Objetivos de esta propuesta: jerarquía (nombre ≠ descripción), exploración 
 ### Decisiones transversales de la fila (fijadas)
 
 1. **Dividir el label combinado en dos líneas:** línea 1 nombre en `.details-title` (16 px bold), línea 2 descripción en `.time-label` (12 px, `text_sec`, una línea con elipsis). La refactorización queda aplicada en `rebuild_emu_rows`.
-2. **Slot de ícono líder estable de 48 px (gated), cuadrado y alineado arriba de la fila:** reservado siempre. Mientras no haya veredicto o asset, muestra un monograma determinista (primera letra del nombre) en un slot cuadrado de 48 px, fondo `well`, borde `border`, texto `.details-title` centrado. Si el veredicto lo permite, el asset sirve en la misma geometría; el texto y la columna de acciones no se mueven. Tamaño elegido: 48 px; justificación en "Estilo de fila: tarjeta".
+2. **Slot de ícono líder estable de 48 px, cuadrado y alineado arriba de la fila:** reservado siempre. Los 11 emuladores con SVG verificado usan el asset dentro de la misma geometría; Azahar o un asset ausente muestran un monograma determinista (primera letra del nombre) en un slot cuadrado de 48 px, fondo `well`, borde `border`, texto centrado. El texto y la columna de acciones no se mueven. Tamaño elegido: 48 px; justificación en "Estilo de fila: tarjeta".
 3. **Búsqueda por nombre/descripción** como control superior (`.search-entry` + `.filter-bar`, ya definidos): la opción viva es lista plana con filtro, sin agrupación.
 4. **Columna de acciones alineada** y vocabulario de botones sin cambios salvo la presentación de `System`: `.add-btn`, `.emu-link-action` + `.emu-system-link-action` y `.danger-btn`; ancho fijo por estado para evitar jitter.
 
@@ -511,7 +511,7 @@ Objetivos de esta propuesta: jerarquía (nombre ≠ descripción), exploración 
 [filtro de búsqueda (GtkSearchEntry, .search-entry)]
 [ .emu-row-card ]
   [48px icon]   Nombre                    (.details-title, bold 16, 1 línea, ellipsis)
-  [monograma]   Descripción — una línea    (.time-label, 12, ellipsis)
+  [monograma si no hay SVG]   Descripción — una línea    (.time-label, 12, ellipsis)
                                       [slot 12ch]  [Install] (.add-btn)
 ```
 
@@ -549,7 +549,7 @@ Justificación de la clase nueva: ninguna clase existente modela una tarjeta de 
 }
 ```
 
-Por qué 48 px (rango pedido 48-56): es el tamaño de las miniaturas de las listas de contenido Prism/Modrinth, la analogía de la referencia; el catálogo mueve 10-12 ítems planos con búsqueda, así que 48 px da presencia al slot sin inflar la altura de fila (56 px costaría densidad de lectura al hacer scroll); y convive con el slot estable de 12 chars: la identidad de dos líneas se lee completa y el monograma (inicial del emulador, ~18-20 px bold) queda legible como fallback legalmente seguro. **Alineación:** el slot se ancla arriba de la fila (`valign: start`); el bloque de texto y la columna de acciones quedan centrados verticalmente respecto a la altura de la tarjeta. **Estable ante el asset real:** si el informe de licencias permite hornear el logo, el asset sirve en la misma geometría de 48 px y el layout no se mueve.
+Por qué 48 px (rango pedido 48-56): es el tamaño de las miniaturas de las listas de contenido Prism/Modrinth, la analogía de la referencia; el catálogo mueve 10-12 ítems planos con búsqueda, así que 48 px da presencia al slot sin inflar la altura de fila (56 px costaría densidad de lectura al hacer scroll); y convive con el slot estable de 12 chars: la identidad de dos líneas se lee completa y el monograma (inicial del emulador, ~18-20 px bold) queda legible como fallback para Azahar o si falta un asset. **Alineación:** el slot se ancla arriba de la fila (`valign: start`); el bloque de texto y la columna de acciones quedan centrados verticalmente respecto a la altura de la tarjeta. **Estable ante el asset real:** los SVG verificados se sirven en la misma geometría de 48 px y el layout no se mueve.
 
 **Matriz estado → (badge, texto del botón, clase CSS, ancho fijo):** la columna `Dot` fue **eliminada** de la matriz y de la fila por decisión del usuario: el estado usable se refleja en la píldora compacta o en la acción. Las clases `emu-dot-on`/`emu-dot-off` quedaron sin uso (pendiente menor: candidatas a eliminar).
 
@@ -586,7 +586,7 @@ Por qué 48 px (rango pedido 48-56): es el tamaño de las miniaturas de las list
 
 ### Pendientes de esta sección (abiertos)
 
-- **Asset real del ícono gated al veredicto de licencias; mientras tanto, monograma** (investigación en curso): el slot de 48 px (`.emu-row-icon`) se reserva siempre y permanece estable; el monograma determinista (inicial del emulador) es el fallback legalmente seguro hasta que el informe de licencias decida si los assets de marca pueden hornearse en la misma geometría.
+- **Asset real del ícono:** completado para los 11 emuladores con SVG verificado en Papirus; los archivos viven en `assets/icons/emulators/` y la atribución GPL-3.0 está en `assets/icons/ATTRIBUTION.md`. El slot de 48 px (`.emu-row-icon`) permanece estable; Azahar y cualquier asset ausente conservan el monograma.
 - **Clases `emu-dot-on` / `emu-dot-off` huérfanas (candidatas a eliminar)**: tras la decisión del usuario de eliminar el dot `[•]` de la fila, las clases quedaron definidas en `helpers.rs:553-554` pero sin uso en código, y la mención del punto de disponibilidad en la "Base tipográfica" (sección de `Set as linked`) quedó obsoleta. No se borran todavía: como su folclore de contraste (verde `#00E639` / `text_muted`) es compartido, se marcan como candidatas a eliminar en una limpieza futura.
 - **Mapa `tag → familia`**: **no aplica a la opción viva** (lista plana con filtro, sin agrupación). Permanece abierto únicamente si el catálogo crece y se retoma B o C del apéndice.
 - **Hueco de estado vacío**: el hint actual de la lista (`"No emulators reported by emulator-manager."`) no distingue "sin plugin reportado" de "sin resultados de filtro"; definir un estado vacío explícito para cada caso (la opción viva incluye búsqueda, así que "sin resultados de filtro" es un estado alcanzable).
