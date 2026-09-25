@@ -2502,16 +2502,15 @@ fn rebuild_emu_rows(
         let name_lbl = gtk::Label::new(Some(&emu.name));
         name_lbl.add_css_class("details-title");
         name_lbl.set_halign(gtk::Align::Start);
-        name_lbl.set_hexpand(true);
         name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        // Linked/native states render as a compact badge next to the name
-        // (line 1); system is represented by its actionable warning below.
+        // Linked and System states render as compact badges next to the name
+        // (line 1); System keeps its actionable warning to the right.
         let status_text: Option<&str> = if emu.source.is_empty() {
             if emu.native { Some("Linked") } else { None }
         } else {
             match emu.source.as_str() {
                 "linked" => Some("Linked"),
-                "system" => None,
+                "system" => Some("System"),
                 _ => None,
             }
         };
@@ -2519,14 +2518,17 @@ fn rebuild_emu_rows(
         text_box.set_halign(gtk::Align::Fill);
         text_box.set_hexpand(true);
         let line1 = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        line1.append(&name_lbl);
+        let name_badge_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        name_badge_box.set_halign(gtk::Align::Start);
+        name_badge_box.append(&name_lbl);
         if let Some(label) = status_text {
             let badge_w = gtk::Label::new(Some(label));
             badge_w.add_css_class("proton-path-badge");
             badge_w.add_css_class("emu-status-pill");
             badge_w.set_valign(gtk::Align::Center);
-            line1.append(&badge_w);
+            name_badge_box.append(&badge_w);
         }
+        line1.append(&name_badge_box);
         text_box.append(&line1);
         // Line 2: description only when present (no ghost line).
         if !emu.description.is_empty() {
