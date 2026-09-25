@@ -30,8 +30,8 @@ Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE (los cinco de
 | **Total** | **42** |
 
 Cuentas del triage original, conservadas como registro. **Estado actual:** de
-los 6 críticos, **C14 y C10 están corregidos**, y **C08 lo está en su parte de
-`timeout` (8 de 12 sitios)**; los otros 3 críticos siguen abiertos. Ningún
+los 6 críticos, **C14, C10 y C09 están corregidos**, y **C08 lo está en su
+parte de `timeout` (8 de 12 sitios)**; quedan abiertos C01 y C03. Ningún
 degradante ni cosmético se ha tocado.
 
 Definiciones:
@@ -155,8 +155,10 @@ búsqueda en `PATH` y por `/proc`, respectivamente.
 
 ### C09 — El registro de plugins elige el primer `.tar.gz` sin filtrar por arquitectura
 
-- `src/backend/plugins.rs:347-363` — itera `assets` y hace `break` en el
-  primer nombre que termina en `.tar.gz`.
+**Estado: CORREGIDO.**
+
+- `src/backend/plugins.rs:347-363` (versión auditada) — itera `assets` y hace
+  `break` en el primer nombre que termina en `.tar.gz`.
 - `src/backend/plugins.rs:418` — lo descarga como `{tag}.tar.gz` y lo extrae
   sin verificar nada más que `size >= 100` (línea 448-452).
 
@@ -166,9 +168,35 @@ orden de la API. El plugin se instala "con éxito" y luego falla con
 `Exec format error` en cada invocación, sin que la UI distinga "instalado" de
 "instalado y utilizable".
 
-**Fix:** filtrar por `std::env::consts::ARCH` contra el sufijo del asset y,
-si no hay ninguno válido, devolver un error explícito. De paso, verificar un
-checksum publicado en el release en lugar de solo `size >= 100`.
+**Severidad real (verificada contra la API el 2026-09-25):** hoy los cinco
+releases publicados usan nombres sin arquitectura —`heroic-store-1.0.8.tar.gz`,
+`minecraft-launcher-1.1.0.tar.gz`, `emulator-manager-1.1.0.tar.gz`,
+`dependency-installer-2.1.3.tar.gz`, `heroic-store-1.0.7.tar.gz`—, así que el
+fallo es **latente**, no activo: hace falta que alguien publique un par de
+assets por arquitectura. Se corrigió igualmente porque el día que se publique,
+el síntoma (instalación correcta y fallo en cada uso) es de los más caros de
+diagnosticar.
+
+**Fix aplicado:** `asset_arch_ok()` decide si un asset sirve para este host, y
+`fetch_registry()` recorre **todos** los `.tar.gz` del release en vez de romper
+en el primero:
+
+1. Un asset **sin token de arquitectura** se acepta: es el caso de los releases
+   actuales y no hay forma de distinguirlo de un asset universal.
+2. Un asset **con token** solo se acepta si el token mapea a
+   `std::env::consts::ARCH`, cubriendo los alias habituales: `x86_64`/`amd64`/
+   `x64`, `aarch64`/`arm64`, `i386`–`i686`/`x86`, `arm`/`armv7l`/`armhf`,
+   `ppc64`/`ppc64le` y `riscv64`/`s390x`.
+3. Los tokens se separan por `-` y `.`, **nunca por `_`**: `x86_64` lleva guion
+   bajo, y partirlo produciría dos tokens sin significado que además
+   colisionarían con `x86`.
+4. Un release cuyos assets son todos de otra arquitectura se **omite** del
+   registro, con el motivo en stderr, en vez de ofrecer una descarga que no
+   puede funcionar.
+
+**Pendiente relacionado (D05):** la API de GitHub ya publica un campo `digest`
+(`sha256:…`) por asset. Verificarlo cierra el hallazgo de integridad y de paso
+da un error de confianza por separado del de compatibilidad.
 
 ### C10 — El escaneo de Lutris ignora `XDG_DATA_HOME` y Lutris Flatpak, en el mismo archivo que sí los respeta
 
@@ -338,10 +366,12 @@ Requiere que el usuario abra la app; el agente no la ejecuta.
    **hecho**: `output_with_timeout()` cubre los 8 sitios. Quedan 5 sitios de
    `ldconfig`/`pgrep`/`pidof`/`which`; el de `ldconfig` se resuelve con C03.
 3. **C10** — **hecho**: `lutris_data_roots()` compartido por escaneo y artwork.
-4. **C09** — acotado y sin riesgo de datos.
+4. **C09** — **hecho**: `asset_arch_ok()` filtra por `std::env::consts::ARCH`.
 5. **C01** — depende del helper compartido de rutas de Steam del punto 2.
 6. **C03** — requiere decidir antes qué significa "32-bit" en aarch64, para no
    cambiar el contrato de `ComponentStatus` a ciegas. Cerrarlo también elimina
    el `ldconfig` de C08.
-7. El resto de degradantes por lotes, empezando por los que tocan datos o
-   superficie de entrada: D05, D12, D13, D19, D22.
+7. El resto de degradantes por lotes. El siguiente con mejor relación
+   esfuerzo/impacto es **D05**: la API ya publica `digest: sha256:…`, así que
+   verificar la descarga es directamente implementable. Después, D12, D13, D19
+   y D22.

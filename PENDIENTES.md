@@ -143,7 +143,7 @@ Detalle completo, con `archivo:línea` y fix mínimo, en
 [`docs/multidistro-audit.md`](docs/multidistro-audit.md) (42 hallazgos del
 triage: 6 críticos, 30 degradantes, 6 cosméticos). Auditoría estática: no se
 compiló ni ejecutó la app. Numeración heredada del triage original.
-**Críticos pendientes: 3** (C01, C03, C09); C08 a medias.
+**Críticos pendientes: 2** (C01, C03); C08 a medias.
 
 ### ~~C14 — `prefix_in_use` falla abierta sin `pgrep`~~ — **CORREGIDO**
 Era el único hallazgo con riesgo de pérdida de datos: sin `pgrep` (NixOS,
@@ -206,13 +206,24 @@ que las dos tarjetas pueden discrepar.
   `gamemoderun`. Antes hay que decidir qué significa "32-bit" en aarch64 para no
   cambiar el contrato de `ComponentStatus` a ciegas.
 
-### C09 — El registro de plugins toma el primer `.tar.gz` sin filtrar por arch
-`plugins.rs:347-363` hace `break` en el primer `.tar.gz` del release. En un
-release con assets x86_64 y aarch64, un host ARM instala el binario x86_64:
-"instalado con éxito" y luego `Exec format error` en cada uso. La única
-validación del tarball es `size >= 100` (línea 448-452).
-- **Fix:** filtrar por `std::env::consts::ARCH`, error explícito si no hay
-  asset válido, y verificar checksum publicado.
+### C09 — El registro de plugins toma el primer `.tar.gz` sin filtrar por arch — **CORREGIDO**
+- **Severidad real, verificada contra la API el 2026-09-25:** los cinco
+  releases publicados usan nombres sin arquitectura
+  (`heroic-store-1.0.8.tar.gz`, `minecraft-launcher-1.1.0.tar.gz`,
+  `emulator-manager-1.1.0.tar.gz`, `dependency-installer-2.1.3.tar.gz`,
+  `heroic-store-1.0.7.tar.gz`), así que el fallo es **latente**: hace falta que
+  alguien publique un par de assets por arquitectura. El síntoma (instalación
+  correcta y `Exec format error` en cada uso) sería de los más caros de
+  diagnosticar, por eso se corrigió igualmente.
+- **Fix aplicado:** `asset_arch_ok()` acepta assets sin token de arquitectura
+  (los actuales) y, si el token existe, exige que mapee a
+  `std::env::consts::ARCH` con los alias habituales: `x86_64`/`amd64`/`x64`,
+  `aarch64`/`arm64`, `i386`–`i686`/`x86`, `arm`/`armv7l`/`armhf`,
+  `ppc64`/`ppc64le`, `riscv64`/`s390x`. Los tokens se separan por `-` y `.`,
+  nunca por `_`, porque `x86_64` lleva guion bajo y `x86` colisionaría.
+- `fetch_registry()` recorre todos los `.tar.gz` en vez de romper en el
+  primero, y **omite** un release cuyos assets son todos de otra arquitectura
+  (motivo en stderr) en vez de ofrecer una descarga imposible.
 
 ### C10 — El escaneo de Lutris ignora `XDG_DATA_HOME` y Lutris Flatpak — **CORREGIDO**
 El artwork (450 líneas antes en el mismo archivo) sí honraba `XDG_DATA_HOME` y

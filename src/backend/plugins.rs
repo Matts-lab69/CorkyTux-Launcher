@@ -324,6 +324,40 @@ impl PluginManager {
 
     // --- Remote registry (GitHub Releases, C++ parity) ---
 
+    /// ¿Este asset sirve para la arquitectura de este host?
+    ///
+    /// Un asset sin token de arquitectura (`plugin.tar.gz`) se acepta: es el
+    /// caso de los releases actuales y no se puede distinguir de uno universal.
+    /// Un asset CON token (`plugin-x86_64.tar.gz`) solo se acepta si el token
+    /// mapea a nuestra `ARCH`: sin esta comprobación, un host aarch64 podía
+    /// quedarse con el binario x86_64, instalarlo "con éxito" y fallar en cada
+    /// invocación con `Exec format error`.
+    ///
+    /// Los tokens se separan por `-` y `.`, nunca por `_`, porque `x86_64` lleva
+    /// guion bajo y partirlo daria dos tokens que no significan nada.
+    fn asset_arch_ok(name: &str) -> bool {
+        let host = std::env::consts::ARCH;
+        let mut saw_arch = false;
+        for token in name.split(|c| c == '-' || c == '.') {
+            let arch = match token.to_ascii_lowercase().as_str() {
+                "x86_64" | "amd64" | "x64" => "x86_64",
+                "aarch64" | "arm64" => "aarch64",
+                "i386" | "i486" | "i586" | "i686" | "x86" => "x86",
+                "arm" | "armv7" | "armv7l" | "armhf" => "arm",
+                "ppc64" | "ppc64le" | "powerpc64" | "powerpc64le" => "powerpc64",
+                "riscv64" => "riscv64",
+                "s390x" => "s390x",
+                _ => continue,
+            };
+            saw_arch = true;
+            if arch == host {
+                return true;
+            }
+        }
+        // Sin token de arch reconocido: asset único, se asume compatible.
+        !saw_arch
+    }
+
     pub fn fetch_registry() -> Result<Vec<RegistryEntry>, String> {
         let url = "https://api.github.com/repos/Matts-lab69/CorkyTux-Plugins/releases?per_page=20";
         let client = reqwest::blocking::Client::builder()
@@ -342,8 +376,14 @@ impl PluginManager {
             resp.json().map_err(|e| format!("Invalid JSON: {}", e))?;
         let mut out = Vec::new();
         for v in json.as_array().cloned().unwrap_or_default() {
-            let mut asset_url = String::new();
-            let mut asset_name = String::new();
+            let tag = v
+                .get("tag_name")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string();
+            // Todos los .tar.gz del release, no solo el primero: el orden de la
+            // API no es una garantía de compatibilidad.
+            let mut candidates: Vec<(String, String)> = Vec::new();
             for a in v
                 .get("assets")
                 .and_then(|x| x.as_array())
@@ -351,22 +391,40 @@ impl PluginManager {
                 .unwrap_or_default()
             {
                 let n = a.get("name").and_then(|x| x.as_str()).unwrap_or_default();
-                if n.ends_with(".tar.gz") {
-                    asset_url = a
-                        .get("browser_download_url")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or_default()
-                        .to_string();
-                    asset_name = n.to_string();
-                    break;
+                if !n.ends_with(".tar.gz") {
+                    continue;
                 }
+                let u = a
+                    .get("browser_download_url")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default();
+                if u.is_empty() {
+                    continue;
+                }
+                candidates.push((n.to_string(), u.to_string()));
             }
-            if asset_url.is_empty() {
+            if candidates.is_empty() {
                 continue;
             }
+            let picked = candidates
+                .iter()
+                .find(|(name, _)| Self::asset_arch_ok(name))
+                .cloned();
+            // Release solo con assets de otra arquitectura: se omite en vez de
+            // ofrecer una descarga que no puede funcionar.
+            let Some((asset_name, asset_url)) = picked else {
+                let names: Vec<&str> = candidates.iter().map(|(n, _)| n.as_str()).collect();
+                eprintln!(
+                    "[plugins] release {} sin asset para {} (hay: {})",
+                    tag,
+                    std::env::consts::ARCH,
+                    names.join(", ")
+                );
+                continue;
+            };
             let body = v.get("body").and_then(|x| x.as_str()).unwrap_or_default();
             out.push(RegistryEntry {
-                tag: v.get("tag_name").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+                tag,
                 name: v.get("name").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
                 description: body.chars().take(200).collect(),
                 date: v.get("published_at").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
