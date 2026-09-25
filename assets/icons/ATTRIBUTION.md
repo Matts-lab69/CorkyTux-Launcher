@@ -107,6 +107,14 @@ application logo:
 The Azahar repository's `license.txt` is GPL-2.0-or-later for the emulator
 source, while `dist/license.md` separately records third-party UI icons. The
 logo's own CC BY 4.0 notice is the applicable license for this bundled asset;
-the attribution above is retained with the unmodified file. The emulator
-resolver remains unchanged in this change, so Azahar still uses the project
-monogram `A` until a separate UI decision activates this verified asset.
+the attribution above is retained with the unmodified file.
+
+**Activado en el resolver el 2026-09-25.** `emulator_icon_path`
+(`src/ui/settings.rs`) mapea `azahar` → `azahar.svg`, así que la fila de
+Azahar deja de usar el monograma `A` y pinta el logo oficial. El archivo sigue
+sin modificarse byte a byte: no se aplicó ningún recorte de centrado ni
+recolor, porque el logo está centrado (medido: desfase 0,00 en horizontal).
+Se verificó además que el resto del logo tiene el mismo aspecto que cualquier
+otro icono de la fila: el `GtkPicture` lo escala a 40×40 con
+`ContentFit::Contain` sin deformar, porque el paintable es cuadrado
+(512×512) y el logo ocupa de 449×509 px dentro de él.

@@ -2415,6 +2415,7 @@ fn emulator_icon_path(name: &str) -> Option<String> {
         .collect::<String>()
         .to_ascii_lowercase();
     let filename = match key.as_str() {
+        "azahar" => "azahar.svg",
         "cemu" => "cemu.svg",
         "desmume" => "desmume.svg",
         "dolphin" | "dolphinemulator" => "dolphin-emu.svg",
