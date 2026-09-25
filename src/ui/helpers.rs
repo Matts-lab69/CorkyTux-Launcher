@@ -589,7 +589,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .card-selected {{ background-color: {accent}; }}\
              .card-selected label {{ color: #000000; }}\
              .destructive-action {{ border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; font-weight: bold; }}
-             .danger-btn {{ background-color: color-mix(in srgb, #E5484D 12%, transparent); border: 1.5px solid #E5484D; color: #E5484D; border-radius: 20px; min-height: 36px; padding: 0 16px; font-size: 14px; font-weight: bold; }}\
+             .danger-btn {{ background-color: color-mix(in srgb, #E5484D 12%, transparent); border: 1.5px solid #E5484D; color: #E5484D; border-radius: 15px; min-height: 30px; padding: 0 14px; font-size: 14px; font-weight: bold; }}\
              .danger-btn:hover {{ background-color: color-mix(in srgb, #E5484D 22%, transparent); }}\
              .mc-tile {{ border-radius: 14px; }}
              .mc-tile:hover {{ border-color: {accent}; }}
@@ -607,14 +607,14 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .time-label {{ color: {text_sec}; font-size: 12px; }}\
              .source-link {{ color: {text_sec}; font-size: 12px; }}\
              .source-link:hover, .source-link.field {{ text-decoration-line: underline; }}\
-             .add-btn {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: {accent}; color: {on_accent}; border: none; font-weight: bold; }}\
+             .add-btn {{ font-size: 14px; min-height: 30px; padding: 0 14px; border-radius: 15px; background-color: {accent}; color: {on_accent}; border: none; font-weight: bold; }}\
              .add-btn:hover {{ opacity: 0.85; }}\
              .settings-btn {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: {well}; color: {text_main}; border: 1.5px solid {accent}; font-weight: bold; }}\
              .settings-btn:hover {{ background-color: {hover}; }}\
-              .emu-link-action {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: color-mix(in srgb, {accent} 14%, transparent); border: 1.5px solid {accent_ui}; color: {text_main}; font-weight: bold; }}\
+              .emu-link-action {{ font-size: 14px; min-height: 30px; padding: 0 14px; border-radius: 15px; background-color: color-mix(in srgb, {accent} 14%, transparent); border: 1.5px solid {accent_ui}; color: {text_main}; font-weight: bold; }}\
               .emu-link-action:hover {{ background-color: color-mix(in srgb, {accent} 22%, transparent); }}\
               .emu-link-action:disabled {{ background-color: color-mix(in srgb, {accent} 8%, transparent); border-color: {text_muted}; color: {text_muted}; }}\
-               .emu-system-notice {{ font-size: 14px; min-height: 36px; padding: 0 12px; border-radius: 8px; background-color: color-mix(in srgb, #E5484D 14%, transparent); border: 1.5px solid #E5484D; color: #E5484D; font-weight: bold; }}\
+               .emu-system-notice {{ font-size: 14px; min-height: 30px; padding: 0 12px; border-radius: 8px; background-color: color-mix(in srgb, #E5484D 14%, transparent); border: 1.5px solid #E5484D; color: #E5484D; font-weight: bold; }}\
              .emu-row-card {{ background-color: {panel}; border: 1px solid {border}; border-radius: 6px; padding: 8px 10px; margin: 2px 0; }}\
              .emu-row-icon {{ background-color: {well}; border: 1px solid {border}; border-radius: 6px; min-width: 48px; min-height: 48px; font-size: 20px; font-weight: bold; color: {text_main}; }}\
              .emu-row-monogram {{ font-size: 20px; font-weight: bold; color: {text_main}; }}\

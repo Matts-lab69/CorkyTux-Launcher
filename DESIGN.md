@@ -478,7 +478,7 @@ Objetivos de esta propuesta: jerarquía (nombre ≠ descripción), exploración 
   `[icono 48px] [nombre + badge] [descripción] [slot estable] [aviso estático opcional] [acción]`.
 - El nombre usa solo `emu.name` con `.details-title` (16 px bold, `text_main`); ya no concatena sufijos de `source`. La descripción se mantiene en la segunda línea con `.time-label`.
 - `Linked`/nativo muestra `Linked` en una píldora de 20 px; `System` muestra `System` en una píldora y un aviso rojo estático; `none` no muestra badge.
-- Botón `Install`: `.add-btn` (relleno accent sólido, 36 px, radio 20 px), ancho fijo 80 px. `Set as linked`: `.emu-link-action`, ancho 120 px.
+- Botón `Install`: `.add-btn` (relleno accent sólido, **30 px, radio 15 px**), ancho fijo 80 px. `Set as linked`: `.emu-link-action`, ancho 120 px. `Remove`: `.danger-btn`, ancho 80 px. Las tres clases comparten métricas: `font-size: 14px`, `min-height: 30px`, `padding: 0 14px`, `border-radius: 15px` — una cápsula de 2,1× la fuente, que es la proporción cómoda; antes eran 36 px (2,6×) y se leían desproporcionadas respecto a las letras. El aviso rojo `Found in system` baja también a `min-height: 30px` para que en la fila `System` el aviso y el botón midan lo mismo y no se descuadre la altura.
 - Orden alfabético por nombre impuesto en `plugins.rs:787`. El filtro por nombre/descripción precede a la lista; cada fila usa un ícono Papirus cuando existe y hereda el scroll de la página.
 - Datos disponibles: `EmuInfo` (`plugins.rs:79-87`) trae `name`, `path`, `description`, `installed`, `native`, `source`, `settings`. **No hay categoría de consola, ni versión, ni URL de proyecto, ni campo de ícono;** la UI resuelve el asset por nombre. `RegistryEntry` (registry de plugins) tampoco.
 
