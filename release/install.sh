@@ -40,6 +40,17 @@ if [[ "${1:-}" == "--uninstall" || "${1:-}" == "-u" ]]; then
   exec "${SCRIPT_DIR}/uninstall.sh"
 fi
 
+# ─── Games folder ────────────────────────────────────────────────
+# Destino del import permanente de Heroic/Lutris. Heroic suele crearla
+# antes que CorkyTux: si ya existe se respeta tal cual, sin tocar su
+# contenido. No es un error ni un aviso, es el caso esperado.
+if [[ -d "${HOME}/Games" ]]; then
+  info "Games folder: ${HOME}/Games (already there, left untouched)"
+else
+  mkdir -p "${HOME}/Games"
+  log "Games folder: ${HOME}/Games (created)"
+fi
+
 # ─── Binary ──────────────────────────────────────────────────────
 APP=""
 for candidate in "${SCRIPT_DIR}/corkytux" "${SCRIPT_DIR}/release/corkytux"; do
