@@ -635,6 +635,11 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .modal-bg {{ background-color: {panel}; border-radius: 12px; border: 1px solid {border}; }}\
              .modal-bg textview {{ background-color: transparent; background-image: none; }}\
              .modal-bg textview > text {{ background-color: transparent; background-image: none; }}\
+             .import-mode {{ background-color: {well}; border: 1px solid {border}; border-radius: 12px; padding: 10px 12px; }}\
+             .import-mode:hover {{ border-color: {accent}; }}\
+             .import-mode:checked {{ background-color: color-mix(in srgb, {accent} 14%, transparent); border-color: {accent}; }}\
+             .import-dot {{ min-width: 10px; min-height: 10px; padding: 0; margin: 0; border-radius: 999px; background-color: {accent}; }}\
+             .import-warn {{ color: {text_main}; font-size: 12px; font-weight: 600; }}\
              tooltip.background {{ background-color: {tab_bar_bg}; border-radius: 8px; border: 1px solid {border}; padding: 12px; }}\
              tooltip label {{ color: {text_main}; font-size: 13px; }}"
         );

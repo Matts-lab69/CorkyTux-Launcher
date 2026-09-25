@@ -14,3 +14,4 @@ pub mod apps_settings;
 pub mod mcx_theme;
 pub mod minecraft_view;
 pub mod stores_view;
+pub mod import_manager;
