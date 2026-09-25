@@ -487,6 +487,14 @@ pub fn apply_theme_css(theme: &ThemeManager) {
         let text_sec = theme.text_sec();
         let text_muted = theme.text_muted();
         let is_dark = theme.is_dark();
+        // {accent_ui}: accent derivado para borde/foco con contraste >=3:1
+        // (WCAG 1.4.11) con los 10 acentos en tema claro; en oscuro se usa el
+        // accent base, que ya cumple >=3.85:1 contra #121212. Ver DESIGN.md.
+        let accent_ui = if is_dark {
+            accent.clone()
+        } else {
+            format!("color-mix(in srgb, {} 30%, {})", text_main, accent)
+        };
 
         let strip_color = accent_strip_color(theme);
         let banner_bg = if is_dark { "#282828" } else { hover };
@@ -602,6 +610,9 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .add-btn:hover {{ opacity: 0.85; }}\
              .settings-btn {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: {well}; color: {text_main}; border: 1.5px solid {accent}; font-weight: bold; }}\
              .settings-btn:hover {{ background-color: {hover}; }}\
+              .emu-link-action {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: color-mix(in srgb, {accent} 14%, transparent); border: 1.5px solid {accent_ui}; color: {text_main}; font-weight: bold; }}\
+              .emu-link-action:hover {{ background-color: color-mix(in srgb, {accent} 22%, transparent); }}\
+              .emu-link-action:disabled {{ background-color: color-mix(in srgb, {accent} 8%, transparent); border-color: {text_muted}; color: {text_muted}; }}\
             .settings-title {{ color: {text_main}; font-size: 18px; font-weight: bold; }}\
             .settings-tab-bar {{ background-color: {tab_bar_bg}; border: 1px solid {border}; border-radius: 14px; min-height: 44px; }}\
             .settings-tab {{ background-color: transparent; color: {text_sec}; border: none; border-radius: 0; padding: 4px 6px; font-size: 11px; font-weight: bold; min-height: 38px; min-width: 64px; }}\

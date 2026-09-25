@@ -2460,12 +2460,15 @@ fn rebuild_emu_rows(
         name_lbl.set_hexpand(true);
         name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
         row.append(&name_lbl);
+        // Stable status slot: the label always exists (empty when idle) so
+        // "Working…" appears in place and badge/button never shift. Ver DESIGN.md.
+        let st = gtk::Label::new(None);
+        st.add_css_class("time-label");
+        st.set_width_chars(12);
         if let Some(s) = emu_status.borrow().get(&emu.name) {
-            let st = gtk::Label::new(Some(s));
-            st.add_css_class("time-label");
-            st.set_width_chars(12);
-            row.append(&st);
+            st.set_text(s);
         }
+        row.append(&st);
         // Status-only states (linked/system/native) render as a badge: a
         // disabled button washes out to near-invisible in light theme.
         let status_text: Option<&str> = if emu.source.is_empty() {
@@ -2528,7 +2531,21 @@ fn rebuild_emu_rows(
             let state_c = state.clone();
             let status_c = emu_status.clone();
             let tx_c = tx.clone();
-            btn.connect_clicked(move |_| {
+            // Rebuild-proof lock: if a refresh rebuilds this row while the
+            // operation is still in flight, the fresh button starts disabled.
+            let busy = emu_status.borrow().get(&emu.name).map(|s| s == "Working…").unwrap_or(false);
+            if busy {
+                btn.set_sensitive(false);
+            }
+            let st_c = st.clone();
+            btn.connect_clicked(move |b| {
+                // Re-entrancy guard: GTK drops pointer events on insensitive
+                // buttons; this also covers a programmatic activate().
+                if !b.is_sensitive() {
+                    return;
+                }
+                b.set_sensitive(false);
+                st_c.set_text("Working…");
                 status_c.borrow_mut().insert(name_c.clone(), "Working…".to_string());
                 let tx2 = tx_c.clone();
                 let dir = state_c.plugins.plugins_dir();
