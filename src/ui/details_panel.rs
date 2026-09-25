@@ -17,6 +17,10 @@ pub struct DetailsPanel {
     play_button: gtk::Button,
     play_icon: gtk::Image,
     play_label: gtk::Label,
+    /// Nombre con el que `play_icon` esta registrado en THEMED_IMAGES.
+    /// Sirve para no re-registrar en cada tick del poller: el registro solo
+    /// hace falta cuando el icono cambia de verdad (Play <-> Stop).
+    play_icon_name: std::cell::RefCell<String>,
     is_dark: bool,
     time_label: gtk::Label,
     install_size_label: gtk::Label,
@@ -120,7 +124,9 @@ impl DetailsPanel {
         play_box.set_halign(gtk::Align::Center);
         let play_icon = gtk::Image::new();
         play_icon.set_pixel_size(16);
-        if let Some(tex) = helpers::load_themed_icon("play", is_dark) {
+        // Tamano 16 explicito: `pixel_size` no escala un paintable, asi que la
+        // textura se pide ya a esa medida (los PNG del bundle son de 20x20).
+        if let Some(tex) = helpers::load_themed_icon_sized("play", is_dark, 16) {
             play_icon.set_paintable(Some(&tex));
         } else {
             play_icon.set_icon_name(Some("corkytux-media-playback-start-symbolic"));
@@ -373,6 +379,7 @@ impl DetailsPanel {
             play_button: play_btn,
             play_icon,
             play_label,
+            play_icon_name: std::cell::RefCell::new(String::from("play")),
             is_dark,
             time_label: time,
             install_size_label: size_label,
@@ -423,12 +430,24 @@ impl DetailsPanel {
     }
 
     pub fn set_playing(&self, playing: bool) {
+        // Actualiza paintable y etiqueta. El registro en THEMED_IMAGES solo se
+        // renueva cuando el nombre cambia de verdad: el poller de 2 s llama a
+        // esta funcion en cada tick, y antes hacia `push` incondicional, con lo
+        // que el Vec crecia ~43.200 entradas por dia (la poda de
+        // refresh_themed_icons solo corre al cambiar de tema).
+        //
+        // No basta con registrar una sola vez en la construccion: al conmutar
+        // a Stop hay que re-registrar, o un cambio de tema posterior recargaria
+        // el icono como "play" mientras la etiqueta dice "Stop".
         let name = if playing { "stop" } else { "play" };
         self.play_label.set_text(if playing { "Stop" } else { "Play" });
-        if let Some(tex) = helpers::load_themed_icon(name, self.is_dark) {
+        if let Some(tex) = helpers::load_themed_icon_sized(name, self.is_dark, 16) {
             self.play_icon.set_paintable(Some(&tex));
         }
-        helpers::track_themed_image(&self.play_icon, name);
+        if self.play_icon_name.borrow().as_str() != name {
+            self.play_icon_name.replace(String::from(name));
+            helpers::track_themed_image(&self.play_icon, name);
+        }
     }
 
     pub fn set_time_played(&self, seconds: u64) {

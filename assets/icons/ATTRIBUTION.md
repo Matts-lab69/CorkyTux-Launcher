@@ -74,6 +74,17 @@ path, symbolic recoloring preserved), system icon theme second.
     logos are used solely to indicate the integration (same criterion as
     Steam/Lutris/Heroic entries), without implying endorsement.
 
+- `stop_dark.png`: **asset derivado en este repositorio** (2026-09-25), no una
+  copia de terceros. Es `stop.png` con la tinta de los píxeles opacos cambiada
+  de `#FFFFFF` a `#241F2E`, conservando dimensiones (20×20), canal alfa y
+  silueta byte a byte. `stop` era el único icono del bundle con tema que no
+  tenía variante de tinta oscura; sin ella, el tema claro caía al fallback y
+  pintaba tinta blanca sobre fondo claro. El convenio del bundle es que
+  `<name>.png` lleva tinta **clara** (para el tema oscuro, cuyo fondo es
+  `#000000`) y `<name>_dark.png` lleva la tinta **oscura** `#241F2E` (para el
+  tema claro). `_dark` nombra la tinta, no el tema. No se alteró ningún otro
+  asset.
+
 # Bundled emulator icons (Papirus)
 
 The files in `emulators/` are unmodified copies of the 48 px application

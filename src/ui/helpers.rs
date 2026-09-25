@@ -252,11 +252,54 @@ fn load_ico_pixbuf(path: &str) -> Option<gdk_pixbuf::Pixbuf> {
 
 pub fn load_themed_icon(name: &str, is_dark: bool) -> Option<gdk::Texture> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    // `_dark` es el nombre de la tinta **oscura**, no el de la variante "para
+    // tema oscuro". El tema oscuro tiene fondo negro (`theme::bg` = #000000),
+    // así que necesita tinta CLARA; el tema claro, fondo #F4F1F8, necesita la
+    // oscura. Por eso el oscuro carga `<name>.png` (tinta #FFFFFF) y el claro
+    // `<name>_dark.png` (tinta #241F2E). Invertir esto deja iconos invisibles:
+    // tinta oscura sobre negro y tinta blanca sobre blanco.
     let suffix = if is_dark { ".png" } else { "_dark.png" };
     let path = format!("{}/.local/share/corkytux/assets/{}{}", home, name, suffix);
-    // Fall back to the base asset when the theme variant is missing
-    // (e.g. corkytux has no _dark.png), then to a symbolic icon.
-    load_texture(&path).or_else(|| load_texture(&asset_path(name)))
+    // Fall back to the other variant when one is missing, then to a symbolic
+    // icon. The fallback stays so a future asset gap degrades instead of
+    // blanking the control.
+    load_texture(&path)
+        .or_else(|| {
+            let other = if is_dark { "_dark.png" } else { ".png" };
+            load_texture(&format!("{}/.local/share/corkytux/assets/{}{}", home, name, other))
+        })
+        .or_else(|| load_texture(&asset_path(name)))
+}
+
+/// Igual que [`load_themed_icon`] pero devuelve la textura **ya escalada** a
+/// `size` px.
+///
+/// Hace falta porque `GtkImage:pixel-size` no hace nada sobre un *paintable*
+/// (solo aplica a imágenes de tipo `ICON_NAME`, según el GIR de GTK), así que el
+/// widget adoptaría la resolución natural del PNG: `steam.png` son 256×256 y se
+/// pide en slots de 24 px. Escalar en carga hace que el paintable nazca al
+/// tamaño pedido **sin cambiar el tipo del widget**, que es lo que permite
+/// arreglar los 23 call sites de `themed_image()` de una vez.
+///
+/// `size <= 0` delega en la carga sin escalar. No agranda: si el asset ya es
+/// menor que lo pedido se devuelve tal cual, para no interpolar hacia arriba.
+pub fn load_themed_icon_sized(name: &str, is_dark: bool, size: i32) -> Option<gdk::Texture> {
+    if size <= 0 {
+        return load_themed_icon(name, is_dark);
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let base = format!("{}/.local/share/corkytux/assets/{}", home, name);
+    // Mismo criterio que `load_themed_icon`: `is_dark` (fondo negro) pide la
+    // tinta clara de `<name>.png`; el tema claro pide `<name>_dark.png`.
+    let (first, other) = if is_dark {
+        (format!("{}.png", base), format!("{}_dark.png", base))
+    } else {
+        (format!("{}_dark.png", base), format!("{}.png", base))
+    };
+    load_thumb(&first, size)
+        .or_else(|| load_thumb(&other, size))
+        .or_else(|| load_thumb(&asset_path(name), size))
+        .or_else(|| load_themed_icon(name, is_dark))
 }
 
 /// Register an externally-loaded themed image so refresh_themed_icons()
@@ -278,7 +321,11 @@ pub fn themed_image(name: &str, is_dark: bool, pixel_size: i32) -> gtk::Image {
 }
 
 fn set_themed_paintable(img: &gtk::Image, name: &str, is_dark: bool) {
-    if let Some(tex) = load_themed_icon(name, is_dark) {
+    // `pixel_size()` devuelve el valor que se fijo con `set_pixel_size`, que en
+    // un paintable no afecta al render pero si sirve como declaracion de
+    // intention: la textura se pide a ese tamano. Asi el refresco de tema
+    // recarga al tamano correcto sin guardar el tamano en THEMED_IMAGES.
+    if let Some(tex) = load_themed_icon_sized(name, is_dark, img.pixel_size()) {
         img.set_paintable(Some(&tex));
     } else {
         img.set_icon_name(Some("image-x-generic-symbolic"));
