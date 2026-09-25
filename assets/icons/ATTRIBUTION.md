@@ -89,5 +89,24 @@ Bundled files: `cemu.svg`, `desmume.svg`, `dolphin-emu.svg`, `duckstation.svg`,
 `mupen64plus-qt.svg`, `PCSX2.svg`, `ppsspp.svg`, `rpcs3.svg`, `ryujinx.svg`,
 `vita3k.svg`, and `net.kuribo64.melonDS.svg`.
 
-They are used only to identify the corresponding emulator. Azahar has no
-verified Papirus icon and keeps the project monogram fallback.
+They are used only to identify the corresponding emulator.
+
+# Bundled Azahar logo
+
+`emulators/azahar.svg` is an unmodified copy of the official Azahar Emulator
+application logo:
+
+- Source: https://github.com/azahar-emu/azahar
+- Upstream path: `dist/azahar.svg`
+- Commit: `56d99197957f9c89609def36514319d961ce01eb`
+- Authors: `angyartanddraw` and `PabloMK7`
+- License: CC BY 4.0, declared in the asset's embedded notice
+  (https://creativecommons.org/licenses/by/4.0/)
+- Format: official 512x512 SVG with `viewBox="0 0 512 512"`
+
+The Azahar repository's `license.txt` is GPL-2.0-or-later for the emulator
+source, while `dist/license.md` separately records third-party UI icons. The
+logo's own CC BY 4.0 notice is the applicable license for this bundled asset;
+the attribution above is retained with the unmodified file. The emulator
+resolver remains unchanged in this change, so Azahar still uses the project
+monogram `A` until a separate UI decision activates this verified asset.
