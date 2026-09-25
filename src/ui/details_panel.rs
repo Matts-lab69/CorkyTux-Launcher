@@ -468,12 +468,17 @@ impl DetailsPanel {
             let gen_c = self.size_gen.clone();
             let cur_c = self.current_game.clone();
             let (tx, rx) = std::sync::mpsc::channel::<String>();
+            let gname_t = gname.clone();
             std::thread::spawn(move || {
                 let expanded = shellexpand_tilde(&mpath);
                 let path = std::path::Path::new(&expanded);
                 let text = if path.exists() {
                     format!("Size: {}", format_size(query_path_size(path)))
                 } else {
+                    // Rama A: la carpeta existia al abrir el panel y
+                    // desaparecio antes de medir. Se pinta "--" igual que
+                    // los demas casos, pero el motivo queda en el log.
+                    eprintln!("[size] {}: path vanished during measure (path={})", gname_t, mpath);
                     "Size: --".to_string()
                 };
                 let _ = tx.send(text);
@@ -499,8 +504,14 @@ impl DetailsPanel {
                 Err(_) => glib::ControlFlow::Break,
             });
         } else if size.is_empty() {
+            // Rama B: nunca se midio (sin cache) y la carpeta no existe.
+            eprintln!("[size] {}: path missing, nothing cached (path={})", game_name, main_path);
             self.install_size_label.set_text("Size: --");
         } else if !main_exists {
+            // Rama C: habia medida cacheada pero la carpeta desaparecio.
+            // La cache se borro arriba; el "--" comparte texto con B pero
+            // el motivo queda distinguido aqui, en el log.
+            eprintln!("[size] {}: path gone, dropping stale cache (path={})", game_name, main_path);
             self.install_size_label.set_text("Size: --");
         } else {
             self.install_size_label.set_text(&format!("Size: {}", size));
