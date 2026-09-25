@@ -1,12 +1,15 @@
 use adw::prelude::*;
 use gtk::prelude::*;
 use std::cell::RefCell;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::AppState;
 use crate::backend::external::StoreManager;
+use crate::backend::import_move::{self, ExecPlan, ImportMode, MoveCandidate, MoveOutcome, Preflight};
 use crate::backend::plugin_process::{PluginEvent, ProcessKiller};
 use crate::ui::helpers;
+use crate::ui::import_manager;
 
 #[derive(Clone)]
 struct StoreGame {
@@ -153,6 +156,28 @@ fn url_encode(s: &str) -> String {
         }
     }
     out
+}
+
+/// Reescribe el ejecutable despues de mover la carpeta.
+///
+/// Si era relativo se deja igual: `import_to_library` lo prefija con el nuevo
+/// main_path. Si era absoluto y vivia dentro de la carpeta movida, se remapea.
+/// Si estaba fuera de la carpeta, no se toca: ese archivo no se movio.
+fn remap_exe(exe: &str, old_install: &str, new_install: &Path) -> String {
+    if exe.is_empty() {
+        return String::new();
+    }
+    if !exe.starts_with('/') && !exe.contains(':') {
+        return exe.to_string();
+    }
+    match Path::new(exe).strip_prefix(old_install) {
+        Ok(rel) => format!(
+            "{}/{}",
+            new_install.to_string_lossy().trim_end_matches('/'),
+            rel.display()
+        ),
+        Err(_) => exe.to_string(),
+    }
 }
 
 fn card(title: &str) -> (gtk::Frame, gtk::Box) {
@@ -1705,7 +1730,7 @@ impl StorePageHandle {
         // install_path is what created broken entries, so it is never
         // attempted here — `import_to_library` also guards it.
         if game.installed {
-            self.import_to_library(&game.title, &self.store, &game.app_id, &game.install_path, &game.executable, false, false);
+            self.import_with_manager(game);
             return;
         }
         if game.stale_registry && self.store == "epic" {
@@ -1925,6 +1950,156 @@ impl StorePageHandle {
             c.rebuild(&self.state, &self.details);
         }
         self.state_toast("Added to library", &name);
+    }
+
+    /// Raiz de destino del import permanente. Distinta de
+    /// `default_games_dir`, que es ~/Games/Heroic y usa el plugin para
+    /// instalar de cero: el move va a ~/Games, que es lo que crea install.sh.
+    fn games_root() -> PathBuf {
+        PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Games")
+    }
+
+    /// Boton "Import" de un juego ya instalado en Heroic. Pasa por el Import
+    /// Manager antes de registrar nada: el modo test es el comportamiento
+    /// actual, el permanente mueve los archivos a ~/Games.
+    fn import_with_manager(&self, game: &StoreGame) {
+        let cands = vec![MoveCandidate {
+            label: game.title.clone(),
+            store_tag: if self.store == "epic" { "Epic" } else { "GOG" }.to_string(),
+            install_path: PathBuf::from(&game.install_path),
+            // Heroic: el prefix_path que CorkyTux registra es suyo, no del
+            // launcher, asi que no se mueve (decision D3).
+            prefix_path: None,
+            executable: PathBuf::from(&game.executable),
+        }];
+        let games_dir = Self::games_root();
+
+        // El preflight recorre el arbol para medirlo, asi que va fuera del
+        // hilo de GTK.
+        let (tx, rx) = std::sync::mpsc::channel::<Preflight>();
+        let wc = cands.clone();
+        let wd = games_dir.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(import_move::preflight(&wc, &wd));
+        });
+
+        let vh = self.clone();
+        let game_c = game.clone();
+        crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
+            Ok(pf) => {
+                vh.ask_import_mode(&game_c, cands, pf);
+                glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(_) => glib::ControlFlow::Break,
+        });
+    }
+
+    fn ask_import_mode(&self, game: &StoreGame, cands: Vec<MoveCandidate>, pf: Preflight) {
+        let vh = self.clone();
+        let game_c = game.clone();
+        import_manager::ask(&self.parent, &game.title, &pf, move |mode| {
+            let Some(mode) = mode else { return };
+            if mode == ImportMode::Test {
+                // Sin cambios: exactamente lo que hacia el boton antes.
+                vh.import_to_library(
+                    &game_c.title,
+                    &vh.store,
+                    &game_c.app_id,
+                    &game_c.install_path,
+                    &game_c.executable,
+                    false,
+                    false,
+                );
+                return;
+            }
+            vh.start_move(&game_c, cands, pf, mode);
+        });
+    }
+
+    /// Modo permanente: mueve y despues registra con las rutas nuevas. El
+    /// progreso es indeterminado porque la copia va con `cp -a`, que no
+    /// reporta bytes; el total se muestra al final.
+    fn start_move(&self, game: &StoreGame, cands: Vec<MoveCandidate>, pf: Preflight, mode: ImportMode) {
+        let (bar, status) = self.progress(&format!("Moving {}", game.title));
+        status.set_text("Preparing the move…");
+        let games_dir = Self::games_root();
+
+        let (tx, rx) = std::sync::mpsc::channel::<(ExecPlan, Vec<(String, MoveOutcome)>)>();
+        std::thread::spawn(move || {
+            let ep = import_move::plan_for_mode(&pf, &cands, &games_dir, mode);
+            let res = import_move::execute(&ep, &games_dir);
+            let _ = tx.send((ep, res));
+        });
+
+        let vh = self.clone();
+        let game_c = game.clone();
+        crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
+            Ok((ep, results)) => {
+                bar.set_fraction(1.0);
+                vh.finish_move(&game_c, &ep, results);
+                glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                // Un pulso por vuelta del poll (cada 50 ms): barra viva sin
+                // lanzar un timer extra que haya que cancelar despues.
+                bar.pulse();
+                glib::ControlFlow::Continue
+            }
+            Err(_) => glib::ControlFlow::Break,
+        });
+    }
+
+    fn finish_move(&self, game: &StoreGame, ep: &ExecPlan, results: Vec<(String, MoveOutcome)>) {
+        let mine = results
+            .iter()
+            .find(|(label, _)| *label == game.title)
+            .map(|(_, o)| o.clone());
+
+        let plan = ep
+            .singles
+            .iter()
+            .find(|p| p.candidate.label == game.title)
+            .or_else(|| {
+                ep.groups
+                    .iter()
+                    .flat_map(|g| g.members.iter())
+                    .find(|p| p.candidate.label == game.title)
+            });
+
+        match mine {
+            Some(MoveOutcome::Failed(msg)) => {
+                // No se importa nada: el original esta intacto y el usuario
+                // decide si reintenta en modo test.
+                self.state_toast("Could not move the game", &msg);
+                return;
+            }
+            Some(MoveOutcome::WithWarning(msg)) => {
+                self.state_toast("Moved with a warning", &msg);
+            }
+            _ => {}
+        }
+
+        let new_install = plan
+            .map(|p| p.new_install_path())
+            .unwrap_or_else(|| PathBuf::from(&game.install_path));
+        let new_exe = remap_exe(&game.executable, &game.install_path, &new_install);
+        let moved = plan.map(|p| p.bytes).unwrap_or(0);
+        if moved > 0 {
+            self.state_toast(
+                "Moved to Games",
+                &format!("{} ({})", new_install.display(), import_move::human_bytes(moved)),
+            );
+        }
+        self.import_to_library(
+            &game.title,
+            &self.store,
+            &game.app_id,
+            new_install.to_string_lossy().as_ref(),
+            &new_exe,
+            false,
+            false,
+        );
     }
 
     fn progress(&self, title: &str) -> (gtk::ProgressBar, gtk::Label) {
