@@ -2,7 +2,7 @@
 
 ## Estado del documento
 
-- Estado: **actualización visual de la fila implementada**: el nombre ya no lleva sufijos de estado; `Linked` conserva una píldora compacta; `System` conserva el badge junto al nombre, muestra un aviso rojo estático `Found in system` y mantiene el botón `Set as linked` como única acción clickeable. El flujo `Working…`, el slot estable y el mapping de acciones permanecen intactos.
+- Estado: **actualización visual de la fila implementada**: el nombre ya no lleva sufijos de estado; `Linked` conserva una píldora compacta y un botón `Unlink` rojo; `System` conserva el badge junto al nombre, muestra un aviso rojo estático `Found in system` y mantiene el botón `Set as linked` como única acción clickeable. El flujo `Working…`, el slot estable y el mapping de acciones permanecen intactos salvo la adición de `Unlink`, que el usuario pidió expresamente para que el enlace no sea irreversible.
 - Alcance: jerarquía, espaciado y tratamiento visual de las filas de emuladores, con foco en la identidad, el estado y las acciones disponibles.
 - Fuentes verificadas: `src/ui/settings.rs`, `rebuild_emu_rows` y el handler `EmuOp`; `src/backend/theme.rs`, tokens de tema y paleta de acentos; `src/ui/helpers.rs`, CSS de aplicación; `assets/icons/ATTRIBUTION.md` para las licencias de los assets.
 - Cambios de esta versión: nombre canónico sin paréntesis; `.emu-status-pill` para `Linked`/`System`/nativo; aviso estático `.emu-system-notice` sin hover, cursor ni callback; botón `Set as linked` con `.emu-link-action`; el callback `link_emulator_in` no cambia. Las secciones de opciones A/B/C se conservan como trazabilidad histórica, pero la implementación vigente es badge + aviso estático + botón.
@@ -130,11 +130,11 @@ El nombre es la identidad canónica y se muestra solo, con `.details-title`; la 
 
 | Source | Señal de disponibilidad | Badge/etiqueta | Acción |
 | --- | --- | --- | --- |
-| `linked` | punto encendido | `Linked` (`.proton-path-badge` + `.emu-status-pill`) | ninguna; estado terminal |
+| `linked` | punto encendido | `Linked` (`.proton-path-badge` + `.emu-status-pill`) | `Unlink` (`.emu-unlink-action`); desenlaza sin tocar el binario |
 | `system` | punto encendido | `System` (`.proton-path-badge` + `.emu-status-pill`) + aviso estático `Found in system` (`.emu-system-notice`, 140 px) | `Set as linked` (`.emu-link-action`, 120 px) |
 | `appimage` | según disponibilidad reportada | — | `Remove` |
 | `none` o vacío, no nativo | punto apagado si no está instalado | — | `Install` o `Remove` según `installed` |
-| nativo, source vacío | punto encendido | `Linked` (`.proton-path-badge` + `.emu-status-pill`) | ninguna |
+| nativo, source vacío | punto encendido | `Linked` (`.proton-path-badge` + `.emu-status-pill`) | `Unlink` (`.emu-unlink-action`) |
 
 `Working…` describe una operación en curso, no el `source`. Por eso permanece en su slot estable; la acción de `System` permanece visible y se deshabilita durante la operación.
 
@@ -201,7 +201,7 @@ Mecanismo vigente:
 3. **Doble click antes de la respuesta:** el segundo click no dispara nada. GTK4 no despacha eventos de puntero a widgets insensibles, y `set_sensitive(false)` se aplica dentro del primer handler, antes de evaluarse el segundo press. El guard del punto 2 cubre además un `activate()` programático.
 4. **Rebuild a mitad de operación:** si un refresco de la lista (`settings.rs:1649`) recrea la fila mientras corre la operación, el botón nuevo nace deshabilitado: al construir una fila `system`, si `emu_status` contiene `"Working…"` para ese emulador, `btn.set_sensitive(false)`. El lock es así rebuild-proof y no depende de la vida del widget clickeado.
 5. **Re-activación (cómo y cuándo):** el botón deshabilitado no se re-habilita en el mismo widget; el widget se descarta y la recuperación la decide el resultado vía el rebuild de `EmuOp`:
-   - En éxito, `emu_status` se limpia y la lista nueva convierte la fila en `Linked` (badge solo, sin botón; estado terminal).
+   - En éxito, `emu_status` se limpia y la lista nueva convierte la fila en `Linked` (badge + botón `Unlink` rojo, que devuelve la fila a `System` si el binario sigue en el PATH).
    - En error, `emu_status` se limpia, el mensaje va al status global y la fila vuelve a `System` con badge, aviso y botón nuevo sensible `Set as linked`.
    No existe una ruta donde un botón viejo se re-habilite.
 6. **Durante la operación la acción `System` permanece visible y se deshabilita;** el feedback no la reemplaza.
@@ -562,7 +562,7 @@ Por qué 48 px (rango pedido 48-56): es el tamaño de las miniaturas de las list
 | `EmuOp` en vuelo (Installing) | — | `Installing…` | `.add-btn` + **nueva regla** `.add-btn:disabled` | 96 px |
 | `appimage` instalado | — | `Remove` | `.danger-btn` | 80 px |
 | `system` detectado | `System` + aviso `Found in system` (estático) | `Set as linked` | `.emu-link-action` + `.emu-system-notice` | 120 px + 140 px |
-| `linked` / native | `Linked` (`.proton-path-badge` + `.emu-status-pill`) | sin botón (compactada) | — | — |
+| `linked` / native | `Linked` (`.proton-path-badge` + `.emu-status-pill`) | `Unlink` (`.emu-unlink-action`, píldora roja) | — | 80 px |
 | `EmuOp(Err)` con recuperación | — | `Retry` (o re-expuesto `Install`/`Remove` según el estado previo) | `.emu-link-action` | 96 px |
 
 **Slot estable (12 chars, siempre presente):** durante la operación el slot muestra `Working…` (`st.set_width_chars(12)`, `settings.rs:2548`); en reposo queda vacío. `Working…` convive con la píldora o la acción y no empuja el layout. El label del botón (`Installing…`) es complementario, no duplicado.

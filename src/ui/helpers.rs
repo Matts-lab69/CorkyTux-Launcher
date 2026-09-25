@@ -614,6 +614,9 @@ pub fn apply_theme_css(theme: &ThemeManager) {
               .emu-link-action {{ font-size: 14px; min-height: 30px; padding: 0 14px; border-radius: 15px; background-color: color-mix(in srgb, {accent} 14%, transparent); border: 1.5px solid {accent_ui}; color: {text_main}; font-weight: bold; }}\
               .emu-link-action:hover {{ background-color: color-mix(in srgb, {accent} 22%, transparent); }}\
               .emu-link-action:disabled {{ background-color: color-mix(in srgb, {accent} 8%, transparent); border-color: {text_muted}; color: {text_muted}; }}\
+              .emu-unlink-action {{ font-size: 14px; min-height: 30px; padding: 0 14px; border-radius: 15px; background-color: color-mix(in srgb, #E5484D 14%, transparent); border: 1.5px solid #E5484D; color: #E5484D; font-weight: bold; }}\
+              .emu-unlink-action:hover {{ background-color: color-mix(in srgb, #E5484D 22%, transparent); }}\
+              .emu-unlink-action:disabled {{ background-color: color-mix(in srgb, #E5484D 8%, transparent); border-color: {text_muted}; color: {text_muted}; }}\
                .emu-system-notice {{ font-size: 14px; min-height: 30px; padding: 0 12px; border-radius: 8px; background-color: color-mix(in srgb, #E5484D 14%, transparent); border: 1.5px solid #E5484D; color: #E5484D; font-weight: bold; }}\
              .emu-row-card {{ background-color: {panel}; border: 1px solid {border}; border-radius: 6px; padding: 8px 10px; margin: 2px 0; }}\
              .emu-row-icon {{ background-color: {well}; border: 1px solid {border}; border-radius: 6px; min-width: 48px; min-height: 48px; font-size: 20px; font-weight: bold; color: {text_main}; }}\

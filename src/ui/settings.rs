@@ -2569,10 +2569,13 @@ fn rebuild_emu_rows(
         let is_appimage = emu.source == "appimage";
         let is_none = emu.source == "none" || emu.source.is_empty();
         let is_pin = emu.source == "system";
+        // `native` es el alias legacy de "linked" en backends antiguos que no
+        // devuelven `source`. Las dos formas tienen que abrir la misma puerta.
+        let is_linked = emu.source == "linked" || (emu.source.is_empty() && emu.native);
         let show_btn = if emu.source.is_empty() {
             !emu.native
         } else {
-            matches!(emu.source.as_str(), "system" | "appimage" | "none")
+            matches!(emu.source.as_str(), "system" | "appimage" | "none" | "linked")
         };
         if show_btn {
             if is_pin {
@@ -2587,6 +2590,8 @@ fn rebuild_emu_rows(
                 // Legacy backend fallback: honour installed directly.
                 gtk::Button::with_label(if emu.installed {
                     "Remove"
+                } else if is_linked {
+                    "Unlink"
                 } else {
                     "Install"
                 })
@@ -2594,6 +2599,7 @@ fn rebuild_emu_rows(
                 gtk::Button::with_label(match emu.source.as_str() {
                     "appimage" => "Remove",
                     "system" => "Set as linked",
+                    "linked" => "Unlink",
                     _ => "Install",
                 })
             };
@@ -2602,6 +2608,9 @@ fn rebuild_emu_rows(
             }
             if is_pin {
                 btn.add_css_class("emu-link-action");
+            }
+            if is_linked {
+                btn.add_css_class("emu-unlink-action");
             }
             let remove_c = if emu.source.is_empty() { emu.installed } else { is_appimage };
             if remove_c {
@@ -2639,7 +2648,11 @@ fn rebuild_emu_rows(
                 let name2 = name_c.clone();
                 let path2 = path_c.clone();
                 std::thread::spawn(move || {
-                    let res = if remove_c {
+                    let res = if is_linked {
+                        // Desenlazar, no instalar: el binario del sistema se
+                        // queda donde esta, solo se suelta el vinculo.
+                        crate::backend::plugins::PluginManager::unlink_emulator_in(&dir, &name2)
+                    } else if remove_c {
                         crate::backend::plugins::PluginManager::remove_emulator_in(&dir, &name2)
                     } else if is_pin {
                         crate::backend::plugins::PluginManager::link_emulator_in(&dir, &name2, &path2)

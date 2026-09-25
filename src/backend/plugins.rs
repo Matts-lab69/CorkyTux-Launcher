@@ -970,6 +970,50 @@ impl PluginManager {
         Ok(name.to_string())
     }
 
+    /// Suelta un emulador enlazado, dejando el binario intacto.
+    ///
+    /// El plugin expone `corky-unlink` desde siempre, pero el launcher no lo
+    /// invocaba: enlazar era una puerta de un solo sentido y la unica salida era
+    /// romper el enlace borrando el binario o editando `linked.json` a mano.
+    pub fn unlink_emulator(&self, name: &str) -> Result<String, String> {
+        Self::unlink_emulator_in(&self.plugins_dir(), name)
+    }
+
+    /// Thread-safe (no self).
+    pub fn unlink_emulator_in(dir: &Path, name: &str) -> Result<String, String> {
+        let exe = Self::emulator_manager_exe_in(dir);
+        if !exe.exists() {
+            return Err("Emulator Manager plugin not installed".into());
+        }
+        let output = Command::new(&exe)
+            .args(["corky-unlink", name])
+            .output()
+            .map_err(|e| format!("Unlink failed: {}", e))?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(if err.is_empty() {
+                format!("Unlink failed for {}", name)
+            } else {
+                err
+            });
+        }
+        // El plugin responde {"ok":bool,"message":str}: se propaga el motivo
+        // en vez de tragarselo, porque "no estaba enlazado" es informacion
+        // util si la fila se quedo desincronizada.
+        let v: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
+        let ok = v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
+        let msg = v.get("message").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        if ok {
+            Ok(if msg.is_empty() { name.to_string() } else { msg })
+        } else {
+            Err(if msg.is_empty() {
+                format!("Unlink failed for {}", name)
+            } else {
+                msg
+            })
+        }
+    }
+
     pub fn enabled_ids(&self) -> Vec<String> {
         self.imp()
             .plugins
