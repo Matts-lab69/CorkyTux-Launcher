@@ -53,7 +53,7 @@ pub fn show_game_settings_modal(
         let rpg_page = build_rpg_tab(state, game_name, parent);
         page_stack.add_titled(&rpg_page, Some("rpg"), "RPG Maker");
     } else if is_emu {
-        let emu_page = build_emulator_tab(state, game_name);
+        let emu_page = build_emulator_tab(state, game_name, parent);
         page_stack.add_titled(&emu_page, Some("emulator"), "Emulator");
     } else {
         let run_page = build_run_tab(state, game_name, parent);
@@ -1070,7 +1070,11 @@ fn emu_setting_label(id: &str) -> String {
     }
 }
 
-fn build_emulator_tab(state: &AppState, game_name: &str) -> gtk::Box {
+fn build_emulator_tab(
+    state: &AppState,
+    game_name: &str,
+    parent: &adw::ApplicationWindow,
+) -> gtk::Box {
     let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
     page.set_margin_top(12);
     page.set_margin_bottom(12);
@@ -1157,6 +1161,12 @@ fn build_emulator_tab(state: &AppState, game_name: &str) -> gtk::Box {
     }
 
     page.append(&emu_frame);
+
+    // ---- Install folder card (same rescue control as the Run tab; only
+    // renders when the stored folder is actually missing) ----
+    if let Some(card) = build_install_path_card(state, game_name, parent) {
+        page.append(&card);
+    }
     wrap_scroll(page)
 }
 
