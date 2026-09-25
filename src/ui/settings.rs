@@ -2483,13 +2483,19 @@ fn rebuild_emu_rows(
             badge.add_css_class("status-badge");
             badge.set_valign(gtk::Align::Center);
             row.append(&badge);
+        }
+        // system rows keep a functional action next to the badge: pin the
+        // detected PATH to an explicit linked entry (corky-link). linked is
+        // terminal (badge only); appimage/none/legacy get a button only.
+        let is_appimage = emu.source == "appimage";
+        let is_none = emu.source == "none" || emu.source.is_empty();
+        let is_pin = emu.source == "system";
+        let show_btn = if emu.source.is_empty() {
+            !emu.native
         } else {
-            let is_appimage = emu.source == "appimage";
-            let is_none = emu.source == "none" || emu.source.is_empty();
-            // A system-detected emulator already works via PATH; offering
-            // "Install" there would download a redundant AppImage. Instead
-            // offer pinning the detected path to an explicit linked entry.
-            let is_pin = emu.source == "system";
+            matches!(emu.source.as_str(), "system" | "appimage" | "none")
+        };
+        if show_btn {
             let btn = if emu.source.is_empty() {
                 // Legacy backend fallback: honour installed directly.
                 gtk::Button::with_label(if emu.installed {
