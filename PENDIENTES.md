@@ -137,6 +137,67 @@ Commits: `361d6c8` (asunto a) y `6b6ed24` (asunto b)
   el `scr` (texto completo sin scroll porque cabe); desc >300 capa en 300 con
   scroll; `top` `allocH=160` (banner visible); `body` 334/362, `content` 421.
 
+## Auditoría multi-distro (6 críticos, SIN arreglar)
+
+Detalle completo, con `archivo:línea` y fix mínimo, en
+[`docs/multidistro-audit.md`](docs/multidistro-audit.md) (42 hallazgos: 6
+críticos, 30 degradantes, 6 cosméticos). Auditoría estática: no se compiló ni
+ejecutó la app. Numeración heredada del triage original.
+
+### C14 — `prefix_in_use` falla abierta sin `pgrep` (**pérdida de datos**)
+`src/backend/import_move.rs:351-374`
+- `Command::new("pgrep")` falla → `running = false` → el prefix se declara
+  **libre** y el import permanente lo mueve con el juego corriendo.
+- `wineserver.lock` es un socket unix: uno que quedó de una sesión muerta
+  bloquea el import permanentemente sin explicación.
+- El fallback compara `prefix.display()` como substring crudo, sin el `norm()`
+  que sí usa el agrupado de prefixos compartidos.
+- **Fix:** invertir el default (sin `pgrep` = bloquear con aviso, no liberar),
+  comparar contra `norm(prefix)` y tratar socket sin proceso vivo como
+  obsoleto. Es el arreglo más prioritario de la auditoría.
+
+### C08 — Dependencia dura de binarios externos en 12 sitios
+`timeout` (×8: `plugins.rs:552,620,690,727`, `integration.rs:601,609,666`,
+`proton.rs:1314`), `ldconfig` (`proton.rs:617`), `pgrep` (×3), `pidof`
+(`proton.rs:825`), `which` (×3). Son de coreutils/procps, no POSIX: faltan en
+NixOS y en contenedores mínimos. El peor caso es `plugins.rs:727`: sin
+`timeout`, la lista de emuladores sale **vacía y sin error**.
+- **Fix:** timeout en proceso (`spawn` + `try_wait` con deadline + `kill`) y
+  que la ausencia de `pgrep`/`ldconfig` sea un estado explícito.
+
+### C01 — Rutas de Steam hardcodeadas: overlay roto en Flatpak/Snap
+`proton.rs:335-340` (`steam_client_path`) y `proton.rs:940-942,1035-1037`
+(`gameoverlayrenderer.so`) usan solo `~/.steam/steam`, mientras
+`proton.rs:480-485` sí lista las cuatro raíces. Con Steam Flatpak el toggle de
+overlay queda activo y no inyecta nada, sin aviso.
+- **Fix:** un único helper `steam_roots(home)` con las cuatro raíces.
+
+### C03 — `component_status` solo reconoce tokens x86 y sondea dos binarios de GameMode
+`proton.rs:617-628` parsea `ldconfig -p` buscando `x86-64`/`lib64` e
+`i386`/`lib32`; en aarch64 ninguno matchea, así que `installed32` **jamás** puede
+ser `true` en ARM. Además `proton.rs:605` sondea `gamemoderun` (cliente) y
+`proton.rs:687` sondea `gamemoded` (daemon) para la misma característica, así
+que las dos tarjetas pueden discrepar.
+- **Fix:** derivar la arch de `std::env::consts::ARCH` y unificar el sondeo en
+  `gamemoderun`. Antes hay que decidir qué significa "32-bit" en aarch64 para no
+  cambiar el contrato de `ComponentStatus` a ciegas.
+
+### C09 — El registro de plugins toma el primer `.tar.gz` sin filtrar por arch
+`plugins.rs:347-363` hace `break` en el primer `.tar.gz` del release. En un
+release con assets x86_64 y aarch64, un host ARM instala el binario x86_64:
+"instalado con éxito" y luego `Exec format error` en cada uso. La única
+validación del tarball es `size >= 100` (línea 448-452).
+- **Fix:** filtrar por `std::env::consts::ARCH`, error explícito si no hay
+  asset válido, y verificar checksum publicado.
+
+### C10 — El escaneo de Lutris ignora `XDG_DATA_HOME` y Lutris Flatpak
+`integration.rs:852-857` y `871-876` hardcodean `~/.local/share/lutris`, cuando
+**el mismo archivo** en `395-407` sí resuelve `XDG_DATA_HOME` y sí añade
+`~/.var/app/net.lutris.Lutris/data/lutris` para el artwork. Resultado: con
+`XDG_DATA_HOME` puesto, las carátulas se ven pero se importan 0 juegos; con
+Lutris Flatpak, lo mismo.
+- **Fix:** un único `lutris_data_dirs(home)` consumido por escaneo y artwork.
+
 ## Hallazgos nuevos (anotados, NO arreglados)
 
 ### DLC de Fortnite fallan en el modal "View"
