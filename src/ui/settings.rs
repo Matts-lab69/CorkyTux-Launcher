@@ -1,12 +1,14 @@
 use adw::prelude::*;
 use gtk::prelude::*;
 use std::cell::{Cell, RefCell};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::backend::game_model::GameSource;
+use crate::backend::import_move::{self, ExecPlan, ImportMode, MoveCandidate, MoveOutcome, Preflight};
 use crate::backend::theme::{ThemeManager, ThemeMode, all_accents};
 use crate::ui::helpers;
+use crate::ui::import_manager;
 use crate::AppState;
 
 fn make_settings_tab_icon(name: &str, theme: &ThemeManager) -> gtk::Image {
@@ -19,6 +21,492 @@ fn capitalize(s: &str) -> String {
         None => String::new(),
         Some(f) => f.to_uppercase().to_string() + c.as_str(),
     }
+}
+
+/// Rutas ya movidas por el import permanente, indexadas por nombre de juego.
+/// Vacio en modo test, y con una entrada por juego movido en los modos
+/// permanentes.
+type MovedPaths = std::collections::HashMap<String, (PathBuf, Option<PathBuf>)>;
+
+/// Candidatos de move para los juegos de Lutris. `prefix_path` es el prefix
+/// REAL de Lutris: el unico caso donde puede estar compartido entre juegos.
+fn lutris_candidates(
+    entries: &[crate::backend::integration::IntegrationEntry],
+    state: &AppState,
+) -> Vec<MoveCandidate> {
+    entries
+        .iter()
+        .filter(|e| state.game_model.get_game(&e.name).is_none())
+        .filter(|e| !e.path.is_empty() && Path::new(&e.path).exists())
+        .map(|e| MoveCandidate {
+            label: e.name.clone(),
+            store_tag: "Lutris".to_string(),
+            install_path: PathBuf::from(&e.path),
+            prefix_path: match e.prefix.is_empty() {
+                true => None,
+                false if !Path::new(&e.prefix).exists() => None,
+                false => Some(PathBuf::from(&e.prefix)),
+            },
+            executable: match e.executable.is_empty() {
+                true => PathBuf::from(&e.path),
+                false => PathBuf::from(&e.executable),
+            },
+        })
+        .collect()
+}
+
+/// Candidatos de move para el scan de Heroic. Sin prefix: el prefix_path que
+/// CorkyTux registra para los stores es suyo y no se mueve (decision D3).
+fn heroic_candidates(doc: &serde_json::Value, state: &AppState) -> Vec<MoveCandidate> {
+    doc.get("games")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|g| {
+            let title = g.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let ipath = g
+                .get("install_path")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
+            if title.is_empty() || ipath.is_empty() {
+                return None;
+            }
+            if state.game_model.get_game(&title).is_some() {
+                return None;
+            }
+            if !Path::new(&ipath).exists() {
+                return None;
+            }
+            let store = g.get("store").and_then(|x| x.as_str()).unwrap_or("epic");
+            let exe = g.get("executable").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            Some(MoveCandidate {
+                label: title,
+                store_tag: if store == "gog" { "GOG" } else { "Epic" }.to_string(),
+                install_path: PathBuf::from(&ipath),
+                prefix_path: None,
+                executable: if exe.is_empty() {
+                    PathBuf::from(&ipath)
+                } else {
+                    PathBuf::from(&exe)
+                },
+            })
+        })
+        .collect()
+}
+
+/// Total real movido. En los planes simples `bytes` ya incluye su prefix; el
+/// prefix de un grupo se cuenta una sola vez aqui, y los miembros anidados
+/// valen 0 porque sus datos viajan dentro del prefix.
+fn moved_total(ep: &ExecPlan) -> u64 {
+    let mut total: u64 = ep.singles.iter().map(|p| p.bytes).sum();
+    for g in &ep.groups {
+        if let Some(pm) = &g.prefix_move {
+            total = total.saturating_add(pm.bytes);
+        }
+        total = total.saturating_add(g.members.iter().map(|p| p.bytes).sum::<u64>());
+    }
+    total
+}
+
+/// Import bulk con Import Manager delante. Devuelve el control cuando el
+/// usuario elige modo: `on_ready` recibe las rutas movidas y una nota para el
+/// status. El preflight y el move van en hilos aparte porque miden el arbol y
+/// lanzan `cp -a`.
+fn bulk_import_via_manager<F>(
+    parent: &adw::ApplicationWindow,
+    label: &str,
+    cands: Vec<MoveCandidate>,
+    on_ready: F,
+) where
+    F: Fn(MovedPaths, String) + 'static,
+{
+    let games_dir = import_manager::games_root();
+    let (tx, rx) = std::sync::mpsc::channel::<Preflight>();
+    let wc = cands.clone();
+    let wd = games_dir.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(import_move::preflight(&wc, &wd));
+    });
+
+    // Clones hechos ANTES de anidar closures: un Fn/FnMut no puede mover sus
+    // propias capturas hacia dentro.
+    let ready: Rc<F> = Rc::new(on_ready);
+    let parent_poll = parent.clone();
+    let label_poll = label.to_string();
+    let cands_poll = cands.clone();
+    let dir_poll = games_dir.clone();
+
+    crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
+        Ok(pf) => {
+            let ready_a = ready.clone();
+            let parent_a = parent_poll.clone();
+            let cands_a = cands_poll.clone();
+            let dir_a = dir_poll.clone();
+            import_manager::ask(&parent_a, &label_poll, &pf, move |mode| {
+                let Some(mode) = mode else { return };
+                let ready_b = ready_a.clone();
+                let parent_b = parent_a.clone();
+                let cands_b = cands_a.clone();
+                let dir_b = dir_a.clone();
+                let pf_b = pf.clone();
+
+                if mode == ImportMode::Test {
+                    ready_b(MovedPaths::new(), String::new());
+                    return;
+                }
+
+                let (bar, status) = import_manager::progress(&parent_b, "Moving games");
+                status.set_text("Preparing the move…");
+                let (tx2, rx2) =
+                    std::sync::mpsc::channel::<(ExecPlan, Vec<(String, MoveOutcome)>)>();
+                let c2 = cands_b.clone();
+                let d2 = dir_b.clone();
+                std::thread::spawn(move || {
+                    let ep = import_move::plan_for_mode(&pf_b, &c2, &d2, mode);
+                    let res = import_move::execute(&ep, &d2);
+                    let _ = tx2.send((ep, res));
+                });
+
+                let ready_c = ready_b.clone();
+                let bar_c = bar.clone();
+                let status_c = status.clone();
+                crate::backend::plugin_process::poll_once_local(rx2, move |r2| match r2 {
+                    Ok((ep, results)) => {
+                        bar_c.set_fraction(1.0);
+                        let bad = results.iter().filter(|(_, o)| !o.is_ok()).count();
+                        let mut map = MovedPaths::new();
+                        for p in &ep.singles {
+                            map.insert(
+                                p.candidate.label.clone(),
+                                (p.new_install_path(), p.new_prefix_path()),
+                            );
+                        }
+                        for g in &ep.groups {
+                            for p in &g.members {
+                                map.insert(
+                                    p.candidate.label.clone(),
+                                    (p.new_install_path(), p.new_prefix_path()),
+                                );
+                            }
+                        }
+                        let mut note = format!(
+                            "; moved {} to Games",
+                            import_move::human_bytes(moved_total(&ep))
+                        );
+                        if bad > 0 {
+                            note.push_str(&format!(", {} not moved", bad));
+                        }
+                        status_c.set_text(&note);
+                        ready_c(map, note);
+                        glib::ControlFlow::Break
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        bar_c.pulse();
+                        glib::ControlFlow::Continue
+                    }
+                    Err(_) => {
+                        ready_c(
+                            MovedPaths::new(),
+                            "; the move could not be finished".to_string(),
+                        );
+                        glib::ControlFlow::Break
+                    }
+                });
+            });
+            glib::ControlFlow::Break
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+        Err(_) => glib::ControlFlow::Break,
+    });
+}
+
+/// Registra en la biblioteca lo que devuelve un scan de Steam o Lutris.
+/// `moved` lleva las rutas nuevas del import permanente; vacio = modo test.
+#[allow(clippy::too_many_arguments)]
+fn import_scanned_entries(
+    entries: &[crate::backend::integration::IntegrationEntry],
+    source: &str,
+    moved: &MovedPaths,
+    move_note: &str,
+    state: &AppState,
+    status: &gtk::Label,
+    parent: &adw::ApplicationWindow,
+    sb: &Rc<RefCell<Option<crate::ui::sidebar::Sidebar>>>,
+    ch: &Rc<RefCell<Option<crate::ui::center::CenterHandle>>>,
+    details: &Rc<RefCell<Option<crate::ui::details_panel::DetailsPanel>>>,
+) {
+    let mut imported = 0;
+    let mut fresh: Vec<(String, String)> = Vec::new();
+    let mut art_jobs: Vec<(String, String)> = Vec::new();
+    let source_c = source.to_string();
+    let entries_c = entries.len();
+    for entry in entries {
+        if state.game_model.get_game(&entry.name).is_some() {
+            continue;
+        }
+        // C++ parity: lutris runner -> executor, playtime -> timeSpent
+        let executor = if source == "Lutris" {
+            crate::backend::integration::lutris_runner_to_executor(&entry.runner)
+        } else {
+            String::new()
+        };
+        // Import permanente: main_path y prefix_path vienen del plan ya
+        // ejecutado. En modo test siguen siendo los de Lutris.
+        let (main_path, prefix_path) = match moved.get(&entry.name) {
+            Some((p, pre)) => (
+                p.to_string_lossy().to_string(),
+                pre.clone().unwrap_or_else(|| entry.prefix.clone()),
+            ),
+            None => (entry.path.clone(), entry.prefix.clone()),
+        };
+        let executable = if moved.contains_key(&entry.name) {
+            import_manager::remap_exe(&entry.executable, &entry.path, Path::new(&main_path))
+        } else if !entry.executable.is_empty() {
+            entry.executable.clone()
+        } else {
+            main_path.clone()
+        };
+        let game_entry = crate::backend::game_model::GameEntry {
+            name: entry.name.clone(),
+            executable,
+            main_path: main_path.clone(),
+            prefix_path,
+            proton: entry.proton.clone(),
+            overrides: String::new(),
+            steam_id: entry.appid.clone(),
+            banner: String::new(),
+            icon: String::new(),
+            time_spent: (entry.playtime_hours * 3600.0).round() as u64,
+            last_played: 0,
+            favorite: false,
+            source: GameSource::from_str(source),
+            executor,
+            emu_settings: std::collections::HashMap::new(),
+            lutris_runner: entry.runner.clone(),
+            environment: String::new(),
+            args_before: String::new(),
+            args_after: String::new(),
+            steam_overlay: false,
+            steam_runtime: false,
+            use_umu: false,
+            use_shared_prefix: false,
+            shared_prefix_name: String::new(),
+            wined3d: false,
+            native_wayland: false,
+            game_mode: false,
+            mango_hud: false,
+            lutris_slug: entry.slug.clone(),
+            fake_steam_id: String::new(),
+            install_size: String::new(),
+            heroic_store: String::new(),
+            heroic_app_id: String::new(),
+            heroic_eac: false,
+            heroic_battleye: false,
+        };
+        state.game_model.import_external_game(game_entry);
+        // Artwork resolves in the background below (network on the main
+        // thread froze the whole launcher).
+        fresh.push((entry.name.clone(), main_path.clone()));
+        art_jobs.push((
+            entry.name.clone(),
+            if source == "Steam" {
+                entry.appid.clone()
+            } else {
+                String::new()
+            },
+        ));
+        imported += 1;
+    }
+    // Background artwork (Steam CDN, Lutris, SGDB), applied back on the main
+    // thread like the AddGame flow.
+    if !art_jobs.is_empty() {
+        let (atx, arx) = std::sync::mpsc::channel::<Vec<(String, String, String)>>();
+        std::thread::spawn(move || {
+            let fresh_mgr = crate::backend::integration::IntegrationManager::new();
+            let mut done = Vec::new();
+            for (gname, gid) in art_jobs {
+                let (i, b) = fresh_mgr.resolve_artwork(&gname, &gid);
+                let mut banner = b;
+                if banner.is_none() {
+                    if let Some(ref ic) = i {
+                        banner = fresh_mgr.banner_from_icon(ic, &gname);
+                    }
+                }
+                done.push((gname, i.unwrap_or_default(), banner.unwrap_or_default()));
+            }
+            let _ = atx.send(done);
+        });
+        let gm_c = state.game_model.clone();
+        let sb_c = sb.clone();
+        let ch_c = ch.clone();
+        let det_c = details.clone();
+        let state_cc = state.clone();
+        let status_cc = status.clone();
+        let total = imported;
+        let note_c = move_note.to_string();
+        glib::idle_add_local(move || match arx.try_recv() {
+            Ok(done) => {
+                for (gname, icon, banner) in &done {
+                    if !icon.is_empty() || !banner.is_empty() {
+                        gm_c.set_artwork(gname, banner, icon);
+                    }
+                }
+                if let Some(ref sb) = *sb_c.borrow() {
+                    sb.apply_current_filter();
+                }
+                if let Some(ref ch) = *ch_c.borrow() {
+                    ch.rebuild(&state_cc, &det_c);
+                }
+                status_cc.set_text(&format!(
+                    "{}: found {}, imported {} new (artwork done){}",
+                    source_c, entries_c, total, note_c
+                ));
+                glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(_) => glib::ControlFlow::Break,
+        });
+    }
+    // C++ applyScanPlugins parity: dep + dll scans for the fresh imports
+    // (single summary dialog if deps are missing).
+    if !fresh.is_empty() {
+        crate::run_plugin_scans_batch(state, parent, fresh);
+    }
+    state.recent_model.refresh(30);
+    // The library views must show the imports at once (no manual filter
+    // switching needed).
+    if let Some(ref sb) = *sb.borrow() {
+        sb.apply_current_filter();
+    }
+    if let Some(ref ch) = *ch.borrow() {
+        ch.rebuild(state, details);
+    }
+    status.set_text(&format!(
+        "{}: found {}, imported {} new{}",
+        source,
+        entries.len(),
+        imported,
+        move_note
+    ));
+}
+
+/// Registra en la biblioteca lo que devuelve el scan de Heroic. `moved` lleva
+/// las rutas nuevas del import permanente; vacio = modo test. El `prefix_path`
+/// sigue siendo el de CorkyTux, nunca se mueve (decision D3).
+#[allow(clippy::too_many_arguments)]
+fn import_heroic_entries(
+    doc: &serde_json::Value,
+    moved: &MovedPaths,
+    move_note: &str,
+    state: &AppState,
+    status: &gtk::Label,
+    sb: &Rc<RefCell<Option<crate::ui::sidebar::Sidebar>>>,
+    ch: &Rc<RefCell<Option<crate::ui::center::CenterHandle>>>,
+    details: &Rc<RefCell<Option<crate::ui::details_panel::DetailsPanel>>>,
+) {
+    let games = doc
+        .get("games")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut imported = 0;
+    let def_proton = state.config.launcher_value("defaultProton").unwrap_or_default();
+    for g in &games {
+        let title = g.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        if title.is_empty() || state.game_model.get_game(&title).is_some() {
+            continue;
+        }
+        let store = g.get("store").and_then(|x| x.as_str()).unwrap_or("epic").to_string();
+        let app_id = g.get("app_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let orig_ipath = g
+            .get("install_path")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        if orig_ipath.is_empty() || !Path::new(&orig_ipath).exists() {
+            continue;
+        }
+        let exe = g.get("executable").and_then(|x| x.as_str()).unwrap_or("").to_string();
+
+        // Modo permanente: main_path y ejecutable vienen del plan ya ejecutado.
+        let (main_path, executable) = match moved.get(&title) {
+            Some((p, _)) => {
+                let remapped = import_manager::remap_exe(&exe, &orig_ipath, p);
+                let exe_final = if remapped.is_empty() {
+                    p.to_string_lossy().to_string()
+                } else {
+                    remapped
+                };
+                (p.to_string_lossy().to_string(), exe_final)
+            }
+            None => {
+                let exe_final = if exe.is_empty() {
+                    orig_ipath.clone()
+                } else if exe.starts_with('/') {
+                    exe.clone()
+                } else {
+                    format!("{}/{}", orig_ipath.trim_end_matches('/'), exe)
+                };
+                (orig_ipath.clone(), exe_final)
+            }
+        };
+
+        let prefix = state
+            .config
+            .base_path_for("prefixes")
+            .join(&title)
+            .display()
+            .to_string();
+        let entry = crate::backend::game_model::GameEntry {
+            name: title.clone(),
+            executable,
+            main_path,
+            prefix_path: prefix,
+            proton: def_proton.clone(),
+            overrides: String::new(),
+            steam_id: String::new(),
+            banner: String::new(),
+            icon: String::new(),
+            time_spent: 0,
+            last_played: 0,
+            favorite: false,
+            source: GameSource::from_str(if store == "gog" { "GOG" } else { "Epic" }),
+            executor: String::new(),
+            emu_settings: std::collections::HashMap::new(),
+            lutris_runner: String::new(),
+            environment: String::new(),
+            args_before: String::new(),
+            args_after: String::new(),
+            steam_overlay: false,
+            steam_runtime: false,
+            use_umu: false,
+            use_shared_prefix: false,
+            shared_prefix_name: String::new(),
+            wined3d: false,
+            native_wayland: false,
+            game_mode: false,
+            mango_hud: false,
+            lutris_slug: String::new(),
+            fake_steam_id: String::new(),
+            install_size: String::new(),
+            heroic_store: store,
+            heroic_app_id: app_id,
+            heroic_eac: g.get("eac").and_then(|x| x.as_bool()).unwrap_or(false),
+            heroic_battleye: g.get("battleye").and_then(|x| x.as_bool()).unwrap_or(false),
+        };
+        state.game_model.add_game(entry);
+        imported += 1;
+    }
+    state.recent_model.refresh(30);
+    if let Some(ref s) = *sb.borrow() {
+        s.apply_current_filter();
+    }
+    if let Some(ref c) = *ch.borrow() {
+        c.rebuild(state, details);
+    }
+    status.set_text(&format!("Heroic: imported {} new{}", imported, move_note));
 }
 
 pub fn show_settings_modal(
@@ -1519,151 +2007,38 @@ pub fn show_settings_modal(
             } else {
                 state_clone.integration.scan_lutris()
             };
-            let mut imported = 0;
-            let mut fresh: Vec<(String, String)> = Vec::new();
-            let mut art_jobs: Vec<(String, String)> = Vec::new();
-            let source_c = source.clone();
-            let entries_c = entries.len();
-            for entry in &entries {
-                if state_clone.game_model.get_game(&entry.name).is_some() {
-                    continue;
-                }
-                // C++ parity: lutris runner → executor, playtime → timeSpent
-                let executor = if source == "Lutris" {
-                    crate::backend::integration::lutris_runner_to_executor(&entry.runner)
-                } else {
-                    String::new()
-                };
-                let executable = if !entry.executable.is_empty() {
-                    entry.executable.clone()
-                } else {
-                    entry.path.clone()
-                };
-                let game_entry = crate::backend::game_model::GameEntry {
-                    name: entry.name.clone(),
-                    executable,
-                    main_path: entry.path.clone(),
-                    prefix_path: entry.prefix.clone(),
-                    proton: entry.proton.clone(),
-                    overrides: String::new(),
-                    steam_id: entry.appid.clone(),
-                    banner: String::new(),
-                    icon: String::new(),
-                    time_spent: (entry.playtime_hours * 3600.0).round() as u64,
-                    last_played: 0,
-                    favorite: false,
-                    source: GameSource::from_str(&source),
-                    executor,
-                    emu_settings: std::collections::HashMap::new(),
-                    lutris_runner: entry.runner.clone(),
-                    environment: String::new(),
-                    args_before: String::new(),
-                    args_after: String::new(),
-                    steam_overlay: false,
-                    steam_runtime: false,
-                    use_umu: false,
-                    use_shared_prefix: false,
-                    shared_prefix_name: String::new(),
-                    wined3d: false,
-                    native_wayland: false,
-                    game_mode: false,
-                    mango_hud: false,
-                    lutris_slug: entry.slug.clone(),
-                    fake_steam_id: String::new(),
-                    install_size: String::new(),
-                    heroic_store: String::new(),
-                    heroic_app_id: String::new(),
-                    heroic_eac: false,
-                    heroic_battleye: false,
-                };
-                state_clone.game_model.import_external_game(game_entry);
-                // Artwork resolves in the background below (network on the
-                // main thread froze the whole launcher).
-                fresh.push((entry.name.clone(), entry.path.clone()));
-                art_jobs.push((
-                    entry.name.clone(),
-                    if source == "Steam" {
-                        entry.appid.clone()
-                    } else {
-                        String::new()
-                    },
-                ));
-                imported += 1;
-            }
-            // Background artwork (Steam CDN, Lutris, SGDB), applied back on
-            // the main thread like the AddGame flow.
-            if !art_jobs.is_empty() {
-                let (atx, arx) = std::sync::mpsc::channel::<Vec<(String, String, String)>>();
-                std::thread::spawn(move || {
-                    let fresh_mgr =
-                        crate::backend::integration::IntegrationManager::new();
-                    let mut done = Vec::new();
-                    for (gname, gid) in art_jobs {
-                        let (i, b) = fresh_mgr.resolve_artwork(&gname, &gid);
-                        let mut banner = b;
-                        if banner.is_none() {
-                            if let Some(ref ic) = i {
-                                banner = fresh_mgr.banner_from_icon(ic, &gname);
-                            }
-                        }
-                        done.push((
-                            gname,
-                            i.unwrap_or_default(),
-                            banner.unwrap_or_default(),
-                        ));
-                    }
-                    let _ = atx.send(done);
+            // Lutris: el Import Manager decide el modo antes de registrar
+            // nada. Steam no se toca y sigue yendo directo al import.
+            if source != "Steam" {
+                let label = format!("{} Lutris games", entries.len());
+                let cands = lutris_candidates(&entries, &state_clone);
+                let st = state_clone.clone();
+                let sc = status_c.clone();
+                let pc = parent_c.clone();
+                let sbx = sb_c.clone();
+                let chx = ch_c.clone();
+                let dx = det_c.clone();
+                let srcx = source.clone();
+                let entsx = entries.clone();
+                bulk_import_via_manager(&pc, &label, cands, move |moved, note| {
+                    import_scanned_entries(
+                        &entsx, &srcx, &moved, &note, &st, &sc, &pc, &sbx, &chx, &dx,
+                    );
                 });
-                let gm_c = state_clone.game_model.clone();
-                let sb_c = sb_c.clone();
-                let ch_c = ch_c.clone();
-                let det_c = det_c.clone();
-                let state_cc = state_clone.clone();
-                let status_cc = status_c.clone();
-                let total = imported;
-                glib::idle_add_local(move || match arx.try_recv() {
-                    Ok(done) => {
-                        for (gname, icon, banner) in &done {
-                            if !icon.is_empty() || !banner.is_empty() {
-                                gm_c.set_artwork(gname, banner, icon);
-                            }
-                        }
-                        if let Some(ref sb) = *sb_c.borrow() {
-                            sb.apply_current_filter();
-                        }
-                        if let Some(ref ch) = *ch_c.borrow() {
-                            ch.rebuild(&state_cc, &det_c);
-                        }
-                        status_cc.set_text(&format!(
-                            "{}: found {}, imported {} new (artwork done)",
-                            source_c, entries_c, total
-                        ));
-                        glib::ControlFlow::Break
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-                    Err(_) => glib::ControlFlow::Break,
-                });
+                return;
             }
-            // C++ applyScanPlugins parity: dep + dll scans for the fresh
-            // imports (single summary dialog if deps are missing).
-            if !fresh.is_empty() {
-                crate::run_plugin_scans_batch(&state_clone, &parent_c, fresh);
-            }
-            state_clone.recent_model.refresh(30);
-            // The library views must show the imports at once (no manual
-            // filter switching needed).
-            if let Some(ref sb) = *sb_c.borrow() {
-                sb.apply_current_filter();
-            }
-            if let Some(ref ch) = *ch_c.borrow() {
-                ch.rebuild(&state_clone, &det_c);
-            }
-            status_c.set_text(&format!(
-                "{}: found {}, imported {} new",
-                source,
-                entries.len(),
-                imported
-            ));
+            import_scanned_entries(
+                &entries,
+                &source,
+                &MovedPaths::new(),
+                "",
+                &state_clone,
+                &status_c,
+                &parent_c,
+                &sb_c,
+                &ch_c,
+                &det_c,
+            );
         });
         row.append(&lbl);
         row.append(&scan);
@@ -1713,79 +2088,25 @@ pub fn show_settings_modal(
             let sb_cc = sb_c.clone();
             let ch_cc = ch_c.clone();
             let det_cc = det_c.clone();
+            let parent_cc = parent.clone();
             glib::idle_add_local(move || match rx.try_recv() {
                 Ok(Ok(doc)) => {
-                    let games = doc.get("games").and_then(|x| x.as_array()).cloned().unwrap_or_default();
-                    let mut imported = 0;
-                    let def_proton = state_c.config.launcher_value("defaultProton").unwrap_or_default();
-                    for g in &games {
-                        let title = g.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                        if title.is_empty() || state_c.game_model.get_game(&title).is_some() {
-                            continue;
-                        }
-                        let store = g.get("store").and_then(|x| x.as_str()).unwrap_or("epic").to_string();
-                        let app_id = g.get("app_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                        let ipath = g.get("install_path").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                        if ipath.is_empty() || !std::path::Path::new(&ipath).exists() {
-                            continue;
-                        }
-                        let exe = g.get("executable").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                        let executable = if exe.is_empty() {
-                            ipath.clone()
-                        } else if exe.starts_with('/') {
-                            exe.clone()
-                        } else {
-                            format!("{}/{}", ipath.trim_end_matches('/'), exe)
-                        };
-                        let prefix = state_c.config.base_path_for("prefixes").join(&title).display().to_string();
-                        let entry = crate::backend::game_model::GameEntry {
-                            name: title.clone(),
-                            executable,
-                            main_path: ipath,
-                            prefix_path: prefix,
-                            proton: def_proton.clone(),
-                            overrides: String::new(),
-                            steam_id: String::new(),
-                            banner: String::new(),
-                            icon: String::new(),
-                            time_spent: 0,
-                            last_played: 0,
-                            favorite: false,
-                            source: GameSource::from_str(if store == "gog" { "GOG" } else { "Epic" }),
-                            executor: String::new(),
-                            emu_settings: std::collections::HashMap::new(),
-                            lutris_runner: String::new(),
-                            environment: String::new(),
-                            args_before: String::new(),
-                            args_after: String::new(),
-                            steam_overlay: false,
-                            steam_runtime: false,
-                            use_umu: false,
-                            use_shared_prefix: false,
-                            shared_prefix_name: String::new(),
-                            wined3d: false,
-                            native_wayland: false,
-                            game_mode: false,
-                            mango_hud: false,
-                            lutris_slug: String::new(),
-                            fake_steam_id: String::new(),
-                            install_size: String::new(),
-                            heroic_store: store,
-                            heroic_app_id: app_id,
-                            heroic_eac: g.get("eac").and_then(|x| x.as_bool()).unwrap_or(false),
-                            heroic_battleye: g.get("battleye").and_then(|x| x.as_bool()).unwrap_or(false),
-                        };
-                        state_c.game_model.add_game(entry);
-                        imported += 1;
+                    let cands = heroic_candidates(&doc, &state_c);
+                    if cands.is_empty() {
+                        status_cc.set_text("Heroic: no new games to import");
+                        return glib::ControlFlow::Break;
                     }
-                    state_c.recent_model.refresh(30);
-                    if let Some(ref sb) = *sb_cc.borrow() {
-                        sb.apply_current_filter();
-                    }
-                    if let Some(ref ch) = *ch_cc.borrow() {
-                        ch.rebuild(&state_c, &det_cc);
-                    }
-                    status_cc.set_text(&format!("Heroic: imported {} new", imported));
+                    let label = format!("{} Heroic games", cands.len());
+                    let st = state_c.clone();
+                    let sc = status_cc.clone();
+                    let pc = parent_cc.clone();
+                    let sbx = sb_cc.clone();
+                    let chx = ch_cc.clone();
+                    let dx = det_cc.clone();
+                    let docx = doc.clone();
+                    bulk_import_via_manager(&pc, &label, cands, move |moved, note| {
+                        import_heroic_entries(&docx, &moved, &note, &st, &sc, &sbx, &chx, &dx);
+                    });
                     glib::ControlFlow::Break
                 }
                 Ok(Err(e)) => {

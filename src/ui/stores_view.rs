@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use gtk::prelude::*;
 use std::cell::RefCell;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use crate::AppState;
@@ -156,28 +156,6 @@ fn url_encode(s: &str) -> String {
         }
     }
     out
-}
-
-/// Reescribe el ejecutable despues de mover la carpeta.
-///
-/// Si era relativo se deja igual: `import_to_library` lo prefija con el nuevo
-/// main_path. Si era absoluto y vivia dentro de la carpeta movida, se remapea.
-/// Si estaba fuera de la carpeta, no se toca: ese archivo no se movio.
-fn remap_exe(exe: &str, old_install: &str, new_install: &Path) -> String {
-    if exe.is_empty() {
-        return String::new();
-    }
-    if !exe.starts_with('/') && !exe.contains(':') {
-        return exe.to_string();
-    }
-    match Path::new(exe).strip_prefix(old_install) {
-        Ok(rel) => format!(
-            "{}/{}",
-            new_install.to_string_lossy().trim_end_matches('/'),
-            rel.display()
-        ),
-        Err(_) => exe.to_string(),
-    }
 }
 
 fn card(title: &str) -> (gtk::Frame, gtk::Box) {
@@ -1952,13 +1930,6 @@ impl StorePageHandle {
         self.state_toast("Added to library", &name);
     }
 
-    /// Raiz de destino del import permanente. Distinta de
-    /// `default_games_dir`, que es ~/Games/Heroic y usa el plugin para
-    /// instalar de cero: el move va a ~/Games, que es lo que crea install.sh.
-    fn games_root() -> PathBuf {
-        PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Games")
-    }
-
     /// Boton "Import" de un juego ya instalado en Heroic. Pasa por el Import
     /// Manager antes de registrar nada: el modo test es el comportamiento
     /// actual, el permanente mueve los archivos a ~/Games.
@@ -1972,7 +1943,7 @@ impl StorePageHandle {
             prefix_path: None,
             executable: PathBuf::from(&game.executable),
         }];
-        let games_dir = Self::games_root();
+        let games_dir = import_manager::games_root();
 
         // El preflight recorre el arbol para medirlo, asi que va fuera del
         // hilo de GTK.
@@ -2023,7 +1994,7 @@ impl StorePageHandle {
     fn start_move(&self, game: &StoreGame, cands: Vec<MoveCandidate>, pf: Preflight, mode: ImportMode) {
         let (bar, status) = self.progress(&format!("Moving {}", game.title));
         status.set_text("Preparing the move…");
-        let games_dir = Self::games_root();
+        let games_dir = import_manager::games_root();
 
         let (tx, rx) = std::sync::mpsc::channel::<(ExecPlan, Vec<(String, MoveOutcome)>)>();
         std::thread::spawn(move || {
@@ -2083,7 +2054,7 @@ impl StorePageHandle {
         let new_install = plan
             .map(|p| p.new_install_path())
             .unwrap_or_else(|| PathBuf::from(&game.install_path));
-        let new_exe = remap_exe(&game.executable, &game.install_path, &new_install);
+        let new_exe = import_manager::remap_exe(&game.executable, &game.install_path, &new_install);
         let moved = plan.map(|p| p.bytes).unwrap_or(0);
         if moved > 0 {
             self.state_toast(
