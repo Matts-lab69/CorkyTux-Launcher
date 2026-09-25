@@ -815,6 +815,9 @@ fn build_install_path_card(
         let btn2 = btn.clone();
         let old_main_for_exe = old_main_c.clone();
         let old_exe_for_exe = old_exe.clone();
+        // Dueno para el callback Fn de select_folder: no puede mover
+        // old_main_c (captura del Fn exterior), asi que duena una copia.
+        let old_main_cc = old_main_c.clone();
         let p_c2 = p_c.clone();
         dlg.select_folder(Some(&p_c), gio::Cancellable::NONE, move |res| {
             btn2.set_sensitive(true);
@@ -856,7 +859,6 @@ fn build_install_path_card(
             let g_cc = g_c.clone();
             let status_lbl2 = status_lbl.clone();
             let chosen2 = chosen.clone();
-            let old_main_cc = old_main_c.clone();
             glib::idle_add_local(move || match rx.try_recv() {
                 Ok(Ok(rel)) => {
                     // Selective, atomic Games.ini update — set_game_value
