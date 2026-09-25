@@ -143,7 +143,7 @@ Detalle completo, con `archivo:línea` y fix mínimo, en
 [`docs/multidistro-audit.md`](docs/multidistro-audit.md) (42 hallazgos del
 triage: 6 críticos, 30 degradantes, 6 cosméticos). Auditoría estática: no se
 compiló ni ejecutó la app. Numeración heredada del triage original.
-**Crítico pendiente: 1** (C03); C08 a medias.
+**Críticos: los 6 corregidos.** C08 a medias (3 de 12 externalidades).
 
 ### ~~C14 — `prefix_in_use` falla abierta sin `pgrep`~~ — **CORREGIDO**
 Era el único hallazgo con riesgo de pérdida de datos: sin `pgrep` (NixOS,
@@ -168,8 +168,8 @@ con el juego corriendo.
   archivo).
 
 ### C08 — Dependencia dura de binarios externos — **PARCIALMENTE CORREGIDO**
-**Hecho: los 8 usos de `timeout`.** Quedan 5 sitios de `ldconfig`, `pgrep`,
-`pidof` y `which`.
+**Hecho: los 8 usos de `timeout` y el único de `ldconfig`.** Quedan 4 sitios
+de `pgrep`, `pidof` y `which`.
 
 - **Fix aplicado:** `plugin_process::output_with_timeout()` (`spawn` +
   `try_wait` en bucle de 25 ms contra un `Instant` de corte, `kill` + `wait`
@@ -184,10 +184,9 @@ con el juego corriendo.
   como `[emu] corky-list …`, así un fallo ya es diagnosticable.
 - Efecto colateral: `wineserver -k` en `proton.rs` deja de perder
   `ws.to_str()`, así que un prefix no-UTF8 ya no degrada a programa vacío.
-- **Fix pendiente:** `ldconfig` (`proton.rs:617`, se resuelve con C03),
-  `pgrep` (`proton.rs:261`), `pidof` (`proton.rs:825`, sustituible por `/proc`)
-  y `which` (`integration.rs:27`, `proton.rs:597,822`, sustituible por una
-  búsqueda en `PATH`).
+- **Fix pendiente:** `pgrep` (`proton.rs:261`), `pidof` (`proton.rs:825`,
+  sustituible por `/proc`) y `which` (`integration.rs:27`,
+  `proton.rs:597,822`, sustituible por una búsqueda en `PATH`).
 
 ### C01 — Rutas de Steam hardcodeadas: overlay roto en Flatpak/Snap — **CORREGIDO**
 `steam_client_path()` y los dos resolvers del overlay usaban solo
@@ -211,15 +210,29 @@ nada, sin aviso.
   `steam_client_path()` no cubría el lanzamiento vía Heroic. Ahora usa
   `steam_client_path_for()`, y la lista queda en un único sitio.
 
-### C03 — `component_status` solo reconoce tokens x86 y sondea dos binarios de GameMode
-`proton.rs:617-628` parsea `ldconfig -p` buscando `x86-64`/`lib64` e
-`i386`/`lib32`; en aarch64 ninguno matchea, así que `installed32` **jamás** puede
-ser `true` en ARM. Además `proton.rs:605` sondea `gamemoderun` (cliente) y
-`proton.rs:687` sondea `gamemoded` (daemon) para la misma característica, así
-que las dos tarjetas pueden discrepar.
-- **Fix:** derivar la arch de `std::env::consts::ARCH` y unificar el sondeo en
-  `gamemoderun`. Antes hay que decidir qué significa "32-bit" en aarch64 para no
-  cambiar el contrato de `ComponentStatus` a ciegas.
+### C03 — `component_status` solo reconoce tokens x86 y sondea dos binarios de GameMode — **CORREGIDO**
+Decisiones tomadas por el usuario: derivar de `ARCH` + rutas del sistema, y
+sondear siempre `gamemoderun`.
+
+- `component_bits(lib)` deriva el soporte de `std::env::consts::ARCH`. En
+  aarch64 `installed32` es `false` **por construcción**: no hay distros ARM de
+  32 bits con las que contar, y fingir lo contrario sería peor que no medirlo.
+- `library_present(lib, bits)` busca por prefijo de nombre base
+  (`libMangoHud.so` cubre `libMangoHud.so.1.2`) en el multiarch, `/usr/lib`,
+  `/usr/lib64`, `/usr/local/lib`, `/lib`, `lib32`/`libx32` para 32 bits y
+  `/run/current-system/sw/lib` para NixOS. El multiarch lo dice
+  `gcc -print-multiarch`, con `$MULTIARCH` y `<arch>-linux-gnu` de fallback.
+- **Defecto corregido que era independiente de la arquitectura:**
+  `installed64` nacía en `available`, así que un `mangohud` sin su biblioteca de
+  64 bits se anunciaba como instalado. Los flags solo podían activarse; ahora
+  pueden ser negativos.
+- Se eliminó la dependencia de `ldconfig`: era el último sitio de ese binario.
+- `graphics_component_status()` ahora sondea `gamemoderun` como
+  `component_status()`. Se unificó en el cliente porque es lo que CorkyTux
+  inyecta al lanzar, y que el daemon esté instalado no significa que GameMode
+  se aplique.
+- `component_status_text()` no se tocó: el contrato de las etiquetas de la UI es
+  idéntico.
 
 ### C09 — El registro de plugins toma el primer `.tar.gz` sin filtrar por arch — **CORREGIDO**
 - **Severidad real, verificada contra la API el 2026-09-25:** los cinco

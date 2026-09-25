@@ -29,10 +29,10 @@ Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE (los cinco de
 | Cosmético | 6 |
 | **Total** | **42** |
 
-Cuentas del triage original, conservadas como registro. **Estado actual:** de
-los 6 críticos, **C14, C10, C09 y C01 están corregidos**, y **C08 lo está en su
-parte de `timeout` (8 de 12 sitios)**. **Queda abierto C03**, más el resto de
-C08. Ningún degradante ni cosmético se ha tocado.
+Cuentas del triage original, conservadas como registro. **Estado actual: los 6
+críticos están corregidos.** C08 lo está en 9 de sus 12 sitios (los 8 de
+`timeout` y el único de `ldconfig`); quedan 3 externalidades de bajo impacto.
+Ningún degradante ni cosmético se ha tocado.
 
 Definiciones:
 
@@ -90,43 +90,77 @@ el origen real del hallazgo.
 
 ### C03 — `component_status` solo reconoce tokens x86 y consulta dos binarios distintos de GameMode
 
-- `src/backend/proton.rs:617-628` — parsea `ldconfig -p` buscando
-  `x86-64`/`lib64` para 64 bits y `i386`/`lib32` para 32 bits.
-- `src/backend/proton.rs:614` — `installed64` se inicializa a `available`, así
-  que el bloque `ldconfig` solo puede **activar** flags, nunca corregirlos.
-- `src/backend/proton.rs:605` sondea `gamemoderun`; `src/backend/proton.rs:687`
-  sondea `gamemoded` para la misma característica.
+**Estado: CORREGIDO** (decisiones tomadas por el usuario: derivar de `ARCH` +
+rutas del sistema, y sondear siempre `gamemoderun`).
+
+- `src/backend/proton.rs:617-628` (versión auditada) — parseaba `ldconfig -p`
+  buscando `x86-64`/`lib64` para 64 bits y `i386`/`lib32` para 32 bits.
+- `src/backend/proton.rs:614` — `installed64` se inicializaba a `available`, así
+  que el bloque `ldconfig` solo podía **activar** flags, nunca corregirlos.
+- `src/backend/proton.rs:605` sondeaba `gamemoderun`; `src/backend/proton.rs:687`
+  sondeaba `gamemoded` para la misma característica.
 
 **Impacto:**
 
 1. En aarch64 `ldconfig -p` imprime `aarch64`/`arm64`; ninguno de los dos
-   tokens matchea, luego `installed32` **jamás** puede ser `true` en ARM y la
-   UI afirma que no hay soporte 32-bit aunque el paquete de 32 bits esté
-   instalado.
-2. Sin `ldconfig` (NixOS, contenedores) el bloque se salta entero y
-   `installed32` queda en `false` sin explicación.
-3. `gamemoderun` es el cliente y `gamemoded` el daemon. Sondear el daemon no
-   dice si GameMode puede aplicarse a un juego: en un sistema con el socket
-   de usuario sin activar el chequeo falla aunque el cliente funcione, y en
-   un sistema con cliente pero daemon ausente el chequeo pasa aunque no
-   ocurra nada. Las dos tarjetas de la UI pueden discrepar entre sí.
+   tokens matchea, luego `installed32` **jamás** podía ser `true` en ARM y la
+   UI afirmaba que no hay soporte 32-bit aunque el paquete estuviera instalado.
+2. Sin `ldconfig` (NixOS, contenedores) el bloque se saltaba entero y
+   `installed32` quedaba en `false` sin explicación.
+3. El defecto más serio era independiente de la arquitectura: como
+   `installed64` nacía en `available`, un `mangohud` instalado **sin** su
+   biblioteca de 64 bits se anunciaba como instalado. El flag no podía
+   ponerse a `false` nunca.
+4. `gamemoderun` es el cliente y `gamemoded` el daemon. Sondear el daemon no
+   dice si GameMode puede aplicarse: sin el socket de usuario activo el chequeo
+   falla aunque el cliente funcione, y con cliente pero daemon ausente el
+   chequeo pasa aunque no ocurra nada. Las dos tarjetas de la UI pueden
+   discrepar.
 
-**Fix:** derivar la arquitectura de `std::env::consts::ARCH` en vez de parsear
-`ldconfig`, y unificar el sondeo en `gamemoderun` (el cliente que es el que
-se usa al lanzar).
+**Fix aplicado:**
+
+1. `component_bits(lib)` deriva el soporte de `std::env::consts::ARCH`: el host
+   es de 64 bits si su arch es `x86_64`/`aarch64`/`powerpc64`/`riscv64`/`s390x`,
+   y puede ejecutar 32 bits si es `x86`/`x86_64`. En aarch64 `installed32` es
+   `false` **por construcción**, no por un token que no matche: no hay
+   distribuciones ARM de 32 bits con las que contar, y fingir lo contrario sería
+   peor que no medirlo.
+2. `library_present(lib, bits)` busca por prefijo de nombre base
+   (`libMangoHud.so` cubre `libMangoHud.so.1.2`) en los directorios reales:
+   el multiarch, `/usr/lib`, `/usr/lib64`, `/usr/local/lib`, `/lib`, los
+   subdirectorios `lib32`/`libx32` para 32 bits, y
+   `/run/current-system/sw/lib` para NixOS. El nombre del multiarch lo dice
+   `gcc -print-multiarch`, con `$MULTIARCH` y `<arch>-linux-gnu` como
+   fallbacks.
+3. Los flags ahora **pueden ser negativos**: se resuelven de verdad en lugar de
+   solo activarse.
+4. Se eliminó la dependencia de `ldconfig` (cierra el último sitio de C08 de
+   este binario).
+5. `graphics_component_status()` sondea `gamemoderun`, igual que
+   `component_status()`. Se unificó en el **cliente**: es lo que CorkyTux
+   inyecta al lanzar, y que el daemon esté instalado no significa que GameMode
+   se aplique.
+6. `component_status_text()` **no se tocó**: su contrato es idéntico, así que
+   las etiquetas de la UI no cambian de forma.
+
+**Verificación estática contra el sistema real:** en este host
+(`x86_64`, sin `gcc -print-multiarch` funcional, sin `MULTIARCH`) el fallback da
+`x86_64-linux-gnu`; existen `/usr/lib/libMangoHud.so`,
+`/usr/lib/libgamemodeauto.so.0` (symlink) y `/usr/bin/gamemoderun`, así que
+`available` e `installed64` siguen en `true` como antes del cambio, y
+`installed32` en `false` porque no hay multilib. Sin regresión en x86.
 
 ### C08 — Dependencia dura de binarios externos (`timeout`, `ldconfig`, `pgrep`, `pidof`, `which`) en 12 sitios
 
-**Estado: PARCIALMENTE CORREGIDO.** Los 8 usos de `timeout` están eliminados
-(ver "Fix aplicado"); quedan 5 sitios de `ldconfig`, `pgrep`, `pidof` y
-`which`.
+**Estado: PARCIALMENTE CORREGIDO.** Los 8 usos de `timeout` y el único de
+`ldconfig` están eliminados (9 de 12); quedan 3: `pgrep`, `pidof` y `which`.
 
 Reparto verificado en el triage:
 
 | Binario | Call sites |
 | --- | --- |
 | `timeout` | **corregidos**: `plugins.rs:552`, `plugins.rs:620`, `plugins.rs:690`, `plugins.rs:727`, `integration.rs:601`, `integration.rs:609`, `integration.rs:666`, `proton.rs:1314` |
-| `ldconfig` | `proton.rs:617` |
+| `ldconfig` | **corregido** con C03: `proton.rs:617` ya no lo invoca |
 | `pgrep` | **corregidos** los 2 de `import_move.rs` (C14); queda `proton.rs:261` |
 | `pidof` | `proton.rs:825` |
 | `which` | `integration.rs:27`, `proton.rs:597`, `proton.rs:822` |
@@ -167,10 +201,9 @@ De paso, `wineserver -k` en `proton.rs:1317` deja de perder `ws.to_str()`:
 se pasa el `PathBuf` directo, así que un prefix no-UTF8 ya no degrada a
 programa vacío.
 
-**Fix pendiente:** eliminar `ldconfig`, `pgrep`, `pidof` y `which` de los 5
-sitios que quedan. `ldconfig` se puede evitar con `std::env::consts::ARCH`
-(que es justo lo que pide C03) y `which`/`pidof` se pueden sustituir por una
-búsqueda en `PATH` y por `/proc`, respectivamente.
+**Fix pendiente:** eliminar `pgrep`, `pidof` y `which` de los 3 sitios que
+quedan. `pidof` se puede sustituir por `/proc` (el mismo patrón que se aplicó
+en C14) y `which` por una búsqueda en `$PATH`, que es POSIX.
 
 ### C09 — El registro de plugins elige el primer `.tar.gz` sin filtrar por arquitectura
 
@@ -381,15 +414,17 @@ Requiere que el usuario abra la app; el agente no la ejecuta.
 
 1. ~~**C14**~~ — **hecho**: tri-estado `PrefixUsage` + atribución por
    `/proc/<pid>/environ` en vez de `pgrep`.
-2. ~~**C08**, y en particular el `timeout(1)` de `plugins.rs:727`~~ —
-   **hecho**: `output_with_timeout()` cubre los 8 sitios. Quedan 5 sitios de
-   `ldconfig`/`pgrep`/`pidof`/`which`; el de `ldconfig` se resuelve con C03.
-3. **C10** — **hecho**: `lutris_data_roots()` compartido por escaneo y artwork.
-4. **C09** — **hecho**: `asset_arch_ok()` filtra por `std::env::consts::ARCH`.
-5. **C01** — **hecho**: `steam_roots()` compartido por los cuatro consumidores.
-6. **C03** — el único crítico abierto. Requiere decidir antes qué significa
-   "32-bit" en aarch64, para no cambiar el contrato de `ComponentStatus` a
-   ciegas. Cerrarlo también elimina el `ldconfig` de C08.
+2. ~~**C08**~~ — **hecho en su parte grande**: `output_with_timeout()` cubre los
+   8 sitios de `timeout` (incluida la pestaña de Emuladores que salía vacía sin
+   error) y C03 eliminó el único `ldconfig`. Quedan 3 externalidades de bajo
+   impacto: `pgrep`, `pidof` y `which`.
+3. ~~**C10**~~ — **hecho**: `lutris_data_roots()` compartido por escaneo y
+   artwork.
+4. ~~**C09**~~ — **hecho**: `asset_arch_ok()` filtra por `std::env::consts::ARCH`.
+5. ~~**C01**~~ — **hecho**: `steam_roots()` compartido por los cuatro
+   consumidores.
+6. ~~**C03**~~ — **hecho**: soporte 32/64 derivado de `ARCH` y rutas del sistema,
+   y `gamemoderun` como único criterio de GameMode.
 7. El resto de degradantes por lotes. El siguiente con mejor relación
    esfuerzo/impacto es **D05**: la API ya publica `digest: sha256:…`, así que
    verificar la descarga es directamente implementable. Después, D12, D13, D19

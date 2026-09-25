@@ -661,12 +661,104 @@ impl ProtonManager {
         which("umu-run")
     }
 
+    /// Directorios donde vive una biblioteca, para un ancho de bits dado.
+    ///
+    /// En vez de parsear `ldconfig -p`: ese binario no existe en NixOS ni en
+    /// contenedores mínimos, y sus líneas solo distinguen atributos en x86, así
+    /// que en aarch64 el flag de 32 bits nunca podía activarse. Con rutas del
+    /// sistema la pregunta se responde en cualquier arquitectura, y el resultado
+    /// puede ser negativo: antes los flags solo se activaban, nunca se
+    /// desactivaban, así que un `mangohud` presente sin su biblioteca de 64
+    /// bits se anunciaba como instalado.
+    fn library_search_dirs(bits: u8) -> Vec<PathBuf> {
+        // El nombre del multiarch lo dice el compilador, no una constante:
+        // `aarch64-linux-gnu`, `x86_64-linux-gnu`, etc. Se invoca `gcc`
+        // directamente, sin `which`: si no está en el PATH, la llamada falla y
+        // se cae al patrón de abajo, que es el correcto en NixOS.
+        let multiarch = std::env::var("MULTIARCH")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| {
+                std::process::Command::new("gcc")
+                    .arg("-print-multiarch")
+                    .output()
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .filter(|s| !s.is_empty())
+            })
+            .unwrap_or_else(|| format!("{}-linux-gnu", std::env::consts::ARCH));
+
+        let base = PathBuf::from("/usr/lib");
+        let mut dirs = vec![
+            base.join(&multiarch),
+            base.clone(),
+            PathBuf::from("/usr/lib64"),
+            PathBuf::from("/usr/local/lib"),
+            PathBuf::from("/lib"),
+        ];
+        if bits == 32 {
+            // Las bibliotecas de 32 bits viven en un subdirectorio con el
+            // sufijo del multiarch (`lib32`, `libx32`) en Fedora/openSUSE y en
+            // los multilib de Arch; en Debian lo hacen en el mismo multiarch,
+            // que ya esta en la lista.
+            let short = multiarch.split('-').next().unwrap_or("x86_64");
+            dirs.push(base.join("lib32"));
+            dirs.push(base.join("libx32"));
+            dirs.push(base.join(format!("lib{}", short)));
+        }
+        // `/run/current-system/sw/lib` es la biblioteca del sistema en NixOS.
+        dirs.push(PathBuf::from("/run/current-system/sw/lib"));
+        dirs
+    }
+
+    /// ¿Está esta biblioteca (por nombre base, p. ej. `libMangoHud.so`) en
+    /// alguno de los directorios de `bits`?
+    fn library_present(lib: &str, bits: u8) -> bool {
+        for dir in Self::library_search_dirs(bits) {
+            // `read_dir` en vez de un glob: los nombres reales llevan sufijo de
+            // version (`libMangoHud.so.1.2`), asi que hay que comparar prefijos.
+            let Ok(entries) = fs::read_dir(&dir) else { continue };
+            for entry in entries.flatten() {
+                // `is_file` sigue los enlaces simbolicos, que es como suele
+                //.installarse la version actual de la biblioteca.
+                if entry.file_name().to_string_lossy().starts_with(lib)
+                    && entry.path().is_file()
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Soporte 32/64 bits de un componente, derivado de la arquitectura del
+    /// host y de las rutas del sistema.
+    ///
+    /// `installed64`/`installed32` describen la **biblioteca**, no el
+    /// ejecutable. En aarch64 `installed32` es `false` por construccion: no hay
+    /// distribuciones ARM de 32 bits con las que contar, y fingir lo contrario
+    /// seria peor que no medirlo. En x86 y x86_64 si se busca de verdad, porque
+    /// ahi el soporte de 32 bits varia segun como se instalo el paquete.
+    fn component_bits(lib: &str) -> (bool, bool) {
+        let arch = std::env::consts::ARCH;
+        let host_is_64 = matches!(arch, "x86_64" | "aarch64" | "powerpc64" | "riscv64" | "s390x");
+        let host_can_run_32 = matches!(arch, "x86" | "x86_64");
+        let installed64 = host_is_64 && Self::library_present(lib, 64);
+        let installed32 = host_can_run_32 && Self::library_present(lib, 32);
+        (installed64, installed32)
+    }
+
     /// C++ graphicsComponentStatus parity: availability + 64/32-bit install
     /// state + the game's own architecture (from its PE header).
     pub fn component_status(&self, which: &str, exe: &str) -> ComponentStatus {
+        // `gamemoderun` es el cliente que CorkyTux inyecta al lanzar el juego.
+        // `gamemoded` es el daemon: que este instalado no significa que GameMode
+        // se aplique, porque sin el socket de usuario activo no ocurre nada.
+        // Sondear el daemon hacia que las dos tarjetas de la UI discreparas.
         let (bin, lib) = match which {
-            "mangohud" => ("mangohud", "libMangoHud"),
-            _ => ("gamemoderun", "libgamemodeauto"),
+            "mangohud" => ("mangohud", "libMangoHud.so"),
+            _ => ("gamemoderun", "libgamemodeauto.so"),
         };
         let available = Command::new(bin)
             .arg("--version")
@@ -675,25 +767,11 @@ impl ProtonManager {
             .status()
             .map(|s| s.success())
             .unwrap_or(false);
-        let mut installed64 = available;
-        let mut installed32 = false;
-        if available {
-            if let Ok(output) = Command::new("ldconfig").arg("-p").output() {
-                let text = String::from_utf8_lossy(&output.stdout);
-                for line in text.lines() {
-                    if line.contains(lib) {
-                        if line.contains("i386") || line.contains("lib32") {
-                            installed32 = true;
-                        }
-                        if line.contains("x86-64") || line.contains("lib64") {
-                            installed64 = true;
-                        }
-                    }
-                }
-            }
+        let (installed64, installed32) = if available {
+            Self::component_bits(lib)
         } else {
-            installed64 = false;
-        }
+            (false, false)
+        };
         let game_arch = if exe.is_empty() {
             String::new()
         } else {
@@ -747,8 +825,10 @@ impl ProtonManager {
         format!("{}: not installed", display)
     }
 
+    /// Las mismas dos características que `component_status`, con el mismo
+    /// criterio: el cliente inyectado, no el daemon.
     pub fn graphics_component_status(&self) -> Vec<(GraphicsComponent, bool)> {
-        let gamemode = Command::new("gamemoded")
+        let gamemode = Command::new("gamemoderun")
             .arg("--version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
