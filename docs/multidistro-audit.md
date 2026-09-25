@@ -406,9 +406,63 @@ Requiere que el usuario abra la app; el agente no la ejecuta.
 1. Matriz de estados transitorios de la fila de emuladores: `Installing…`,
    `.add-btn:disabled` y el ancho de 96 px (ya registrado en `DESIGN.md`).
 2. Centrado de los iconos Papirus y del monograma en el slot de 48 px.
+   **El `Align::Center` ya está en HEAD desde `ac0e0fb`**; si los iconos se ven
+   sin centrar, casi siempre es que se está ejecutando un binario anterior al
+   fix (ver "Binario en uso" más abajo), no que el CSS falle.
 3. `Found in system` estático y `Set as linked` clickeable en la misma fila.
 4. Aviso `*** BUG *** In pixman_region32_init_rect: Invalid rectangle passed`:
-   causa no confirmada, aplazada por no ser crítica.
+   se reprodujo 7 veces al arrancar el build de `0b388df`; la causa sigue sin
+   confirmar y no es crítica.
+
+## Medición del centrado de los iconos (2026-09-25)
+
+Medido con `rsvg-convert` + análisis del canal alfa, sin ejecutar la app. Los
+12 SVG de `assets/icons/emulators/` declaran `width="48" height="48"` (aspecto
+1:1 exacto, ninguno con `viewBox`), así que no hay deformación por escala.
+
+| Grupo | bbox (unidades de viewBox) | centro | desfase |
+| --- | --- | --- | --- |
+| Los 11 iconos Papirus restantes | — | — | ≤ 0,4 px a 40 px |
+| `mupen64plus-qt.svg`, bbox global | 41,0 × 43,0 · x[6,0; 47,0] y[4,0; 47,0] | (26,5; 25,5) | **(+2,51; +1,50)** |
+| `mupen64plus-qt.svg`, **logo solo** (M + fondo) | 36,0 × 41,1 · x[6,0; 42,0] y[4,0; 45,1] | **(24,0; 24,5)** | **(+0,00; +0,54)** |
+| `mupen64plus-qt.svg`, distintivo verde | 22,0 × 23,0 · x[25,0; 47,0] y[24,0; 47,0] | (36,0; 35,5) | (+12,00; +11,51) |
+
+**El desfase global NO es un defecto: es el distintivo verde.** Es un círculo de
+estado en la esquina inferior derecha (elementos `<circle>`/`<rect>` del asset,
+`cx=36 cy=35 r=11`), colocado ahí a propósito por Papirus. El logo principal
+—la "M" y su fondo redondeado— está **centrado en horizontal con exactitud
+numérica** (+0,00) y a +0,54 unidades en vertical, que son 0,45 px a tamaño de
+render de 40 px: imperceptible.
+
+### Por qué NO se recorta
+
+Se simuló el ajuste literal pedido (añadir `viewBox="2.51 1.50 48 48"`, que
+centra el bbox global) sobre una copia temporal. Resultado:
+
+| Medida | Antes | Después del `viewBox` |
+| --- | --- | --- |
+| Logo principal | (+0,00; +0,54) | **(−2,52; −0,96)** |
+| Distintivo verde | (+12,00; +11,51) | (+9,49; +10,01) |
+| bbox global | (+2,51; +1,50) | (−0,01; +0,00) |
+
+El recorte centró el bbox global y **movió el logo 2,1 px a la izquierda y
+0,8 px arriba**, que es justo lo que se pretendía eliminar. Intercambia una
+asimetría de distintivo de 0,45 px e imperceptible por un descentrado visible
+del logo. **El asset se deja intacto** y la afirmación de
+`assets/icons/ATTRIBUTION.md` de que son "unmodified copies" sigue siendo
+cierta.
+
+## Binario en uso (2026-09-25)
+
+`~/.local/share/applications/corkytux.desktop` lanza
+`~/.local/share/corkytux/corkytux`, cuyo binario es **anterior a `ac0e0fb`**
+(compilado 02:58:41; el fix es de 05:18:26). Se confirmó por strings: ese
+binario **no contiene** `emu-system-notice` ni `Found in system`, mientras que
+`target/debug/corkytux` (05:55) sí. Antes del fix, `icon_slot` usaba
+`Align::Start` y la imagen no tenía `set_size_request`, es decir la imagen
+quedaba anclada a la esquina superior izquierda del slot: ese es el síntoma
+"iconos sin centrar". Para que el lanzador del menú vea el fix hay que
+reinstalar el binario y los assets.
 
 ## Orden de corrección
 
