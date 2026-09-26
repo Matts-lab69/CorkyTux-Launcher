@@ -727,6 +727,11 @@ fn run(url: &str) -> Result<String, Failure> {
         .call("Page.navigate", json!({ "url": url }), Duration::from_secs(60))
         .map_err(|e| (why::NAV, format!("no se pudo abrir la URL de login: {}", e)))?;
 
+    // La ventana recién abierta se trae al frente una vez: si el usuario
+    // estaba en otra cosa, el login no queda escondido atrás. `pgid` es el PID
+    // del Chromium hijo (líder de su grupo), que es lo que busca xdotool.
+    traer_al_frente(pgid as u32);
+
     eprintln!("VENTANA:navegador abierto; inicia sesion ahi");
 
     let deadline = Instant::now() + LOGIN_TIMEOUT;
@@ -1105,6 +1110,71 @@ fn ventana_login(pantalla_w: u32, pantalla_h: u32) -> (u32, u32, u32, u32) {
     (W, H, x, y)
 }
 
+/// Trae la ventana del Chromium del login al frente, una sola vez.
+///
+/// Busca sus ventanas por PID (`xdotool search --onlyvisible --pid`) y les
+/// manda `windowraise` + `windowfocus`. Es best-effort con reintentos cortos:
+/// si xdotool no está o la ventana todavía no existe, solo se avisa por
+/// stderr y el login sigue igual.
+///
+/// NO es un "siempre encima" pegajoso: xdotool no tiene primitiva para fijar
+/// el estado `_NET_WM_STATE_ABOVE` de EWMH (y `wmctrl`, que sí la tiene, no
+/// está instalado). Si el usuario clickea el launcher después, Chromium vuelve
+/// atrás como cualquier ventana normal. Fijarlo de verdad exigiría mandar el
+/// client-message de EWMH a mano (código X11 nuevo) o depender de `wmctrl`.
+fn traer_al_frente(pid: u32) {
+    const INTENTOS: u32 = 5;
+    for intento in 1..=INTENTOS {
+        match ventana_de_pid(pid) {
+            Some(wid) => {
+                let _ = comando_xdotool(&["windowraise", &wid]);
+                let _ = comando_xdotool(&["windowfocus", &wid]);
+                eprintln!("VENTANA:ventana del login traída al frente");
+                return;
+            }
+            None if intento < INTENTOS => {
+                std::thread::sleep(Duration::from_millis(500));
+            }
+            None => {
+                eprintln!("aviso: no se encontró la ventana del login para traerla al frente");
+            }
+        }
+    }
+}
+
+/// Devuelve el ID de la primera ventana visible del PID dado, o `None`.
+fn ventana_de_pid(pid: u32) -> Option<String> {
+    let out = comando_xdotool(&["search", "--onlyvisible", "--pid", &pid.to_string()])?;
+    elegir_ventana(&out)
+}
+
+/// Ejecuta xdotool y devuelve su stdout si salió bien. `None` si xdotool no
+/// está, falla o no produce salida: el login nunca depende de esto.
+fn comando_xdotool(args: &[&str]) -> Option<Vec<u8>> {
+    let out = std::process::Command::new("xdotool")
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() || out.stdout.is_empty() {
+        return None;
+    }
+    Some(out.stdout)
+}
+
+/// Elige la ventana de la salida de `xdotool search`: la primera línea no
+/// vacía (un ID de ventana por línea).
+fn elegir_ventana(salida: &[u8]) -> Option<String> {
+    let texto = String::from_utf8_lossy(salida);
+    texto
+        .lines()
+        .map(|l| l.trim())
+        .find(|l| !l.is_empty())
+        .map(|s| s.to_string())
+}
+
 // ─── tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1409,5 +1479,22 @@ mod tests {
     #[test]
     fn ventana_login_no_da_posiciones_negativas_en_pantalla_chica() {
         assert_eq!(ventana_login(800, 600), (480, 720, 160, 0));
+    }
+
+    /// De la salida de `xdotool search` (un ID por línea) se toma la primera
+    /// línea no vacía.
+    #[test]
+    fn elegir_ventana_toma_la_primera_linea() {
+        assert_eq!(
+            elegir_ventana(b"0x1a00003\n0x1a00005\n").as_deref(),
+            Some("0x1a00003")
+        );
+    }
+
+    /// Sin salida no hay ventana: `None`, nunca un ID inventado.
+    #[test]
+    fn elegir_ventana_sin_salida_da_none() {
+        assert_eq!(elegir_ventana(b""), None);
+        assert_eq!(elegir_ventana(b"\n  \n"), None);
     }
 }
