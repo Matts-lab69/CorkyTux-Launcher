@@ -98,15 +98,41 @@ type Failure = (&'static str, String);
 fn main() {
     install_stop_handlers();
     let args: Vec<String> = std::env::args().collect();
-    let Some(url) = args.get(1) else {
-        fail(why::USAGE, "falta la URL de autenticacion");
-    };
-    if url.trim().is_empty() {
-        fail(why::USAGE, "la URL de autenticacion va vacia");
-    }
-    match run(url.trim()) {
-        Ok(code) => println!("{}", code),
-        Err((reason, msg)) => fail(reason, &msg),
+    match args.get(1).map(|s| s.as_str()) {
+        // Solo filesystem: dice si el Chromium ya está cacheado, sin lanzar
+        // ningún proceso de Chrome ni tocar la red. Lo usa el modal de
+        // dependencias para decidir si molestar o no.
+        Some("--probe") => {
+            println!("{}", sonda_chrome());
+        }
+        // Descarga el Chromium si falta, con progreso JSON por stdout para el
+        // modal de dependencias. Reusa el mismo camino del login.
+        Some("--prefetch") => match ensure_chrome_con(&|pct, hecho| {
+            println!(
+                "{}",
+                json!({
+                    "type": "chrome_progress",
+                    "percent": pct,
+                    "mb": hecho / 1048576,
+                })
+            );
+        }) {
+            Ok(p) => println!(
+                "{}",
+                json!({"type": "chrome_done", "path": p.display().to_string()})
+            ),
+            Err(e) => fail(why::CHROME, &e),
+        },
+        Some(url) => {
+            if url.trim().is_empty() {
+                fail(why::USAGE, "la URL de autenticacion va vacia");
+            }
+            match run(url.trim()) {
+                Ok(code) => println!("{}", code),
+                Err((reason, msg)) => fail(reason, &msg),
+            }
+        }
+        None => fail(why::USAGE, "falta la URL de autenticacion"),
     }
 }
 
@@ -130,6 +156,21 @@ fn chrome_bin() -> PathBuf {
     chrome_dir().join("chrome-linux64/chrome")
 }
 
+/// Informe de caché del Chromium para el modal de dependencias.
+///
+/// Solo I/O de filesystem (`is_file` sobre la ruta cacheada): no lanza ningún
+/// proceso de Chrome ni toca la red. Un `cached:false` significa que el primer
+/// login (o un `--prefetch`) descargará ~188 MB.
+fn sonda_chrome() -> Value {
+    let bin = chrome_bin();
+    json!({
+        "type": "chrome_probe",
+        "cached": bin.is_file(),
+        "version": CHROME_VERSION,
+        "path": bin.display().to_string(),
+    })
+}
+
 /// Descarga el zip de Chromium, con reintentos y barra de progreso.
 ///
 /// Los 188 MB no entran de una en redes normales: la primera vez que se probó
@@ -139,7 +180,10 @@ fn chrome_bin() -> PathBuf {
 ///
 /// Se escribe a un temporal y se renombra al terminar: un zip a medias nunca
 /// puede quedar donde el código espera el definitivo.
-fn download_zip() -> Result<std::path::PathBuf, String> {
+///
+/// `progreso` recibe `(porcentaje, bytes)` cada ~10 %: el login lo muestra
+/// como texto humano, `--prefetch` lo emite como JSON para el modal.
+fn download_zip(progreso: &dyn Fn(u8, u64)) -> Result<std::path::PathBuf, String> {
     /// Espera antes de cada reintento, en segundos.
     const BACKOFF: [u64; 4] = [0, 3, 10, 25];
     const ESPERADO: u64 = 188 * 1024 * 1024;
@@ -162,7 +206,7 @@ fn download_zip() -> Result<std::path::PathBuf, String> {
             std::thread::sleep(Duration::from_secs(*espera));
         }
 
-        match intentar_descarga(&parcial, ESPERADO) {
+        match intentar_descarga(&parcial, ESPERADO, progreso) {
             Ok(()) => {
                 // El rename es atómico en el mismo sistema de archivos: o está
                 // el zip entero, o no está nada.
@@ -190,14 +234,30 @@ fn download_zip() -> Result<std::path::PathBuf, String> {
 }
 
 /// Un intento de descarga, escribiendo a `destino` y mostrando el progreso.
-fn intentar_descarga(destino: &Path, esperado: u64) -> Result<(), String> {
+fn intentar_descarga(
+    destino: &Path,
+    esperado: u64,
+    progreso: &dyn Fn(u8, u64),
+) -> Result<(), String> {
+    descargar_de(CHROME_URL, destino, esperado, progreso)
+}
+
+/// Descarga `url` a `destino` con el mismo protocolo (reintento lo maneja el
+/// llamador). Separada de `intentar_descarga` para poder probarla contra un
+/// servidor local sin tocar la red real.
+fn descargar_de(
+    url: &str,
+    destino: &Path,
+    esperado: u64,
+    progreso: &dyn Fn(u8, u64),
+) -> Result<(), String> {
     use std::io::Read as _;
 
     let mut resp = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(900))
         .build()
         .map_err(|e| format!("no se pudo preparar la conexion: {}", e))?
-        .get(CHROME_URL)
+        .get(url)
         .send()
         .map_err(|e| format!("fallo de red al conectar: {}", e))?
         .error_for_status()
@@ -230,7 +290,7 @@ fn intentar_descarga(destino: &Path, esperado: u64) -> Result<(), String> {
         let pct = ((hecho as f64 / total as f64) * 100.0) as u8;
         if pct >= ultimo_pct + 10 {
             ultimo_pct = pct;
-            eprintln!("CHROME:descargando {}% ({:.0} MB)", pct, hecho as f64 / 1048576.0);
+            progreso(pct, hecho);
         }
     }
     std::io::Write::flush(&mut w).map_err(|e| format!("no se pudo volcar a disco: {}", e))?;
@@ -250,7 +310,19 @@ fn intentar_descarga(destino: &Path, esperado: u64) -> Result<(), String> {
 ///
 /// Se prefiere el del sistema si ya está en el PATH, para no descargar 188 MB
 /// cuando no hace falta. La descarga embebida existe para no depender de root.
+///
+/// `progreso` recibe `(porcentaje, bytes)` cada ~10 % de la descarga.
 fn ensure_chrome() -> Result<PathBuf, String> {
+    ensure_chrome_con(&|pct, hecho| {
+        eprintln!(
+            "CHROME:descargando {}% ({:.0} MB)",
+            pct,
+            hecho as f64 / 1048576.0
+        );
+    })
+}
+
+fn ensure_chrome_con(progreso: &dyn Fn(u8, u64)) -> Result<PathBuf, String> {
     if let Ok(custom) = std::env::var("CORKYTUX_CHROME") {
         let p = PathBuf::from(custom);
         if p.is_file() {
@@ -284,7 +356,7 @@ fn ensure_chrome() -> Result<PathBuf, String> {
         CHROME_VERSION, CHROME_LICENSE
     );
 
-    let zip = download_zip()?;
+    let zip = download_zip(progreso)?;
 
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).map_err(|e| format!("no se pudo crear {}: {}", dir.display(), e))?;
@@ -1411,19 +1483,26 @@ mod tests {
     /// Sirve una lista fija de `/json/list` en localhost para probar
     /// `wait_for_page` sin un Chromium de verdad. Devuelve el puerto.
     fn servir_lista_fija(cuerpo: &'static str) -> u16 {
+        servir_bytes_fijos(cuerpo.as_bytes())
+    }
+
+    /// Sirve bytes fijos con `Content-Length` en localhost. Devuelve el puerto.
+    fn servir_bytes_fijos(cuerpo: &'static [u8]) -> u16 {
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();
+        // El cuerpo se copia al hilo: el `&'static` sobrevive al test.
+        let cuerpo: Vec<u8> = cuerpo.to_vec();
         std::thread::spawn(move || {
             for stream in l.incoming() {
                 let Ok(mut s) = stream else { break };
                 let mut buf = [0u8; 4096];
                 let _ = s.read(&mut buf);
-                let resp = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                let cabecera = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     cuerpo.len(),
-                    cuerpo
                 );
-                let _ = s.write_all(resp.as_bytes());
+                let _ = s.write_all(cabecera.as_bytes());
+                let _ = s.write_all(&cuerpo);
             }
         });
         port
@@ -1496,5 +1575,74 @@ mod tests {
     fn elegir_ventana_sin_salida_da_none() {
         assert_eq!(elegir_ventana(b""), None);
         assert_eq!(elegir_ventana(b"\n  \n"), None);
+    }
+
+    /// `--probe` refleja la caché real: `false` con HOME vacío, `true` cuando
+    /// el binario existe. Solo I/O, sin procesos ni red.
+    #[test]
+    fn sonda_chrome_reporta_cache() {
+        let orig_home = std::env::var("HOME").unwrap_or_default();
+        let tmp = std::env::temp_dir().join(format!("corkytux-sonda-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("HOME", &tmp);
+
+        let r = sonda_chrome();
+        assert_eq!(r.get("type").and_then(|x| x.as_str()), Some("chrome_probe"));
+        assert_eq!(r.get("cached").and_then(|x| x.as_bool()), Some(false));
+
+        let bin = chrome_bin();
+        std::fs::create_dir_all(bin.parent().expect("chrome_bin tiene padre")).unwrap();
+        std::fs::write(&bin, b"x").unwrap();
+        assert_eq!(
+            sonda_chrome().get("cached").and_then(|x| x.as_bool()),
+            Some(true)
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("HOME", &orig_home);
+    }
+
+    /// La descarga escribe los bytes exactos y reporta progreso creciente por
+    /// callback (camino que usa `--prefetch` hacia el modal).
+    #[test]
+    fn descargar_de_reporta_progreso_y_escribe_bytes() {
+        static CUERPO: [u8; 200 * 1024] = [7; 200 * 1024];
+        let port = servir_bytes_fijos(&CUERPO);
+        let destino = std::env::temp_dir().join(format!(
+            "corkytux-descarga-{}-{}.bin",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+
+        let pcts: std::sync::Mutex<Vec<u8>> = std::sync::Mutex::new(Vec::new());
+        descargar_de(
+            &format!("http://127.0.0.1:{}/chrome-linux64.zip", port),
+            &destino,
+            CUERPO.len() as u64,
+            &|pct, _| {
+                pcts.lock().expect("mutex de test").push(pct);
+            },
+        )
+        .expect("descarga local");
+
+        let datos = std::fs::read(&destino).unwrap();
+        let _ = std::fs::remove_file(&destino);
+        assert_eq!(datos.len(), CUERPO.len());
+        assert_eq!(datos, CUERPO);
+
+        let pcts = pcts.lock().expect("mutex de test").clone();
+        assert!(!pcts.is_empty(), "sin reportes de progreso");
+        assert!(
+            pcts.windows(2).all(|w| w[0] <= w[1]),
+            "progreso no creciente: {:?}",
+            pcts
+        );
+        // El reporte es cada ~10 % por diseño: el último aviso no tiene por
+        // qué ser 100 (en producción lo cierra el evento `done`).
+        let ultimo = *pcts.last().expect("no vacío");
+        assert!(ultimo >= 90, "progreso final insuficiente: {:?}", pcts);
     }
 }
