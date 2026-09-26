@@ -676,6 +676,13 @@ fn run(url: &str) -> Result<String, Failure> {
     let port = free_port().map_err(|e| (why::SESSION, e))?;
 
     use std::os::unix::process::CommandExt;
+    // Tamaño fijo y centrada: el formulario de login es angosto y alto, y sin
+    // estas flags Chrome decide solo (Epic salía chica, GOG gigante). Sin
+    // `--app=` a propósito: exige la URL en el arranque en vez de
+    // `about:blank` + `Page.navigate`, y cambia el comportamiento de los
+    // popups de OAuth que el login necesita.
+    let (pantalla_w, pantalla_h) = pantalla();
+    let (win_w, win_h, win_x, win_y) = ventana_login(pantalla_w, pantalla_h);
     let child = Command::new(&chrome)
         .arg(format!("--user-data-dir={}", profile.display()))
         .arg(format!("--remote-debugging-port={}", port))
@@ -686,6 +693,8 @@ fn run(url: &str) -> Result<String, Failure> {
         .arg("--no-first-run")
         .arg("--no-default-browser-check")
         .arg("--disable-session-crashed-bubble")
+        .arg(format!("--window-size={},{}", win_w, win_h))
+        .arg(format!("--window-position={},{}", win_x, win_y))
         .arg("about:blank")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -1056,6 +1065,46 @@ fn free_port() -> Result<u16, String> {
     Ok(p)
 }
 
+/// Resolución de pantalla para centrar la ventana del login.
+///
+/// Intenta `xdotool getdisplaygeometry` (devuelve `ANCHO ALTO`); si no está
+/// instalado o falla, 1920x1080 como fallback documentado. Nunca falla: en el
+/// peor caso la ventana sale centrada para 1080p.
+fn pantalla() -> (u32, u32) {
+    const FALLBACK: (u32, u32) = (1920, 1080);
+    let salida = std::process::Command::new("xdotool")
+        .arg("getdisplaygeometry")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output();
+    let Ok(salida) = salida else {
+        return FALLBACK;
+    };
+    if !salida.status.success() {
+        return FALLBACK;
+    }
+    let texto = String::from_utf8_lossy(&salida.stdout);
+    let mut nums = texto
+        .split_whitespace()
+        .filter_map(|w| w.parse::<u32>().ok());
+    match (nums.next(), nums.next()) {
+        (Some(w), Some(h)) if w > 0 && h > 0 => (w, h),
+        _ => FALLBACK,
+    }
+}
+
+/// Geometría de la ventana del login: angosta y alta para el formulario, y
+/// centrada en la pantalla. Devuelve `(ancho, alto, x, y)`. Las posiciones se
+/// saturan en 0 para no dar coordenadas negativas en pantallas chicas.
+fn ventana_login(pantalla_w: u32, pantalla_h: u32) -> (u32, u32, u32, u32) {
+    const W: u32 = 480;
+    const H: u32 = 720;
+    let x = pantalla_w.saturating_sub(W) / 2;
+    let y = pantalla_h.saturating_sub(H) / 2;
+    (W, H, x, y)
+}
+
 // ─── tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1346,5 +1395,19 @@ mod tests {
             "mensaje sin diagnostico util: {}",
             err
         );
+    }
+
+    /// En 1080p la ventana de 480x720 sale centrada: x=(1920-480)/2,
+    /// y=(1080-720)/2.
+    #[test]
+    fn ventana_login_centra_en_1080p() {
+        assert_eq!(ventana_login(1920, 1080), (480, 720, 720, 180));
+    }
+
+    /// En pantallas chicas las posiciones se saturan en 0 en vez de dar
+    /// coordenadas negativas que el WM rechazaría.
+    #[test]
+    fn ventana_login_no_da_posiciones_negativas_en_pantalla_chica() {
+        assert_eq!(ventana_login(800, 600), (480, 720, 160, 0));
     }
 }
