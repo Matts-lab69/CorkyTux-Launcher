@@ -88,6 +88,7 @@ mod why {
     pub const TIMEOUT: &str = "timeout";
     pub const SESSION: &str = "session";
     pub const NAV: &str = "nav";
+    pub const CDP: &str = "cdp_perdido";
     pub const CANCELLED: &str = "cancelado";
     pub const USAGE: &str = "uso";
 }
@@ -702,7 +703,10 @@ fn run(url: &str) -> Result<String, Failure> {
 
     // Se espera a que el puerto de depuración responda y a que aparezca la
     // pestaña. La primera vez tarda bastante: es un navegador entero.
-    let ws = wait_for_page(port, Duration::from_secs(90))
+    // Al arrancar solo existe el `about:blank` que lanzó el helper: sin
+    // criterio, gana la primera pestaña como antes. Se guarda su target ID
+    // para reencontrarla al reconectar aunque haya navegado.
+    let (ws, mut target_id) = wait_for_page(port, Duration::from_secs(90), None, &[])
         .map_err(|e| (why::SESSION, e))?;
     let cdp = Cdp::connect(&ws).map_err(|e| (why::SESSION, e))?;
     cleanup.cdp = Some(cdp);
@@ -718,6 +722,11 @@ fn run(url: &str) -> Result<String, Failure> {
 
     let deadline = Instant::now() + LOGIN_TIMEOUT;
     let mut last_url = String::new();
+    // Racha de fallos de transporte CDP. Cada uno intenta una reconexión con
+    // espera corta; agotados los intentos se falla ya, sin quemar los 180 s.
+    let mut fallos_socket: u32 = 0;
+    const MAX_RECONEXIONES: u32 = 2;
+    const ESPERA_RECONEXION: [u64; 2] = [1, 2];
     loop {
         if STOP.load(std::sync::atomic::Ordering::SeqCst) {
             // Alguien nos pidió parar. Se sale por el camino normal para que el
@@ -755,6 +764,9 @@ fn run(url: &str) -> Result<String, Failure> {
                 Duration::from_secs(10),
             ) {
                 Ok(res) => {
+                    // El socket respondió: cualquier fallo anterior quedó atrás
+                    // y la racha de transporte se reinicia.
+                    fallos_socket = 0;
                     let val = res
                         .get("result")
                         .and_then(|x| x.get("value"))
@@ -786,9 +798,63 @@ fn run(url: &str) -> Result<String, Failure> {
                     }
                 }
                 Err(e) => {
-                    // Un cambio de navegacion puede cortar la lectura; se sigue.
-                    eprintln!("aviso: no se pudo leer la pagina ({})", e);
-                    None
+                    if socket_muerto(&e) {
+                        // El socket murió: se intenta revivirlo con espera
+                        // corta en vez de reintentar contra un muerto hasta el
+                        // timeout, que era lo que dejaba el login "colgado".
+                        fallos_socket += 1;
+                        eprintln!("aviso: conexion CDP perdida ({})", e);
+                        if fallos_socket > MAX_RECONEXIONES {
+                            return Err((
+                                why::CDP,
+                                format!(
+                                    "se perdio la conexion con el navegador del login ({}) tras {} intentos de reconexion; probá de nuevo con Log in",
+                                    e, MAX_RECONEXIONES
+                                ),
+                            ));
+                        }
+                        let espera = ESPERA_RECONEXION
+                            .get((fallos_socket - 1) as usize)
+                            .copied()
+                            .unwrap_or(2);
+                        eprintln!(
+                            "CDP:reintentando conexion {} de {} en {} s",
+                            fallos_socket, MAX_RECONEXIONES, espera
+                        );
+                        std::thread::sleep(Duration::from_secs(espera));
+                        match reconectar_cdp(port, url, &last_url, &target_id) {
+                            Ok((nuevo, nuevo_id)) => {
+                                cleanup.cdp = Some(nuevo);
+                                // La pestaña a la que se volvió es la del login
+                                // según el mejor criterio disponible: se la
+                                // sigue trackeando a ella de ahora en más.
+                                target_id = nuevo_id;
+                                eprintln!("CDP:conexion restablecida");
+                            }
+                            Err(r) => {
+                                eprintln!(
+                                    "aviso: no se pudo restablecer la conexion CDP ({})",
+                                    r
+                                );
+                                if fallos_socket >= MAX_RECONEXIONES {
+                                    return Err((
+                                        why::CDP,
+                                        format!(
+                                            "se perdio la conexion con el navegador del login ({}) y no se pudo restablecer ({}); probá de nuevo con Log in",
+                                            e, r
+                                        ),
+                                    ));
+                                }
+                                // Queda un intento: se sigue y el próximo
+                                // sondeo lo vuelve a intentar.
+                            }
+                        }
+                        None
+                    } else {
+                        // Un cambio de navegacion puede cortar la lectura; se sigue.
+                        eprintln!("aviso: no se pudo leer la pagina ({})", e);
+                        None
+                    }
                 }
             }
         };
@@ -803,8 +869,21 @@ fn run(url: &str) -> Result<String, Failure> {
 }
 
 /// Espera a que Chromium exponga la pestaña por CDP y devuelve su
-/// `webSocketDebuggerUrl`.
-fn wait_for_page(port: u16, timeout: Duration) -> Result<String, String> {
+/// `webSocketDebuggerUrl` junto con su target ID.
+///
+/// `id` es el target ID trackeado desde la primera conexión: Chromium lo
+/// mantiene estable aunque la pestaña navegue (solo cambia si se cierra), así
+/// que es el criterio principal al reconectar. `dominios` es el respaldo por
+/// host para el caso en que la pestaña original ya no esté. Con una sola
+/// pestaña no hay ambigüedad y se usa igual que antes. Sin ID ni dominios gana
+/// la primera pestaña (arranque inicial, donde solo existe el `about:blank`
+/// que lanzó el helper).
+fn wait_for_page(
+    port: u16,
+    timeout: Duration,
+    id: Option<&str>,
+    dominios: &[&str],
+) -> Result<(String, String), String> {
     let deadline = Instant::now() + timeout;
     let mut last = "el navegador no exponio su puerto de depuracion".to_string();
     while Instant::now() < deadline {
@@ -814,15 +893,32 @@ fn wait_for_page(port: u16, timeout: Duration) -> Result<String, String> {
         {
             if let Ok(list) = serde_json::from_str::<Value>(&txt) {
                 if let Some(arr) = list.as_array() {
-                    for t in arr {
-                        let kind = t.get("type").and_then(|x| x.as_str()).unwrap_or("");
-                        let ws = t.get("webSocketDebuggerUrl").and_then(|x| x.as_str());
-                        if kind == "page" {
-                            if let Some(ws) = ws {
-                                return Ok(ws.to_string());
-                            }
-                        }
+                    let paginas: Vec<&Value> = arr
+                        .iter()
+                        .filter(|t| {
+                            t.get("type").and_then(|x| x.as_str()) == Some("page")
+                                && t
+                                    .get("webSocketDebuggerUrl")
+                                    .and_then(|x| x.as_str())
+                                    .is_some()
+                        })
+                        .collect();
+                    if let Some(par) = elegir_pestana(&paginas, id, dominios) {
+                        return Ok(par);
                     }
+                    last = if paginas.is_empty() {
+                        format!(
+                            "el navegador no dio ninguna pestana todavia ({} objetivo(s))",
+                            arr.len()
+                        )
+                    } else {
+                        format!(
+                            "hay {} pestana(s) pero ninguna es la del login (ni por ID ni por dominio)",
+                            paginas.len()
+                        )
+                    };
+                    std::thread::sleep(Duration::from_millis(300));
+                    continue;
                 }
             }
             last = format!(
@@ -836,6 +932,121 @@ fn wait_for_page(port: u16, timeout: Duration) -> Result<String, String> {
         std::thread::sleep(Duration::from_millis(300));
     }
     Err(format!("{} tras {} s", last, timeout.as_secs()))
+}
+
+/// Elige a qué pestaña conectarse de las que expone `/json/list`. Devuelve su
+/// `webSocketDebuggerUrl` junto con su target ID.
+///
+/// Criterio principal: el target ID, que Chromium mantiene estable aunque la
+/// pestaña navegue —solo cambia si se cierra. Se trackea desde la primera
+/// conexión, así un popup de OAuth (Google SSO) cuya URL cambia varias veces
+/// no confunde la reconexión.
+///
+/// Respaldo: si el ID ya no está (pestaña cerrada), vale cualquier pestaña
+/// cuyo host esté en `dominios`. Con una sola pestaña no hay ambigüedad y se
+/// usa igual que antes; si hay varias y nada coincide se devuelve `None` para
+/// seguir esperando (o agotar el reintento) en vez de leer una pestaña ajena
+/// hasta el timeout general.
+fn elegir_pestana(
+    paginas: &[&Value],
+    id: Option<&str>,
+    dominios: &[&str],
+) -> Option<(String, String)> {
+    let ws_e_id = |t: &&Value| {
+        let ws = t.get("webSocketDebuggerUrl").and_then(|x| x.as_str())?;
+        let tid = t.get("id").and_then(|x| x.as_str())?;
+        Some((ws.to_string(), tid.to_string()))
+    };
+    if paginas.len() == 1 {
+        return ws_e_id(&paginas[0]);
+    }
+    if let Some(id) = id {
+        for t in paginas {
+            if t.get("id").and_then(|x| x.as_str()) == Some(id) {
+                if let Some(par) = ws_e_id(t) {
+                    return Some(par);
+                }
+            }
+        }
+    }
+    if !dominios.is_empty() {
+        for t in paginas {
+            let url = t.get("url").and_then(|x| x.as_str()).unwrap_or("");
+            if url_en_dominios(url, dominios) {
+                if let Some(par) = ws_e_id(t) {
+                    return Some(par);
+                }
+            }
+        }
+    }
+    if id.is_none() && dominios.is_empty() {
+        // Sin criterio gana la primera: comportamiento histórico del arranque.
+        return paginas.first().and_then(ws_e_id);
+    }
+    None
+}
+
+/// Saca el host de una URL (`https://auth.gog.com/auth?x=1` → `auth.gog.com`).
+/// Solo para el filtro de respaldo por dominio; no valida nada.
+fn host_de(url: &str) -> Option<&str> {
+    let resto = url.split("://").nth(1)?;
+    Some(resto.split(['/', '?', '#']).next().unwrap_or(resto))
+}
+
+/// Dice si la URL de una pestaña cae dentro de alguno de los dominios
+/// esperados, comparando por host y no por URL exacta: la pestaña navega
+/// durante el login y su URL cambia varias veces.
+fn url_en_dominios(url: &str, dominios: &[&str]) -> bool {
+    match host_de(url) {
+        Some(h) => dominios.iter().any(|d| h.eq_ignore_ascii_case(d)),
+        None => false,
+    }
+}
+
+/// Dice si un error de `cdp.call()` significa que el socket CDP murió.
+///
+/// Solo cuentan los errores de transporte: conexión cerrada por el navegador,
+/// tubería rota o reseteo de la conexión. Un fallo de `Runtime.evaluate` por
+/// una navegación a mitad de lectura NO es fatal: ese caso sigue por el camino
+/// de aviso y reintento como antes.
+fn socket_muerto(e: &str) -> bool {
+    let t = e.to_lowercase();
+    t.contains("conexion cerrada")
+        || t.contains("cerro la conexion")
+        || t.contains("cerro antes")
+        || t.contains("broken pipe")
+        || t.contains("connection reset")
+        || t.contains("os error 32")
+        || t.contains("os error 104")
+}
+
+/// Reabre la sesión CDP contra el mismo Chromium, sobre la pestaña del login.
+///
+/// La reencuentra por su target ID, que es estable aunque la pestaña haya
+/// navegado (caso real: popup de OAuth con la URL cambiada entre la
+/// desconexión y la reconexión). Como respaldo, si el ID ya no está, vale
+/// cualquier pestaña en los dominios del login original o de la última URL
+/// leída (GOG navega de `auth.gog.com` a `embed.gog.com` al completar el
+/// login). No relanza el navegador: si el proceso murió o no queda ninguna
+/// pestaña usable, se devuelve el error para fallar rápido con `cdp_perdido`.
+/// Devuelve la sesión y el ID de la pestaña a la que se volvió, para seguir
+/// trackeando a esa de ahora en más.
+fn reconectar_cdp(
+    port: u16,
+    login_url: &str,
+    last_url: &str,
+    target_id: &str,
+) -> Result<(Cdp, String), String> {
+    let mut dominios: Vec<&str> = Vec::with_capacity(2);
+    for u in [login_url, last_url] {
+        if let Some(h) = host_de(u) {
+            if !dominios.contains(&h) {
+                dominios.push(h);
+            }
+        }
+    }
+    let (ws, id) = wait_for_page(port, Duration::from_secs(10), Some(target_id), &dominios)?;
+    Cdp::connect(&ws).map(|cdp| (cdp, id))
 }
 
 fn free_port() -> Result<u16, String> {
@@ -919,5 +1130,221 @@ mod tests {
     #[test]
     fn las_claves_son_aleatorias() {
         assert_ne!(random_bytes(16), random_bytes(16));
+    }
+
+    /// Los errores de transporte tienen que marcar el socket como muerto para
+    /// que el sondeo reconecte en vez de reintentar contra un muerto.
+    #[test]
+    fn socket_muerto_detecta_transporte() {
+        // Los tres que salieron en el log real de las 19:50.
+        assert!(socket_muerto("Runtime.evaluate: conexion cerrada"));
+        assert!(socket_muerto(
+            "Runtime.evaluate: el navegador cerro la conexion"
+        ));
+        assert!(socket_muerto(
+            "Runtime.evaluate: Broken pipe (os error 32)"
+        ));
+        assert!(socket_muerto(
+            "Runtime.evaluate: Connection reset by peer (os error 104)"
+        ));
+    }
+
+    /// Un fallo de lectura por navegación o por timeout NO es socket muerto:
+    /// esos siguen por el camino de aviso y reintento como antes.
+    #[test]
+    fn socket_muerto_no_confunde_navegacion_ni_timeout() {
+        assert!(!socket_muerto(
+            "Runtime.evaluate no respondio en 10 s"
+        ));
+        assert!(!socket_muerto(
+            "Runtime.evaluate: {\"code\":-32000,\"message\":\"No hay sesion\"}"
+        ));
+        assert!(!socket_muerto("aviso: respuesta ilegible (algo)"));
+    }
+
+    /// Arma un target de `/json/list` para probar la selección de pestaña.
+    fn pagina(url: &str, id: &str, ws: &str) -> Value {
+        json!({"type": "page", "url": url, "id": id, "webSocketDebuggerUrl": ws})
+    }
+
+    /// Con una sola pestaña no hay ambigüedad: se usa aunque no haya criterio
+    /// (es el `about:blank` recién lanzado o la única abierta).
+    #[test]
+    fn elegir_pestana_usa_la_unica_aunque_no_haya_criterio() {
+        let a = pagina("about:blank", "ID-A", "ws://127.0.0.1:9/devtools/page/AAA");
+        let pags = [&a];
+        assert_eq!(
+            elegir_pestana(&pags, None, &[]),
+            Some((
+                "ws://127.0.0.1:9/devtools/page/AAA".to_string(),
+                "ID-A".to_string()
+            ))
+        );
+    }
+
+    /// Caso real que motivó el fix: dos pestañas activas (la principal + un
+    /// popup de SSO) y la URL de la principal cambió respecto a `last_url`.
+    /// Igual se la encuentra por su target ID, estable aunque navegue.
+    #[test]
+    fn elegir_pestana_encuentra_por_id_aunque_la_url_haya_cambiado() {
+        // La principal navegó del login de GOG al consentimiento de Google
+        // entre la desconexión y la reconexión: ni `last_url`
+        // (`auth.gog.com`) ni la URL actual matchean por dominio de login.
+        let principal = pagina(
+            "https://accounts.google.com/o/oauth2/consent?x=1",
+            "ID-MAIN",
+            "ws://127.0.0.1:9/devtools/page/AAA",
+        );
+        let popup = pagina(
+            "https://auth.gog.com/auth?client_id=1",
+            "ID-POPUP",
+            "ws://127.0.0.1:9/devtools/page/BBB",
+        );
+        let pags = [&principal, &popup];
+        assert_eq!(
+            elegir_pestana(&pags, Some("ID-MAIN"), &["auth.gog.com"]),
+            Some((
+                "ws://127.0.0.1:9/devtools/page/AAA".to_string(),
+                "ID-MAIN".to_string()
+            ))
+        );
+    }
+
+    /// Si el ID ya no está (pestaña cerrada), el respaldo por dominio vale:
+    /// GOG navega de `auth.gog.com` a `embed.gog.com` al completar el login.
+    #[test]
+    fn elegir_pestana_sin_id_vale_el_respaldo_por_dominio() {
+        let exito = pagina(
+            "https://embed.gog.com/on_login_success?code=abc",
+            "ID-NEW",
+            "ws://127.0.0.1:9/devtools/page/BBB",
+        );
+        let popup = pagina(
+            "https://accounts.google.com/o/oauth2/auth?x=1",
+            "ID-POPUP",
+            "ws://127.0.0.1:9/devtools/page/CCC",
+        );
+        let pags = [&exito, &popup];
+        assert_eq!(
+            elegir_pestana(&pags, Some("ID-CERRADA"), &["auth.gog.com", "embed.gog.com"]),
+            Some((
+                "ws://127.0.0.1:9/devtools/page/BBB".to_string(),
+                "ID-NEW".to_string()
+            ))
+        );
+    }
+
+    /// Con varias pestañas y sin ID ni dominio coincidente no se elige
+    /// ninguna: el llamador sigue esperando (o agota el reintento) en vez de
+    /// leer una pestaña ajena hasta el timeout general.
+    #[test]
+    fn elegir_pestana_sin_coincidencia_devuelve_none() {
+        let a = pagina("about:blank", "ID-A", "ws://127.0.0.1:9/devtools/page/AAA");
+        let b = pagina("chrome://newtab/", "ID-B", "ws://127.0.0.1:9/devtools/page/BBB");
+        let pags = [&a, &b];
+        assert_eq!(
+            elegir_pestana(&pags, Some("ID-OTRA"), &["auth.gog.com"]),
+            None
+        );
+    }
+
+    /// Sin criterio se mantiene el comportamiento histórico: gana la primera.
+    #[test]
+    fn elegir_pestana_sin_criterio_gana_la_primera() {
+        let a = pagina("about:blank", "ID-A", "ws://127.0.0.1:9/devtools/page/AAA");
+        let b = pagina("chrome://newtab/", "ID-B", "ws://127.0.0.1:9/devtools/page/BBB");
+        let pags = [&a, &b];
+        assert_eq!(
+            elegir_pestana(&pags, None, &[]),
+            Some((
+                "ws://127.0.0.1:9/devtools/page/AAA".to_string(),
+                "ID-A".to_string()
+            ))
+        );
+    }
+
+    /// El host se extrae para el filtro por dominio (con query, fragmento o
+    /// URL sin esquema no hay match exacto: mejor `None` que un falso positivo).
+    #[test]
+    fn host_de_extrae_el_host() {
+        assert_eq!(
+            host_de("https://auth.gog.com/auth?client_id=1"),
+            Some("auth.gog.com")
+        );
+        assert_eq!(
+            host_de("https://embed.gog.com/on_login_success?code=abc#frag"),
+            Some("embed.gog.com")
+        );
+        assert_eq!(host_de("about:blank"), None);
+    }
+
+    /// El respaldo compara por host, no por URL exacta: la pestaña navega y su
+    /// URL cambia, el dominio no.
+    #[test]
+    fn url_en_dominios_compara_por_host() {
+        let doms = ["auth.gog.com", "embed.gog.com"];
+        assert!(url_en_dominios("https://auth.gog.com/auth?x=1", &doms));
+        assert!(url_en_dominios("https://embed.gog.com/on_login_success", &doms));
+        assert!(!url_en_dominios("https://accounts.google.com/o/oauth2/auth", &doms));
+        assert!(!url_en_dominios("about:blank", &doms));
+    }
+
+    /// Sirve una lista fija de `/json/list` en localhost para probar
+    /// `wait_for_page` sin un Chromium de verdad. Devuelve el puerto.
+    fn servir_lista_fija(cuerpo: &'static str) -> u16 {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in l.incoming() {
+                let Ok(mut s) = stream else { break };
+                let mut buf = [0u8; 4096];
+                let _ = s.read(&mut buf);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    cuerpo.len(),
+                    cuerpo
+                );
+                let _ = s.write_all(resp.as_bytes());
+            }
+        });
+        port
+    }
+
+    /// Varias pestañas al reconectar y la principal cambió de URL (popup de
+    /// SSO mediante): se la reencuentra por su target ID.
+    #[test]
+    fn wait_for_page_reencuentra_por_id_aunque_la_url_haya_cambiado() {
+        let cuerpo = r#"[{"type":"page","url":"https://accounts.google.com/o/oauth2/consent?x=1","id":"ID-MAIN","webSocketDebuggerUrl":"ws://127.0.0.1:9/devtools/page/AAA"},{"type":"page","url":"https://auth.gog.com/auth?client_id=1","id":"ID-POPUP","webSocketDebuggerUrl":"ws://127.0.0.1:9/devtools/page/BBB"}]"#;
+        let port = servir_lista_fija(cuerpo);
+        let (ws, id) = wait_for_page(port, Duration::from_secs(5), Some("ID-MAIN"), &["auth.gog.com"])
+            .expect("la pestana del login esta presente por ID");
+        assert_eq!(id, "ID-MAIN", "reconectó a la pestaña equivocada");
+        assert!(
+            ws.ends_with("/AAA"),
+            "eligio la pestana equivocada: {}",
+            ws
+        );
+    }
+
+    /// Varias pestañas y ni el ID ni ningún dominio coinciden: falla en el
+    /// reintento corto, no se cuelga hasta el timeout general (en producción
+    /// ese `Err` se convierte en `ERRO:cdp_perdido`).
+    #[test]
+    fn wait_for_page_sin_pestana_del_login_falla_en_el_reintento() {
+        let cuerpo = r#"[{"type":"page","url":"about:blank","id":"ID-A","webSocketDebuggerUrl":"ws://127.0.0.1:9/devtools/page/AAA"},{"type":"page","url":"chrome://newtab/","id":"ID-B","webSocketDebuggerUrl":"ws://127.0.0.1:9/devtools/page/BBB"}]"#;
+        let port = servir_lista_fija(cuerpo);
+        let t0 = Instant::now();
+        let err = wait_for_page(port, Duration::from_secs(1), Some("ID-OTRA"), &["auth.gog.com"])
+            .expect_err("ninguna pestana es la del login");
+        assert!(
+            t0.elapsed() < Duration::from_secs(5),
+            "se colgo {} s en vez de fallar en el reintento",
+            t0.elapsed().as_secs()
+        );
+        assert!(
+            err.contains("ninguna es la del login"),
+            "mensaje sin diagnostico util: {}",
+            err
+        );
     }
 }

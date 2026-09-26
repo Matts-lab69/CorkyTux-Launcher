@@ -2313,6 +2313,9 @@ fn login_failure_message(why: &str, detail: &str) -> String {
         "cancelado" => "The login was cancelled and the browser was closed. Press Log in \
                         to start again."
             .to_string(),
+        "cdp_perdido" => "The connection to the login window was lost and could not be \
+                          re-established. Press Log in to start again."
+            .to_string(),
         _ => "The automated store login failed. Press Log in to retry.".to_string(),
     };
     // El detalle solo se añade si aporta algo: el motivo de un timeout ya
