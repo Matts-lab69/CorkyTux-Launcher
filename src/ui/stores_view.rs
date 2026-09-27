@@ -8,6 +8,7 @@ use crate::AppState;
 use crate::backend::external::StoreManager;
 use crate::backend::import_move::{self, ExecPlan, ImportMode, MoveCandidate, MoveOutcome, Preflight};
 use crate::backend::plugin_process::{PluginEvent, ProcessKiller};
+use crate::ui::deps_modal::DepId;
 use crate::ui::helpers;
 use crate::ui::import_manager;
 
@@ -48,6 +49,9 @@ impl StoresView {
         for h in self.handles.borrow().iter() {
             h.ensure_loaded();
         }
+        // Trigger del modal de dependencias: chequeo async (no frena la
+        // apertura), modal si falta algo, nunca si está completo.
+        self.chequear_dependencias();
         // (a) lightweight installed-status re-verify on entry: local
         // registry + disk, no network, debounced, applied in place.
         self.schedule_focus_checks();
@@ -60,6 +64,53 @@ impl StoresView {
                 }
             }
         }
+    }
+
+    /// Trigger del modal de dependencias: chequeo async al entrar a Stores
+    /// (y al reabrir desde "Setup incomplete"). Si falta algo, bloquea por tab
+    /// y presenta el modal; si está todo, restaura la UI normal.
+    ///
+    /// Sin memoria de skip: cada entrada con algo pendiente vuelve a mostrar
+    /// el modal, incluido tras reiniciar el launcher.
+    pub fn chequear_dependencias(&self) {
+        let vista = self.clone();
+        let (tx, rx) = std::sync::mpsc::channel::<Faltantes>();
+        std::thread::spawn(move || {
+            let _ = tx.send(faltantes_actuales());
+        });
+        crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
+            Ok(f) => {
+                for h in vista.handles.borrow().iter() {
+                    h.aplicar_faltantes(&f);
+                }
+                if f.hay_algo() {
+                    let filas = f.filas_modal();
+                    let helper = login_helper_path().ok();
+                    let v = vista.clone();
+                    let padre = v.widget.clone();
+                    crate::ui::deps_modal::present(
+                        &padre,
+                        filas,
+                        helper,
+                        move |salida| match salida {
+                            crate::ui::deps_modal::InstallOutcome::TodoOk => {
+                                // Re-chequeo de verdad y refresco de lo
+                                // desbloqueado, como hace "Install tools".
+                                v.chequear_dependencias();
+                                for h in v.handles.borrow().iter() {
+                                    h.refresh_auth(false);
+                                    h.refresh_library(true);
+                                }
+                            }
+                            crate::ui::deps_modal::InstallOutcome::Skip => {}
+                        },
+                    );
+                }
+                glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(_) => glib::ControlFlow::Break,
+        });
     }
 
     /// Window focus returned to the launcher: lightweight installed-status
@@ -313,11 +364,18 @@ impl StoresView {
             first.ensure_loaded();
         }
         *handles_slot.borrow_mut() = handles;
-        Self {
+        let vista = Self {
             widget: scroll,
             handles: handles_slot.clone(),
             deals: deals_map.clone(),
+        };
+        // Los botones "Install dependencies" (panel incomplete + fila del
+        // login) reabren el modal con un re-chequeo fresco.
+        for h in vista.handles.borrow().iter() {
+            let v = vista.clone();
+            *h.reabrir.borrow_mut() = Some(Rc::new(move || v.chequear_dependencias()));
         }
+        vista
     }
 
     fn store_page(
@@ -345,6 +403,18 @@ impl StoresView {
         auth_row.append(&login_btn);
         login_box.append(&auth_row);
         auth_inner.append(&login_box);
+        // Sin navegador no hay login, pero la biblioteca sigue visible: fila
+        // compacta con botón para reabrir el modal. Oculta por defecto.
+        let browser_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let browser_lbl = note("Login needs the login browser.");
+        browser_lbl.set_hexpand(true);
+        browser_lbl.set_halign(gtk::Align::Start);
+        browser_row.append(&browser_lbl);
+        let browser_btn = gtk::Button::with_label("Install dependencies");
+        browser_btn.add_css_class("settings-btn");
+        browser_row.append(&browser_btn);
+        browser_row.set_visible(false);
+        auth_inner.append(&browser_row);
         // logged-in session row: avatar + name + logout
         let acc_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let acc_avatar = gtk::Label::new(Some(""));
@@ -868,6 +938,45 @@ impl StoresView {
         lib_inner.append(&flow);
         page.append(&lib_frame);
 
+        // Estado "Setup incomplete": tapa el tab cuando falta el binario.
+        // Oculto por defecto; lo muestra `aplicar_faltantes`.
+        let incomplete_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        incomplete_box.set_halign(gtk::Align::Center);
+        incomplete_box.set_valign(gtk::Align::Center);
+        incomplete_box.set_vexpand(true);
+        let incomplete_title = gtk::Label::new(Some("Setup incomplete"));
+        incomplete_title.add_css_class("details-title");
+        incomplete_box.append(&incomplete_title);
+        let incomplete_text = note("");
+        incomplete_text.set_halign(gtk::Align::Center);
+        incomplete_text.set_wrap(true);
+        incomplete_box.append(&incomplete_text);
+        let incomplete_btn = gtk::Button::with_label("Install dependencies");
+        incomplete_btn.add_css_class("suggested-action");
+        incomplete_btn.set_halign(gtk::Align::Center);
+        incomplete_box.append(&incomplete_btn);
+        incomplete_box.set_visible(false);
+        page.append(&incomplete_box);
+
+        // Lo pone StoresView tras construir los handles.
+        let reabrir: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+        {
+            let r = reabrir.clone();
+            incomplete_btn.connect_clicked(move |_| {
+                if let Some(f) = r.borrow().as_ref() {
+                    f();
+                }
+            });
+        }
+        {
+            let r = reabrir.clone();
+            browser_btn.connect_clicked(move |_| {
+                if let Some(f) = r.borrow().as_ref() {
+                    f();
+                }
+            });
+        }
+
         let view = StorePageHandle {
             state: state.clone(),
             parent: parent.clone(),
@@ -884,6 +993,13 @@ impl StoresView {
             acc_row: acc_row.clone(),
             acc_name: acc_name.clone(),
             acc_avatar: acc_avatar.clone(),
+            auth_frame: auth_frame.clone(),
+            lib_frame: lib_frame.clone(),
+            incomplete_box: incomplete_box.clone(),
+            incomplete_text: incomplete_text.clone(),
+            browser_row: browser_row.clone(),
+            bloqueado: Rc::new(std::cell::Cell::new(false)),
+            reabrir,
             loaded: Rc::new(std::cell::Cell::new(false)),
             desc_killer: Rc::new(RefCell::new(None)),
             desc_running: Rc::new(std::cell::Cell::new(false)),
@@ -1004,6 +1120,17 @@ struct StorePageHandle {
     acc_row: gtk::Box,
     acc_name: gtk::Label,
     acc_avatar: gtk::Label,
+    // Estado "Setup incomplete": `incomplete_box` tapa el tab cuando falta el
+    // binario (ni login ni biblioteca); `browser_row` solo tapa el login
+    // cuando falta el navegador. `bloqueado` frena cargas inútiles del plugin.
+    // `reabrir` lo pone StoresView y reabre el modal de dependencias.
+    auth_frame: gtk::Frame,
+    lib_frame: gtk::Frame,
+    incomplete_box: gtk::Box,
+    incomplete_text: gtk::Label,
+    browser_row: gtk::Box,
+    bloqueado: Rc<std::cell::Cell<bool>>,
+    reabrir: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
     loaded: Rc<std::cell::Cell<bool>>,
     // Background description batch (library card "Refresh" on Epic).
     // ref_cell holds the current process-killer; gen is bumped on every
@@ -1083,11 +1210,38 @@ impl StorePageHandle {
     }
 
     fn ensure_loaded(&self) {
-        if self.loaded.get() {
+        if self.loaded.get() || self.bloqueado.get() {
             return;
         }
         self.loaded.set(true);
         self.refresh_library(false);
+    }
+
+    /// Aplica el estado de dependencias al tab: panel "Setup incomplete" si
+    /// falta el binario (ni login ni biblioteca), o solo bloqueo del login si
+    /// falta el navegador. Sin faltantes, UI normal.
+    fn aplicar_faltantes(&self, f: &Faltantes) {
+        let nombre = if self.store == "epic" { "Epic" } else { "GOG" };
+        if f.tab_bloqueado(&self.store) {
+            let pendientes = f.para_tienda(&self.store).join(", ");
+            self.incomplete_text.set_text(&format!(
+                "{} needs: {}. Log in and library are unavailable until installation completes.",
+                nombre, pendientes
+            ));
+            self.incomplete_box.set_visible(true);
+            self.auth_frame.set_visible(false);
+            self.lib_frame.set_visible(false);
+            self.browser_row.set_visible(false);
+            self.bloqueado.set(true);
+        } else {
+            self.incomplete_box.set_visible(false);
+            self.auth_frame.set_visible(true);
+            self.lib_frame.set_visible(true);
+            let sin_browser = f.login_bloqueado();
+            self.login_btn.set_visible(!sin_browser);
+            self.browser_row.set_visible(sin_browser);
+            self.bloqueado.set(false);
+        }
     }
 
     /// Drop library tiles/covers so no RAM is held while the store
@@ -2246,7 +2400,9 @@ fn run_login_helper(url: &str) -> Result<String, (String, String)> {
 /// Vive al lado del launcher: en desarrollo los dos están en `target/debug/` y
 /// en una instalación los dos en `~/.local/share/corkytux/`. El override por
 /// entorno existe para poder probar otro binario sin recompilar.
-fn login_helper_path() -> Result<PathBuf, String> {
+///
+/// `pub(crate)` porque el modal de dependencias lo necesita para `--prefetch`.
+pub(crate) fn login_helper_path() -> Result<PathBuf, String> {
     if let Ok(custom) = std::env::var("CORKYTUX_LOGIN_HELPER") {
         let p = PathBuf::from(custom);
         if p.is_file() {
@@ -2287,6 +2443,121 @@ fn login_helper_log_path() -> PathBuf {
     dir.join("login-helper.log")
 }
 
+// ─── dependencias de Stores (modal "Install dependencies") ─────────────────
+
+/// Qué herramientas faltan para Stores. Todo el modal, el trigger y el estado
+/// "Setup incomplete" se deciden con esto; no hay banderas de sesión.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct Faltantes {    /// Falta el binario de Epic (legendary).
+    legendary: bool,
+    /// Falta el binario de GOG (gogdl).
+    gogdl: bool,
+    /// Falta la caché del Chromium de login.
+    chromium: bool,
+}
+
+impl Faltantes {
+    /// El modal aparece si y solo si falta algo. Sin memoria: el skip no deja
+    /// marca, así que reentrar a Stores con algo pendiente lo muestra de nuevo.
+    fn hay_algo(&self) -> bool {
+        self.legendary || self.gogdl || self.chromium
+    }
+
+    /// Nombres a mostrar para una tienda ("epic"/"gog"): su binario si falta,
+    /// más el navegador si falta. Orden fijo: binario, navegador.
+    fn para_tienda(&self, store: &str) -> Vec<&'static str> {
+        let mut v = Vec::new();
+        if store == "epic" && self.legendary {
+            v.push("legendary");
+        }
+        if store == "gog" && self.gogdl {
+            v.push("gogdl");
+        }
+        if self.chromium {
+            v.push("login browser");
+        }
+        v
+    }
+
+    /// Sin binario no hay nada que mostrar en el tab: ni login ni biblioteca.
+    fn tab_bloqueado(&self, store: &str) -> bool {
+        (store == "epic" && self.legendary) || (store == "gog" && self.gogdl)
+    }
+
+    /// Sin navegador solo se bloquea el login; lo ya logueado sigue andando.
+    fn login_bloqueado(&self) -> bool {
+        self.chromium
+    }
+
+    /// Filas del modal en orden DEPS: solo las que faltan.
+    fn filas_modal(&self) -> Vec<DepId> {
+        let mut v = Vec::new();
+        if self.legendary {
+            v.push(DepId::Legendary);
+        }
+        if self.gogdl {
+            v.push(DepId::Gogdl);
+        }
+        if self.chromium {
+            v.push(DepId::Chromium);
+        }
+        v
+    }
+}
+
+/// Corre `webdriver_login --probe` y devuelve si el Chromium está cacheado.
+///
+/// `None` si el helper falta o responde ilegible: el llamador lo trata como
+/// faltante (el modal ofrece instalarlo) en vez de asumir que está.
+fn probe_chrome_cached() -> Option<bool> {
+    let bin = login_helper_path().ok()?;
+    let out = std::process::Command::new(&bin)
+        .arg("--probe")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+    v.get("cached")?.as_bool()
+}
+
+/// Reúne qué falta: bins del plugin (`status` sin `--quick`, chequeo real,
+/// sin la caché de 60 s) + caché de Chromium (`--probe`). Nada se reimplementa.
+fn faltantes_actuales() -> Faltantes {
+    let (leg_ok, gog_ok) = match StoreManager::status(false) {
+        Ok(st) => {
+            let bins = st.get("bins");
+            let leg = bins
+                .and_then(|b| b.get("epic"))
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false);
+            let gog = bins
+                .and_then(|b| b.get("gog"))
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false);
+            (leg, gog)
+        }
+        // Si el status falla no se puede afirmar que estén: se ofrecen.
+        Err(_) => (false, false),
+    };
+    Faltantes {
+        legendary: !leg_ok,
+        gogdl: !gog_ok,
+        chromium: match probe_chrome_cached() {
+            Some(c) => !c,
+            None => true,
+        },
+    }
+}
+
+/// Pre-chequeo liviano de entrada a Stores, sin red: presencia de bins
+/// (subcomando `bins` del plugin, solo filesystem) + caché de Chromium
+/// (`--probe`, solo filesystem). Es lo único que corre en cada entrada;
+/// el chequeo completo con red solo sigue si esto marca algo.
 /// Traduce el motivo de fallo del helper a un mensaje accionable.
 ///
 /// Cada motivo que el helper puede devolver tiene su propio mensaje, y todos
@@ -2325,4 +2596,73 @@ fn login_failure_message(why: &str, detail: &str) -> String {
     } else {
         format!("{} ({})", base, detail.trim())
     }
+}
+
+#[cfg(test)]
+#[allow(non_snake_case)]
+mod tests {
+    use super::*;
+
+    /// Falta solo legendary: Epic bloqueado (binario + navegador pendientes),
+    /// GOG solo sin login.
+    #[test]
+    fn granularidad_falta_solo_legendary() {
+        let f = Faltantes { legendary: true, gogdl: false, chromium: true };
+        assert!(f.hay_algo());
+        assert!(f.tab_bloqueado("epic"));
+        assert!(!f.tab_bloqueado("gog"));
+        assert!(f.login_bloqueado());
+        assert_eq!(f.para_tienda("epic"), vec!["legendary", "login browser"]);
+        assert_eq!(f.para_tienda("gog"), vec!["login browser"]);
+        assert_eq!(f.filas_modal(), vec![DepId::Legendary, DepId::Chromium]);
+    }
+
+    /// Falta solo gogdl: espejo del caso Epic.
+    #[test]
+    fn granularidad_falta_solo_gogdl() {
+        let f = Faltantes { legendary: false, gogdl: true, chromium: true };
+        assert!(!f.tab_bloqueado("epic"));
+        assert!(f.tab_bloqueado("gog"));
+        assert_eq!(f.para_tienda("epic"), vec!["login browser"]);
+        assert_eq!(f.para_tienda("gog"), vec!["gogdl", "login browser"]);
+        assert_eq!(f.filas_modal(), vec![DepId::Gogdl, DepId::Chromium]);
+    }
+
+    /// Falta solo Chromium: ningún tab bloqueado, solo el login. La
+    /// biblioteca de lo ya logueado sigue visible.
+    #[test]
+    fn granularidad_falta_solo_chromium() {
+        let f = Faltantes { legendary: false, gogdl: false, chromium: true };
+        assert!(f.hay_algo());
+        assert!(!f.tab_bloqueado("epic"));
+        assert!(!f.tab_bloqueado("gog"));
+        assert!(f.login_bloqueado());
+        assert_eq!(f.filas_modal(), vec![DepId::Chromium]);
+    }
+
+    /// Falta todo: ambos tabs bloqueados, tres filas en orden.
+    #[test]
+    fn granularidad_falta_todo() {
+        let f = Faltantes { legendary: true, gogdl: true, chromium: true };
+        assert!(f.tab_bloqueado("epic"));
+        assert!(f.tab_bloqueado("gog"));
+        assert_eq!(f.filas_modal(), vec![DepId::Legendary, DepId::Gogdl, DepId::Chromium]);
+    }
+
+
+    /// Ciclo fallo→skip→reentrada→modal: el skip no deja marca persistente,
+    /// así que reentrar con algo pendiente vuelve a pedir el modal. Solo
+    /// completar (nada faltante) lo silencia.
+    #[test]
+    fn ciclo_skip_no_silencia_el_modal() {
+        let pendiente = Faltantes { legendary: false, gogdl: true, chromium: true };
+        assert!(pendiente.hay_algo(), "antes del skip: modal");
+        // El skip no muta nada persistente: mismo valor, mismo modal.
+        let tras_skip = pendiente;
+        assert!(tras_skip.hay_algo(), "tras el skip: modal de nuevo al reentrar");
+        let completo = Faltantes::default();
+        assert!(!completo.hay_algo(), "completo: nunca más");
+        assert!(completo.filas_modal().is_empty());
+    }
+
 }

@@ -1,4 +1,5 @@
 pub mod helpers;
+pub mod deps_modal;
 pub mod sidebar;
 pub mod details_panel;
 pub mod game_card;
