@@ -72,6 +72,26 @@ struct FilaWidgets {
     estado: gtk::Label,
 }
 
+/// Verde neón fijo para "Ready": hardcodeado a propósito, NO sigue el tema
+/// claro/oscuro (decisión de diseño explícita). Se registra una sola vez con
+/// un provider propio que ningún cambio de tema toca.
+const READY_CSS: &str = ".deps-ready { color: #39FF14; }";
+
+fn asegurar_css_ready() {
+    use std::sync::OnceLock;
+    static LISTO: OnceLock<()> = OnceLock::new();
+    LISTO.get_or_init(|| {
+        if let Some(display) = gdk::Display::default() {
+            let p = gtk::CssProvider::new();
+            p.load_from_string(READY_CSS);
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &p,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+    });
+}
 /// Mapea un error libre del backend a un motivo corto en inglés para la fila.
 ///
 /// Los textos de `cmd_setup` son excepciones de Python sin formato fijo y los
@@ -253,8 +273,9 @@ pub fn present(
     let dialog = adw::Dialog::new();
     dialog.set_title("Install dependencies");
     dialog.set_content_width(480);
-    // Sin salida por gesto: ni X (no hay botón) ni Esc. El cierre
-    // programático (`close()`) sigue funcionando para el éxito y el skip.
+    // Sin salida por gesto: ni X (no hay botón) ni Esc. OJO: con can-close en
+    // false, `close()` queda VETADO incluso programático (semántica de
+    // libadwaita): todas las salidas usan `force_close()`.
     dialog.set_can_close(false);
     // La modalidad/transiencia la da `present(parent)`: AdwDialog no es
     // GtkWindow y no tiene set_transient_for/set_modal.
@@ -348,6 +369,7 @@ pub fn present(
     inner.append(&skip);
 
     dialog.set_child(Some(&content));
+    asegurar_css_ready();
 
     let terminado = Rc::new(terminado);
     let dlg_vivo: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(true));
@@ -398,6 +420,7 @@ pub fn present(
                 if let Some(f) = e.filas.get(i) {
                     f.spin.stop();
                     f.spin.set_visible(false);
+                    f.estado.remove_css_class("deps-ready");
                     f.estado.set_text("Waiting…");
                 }
             }
@@ -427,7 +450,7 @@ pub fn present(
         let t = terminado.clone();
         let d = dialog.clone();
         skip.connect_clicked(move |_| {
-            d.close();
+            d.force_close();
             t(InstallOutcome::Skip);
         });
     }
@@ -459,6 +482,7 @@ pub fn present(
                         if let Some(f) = e.filas.get(i) {
                             f.spin.set_visible(true);
                             f.spin.start();
+                            f.estado.remove_css_class("deps-ready");
                             f.estado.set_text("Downloading…");
                         }
                     }
@@ -471,7 +495,8 @@ pub fn present(
                         if let Some(f) = e.filas.get(i) {
                             f.spin.stop();
                             f.spin.set_visible(false);
-                            f.estado.set_text("Ready ✓");
+                            f.estado.set_text("Ready");
+                            f.estado.add_css_class("deps-ready");
                         }
                         e.listas += 1;
                         e.barra.set_fraction(e.listas as f64 / e.total.max(1) as f64);
@@ -492,12 +517,14 @@ pub fn present(
                             // Éxito total: auto-cierre. Es la única salida
                             // "limpia"; quedarse abierto sin nada que hacer
                             // sería la trampa que el diseño quiere evitar.
+                            // `force_close`: `close()` está vetado por el
+                            // can-close en false (fue el bug del auto-cierre).
                             let dd = d.clone();
                             let tt = t.clone();
                             glib::timeout_add_local_once(
                                 std::time::Duration::from_millis(900),
                                 move || {
-                                    dd.close();
+                                    dd.force_close();
                                     tt(InstallOutcome::TodoOk);
                                 },
                             );
