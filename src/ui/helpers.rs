@@ -496,6 +496,10 @@ pub fn icon_button(name: &str, is_dark: bool, tooltip: &str) -> gtk::Button {
     let btn = gtk::Button::new();
     btn.set_tooltip_text(Some(tooltip));
     btn.set_width_request(36);
+    // Fondo con contraste en ambos temas (el default de Libadwaita se pierde
+    // contra el bg claro personalizado): misma clase que el resto de botones
+    // de acción de la app.
+    btn.add_css_class("settings-btn");
     let img = themed_image(name, is_dark, 16);
     btn.set_child(Some(&img));
     btn
