@@ -934,7 +934,7 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                     ch.rebuild(&state_c, &det_c);
                 }
                 if let Some(ref d) = *det_c.borrow() {
-                    d.set_playing(false);
+                    d.set_playing(false, state_c.theme.is_dark());
                     d.set_game(&game, &state_c.config);
                 }
             } else if let Some(ref d) = *det_c.borrow() {
@@ -943,6 +943,7 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                     state_c.proton.is_game_running()
                         && state_c.proton.session_game_name() == selected
                         && !selected.is_empty(),
+                    state_c.theme.is_dark(),
                 );
             }
             glib::ControlFlow::Continue

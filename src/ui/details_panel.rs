@@ -21,7 +21,6 @@ pub struct DetailsPanel {
     /// Sirve para no re-registrar en cada tick del poller: el registro solo
     /// hace falta cuando el icono cambia de verdad (Play <-> Stop).
     play_icon_name: std::cell::RefCell<String>,
-    is_dark: bool,
     time_label: gtk::Label,
     install_size_label: gtk::Label,
     install_path_label: gtk::Label,
@@ -380,7 +379,6 @@ impl DetailsPanel {
             play_icon,
             play_label,
             play_icon_name: std::cell::RefCell::new(String::from("play")),
-            is_dark,
             time_label: time,
             install_size_label: size_label,
             install_path_label: path_label,
@@ -429,7 +427,11 @@ impl DetailsPanel {
             .set_icon_name(Some("image-x-generic-symbolic"));
     }
 
-    pub fn set_playing(&self, playing: bool) {
+    /// El tema se recibe vivo en cada llamada a propósito: guardarlo en el
+    /// struct lo congelaría al valor de construcción y el poller de 2 s lo
+    /// re-aplicaría para siempre (fue el bug del flip a tinta incorrecta
+    /// tras un toggle Dark→Light).
+    pub fn set_playing(&self, playing: bool, is_dark: bool) {
         // Actualiza paintable y etiqueta. El registro en THEMED_IMAGES solo se
         // renueva cuando el nombre cambia de verdad: el poller de 2 s llama a
         // esta funcion en cada tick, y antes hacia `push` incondicional, con lo
@@ -441,7 +443,7 @@ impl DetailsPanel {
         // el icono como "play" mientras la etiqueta dice "Stop".
         let name = if playing { "stop" } else { "play" };
         self.play_label.set_text(if playing { "Stop" } else { "Play" });
-        if let Some(tex) = helpers::load_themed_icon_sized(name, self.is_dark, 16) {
+        if let Some(tex) = helpers::load_themed_icon_sized(name, is_dark, 16) {
             self.play_icon.set_paintable(Some(&tex));
         }
         if self.play_icon_name.borrow().as_str() != name {
