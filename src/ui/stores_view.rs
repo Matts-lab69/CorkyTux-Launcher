@@ -111,7 +111,7 @@ impl StoresView {
                         move |salida| match salida {
                             crate::ui::deps_modal::InstallOutcome::TodoOk => {
                                 // Re-chequeo de verdad y refresco de lo
-                                // desbloqueado, como hace "Install tools".
+                                // desbloqueado tras instalar.
                                 v.chequear_dependencias();
                                 for h in v.handles.borrow().iter() {
                                     h.refresh_auth(false);
@@ -262,63 +262,26 @@ impl StoresView {
         col.set_hexpand(true);
         scroll.set_child(Some(&col));
 
-        // header
-        let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        // header: bloque centrado con ícono grande + título grande. Sin botón
+        // manual de instalación: todo el flujo es automático por detección
+        // (modal al entrar + "Setup incomplete" por tab).
+        let head = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        head.set_halign(gtk::Align::Center);
         let hicon = gtk::Image::from_icon_name("corkytux-system-software-install-symbolic");
-        hicon.set_pixel_size(28);
+        hicon.set_pixel_size(64);
+        hicon.set_valign(gtk::Align::Center);
         head.append(&hicon);
-        let title = gtk::Label::new(Some("Stores"));
+        let title = gtk::Label::new(None);
+        title.set_markup("<span size=\"xx-large\" weight=\"bold\">Stores</span>");
         title.add_css_class("details-title");
-        title.set_halign(gtk::Align::Start);
-        title.set_hexpand(true);
+        title.set_valign(gtk::Align::Center);
         head.append(&title);
-        let setup_btn = gtk::Button::with_label("Install tools");
-        setup_btn.set_tooltip_text(Some("Download legendary + gogdl (independent from Heroic)"));
-        setup_btn.add_css_class("settings-btn");
-        setup_btn.set_valign(gtk::Align::Center);
-        head.append(&setup_btn);
         head.add_css_class("mc-head");
         col.append(&head);
-        let setup_status = note("");
-        setup_status.set_visible(false);
-        col.append(&setup_status);
-        // Filled with the per-store handles below; setup success refreshes
-        // both account badges (no more stale "Tools missing").
         let handles_slot: Rc<RefCell<Vec<StorePageHandle>>> = Rc::new(RefCell::new(Vec::new()));
-        {
-            let st = setup_status.clone();
-            let slot_c = handles_slot.clone();
-            setup_btn.connect_clicked(move |_| {
-                st.set_visible(true);
-                st.set_text("Downloading legendary + gogdl…");
-                let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
-                std::thread::spawn(move || {
-                    let _ = tx.send(StoreManager::setup().map(|d| {
-                        let got = d.get("installed").and_then(|x| x.as_array()).map(|a| a.len()).unwrap_or(0);
-                        format!("Tools ready ({}).", got)
-                    }).map_err(|e| e.to_string()));
-                });
-                let sc = st.clone();
-                let slot_cc = slot_c.clone();
-                crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
-                    Ok(Ok(msg)) => {
-                        sc.set_text(&msg);
-                        for h in slot_cc.borrow().iter() {
-                            h.refresh_auth(false);
-                            h.refresh_library(true);
-                        }
-                        glib::ControlFlow::Break
-                    }
-                    Ok(Err(e)) => {
-                        sc.set_text(&format!("Setup failed: {}", e));
-                        glib::ControlFlow::Break
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-                    Err(_) => glib::ControlFlow::Break,
-                });
-            });
-        }
         let status = note("Epic + GOG via legendary/gogdl (Heroic pattern). Games install into the native library.");
+        status.set_halign(gtk::Align::Center);
+        status.set_justify(gtk::Justification::Center);
         col.append(&status);
 
         // tabs (segmented, same pattern as MC Addons tabs)
@@ -1198,7 +1161,7 @@ impl StorePageHandle {
                 if !has_bin {
                     badge.set_text("Tools missing.");
                     hint.set_visible(true);
-                    hint.set_text("Press Install tools above to download legendary + gogdl.");
+                    hint.set_text("Re-enter Stores to install the missing tools.");
                     login_box.set_visible(true);
                     acc_row.set_visible(false);
                 } else if is_logged {
@@ -2471,7 +2434,8 @@ enum Chequeo {
 /// Qué herramientas faltan para Stores. Todo el modal, el trigger y el estado
 /// "Setup incomplete" se deciden con esto; no hay banderas de sesión.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-struct Faltantes {    /// Falta el binario de Epic (legendary).
+struct Faltantes {
+    /// Falta el binario de Epic (legendary).
     legendary: bool,
     /// Falta el binario de GOG (gogdl).
     gogdl: bool,
@@ -2608,10 +2572,6 @@ fn precheck_actual() -> Faltantes {
     }
 }
 
-/// Pre-chequeo liviano de entrada a Stores, sin red: presencia de bins
-/// (subcomando `bins` del plugin, solo filesystem) + caché de Chromium
-/// (`--probe`, solo filesystem). Es lo único que corre en cada entrada;
-/// el chequeo completo con red solo sigue si esto marca algo.
 /// Traduce el motivo de fallo del helper a un mensaje accionable.
 ///
 /// Cada motivo que el helper puede devolver tiene su propio mensaje, y todos
@@ -2703,7 +2663,6 @@ mod tests {
         assert_eq!(f.filas_modal(), vec![DepId::Legendary, DepId::Gogdl, DepId::Chromium]);
     }
 
-
     /// Falta SOLO gogdl (legendary y Chromium presentes): una fila, GOG
     /// bloqueado, Epic intacto con login.
     #[test]
@@ -2743,7 +2702,6 @@ mod tests {
         assert!(!completo.hay_algo(), "completo: nunca más");
         assert!(completo.filas_modal().is_empty());
     }
-
 
     /// Escenario del bug del trigger: todo instalado → los archivos
     /// desaparecen por fuera del modal → re-chequeo → se detecta la falta y
