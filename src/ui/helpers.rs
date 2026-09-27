@@ -598,6 +598,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              switch:checked > slider {{ background-color: {on_accent}; }}\
              check:checked {{ background-color: {accent}; border-color: {accent}; color: {on_accent}; }}\
              check, radio {{ background-color: transparent; border: 1px solid {text_muted}; }}\
+             checkbutton > label {{ color: {text_main}; }}\
              listbox, listbox > row {{ background-color: transparent; }}\
              listbox > row {{ color: {text_main}; }}\
              listbox > row:selected {{ background-color: color-mix(in srgb, {accent} 25%, transparent); }}\
