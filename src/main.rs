@@ -102,7 +102,7 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
     let state_clone = state.clone();
     let state_clone2 = state.clone();
     let win_clone = window.clone();
-    DetailsPanel::new(&state.theme, move |name| {
+    DetailsPanel::new(&state.theme, &state.proton, move |name| {
         // QML parity: Play launches, Stop (same button) banks session time.
         // Returns Err so the panel can show launch failures (used to be
         // silent `let _ = ...`, leaving users with a dead button).

@@ -2,6 +2,7 @@ use gtk::prelude::*;
 use gtk::{self, glib};
 
 use crate::backend::config::ConfigManager;
+use crate::backend::proton::ProtonManager;
 use crate::backend::theme::ThemeManager;
 use crate::ui::helpers;
 
@@ -21,6 +22,10 @@ pub struct DetailsPanel {
     /// Sirve para no re-registrar en cada tick del poller: el registro solo
     /// hace falta cuando el icono cambia de verdad (Play <-> Stop).
     play_icon_name: std::cell::RefCell<String>,
+    /// Handles vivos (no snapshots): el recálculo de set_game lee el estado
+    /// actual en cada selección, así el botón no espera al poller de 2 s.
+    proton: ProtonManager,
+    theme: ThemeManager,
     time_label: gtk::Label,
     install_size_label: gtk::Label,
     install_path_label: gtk::Label,
@@ -37,6 +42,7 @@ pub struct DetailsPanel {
 impl DetailsPanel {
     pub fn new<F: Fn(String) -> Result<(), String> + 'static + Clone, G: Fn(String) + 'static + Clone>(
         theme: &ThemeManager,
+        proton: &ProtonManager,
         on_play: F,
         on_favorite: G,
     ) -> Self {
@@ -379,6 +385,8 @@ impl DetailsPanel {
             play_icon,
             play_label,
             play_icon_name: std::cell::RefCell::new(String::from("play")),
+            proton: proton.clone(),
+            theme: theme.clone(),
             time_label: time,
             install_size_label: size_label,
             install_path_label: path_label,
@@ -699,7 +707,23 @@ impl DetailsPanel {
         // Reveal
         self.revealer.set_visible(true);
         self.revealer.set_reveal_child(true);
+
+        // Recálculo inmediato del botón Play/Stop con estado vivo: sin esto
+        // el texto quedaba rancio hasta el próximo tick del poller de 2 s al
+        // cambiar de selección. Misma fórmula del poller, mismo resultado.
+        let playing = playing_state(
+            name,
+            self.proton.is_game_running(),
+            &self.proton.session_game_name(),
+        );
+        self.set_playing(playing, self.theme.is_dark());
     }
+}
+
+/// ¿El botón del juego seleccionado debe mostrar Stop? Misma fórmula que el
+/// poller de `main.rs`: corre algo, es de esta sesión y hay selección.
+fn playing_state(selected: &str, running: bool, session: &str) -> bool {
+    running && session == selected && !selected.is_empty()
 }
 
 fn shellexpand_tilde(s: &str) -> String {
@@ -751,4 +775,26 @@ fn format_size(bytes: u64) -> String {
     if bytes < 1024 * 1024 { return format!("{:.1} KB", bytes as f64 / 1024.0); }
     if bytes < 1024 * 1024 * 1024 { return format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0)); }
     format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+}
+
+#[cfg(test)]
+#[allow(non_snake_case)]
+mod tests {
+    use super::*;
+
+    /// El seleccionado corriendo muestra Stop.
+    #[test]
+    fn playing_state_stop_si_es_el_que_corre() {
+        assert!(playing_state("Doom", true, "Doom"));
+    }
+
+    /// Selección distinta al que corre, nada corriendo o sin selección:
+    /// Play. Son los casos que quedaban rancios hasta el tick del poller.
+    #[test]
+    fn playing_state_play_en_el_resto() {
+        assert!(!playing_state("Doom", true, "Quake"));
+        assert!(!playing_state("Doom", false, "Doom"));
+        assert!(!playing_state("", true, ""));
+        assert!(!playing_state("Doom", true, ""));
+    }
 }
