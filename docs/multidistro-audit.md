@@ -462,6 +462,19 @@ Requiere que el usuario abra la app; el agente no la ejecuta.
    que excede la autorización actual de "compila y abre". Hasta entonces se
    queda como cosmético: la app funciona y el aviso no impide nada.
 
+   **Actualización 2026-09-27 — cerrado como cosmético conocido, sin fix.**
+   Auditoría por lectura (sin debugger): el sospechoso principal pasó a ser
+   cada tile de la biblioteca —`.game-card { border-radius: 22px }` y
+   `.accent-strip { border-radius: 0 0 20px 20px }` (`helpers.rs`) sobre
+   `GtkPicture(can_shrink, Cover)` cuyo paintable llega async
+   (`game_card.rs`, `load_cover_async`). Es la única hipótesis que explica
+   conteos variables con mismo binario y mismos assets: cuántas pictures
+   quedan en tamaño 0 depende del timing de cada arranque. La de filas de
+   emulador queda degradada a secundaria (8 filas vs docenas de tiles).
+   Confianza media-alta en la familia, baja en nombrar el widget exacto.
+   Decisión: no hay experimento ni fix (requerirían debugger o re-descargar
+   ~576 MB de covers). La app funciona y el aviso no impide nada.
+
 ## Medición del centrado de los iconos (2026-09-25)
 
 Medido con `rsvg-convert` + análisis del canal alfa, sin ejecutar la app. Los
