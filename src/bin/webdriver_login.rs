@@ -308,8 +308,9 @@ fn descargar_de(
 
 /// Devuelve la ruta al Chromium, descargándolo la primera vez.
 ///
-/// Se prefiere el del sistema si ya está en el PATH, para no descargar 188 MB
-/// cuando no hace falta. La descarga embebida existe para no depender de root.
+/// Se prefiere la caché pineada (versión conocida y probada); el del sistema
+/// en el PATH es fallback para no descargar 188 MB cuando la caché falta.
+/// La descarga embebida existe para no depender de root.
 ///
 /// `progreso` recibe `(porcentaje, bytes)` cada ~10 % de la descarga.
 fn ensure_chrome() -> Result<PathBuf, String> {
@@ -330,6 +331,14 @@ fn ensure_chrome_con(progreso: &dyn Fn(u8, u64)) -> Result<PathBuf, String> {
         }
         return Err(format!("CORKYTUX_CHROME no apunta a un archivo: {}", p.display()));
     }
+    // La caché pineada va primero: es la versión conocida y probada contra
+    // hCaptcha, y la mayoría de los usuarios (Firefox) no tiene nada usable
+    // en el PATH de todos modos. El PATH queda como fallback para no
+    // descargar 188 MB si hay un Chrome del sistema y la caché falta.
+    let cached = chrome_bin();
+    if cached.is_file() {
+        return Ok(cached);
+    }
     if let Ok(px) = std::env::var("PATH") {
         for dir in std::env::split_paths(&px) {
             let p = dir.join("google-chrome");
@@ -343,10 +352,6 @@ fn ensure_chrome_con(progreso: &dyn Fn(u8, u64)) -> Result<PathBuf, String> {
                 }
             }
         }
-    }
-    let cached = chrome_bin();
-    if cached.is_file() {
-        return Ok(cached);
     }
 
     let dir = chrome_dir();
