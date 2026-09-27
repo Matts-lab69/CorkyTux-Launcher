@@ -153,6 +153,11 @@ impl StoreManager {
         plugin_process::run_single_json(&Self::exe(), &["setup"])
     }
 
+    /// Solo presencia de binarios, sin red: pre-chequeo liviano del modal.
+    pub fn bins() -> Result<serde_json::Value, String> {
+        plugin_process::run_single_json(&Self::exe(), &["bins"])
+    }
+
     pub fn auth(store: &str, code: &str) -> Result<serde_json::Value, String> {
         let mut args = vec!["auth", "--store", store];
         let code_owned;

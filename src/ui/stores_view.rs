@@ -66,20 +66,36 @@ impl StoresView {
         }
     }
 
-    /// Trigger del modal de dependencias: chequeo async al entrar a Stores
-    /// (y al reabrir desde "Setup incomplete"). Si falta algo, bloquea por tab
-    /// y presenta el modal; si está todo, restaura la UI normal.
+    /// Trigger del modal de dependencias: pre-chequeo barato en cada entrada
+    /// (sin red), chequeo completo + modal solo si el pre-chequeo marca algo.
     ///
-    /// Sin memoria de skip: cada entrada con algo pendiente vuelve a mostrar
-    /// el modal, incluido tras reiniciar el launcher.
+    /// Corre UNA vez por entrada a Stores: ni loop ni polling mientras el
+    /// usuario está parado en la pantalla. Lo pendiente nunca se cachea, así
+    /// que borrar algo afuera y reentrar siempre lo detecta.
     pub fn chequear_dependencias(&self) {
         let vista = self.clone();
-        let (tx, rx) = std::sync::mpsc::channel::<Faltantes>();
+        let (tx, rx) = std::sync::mpsc::channel::<Chequeo>();
         std::thread::spawn(move || {
-            let _ = tx.send(faltantes_actuales());
+            let pre = precheck_actual();
+            if pre.hay_algo() {
+                let _ = tx.send(Chequeo::Falta(faltantes_actuales()));
+            } else {
+                let _ = tx.send(Chequeo::TodoBien);
+            }
         });
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
-            Ok(f) => {
+            Ok(Chequeo::TodoBien) => {
+                // Todo presente: UI normal. Si algo se había bloqueado y se
+                // restauró afuera, hay que cargar lo que el bloqueo frenó.
+                for h in vista.handles.borrow().iter() {
+                    h.aplicar_faltantes(&Faltantes::default());
+                    if !h.bloqueado.get() {
+                        h.ensure_loaded();
+                    }
+                }
+                glib::ControlFlow::Break
+            }
+            Ok(Chequeo::Falta(f)) => {
                 for h in vista.handles.borrow().iter() {
                     h.aplicar_faltantes(&f);
                 }
@@ -2445,6 +2461,13 @@ fn login_helper_log_path() -> PathBuf {
 
 // ─── dependencias de Stores (modal "Install dependencies") ─────────────────
 
+/// Resultado del chequeo de entrada a Stores: pre-chequeo barato primero,
+/// chequeo completo solo si el pre-chequeo marcó algo.
+enum Chequeo {
+    TodoBien,
+    Falta(Faltantes),
+}
+
 /// Qué herramientas faltan para Stores. Todo el modal, el trigger y el estado
 /// "Setup incomplete" se deciden con esto; no hay banderas de sesión.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -2558,6 +2581,37 @@ fn faltantes_actuales() -> Faltantes {
 /// (subcomando `bins` del plugin, solo filesystem) + caché de Chromium
 /// (`--probe`, solo filesystem). Es lo único que corre en cada entrada;
 /// el chequeo completo con red solo sigue si esto marca algo.
+fn precheck_actual() -> Faltantes {
+    let (leg_ok, gog_ok) = match StoreManager::bins() {
+        Ok(v) => {
+            let bins = v.get("bins");
+            let leg = bins
+                .and_then(|b| b.get("legendary"))
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false);
+            let gog = bins
+                .and_then(|b| b.get("gogdl"))
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false);
+            (leg, gog)
+        }
+        // Si ni el `bins` responde no se puede afirmar que estén: se ofrecen.
+        Err(_) => (false, false),
+    };
+    Faltantes {
+        legendary: !leg_ok,
+        gogdl: !gog_ok,
+        chromium: match probe_chrome_cached() {
+            Some(c) => !c,
+            None => true,
+        },
+    }
+}
+
+/// Pre-chequeo liviano de entrada a Stores, sin red: presencia de bins
+/// (subcomando `bins` del plugin, solo filesystem) + caché de Chromium
+/// (`--probe`, solo filesystem). Es lo único que corre en cada entrada;
+/// el chequeo completo con red solo sigue si esto marca algo.
 /// Traduce el motivo de fallo del helper a un mensaje accionable.
 ///
 /// Cada motivo que el helper puede devolver tiene su propio mensaje, y todos
@@ -2650,6 +2704,31 @@ mod tests {
     }
 
 
+    /// Falta SOLO gogdl (legendary y Chromium presentes): una fila, GOG
+    /// bloqueado, Epic intacto con login.
+    #[test]
+    fn granularidad_falta_solo_gogdl_sin_nada_mas() {
+        let f = Faltantes { legendary: false, gogdl: true, chromium: false };
+        assert!(f.hay_algo());
+        assert!(!f.tab_bloqueado("epic"));
+        assert!(f.tab_bloqueado("gog"));
+        assert!(!f.login_bloqueado());
+        assert_eq!(f.para_tienda("epic"), Vec::<&str>::new());
+        assert_eq!(f.para_tienda("gog"), vec!["gogdl"]);
+        assert_eq!(f.filas_modal(), vec![DepId::Gogdl]);
+    }
+
+    /// Falta SOLO legendary: espejo del caso GOG.
+    #[test]
+    fn granularidad_falta_solo_legendary_sin_nada_mas() {
+        let f = Faltantes { legendary: true, gogdl: false, chromium: false };
+        assert!(f.tab_bloqueado("epic"));
+        assert!(!f.tab_bloqueado("gog"));
+        assert!(!f.login_bloqueado());
+        assert_eq!(f.para_tienda("epic"), vec!["legendary"]);
+        assert_eq!(f.filas_modal(), vec![DepId::Legendary]);
+    }
+
     /// Ciclo fallo→skip→reentrada→modal: el skip no deja marca persistente,
     /// así que reentrar con algo pendiente vuelve a pedir el modal. Solo
     /// completar (nada faltante) lo silencia.
@@ -2665,4 +2744,105 @@ mod tests {
         assert!(completo.filas_modal().is_empty());
     }
 
+
+    /// Escenario del bug del trigger: todo instalado → los archivos
+    /// desaparecen por fuera del modal → re-chequeo → se detecta la falta y
+    /// hay que mostrar el modal. (El `deps_ok` cacheado impedía re-chequear;
+    /// eliminado: cada entrada evalúa de nuevo.)
+    ///
+    /// Hermético y sin red: HOME temporal + copia del script real del plugin
+    /// + helper real localizado junto al binario de test. Toca procesos
+    /// reales (`bins` en Python, `--probe` en Rust) contra ese sandbox.
+    #[test]
+    fn precheck_detecta_borrado_externo_y_dispara_modal() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let orig_home = std::env::var("HOME").unwrap_or_default();
+        let orig_helper = std::env::var("CORKYTUX_LOGIN_HELPER").ok();
+        let base = std::env::temp_dir().join(format!(
+            "corkytux-precheck-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+
+        // Sandbox: copia del script del plugin + bins + caché de Chromium.
+        let script_origen = std::path::PathBuf::from(&orig_home)
+            .join(".local/share/CorkyTux/plugins/heroic-store/heroic-store");
+        assert!(
+            script_origen.is_file(),
+            "falta el plugin instalado para copiar al sandbox: {}",
+            script_origen.display()
+        );
+        let script = base.join(".local/share/CorkyTux/plugins/heroic-store/heroic-store");
+        std::fs::create_dir_all(script.parent().expect("padre del script")).unwrap();
+        std::fs::copy(&script_origen, &script).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let bin_dir = base.join(".config/CorkyTux/plugins/heroic-store/bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let leg = bin_dir.join("legendary");
+        let gog = bin_dir.join("gogdl");
+        std::fs::write(&leg, b"x").unwrap();
+        std::fs::write(&gog, b"x").unwrap();
+
+        // Helper real: el binario junto al harness de test (lo construye
+        // `cargo test` al compilar todos los targets).
+        let exe = std::env::current_exe().expect("current_exe");
+        let helper = exe
+            .parent()
+            .and_then(|d| d.parent())
+            .map(|d| d.join("webdriver_login"))
+            .expect("ruta del helper");
+        assert!(
+            helper.is_file(),
+            "falta el helper compilado para --probe: {}",
+            helper.display()
+        );
+        let chrome = base.join(
+            ".local/share/corkytux/chrome-154.0.8037.57/chrome-linux64/chrome",
+        );
+        std::fs::create_dir_all(chrome.parent().expect("padre de chrome")).unwrap();
+        std::fs::write(&chrome, b"x").unwrap();
+
+        std::env::set_var("HOME", &base);
+        std::env::set_var("CORKYTUX_LOGIN_HELPER", &helper);
+
+        // Estado inicial: todo instalado → sin modal.
+        let antes = precheck_actual();
+        assert!(
+            !antes.hay_algo(),
+            "con todo presente no hay modal: {:?}",
+            antes
+        );
+
+        // Borrado externo, sin pasar por el modal (el escenario del bug).
+        std::fs::remove_file(&leg).unwrap();
+        std::fs::remove_file(&gog).unwrap();
+        std::fs::remove_file(&chrome).unwrap();
+
+        // Re-chequeo: detecta las tres faltas → modal.
+        let despues = precheck_actual();
+        assert!(
+            despues.hay_algo(),
+            "tras el borrado externo hay modal: {:?}",
+            despues
+        );
+        assert_eq!(
+            despues,
+            Faltantes { legendary: true, gogdl: true, chromium: true },
+            "las tres faltas detectadas"
+        );
+        assert_eq!(despues.filas_modal().len(), 3);
+
+        match orig_helper {
+            Some(v) => std::env::set_var("CORKYTUX_LOGIN_HELPER", v),
+            None => std::env::remove_var("CORKYTUX_LOGIN_HELPER"),
+        }
+        std::env::set_var("HOME", &orig_home);
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

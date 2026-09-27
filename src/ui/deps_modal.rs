@@ -72,6 +72,23 @@ struct FilaWidgets {
     estado: gtk::Label,
 }
 
+/// Estado lógico de una fila, espejo del widget para decisiones sin GTK.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FilaEstado {
+    Espera,
+    Activa,
+    Lista,
+    Fallo,
+}
+
+/// El link "Skip for now" aparece en cuanto ALGUNA fila está en Failed, sin
+/// importar el estado de las demás (en progreso, éxito u otro fallo). No se
+/// espera a que terminen todas: esa espera era el bug (una fila en progreso
+/// bloqueaba el link aunque otra ya hubiera fallado).
+fn mostrar_skip(estados: &[FilaEstado]) -> bool {
+    estados.iter().any(|s| *s == FilaEstado::Fallo)
+}
+
 /// Verde neón fijo para "Ready": hardcodeado a propósito, NO sigue el tema
 /// claro/oscuro (decisión de diseño explícita). Se registra una sola vez con
 /// un provider propio que ningún cambio de tema toca.
@@ -385,6 +402,7 @@ pub fn present(
     // Estado compartido con el poller.
     struct Estado {
         filas: Vec<FilaWidgets>,
+        estados: Vec<FilaEstado>,
         barra: gtk::ProgressBar,
         instalar_btn: gtk::Button,
         skip: gtk::Button,
@@ -395,6 +413,7 @@ pub fn present(
     }
     let estado = Rc::new(std::cell::RefCell::new(Estado {
         filas,
+        estados: vec![FilaEstado::Espera; pendientes.len()],
         barra: barra.clone(),
         instalar_btn: instalar_btn.clone(),
         skip: skip.clone(),
@@ -422,6 +441,11 @@ pub fn present(
                     f.spin.set_visible(false);
                     f.estado.remove_css_class("deps-ready");
                     f.estado.set_text("Waiting…");
+                }
+                // Intento fresco, estados frescos. El link de skip NO se
+                // oculta: una vez ganado por un fallo anterior, queda.
+                if let Some(s) = e.estados.get_mut(i) {
+                    *s = FilaEstado::Espera;
                 }
             }
             e.barra.set_fraction(0.0);
@@ -485,6 +509,9 @@ pub fn present(
                             f.estado.remove_css_class("deps-ready");
                             f.estado.set_text("Downloading…");
                         }
+                        if let Some(s) = e.estados.get_mut(i) {
+                            *s = FilaEstado::Activa;
+                        }
                     }
                     Avance::FilaProgreso(i, pct, mb) => {
                         if let Some(f) = e.filas.get(i) {
@@ -498,6 +525,9 @@ pub fn present(
                             f.estado.set_text("Ready");
                             f.estado.add_css_class("deps-ready");
                         }
+                        if let Some(s) = e.estados.get_mut(i) {
+                            *s = FilaEstado::Lista;
+                        }
                         e.listas += 1;
                         e.barra.set_fraction(e.listas as f64 / e.total.max(1) as f64);
                         e.barra.set_text(Some(&format!("{} of {}", e.listas, e.total)));
@@ -506,7 +536,17 @@ pub fn present(
                         if let Some(f) = e.filas.get(i) {
                             f.spin.stop();
                             f.spin.set_visible(false);
+                            f.estado.remove_css_class("deps-ready");
                             f.estado.set_text(&format!("Failed: {}", motivo));
+                        }
+                        if let Some(s) = e.estados.get_mut(i) {
+                            *s = FilaEstado::Fallo;
+                        }
+                        // FIX del timing: el link aparece con el primer fallo,
+                        // sin esperar a que el resto termine. Monotónico: una
+                        // vez visible no se oculta (regla aprobada).
+                        if mostrar_skip(&e.estados) {
+                            e.skip.set_visible(true);
                         }
                     }
                     Avance::Terminado => {
@@ -531,7 +571,8 @@ pub fn present(
                         } else {
                             e.fallos_acumulados += 1;
                             e.barra.set_text(Some("Press Install All to retry."));
-                            e.skip.set_visible(true);
+                            // El link ya se mostró con el primer fallo
+                            // (regla `mostrar_skip`); acá no se decide nada.
                         }
                     }
                 }
@@ -571,5 +612,27 @@ mod tests {
     fn las_tres_deps_estan_fichadas() {
         assert_eq!(DEPS.len(), 3);
         assert!(DEPS.iter().any(|d| d.id == DepId::Chromium && d.peso == "~188 MB"));
+    }
+
+    /// Caso del bug reportado: fila A en Failed, fila B todavía en progreso
+    /// (ni éxito ni fallo) → el link ya debe estar visible, sin esperar a B.
+    #[test]
+    fn mostrar_skip_con_un_fallo_y_otra_en_progreso() {
+        assert!(mostrar_skip(&[FilaEstado::Fallo, FilaEstado::Activa]));
+    }
+
+    /// Sin ningún fallo no hay link, en ningún estado intermedio ni final.
+    #[test]
+    fn mostrar_skip_sin_fallos_oculto() {
+        assert!(!mostrar_skip(&[FilaEstado::Espera, FilaEstado::Espera]));
+        assert!(!mostrar_skip(&[FilaEstado::Activa, FilaEstado::Espera]));
+        assert!(!mostrar_skip(&[FilaEstado::Lista, FilaEstado::Lista]));
+        assert!(!mostrar_skip(&[]));
+    }
+
+    /// Fallo junto a éxito también muestra el link (no importa el resto).
+    #[test]
+    fn mostrar_skip_con_fallo_y_exito() {
+        assert!(mostrar_skip(&[FilaEstado::Lista, FilaEstado::Fallo]));
     }
 }
