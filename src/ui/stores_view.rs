@@ -16,6 +16,10 @@ use crate::ui::import_manager;
 struct StoreGame {
     app_id: String,
     title: String,
+    /// Género simple de GOG (`category`); vacío si no viene. Epic no lo usa.
+    category: String,
+    /// Sistemas de GOG (`worksOn` filtrado a trues); vacío = no mostrar.
+    systems: Vec<String>,
     version: String,
     installed: bool,
     stale_registry: bool,
@@ -906,6 +910,30 @@ impl StoresView {
         refresh_btn.add_css_class("settings-btn");
         lib_row.append(&refresh_btn);
         lib_inner.append(&lib_row);
+        // Toolbar Fase 1, solo tab GOG: búsqueda + orden en memoria sobre la
+        // lista completa (sin red). Epic mantiene su UI intacta. El cableado
+        // va tras construir el handle (necesita el `view`).
+        let gog_search: Option<gtk::SearchEntry>;
+        let gog_sort_dd: Option<gtk::DropDown>;
+        if store == "gog" {
+            let tools = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            let search = gtk::SearchEntry::new();
+            search.set_hexpand(true);
+            search.set_placeholder_text(Some("Search GOG library…"));
+            tools.append(&search);
+            let sort_dd = gtk::DropDown::new(None::<gtk::StringList>, None::<gtk::Expression>);
+            let sorts = gtk::StringList::new(&["Title A–Z", "Title Z–A", "Installed first"]);
+            let model: gtk::gio::ListModel = sorts.upcast();
+            sort_dd.set_model(Some(&model));
+            sort_dd.set_selected(0);
+            tools.append(&sort_dd);
+            lib_inner.append(&tools);
+            gog_search = Some(search);
+            gog_sort_dd = Some(sort_dd);
+        } else {
+            gog_search = None;
+            gog_sort_dd = None;
+        }
         let flow = gtk::FlowBox::new();
         flow.set_max_children_per_line(10);
         flow.set_min_children_per_line(1);
@@ -979,6 +1007,10 @@ impl StoresView {
             browser_row: browser_row.clone(),
             bloqueado: Rc::new(std::cell::Cell::new(false)),
             reabrir,
+            all_games: Rc::new(RefCell::new(Vec::new())),
+            shown_games: Rc::new(RefCell::new(Vec::new())),
+            gog_query: Rc::new(RefCell::new(String::new())),
+            gog_sort: Rc::new(std::cell::Cell::new(0)),
             loaded: Rc::new(std::cell::Cell::new(false)),
             desc_killer: Rc::new(RefCell::new(None)),
             desc_running: Rc::new(std::cell::Cell::new(false)),
@@ -1037,6 +1069,31 @@ impl StoresView {
         // Full status at page build: --quick keeps `accounts` empty (quick=true
         // => accounts={"epic":""}) so the account row would fall back to the
         // store literal ("epic"). Non-quick fills the real displayName (e.g. "Matyy_y").
+        //
+        // Cableado del toolbar GOG + apertura de ficha por click en tarjeta.
+        // Solo tab GOG (Epic no tiene toolbar ni tarjetas clicables).
+        if s == "gog" {
+            if let (Some(search), Some(sort_dd)) = (gog_search, gog_sort_dd) {
+                let vv = view.clone();
+                search.connect_search_changed(move |e| {
+                    *vv.gog_query.borrow_mut() = e.text().to_string();
+                    vv.render_filtered();
+                });
+                let vv2 = view.clone();
+                sort_dd.connect_selected_notify(move |dd| {
+                    vv2.gog_sort.set(dd.selected());
+                    vv2.render_filtered();
+                });
+            }
+            let vv3 = view.clone();
+            let flow_c = flow.clone();
+            flow_c.connect_child_activated(move |_, child| {
+                let idx = child.index() as usize;
+                if let Some(g) = vv3.shown_games.borrow().get(idx).cloned() {
+                    vv3.show_game_info(&g);
+                }
+            });
+        }
         view.refresh_auth(false);
         (page, view)
     }
@@ -1110,6 +1167,12 @@ struct StorePageHandle {
     browser_row: gtk::Box,
     bloqueado: Rc<std::cell::Cell<bool>>,
     reabrir: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    // Grilla GOG Fase 1: lista completa + vista filtrada/ordenada en memoria,
+    // query y modo de orden del toolbar (solo tab GOG; Epic no los usa).
+    all_games: Rc<RefCell<Vec<StoreGame>>>,
+    shown_games: Rc<RefCell<Vec<StoreGame>>>,
+    gog_query: Rc<RefCell<String>>,
+    gog_sort: Rc<std::cell::Cell<u32>>,
     loaded: Rc<std::cell::Cell<bool>>,
     // Background description batch (library card "Refresh" on Epic).
     // ref_cell holds the current process-killer; gen is bumped on every
@@ -1489,14 +1552,19 @@ impl StorePageHandle {
         while let Some(c) = self.flow.first_child() {
             self.flow.remove(&c);
         }
-        let (tx, rx) = std::sync::mpsc::channel::<Result<Vec<StoreGame>, String>>();
+        let (tx, rx) = std::sync::mpsc::channel::<Result<(Vec<StoreGame>, Option<String>), String>>();
         let store = self.store.clone();
         std::thread::spawn(move || {
             let _ = tx.send(StoreManager::library(&store, force).map(|d| {
-                d.get("games").and_then(|x| x.as_array()).cloned().unwrap_or_default()
+                let warn = d.get("warning").and_then(|x| x.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
+                let games = d.get("games").and_then(|x| x.as_array()).cloned().unwrap_or_default()
                     .into_iter().map(|g| StoreGame {
                         app_id: g.get("app_id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                         title: g.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                        category: g.get("category").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                        systems: g.get("systems").and_then(|x| x.as_array()).map(|a| {
+                            a.iter().filter_map(|x| x.as_str()).map(|s| s.to_string()).collect()
+                        }).unwrap_or_default(),
                         version: g.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                         installed: g.get("installed").and_then(|x| x.as_bool()).unwrap_or(false),
                         stale_registry: g.get("stale_registry").and_then(|x| x.as_bool()).unwrap_or(false),
@@ -1504,13 +1572,25 @@ impl StorePageHandle {
                         executable: g.get("executable").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                         cover: g.get("cover").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                         description: g.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    }).collect::<Vec<_>>()
+                    }).collect::<Vec<_>>();
+                (games, warn)
             }).map_err(|e| e.to_string()));
         });
         let vh = self.clone();
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
-            Ok(Ok(games)) => {
-                vh.render_games(&games);
+            Ok(Ok((games, warn))) => {
+                *vh.all_games.borrow_mut() = games.clone();
+                if vh.store == "gog" {
+                    vh.render_filtered();
+                } else {
+                    vh.render_games(&games);
+                }
+                // Degradación parcial del plugin: nota no bloqueante, nunca
+                // página de error (el `die(3)` se eliminó en Fase 1).
+                if let Some(w) = warn {
+                    let cur = vh.lib_status.text().to_string();
+                    vh.lib_status.set_text(&format!("{} · partial: {}", cur, w.chars().take(80).collect::<String>()));
+                }
                 crate::refresh_warn_buttons(&vh.state);
                 glib::ControlFlow::Break
             }
@@ -1554,6 +1634,9 @@ impl StorePageHandle {
                             .map(|g| StoreGame {
                                 app_id: g.get("app_id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                                 title: g.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                // Lote Epic: sin categoría/sistemas (campos GOG).
+                                category: String::new(),
+                                systems: Vec::new(),
                                 version: g.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                                 installed: g.get("installed").and_then(|x| x.as_bool()).unwrap_or(false),
                                 stale_registry: g.get("stale_registry").and_then(|x| x.as_bool()).unwrap_or(false),
@@ -1598,6 +1681,127 @@ impl StorePageHandle {
             }
         });
     }
+
+    /// Re-render GOG desde la lista completa con query y orden actuales.
+    /// Todo en memoria, sin red. Epic no pasa por acá.
+    fn render_filtered(&self) {
+        let all = self.all_games.borrow().clone();
+        let q = self.gog_query.borrow().clone();
+        let v = Self::filtrar_ordenar(&all, &q, self.gog_sort.get());
+        *self.shown_games.borrow_mut() = v.clone();
+        self.render_gog_cards(&v, !all.is_empty());
+    }
+
+    /// Línea "category · systems" de la tarjeta GOG: cada mitad se oculta si
+    /// está vacía (los campos son opcionales en la respuesta de GOG).
+    fn render_gog_cards(&self, games: &[StoreGame], hay_mas: bool) {
+        while let Some(c) = self.flow.first_child() {
+            self.flow.remove(&c);
+        }
+        if games.is_empty() {
+            self.lib_status.set_text(if hay_mas {
+                "No games match the filter."
+            } else {
+                "No games. Log in and Refresh."
+            });
+            return;
+        }
+        self.lib_status.set_text(&format!("{} game(s)", games.len()));
+        for g in games {
+            let tile = gtk::FlowBoxChild::new();
+            tile.set_width_request(170);
+            let inner = gtk::Box::new(gtk::Orientation::Vertical, 4);
+            inner.set_margin_top(8);
+            inner.set_margin_bottom(8);
+            inner.set_margin_start(8);
+            inner.set_margin_end(8);
+            inner.add_css_class("page-card");
+            if !g.cover.is_empty() {
+                let img = gtk::Image::new();
+                img.set_pixel_size(150);
+                img.set_halign(gtk::Align::Center);
+                crate::ui::minecraft_view::load_mod_icon(&g.cover, &format!("store-gog-{}", g.app_id), &img, 150);
+                inner.append(&img);
+            }
+            let name = gtk::Label::new(Some(&g.title));
+            name.set_halign(gtk::Align::Center);
+            name.set_wrap(true);
+            name.set_lines(2);
+            name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            name.set_max_width_chars(16);
+            name.set_size_request(-1, 44);
+            name.add_css_class("details-title");
+            inner.append(&name);
+            let meta = Self::meta_line(&g.category, &g.systems);
+            if !meta.is_empty() {
+                let meta_lbl = gtk::Label::new(Some(&meta));
+                meta_lbl.set_halign(gtk::Align::Center);
+                meta_lbl.set_opacity(0.6);
+                meta_lbl.add_css_class("time-label");
+                inner.append(&meta_lbl);
+            }
+            if g.installed {
+                let ib = gtk::Label::new(Some("✓ installed"));
+                ib.set_halign(gtk::Align::Center);
+                ib.set_opacity(0.6);
+                ib.add_css_class("time-label");
+                inner.append(&ib);
+            }
+            // Sin botones en la tarjeta (diseño GOG Fase 1): click abre la
+            // ficha, que sí tiene Install/Import. Las tarjetas Epic quedan
+            // intactas con sus botones.
+            tile.set_child(Some(&inner));
+            self.flow.insert(&tile, -1);
+        }
+    }
+
+/// Línea "category · systems" de la tarjeta GOG: cada mitad se oculta si está
+/// vacía, porque ambos campos son opcionales en la respuesta de GOG
+/// (`worksOn` viene roto seguido, `category` puede venir vacío).
+fn meta_line(category: &str, systems: &[String]) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let cat = category.trim();
+    if !cat.is_empty() {
+        parts.push(cat.to_string());
+    }
+    let sys: Vec<String> = systems
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if !sys.is_empty() {
+        parts.push(sys.join(" · "));
+    }
+    parts.join(" · ")
+}
+
+/// Filtro por título/categoría + orden en memoria para la grilla GOG.
+/// Puro y testeable: la UI solo lo aplica y renderiza.
+fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame> {
+    let q = query.trim().to_lowercase();
+    let mut v: Vec<StoreGame> = juegos
+        .iter()
+        .filter(|g| {
+            q.is_empty()
+                || g.title.to_lowercase().contains(&q)
+                || g.category.to_lowercase().contains(&q)
+        })
+        .cloned()
+        .collect();
+    match sort {
+        // Title Z–A.
+        1 => v.sort_by(|a, b| b.title.to_lowercase().cmp(&a.title.to_lowercase())),
+        // Installed first, después A–Z.
+        2 => v.sort_by(|a, b| {
+            b.installed
+                .cmp(&a.installed)
+                .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+        }),
+        // Title A–Z (default, 0 y cualquier otro).
+        _ => v.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
+    }
+    v
+}
 
     fn render_games(&self, games: &[StoreGame]) {
         while let Some(c) = self.flow.first_child() {
@@ -1719,6 +1923,12 @@ impl StorePageHandle {
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
             Ok(Ok(doc)) => {
                 vh.render_game_info(&b2, &doc, &game_c, &dd0);
+                // Degradación parcial (Fase 1): si la ficha vino incompleta se
+                // avisa en vez de mostrarla como si estuviera entera.
+                if doc.get("partial").and_then(|x| x.as_bool()).unwrap_or(false) {
+                    let w = doc.get("warning").and_then(|x| x.as_str()).unwrap_or("");
+                    b2.append(&note(&format!("Incomplete info{}.", if w.is_empty() { String::new() } else { format!(": {}", w.chars().take(90).collect::<String>()) })));
+                }
                 glib::ControlFlow::Break
             }
             Ok(Err(e)) => {
@@ -2802,5 +3012,57 @@ mod tests {
         }
         std::env::set_var("HOME", &orig_home);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// meta_line: cada mitad se oculta si está vacía (campos opcionales).
+    #[test]
+    fn meta_line_oculta_mitades_vacias() {
+        assert_eq!(
+            super::StorePageHandle::meta_line("RPG", &["Windows".to_string()]),
+            "RPG · Windows"
+        );
+        assert_eq!(
+            super::StorePageHandle::meta_line("", &["Linux".to_string()]),
+            "Linux"
+        );
+        assert_eq!(
+            super::StorePageHandle::meta_line("Adv", &[]),
+            "Adv"
+        );
+        assert_eq!(
+            super::StorePageHandle::meta_line("  ", &[String::new()]),
+            ""
+        );
+    }
+
+    /// filtrar_ordenar: filtro por título/categoría + 3 órdenes.
+    #[test]
+    fn filtrar_ordenar_filtra_y_ordena() {
+        let g = |t: &str, c: &str, inst: bool| super::StoreGame {
+            app_id: t.to_string(),
+            title: t.to_string(),
+            category: c.to_string(),
+            systems: Vec::new(),
+            version: String::new(),
+            installed: inst,
+            stale_registry: false,
+            install_path: String::new(),
+            executable: String::new(),
+            cover: String::new(),
+            description: String::new(),
+        };
+        let juegos = vec![g("Zeta", "RPG", false), g("alpha", "Adv", true), g("Mid", "RPG", false)];
+        // Vacío + default: todo A–Z insensible a mayúsculas.
+        let v = super::StorePageHandle::filtrar_ordenar(&juegos, "", 0);
+        assert_eq!(v.iter().map(|x| x.title.as_str()).collect::<Vec<_>>(), vec!["alpha", "Mid", "Zeta"]);
+        // Filtro matchea título o categoría.
+        let v = super::StorePageHandle::filtrar_ordenar(&juegos, "rpg", 0);
+        assert_eq!(v.len(), 2);
+        // Z–A.
+        let v = super::StorePageHandle::filtrar_ordenar(&juegos, "", 1);
+        assert_eq!(v[0].title, "Zeta");
+        // Instalados primero.
+        let v = super::StorePageHandle::filtrar_ordenar(&juegos, "", 2);
+        assert!(v[0].installed);
     }
 }
