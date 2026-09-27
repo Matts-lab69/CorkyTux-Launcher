@@ -1011,6 +1011,7 @@ impl StoresView {
             shown_games: Rc::new(RefCell::new(Vec::new())),
             gog_query: Rc::new(RefCell::new(String::new())),
             gog_sort: Rc::new(std::cell::Cell::new(0)),
+            last_logged: Rc::new(std::cell::Cell::new(false)),
             loaded: Rc::new(std::cell::Cell::new(false)),
             desc_killer: Rc::new(RefCell::new(None)),
             desc_running: Rc::new(std::cell::Cell::new(false)),
@@ -1173,6 +1174,9 @@ struct StorePageHandle {
     shown_games: Rc<RefCell<Vec<StoreGame>>>,
     gog_query: Rc<RefCell<String>>,
     gog_sort: Rc<std::cell::Cell<u32>>,
+    // Último estado de sesión visto por refresh_auth: distingue "sin sesión"
+    // de "logueado pero biblioteca vacía" en los mensajes de estado vacío.
+    last_logged: Rc<std::cell::Cell<bool>>,
     loaded: Rc<std::cell::Cell<bool>>,
     // Background description batch (library card "Refresh" on Epic).
     // ref_cell holds the current process-killer; gen is bumped on every
@@ -1219,8 +1223,10 @@ impl StorePageHandle {
         let acc_row = self.acc_row.clone();
         let acc_name = self.acc_name.clone();
         let acc_avatar = self.acc_avatar.clone();
+        let last_logged = self.last_logged.clone();
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
             Ok((is_logged, has_bin, name)) => {
+                last_logged.set(is_logged);
                 if !has_bin {
                     badge.set_text("Tools missing.");
                     hint.set_visible(true);
@@ -1701,6 +1707,8 @@ impl StorePageHandle {
         if games.is_empty() {
             self.lib_status.set_text(if hay_mas {
                 "No games match the filter."
+            } else if self.last_logged.get() {
+                "No games in your GOG library — try Refresh."
             } else {
                 "No games. Log in and Refresh."
             });
@@ -1808,7 +1816,11 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
             self.flow.remove(&c);
         }
         if games.is_empty() {
-            self.lib_status.set_text("No games. Log in and Refresh.");
+            self.lib_status.set_text(if self.last_logged.get() {
+                "No games in your Epic library — try Refresh."
+            } else {
+                "No games. Log in and Refresh."
+            });
             return;
         }
         self.lib_status.set_text(&format!("{} game(s)", games.len()));
