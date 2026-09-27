@@ -2292,7 +2292,7 @@ pub fn show_settings_modal(
     let github_btn = gtk::Button::new();
     let gh_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     gh_box.set_halign(gtk::Align::Center);
-    gh_box.append(&gtk::Image::from_icon_name("corkytux-web-browser-symbolic"));
+    gh_box.append(&gtk::Image::from_icon_name("corkytux-github-symbolic"));
     let gh_label = gtk::Label::new(Some("GitHub"));
     gh_label.set_halign(gtk::Align::Center);
     gh_box.append(&gh_label);

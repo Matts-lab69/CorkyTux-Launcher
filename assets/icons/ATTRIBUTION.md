@@ -9,6 +9,13 @@ launcher does not depend on the user's system icon theme being installed.
 - Exception: `emblem-ok-symbolic.svg` is a copy of Adwaita's
   `object-select-symbolic.svg` renamed, because Adwaita ships no
   `emblem-ok-symbolic` (only full-color PNGs exist elsewhere).
+- Exception: `corkytux-github-symbolic.svg` (categories) is the GitHub mark
+  from `xsi-github-symbolic.svg` of the **xapp-symbolic-icon-theme** set
+  (Linux Mint), cleaned of editor metadata and kept at the bundle's plain
+  `fill #2e3436` ink so symbolic recoloring is preserved. The XSI project as
+  a whole is distributed under LGPLv3; the GitHub mark itself remains
+  GitHub's trademark, used here only as the visual for a link to
+  github.com (same nominative use as the Epic/GOG brand icons below).
 - Exception: `corkytux-system-software-install-symbolic.svg` uses the trace
   of the modern `system-software-install-symbolic.svg` glyph from the
   **Mint-Breeze** icon theme: the original Adwaita-legacy copy is a lock
