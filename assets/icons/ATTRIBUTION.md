@@ -46,15 +46,15 @@ path, symbolic recoloring preserved), system icon theme second.
   artwork directory and no recognizable brand mark, so the row keeps the
   generic `system-run-symbolic` rather than risking an unofficial logo.
 - Epic Games / GOG: monochrome SVGs from **Simple Icons**
-  (`simple-icons/simple-icons` @ `icons/epicgames.svg` y `icons/gogdotcom.svg`,
-  adaptadas al bundle como `epicgames-symbolic.svg` / `gogdotcom-symbolic.svg`
-  con `fill` del theme, un solo path, sin recolor extra).
-  - Fuente: https://github.com/simple-icons/simple-icons
-  - Licencia del archivo: CC0 1.0
+  (`simple-icons/simple-icons` @ `icons/epicgames.svg` and `icons/gogdotcom.svg`,
+  adapted to the bundle as `epicgames-symbolic.svg` / `gogdotcom-symbolic.svg`
+  with the theme's `fill`, a single path, no extra recoloring).
+  - Source: https://github.com/simple-icons/simple-icons
+  - File license: CC0 1.0
     (https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md).
-    Logos de marca con copyright de sus dueños; se usan únicamente para
-    indicar integración (mismo criterio que Steam/Lutris/Heroic), sin
-    endorsement implícito.
+    Brand logos are copyrighted by their owners; I use them solely to
+    indicate integration (same criterion as Steam/Lutris/Heroic), with no
+    implied endorsement.
 - `steam.png`: official Steam ball icon, Wikimedia Commons
   `File:Steam icon logo.svg` (512px vector, server-rendered to 330px PNG,
   stored at 256px; verified full-color, saturation 0.62). Trademark of
@@ -62,7 +62,7 @@ path, symbolic recoloring preserved), system icon theme second.
   Lutris/Heroic do; no endorsement implied.
 - `corkytux-steamdb.png` / `corkytux-steamdb_dark.png` /
   `corkytux-protondb.png`: SteamDB and ProtonDB logos from **Simple Icons**
-  (`simple-icons/simple-icons` @ `icons/steamdb.svg` y `icons/protondb.svg`),
+  (`simple-icons/simple-icons` @ `icons/steamdb.svg` and `icons/protondb.svg`),
   rasterized to 128px PNG:
     - SteamDB hex `#000000`: the light theme uses the brand black
       (`corkytux-steamdb_dark.png`); the dark theme needs a contrast variant
@@ -70,26 +70,26 @@ path, symbolic recoloring preserved), system icon theme second.
       disappears on dark backgrounds. No other recoloring — no theme-driven
       tinting beyond this contrast swap.
     - ProtonDB hex `#F50057`: single asset (`corkytux-protondb.png`).
-  - Fuente: https://github.com/simple-icons/simple-icons
-  - Campo `license` en los datos de Simple Icons (`_data/simple-icons.json`,
-    dump jsDelivr del 24-sep-2026): `steamdb` → `null`, `protondb` → `null`.
-    `license: null` significa que aplica la licencia por defecto del proyecto,
+  - Source: https://github.com/simple-icons/simple-icons
+  - `license` field in the Simple Icons data (`_data/simple-icons.json`,
+    jsDelivr dump of 24-sep-2026): `steamdb` → `null`, `protondb` → `null`.
+    `license: null` means the project's default license applies,
     CC0 1.0
     (https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md),
-    que es la que se declara aquí para el arte vectorial.
+    which is the one declared here for the vector artwork.
     SteamDB and ProtonDB are trademarks of their respective owners; the
     logos are used solely to indicate the integration (same criterion as
     Steam/Lutris/Heroic entries), without implying endorsement.
 
-- `stop_dark.png`: **asset derivado en este repositorio** (2026-09-25), no una
-  copia de terceros. Es `stop.png` con la tinta de los píxeles opacos cambiada
-  de `#FFFFFF` a `#241F2E`, conservando dimensiones (20×20), canal alfa y
-  silueta byte a byte. `stop` era el único icono del bundle con tema que no
-  tenía variante de tinta oscura; sin ella, el tema claro caía al fallback y
-  pintaba tinta blanca sobre fondo claro. El convenio del bundle es que
-  `<name>.png` lleva tinta **clara** (para el tema oscuro, cuyo fondo es
-  `#000000`) y `<name>_dark.png` lleva la tinta **oscura** `#241F2E` (para el
-  tema claro). `_dark` nombra la tinta, no el tema. No se alteró ningún otro
+- `stop_dark.png`: **asset derived in this repository** (2026-09-25), not a
+  third-party copy. It is `stop.png` with the ink of the opaque pixels changed
+  from `#FFFFFF` to `#241F2E`, keeping dimensions (20×20), alpha channel and
+  silhouette byte for byte. `stop` was the only themed icon in the bundle with
+  no dark-ink variant; without it, the light theme fell back and
+  painted white ink over a light background. The bundle convention is that
+  `<name>.png` carries **light** ink (for the dark theme, whose background is
+  `#000000`) and `<name>_dark.png` carries the **dark** ink `#241F2E` (for the
+  light theme). `_dark` names the ink, not the theme. I did not alter any other
   asset.
 
 # Bundled emulator icons (Papirus)
@@ -127,44 +127,44 @@ source, while `dist/license.md` separately records third-party UI icons. The
 logo's own CC BY 4.0 notice is the applicable license for this bundled asset;
 the attribution above is retained with the unmodified file.
 
-**Activado en el resolver el 2026-09-25.** `emulator_icon_path`
-(`src/ui/settings.rs`) mapea `azahar` → `azahar.svg`, así que la fila de
-Azahar deja de usar el monograma `A` y pinta el logo oficial. El archivo sigue
-sin modificarse byte a byte: no se aplicó ningún recorte de centrado ni
-recolor, porque el logo está centrado (medido: desfase 0,00 en horizontal).
-Se verificó además que el resto del logo tiene el mismo aspecto que cualquier
-otro icono de la fila: el `GtkPicture` lo escala a 40×40 con
-`ContentFit::Contain` sin deformar, porque el paintable es cuadrado
-(512×512) y el logo ocupa de 449×509 px dentro de él.
+**Enabled in the resolver on 2026-09-25.** `emulator_icon_path`
+(`src/ui/settings.rs`) maps `azahar` → `azahar.svg`, so the Azahar row stops
+using the `A` monogram and paints the official logo. The file stays unmodified
+byte for byte: I applied no center crop and no recolor, because
+the logo is centered (measured: 0.00 offset horizontally). I also
+verified that the rest of the logo looks like any other icon in
+the row: `GtkPicture` scales it to 40×40 with `ContentFit::Contain`
+without distortion, because the paintable is square (512×512) and
+the logo occupies 449×509 px inside it.
 
-## Chromium (binario de terceros, no un icono)
+## Chromium (third-party binary, not an icon)
 
-`webdriver_login` (el binario que hace el login de Epic/GOG) necesita un
-navegador real donde la persona escriba su contraseña. Descarga Chrome for
-Testing la primera vez y lo usa siempre en un perfil efímero que borra al
-terminar.
+`webdriver_login` (the binary that does the Epic/GOG login) needs a
+real browser where the person types their password. I download Chrome for
+Testing the first time and I always use it in an ephemeral profile that I delete
+when finished.
 
-- Versión fijada: **154.0.8037.57** (`src/bin/webdriver_login.rs`, constantes
-  `CHROME_VERSION` y `CHROME_URL`)
-- Origen: <https://googlechromelabs.github.io/chrome-for-testing/>
-  (`chrome-linux64.zip`, ~188 MB comprimido)
-- Licencia: **términos de servicio de Google**. Chrome for Testing se
-  distribuye bajo los términos de Google Chrome, no bajo una licencia de
-  proyecto. Se redistribute sin modificar.
-- Se guarda en `~/.local/share/corkytux/chrome-<version>/`
+- Pinned version: **154.0.8037.57** (`src/bin/webdriver_login.rs`, constants
+  `CHROME_VERSION` and `CHROME_URL`)
+- Origin: <https://googlechromelabs.github.io/chrome-for-testing/>
+  (`chrome-linux64.zip`, ~188 MB compressed)
+- License: **Google's terms of service**. Chrome for Testing is
+  distributed under the Google Chrome terms, not under a project license. I
+  redistribute it unmodified.
+- Stored in `~/.local/share/corkytux/chrome-<version>/`
 
-Se prefiere el Chromium del sistema si ya está en el `PATH`, para no descargar
-188 MB cuando no hace falta. La descarga embebida existe para no depender de
-root: el paquete de Gentoo exigiría privilegios que un producto que se instala
-en `~/.local` no puede pedir.
+I prefer the system Chromium when it is already in the `PATH`, so I do not
+download 188 MB when there is no need. The embedded download exists so I do not
+depend on root: the Gentoo package would require privileges that a product
+installed in `~/.local` cannot ask for.
 
-**Por qué Chromium y no Firefox.** Se implementó primero con Firefox por
-geckodriver y no funciona: el hCaptcha de Epic rechaza el reto ya resuelto
-porque `navigator.webdriver` es `true`, y Marionette fuerza ese valor desde C++
-sin que ningún pref lo cambie. Chromium lanzado a mano —sin
-`--enable-automation` ni headless, conectado solo por CDP— deja el valor en
-`false`. La tabla de mediciones está en el comentario de módulo de
+**Why Chromium and not Firefox.** I implemented it first with Firefox via
+geckodriver and it does not work: Epic's hCaptcha rejects the already solved
+challenge because `navigator.webdriver` is `true`, and Marionette forces that
+value from C++: with no pref changing it. Chromium launched by hand —without
+`--enable-automation` nor headless, connected only through CDP— leaves the
+value at `false`. I keep the measurements table in the module comment of
 `src/bin/webdriver_login.rs`.
 
-Este proyecto no incluye ni modifica código de Chromium; solo lo descarga y lo
-lanza.
+This project neither includes nor modifies Chromium code; I only download and
+launch it.
