@@ -632,6 +632,9 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .rail-scroll scrollbar.horizontal slider:hover {{ background-color: {accent}; }}\
              .game-card {{ background-color: {card}; border-radius: 22px; min-width: 200px; min-height: 140px; border: {game_border_width}px solid {game_border}; padding: 0; }}\
              .game-card:hover {{ background-color: {hover}; }}\
+             .lib-card {{ background-color: {card}; border: 1px solid {border}; border-radius: 14px; padding: 0; box-shadow: 0 2px 10px alpha(black, 0.18); }}\
+             .lib-cover {{ background-color: {well}; border-radius: 13px 13px 0 0; }}\
+             .lib-cover picture {{ border-radius: 13px 13px 0 0; }}\
              .accent-strip {{ background-color: {strip_color}; border-radius: 0 0 20px 20px; padding: 6px 10px; }}\
              .accent-strip label {{ color: {on_accent}; font-weight: bold; font-size: 12px; }}\
              .account-avatar {{ background-color: {accent}; color: {on_accent}; border-radius: 50%; min-width: 28px; min-height: 28px; font-size: 13px; font-weight: 800; }}\

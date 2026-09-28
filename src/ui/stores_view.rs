@@ -1850,20 +1850,38 @@ impl StorePageHandle {
         for g in games {
             let tile = gtk::FlowBoxChild::new();
             tile.set_width_request(170);
-            let inner = gtk::Box::new(gtk::Orientation::Vertical, 4);
-            inner.set_margin_top(8);
-            inner.set_margin_bottom(8);
-            inner.set_margin_start(8);
-            inner.set_margin_end(8);
-            inner.add_css_class("page-card");
+            let inner = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            inner.add_css_class("lib-card");
             inner.add_css_class("gog-tile");
             if !g.cover.is_empty() {
-                let img = gtk::Image::new();
-                img.set_pixel_size(150);
-                img.set_halign(gtk::Align::Center);
-                crate::ui::minecraft_view::load_mod_icon(&g.cover, &format!("store-gog-{}", g.app_id), &img, 150);
-                inner.append(&img);
+                let coverbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                coverbox.add_css_class("lib-cover");
+                let pic = gtk::Picture::new();
+                pic.set_size_request(168, 190);
+                pic.set_content_fit(gtk::ContentFit::Cover);
+                pic.set_can_shrink(false);
+                crate::ui::minecraft_view::load_cover_async(&g.cover, &format!("store-gog-{}", g.app_id), &pic, 380);
+                coverbox.append(&pic);
+                inner.append(&coverbox);
             }
+            let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
+            body.set_margin_top(8);
+            body.set_margin_bottom(10);
+            body.set_margin_start(8);
+            body.set_margin_end(8);
+            // Misma jerarquía que Epic: badge de tienda + estado.
+            let brow = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+            brow.set_halign(gtk::Align::Center);
+            let badge = gtk::Label::new(Some("GOG"));
+            badge.add_css_class("proton-path-badge");
+            brow.append(&badge);
+            if g.installed {
+                let ib = gtk::Label::new(Some("installed"));
+                ib.set_opacity(0.6);
+                ib.add_css_class("time-label");
+                brow.append(&ib);
+            }
+            body.append(&brow);
             let name = gtk::Label::new(Some(&g.title));
             name.set_halign(gtk::Align::Center);
             name.set_wrap(true);
@@ -1872,22 +1890,16 @@ impl StorePageHandle {
             name.set_max_width_chars(16);
             name.set_size_request(-1, 44);
             name.add_css_class("details-title");
-            inner.append(&name);
+            body.append(&name);
             let meta = Self::meta_line(&g.category, &g.systems);
             if !meta.is_empty() {
                 let meta_lbl = gtk::Label::new(Some(&meta));
                 meta_lbl.set_halign(gtk::Align::Center);
                 meta_lbl.set_opacity(0.6);
                 meta_lbl.add_css_class("time-label");
-                inner.append(&meta_lbl);
+                body.append(&meta_lbl);
             }
-            if g.installed {
-                let ib = gtk::Label::new(Some("✓ installed"));
-                ib.set_halign(gtk::Align::Center);
-                ib.set_opacity(0.6);
-                ib.add_css_class("time-label");
-                inner.append(&ib);
-            }
+            inner.append(&body);
             // Sin botones en la tarjeta (diseño GOG Fase 1): click abre la
             // ficha, que sí tiene Install/Import. Las tarjetas Epic quedan
             // intactas con sus botones.
@@ -2338,20 +2350,25 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
         for g in games {
             let tile = gtk::FlowBoxChild::new();
             tile.set_width_request(190);
-            let inner = gtk::Box::new(gtk::Orientation::Vertical, 4);
-            inner.set_margin_top(8);
-            inner.set_margin_bottom(8);
-            inner.set_margin_start(8);
-            inner.set_margin_end(8);
-            inner.add_css_class("page-card");
+            let inner = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            inner.add_css_class("lib-card");
             inner.add_css_class("mc-tile");
             if !g.cover.is_empty() {
-                let img = gtk::Image::new();
-                img.set_pixel_size(120);
-                img.set_halign(gtk::Align::Center);
-                crate::ui::minecraft_view::load_mod_icon(&g.cover, &format!("store-{}-{}", self.store, g.app_id), &img, 120);
-                inner.append(&img);
+                let coverbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                coverbox.add_css_class("lib-cover");
+                let pic = gtk::Picture::new();
+                pic.set_size_request(188, 210);
+                pic.set_content_fit(gtk::ContentFit::Cover);
+                pic.set_can_shrink(false);
+                crate::ui::minecraft_view::load_cover_async(&g.cover, &format!("store-{}-{}", self.store, g.app_id), &pic, 420);
+                coverbox.append(&pic);
+                inner.append(&coverbox);
             }
+            let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
+            body.set_margin_top(8);
+            body.set_margin_bottom(10);
+            body.set_margin_start(8);
+            body.set_margin_end(8);
             let brow = gtk::Box::new(gtk::Orientation::Horizontal, 4);
             brow.set_halign(gtk::Align::Center);
             let badge = gtk::Label::new(Some(if self.store == "epic" { "EPIC" } else { "GOG" }));
@@ -2365,7 +2382,7 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
                 brow.append(&ib);
                 *inst_lbl.borrow_mut() = Some(ib);
             }
-            inner.append(&brow);
+            body.append(&brow);
             let name = gtk::Label::new(Some(&g.title));
             name.set_halign(gtk::Align::Center);
             name.set_wrap(true);
@@ -2374,7 +2391,7 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
             name.set_max_width_chars(18);
             name.set_size_request(-1, 48);
             name.add_css_class("details-title");
-            inner.append(&name);
+            body.append(&name);
             let btnrow = gtk::Box::new(gtk::Orientation::Horizontal, 4);
             btnrow.set_halign(gtk::Align::Center);
             btnrow.set_homogeneous(true);
@@ -2397,7 +2414,8 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
             let game2 = g.clone();
             view.connect_clicked(move |_| vh2.show_game_info(&game2));
             btnrow.append(&view);
-            inner.append(&btnrow);
+            body.append(&btnrow);
+            inner.append(&body);
             tile.set_child(Some(&inner));
             self.flow.insert(&tile, -1);
         }
