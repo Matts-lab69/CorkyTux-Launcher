@@ -583,6 +583,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .info-card {{ background-color: {panel}; border: 1px solid {border}; border-radius: 6px; padding: 8px; }}\
              .info-label {{ color: {text_muted}; font-size: 11px; font-weight: bold; }}\
             .frame-title {{ color: {text_main}; font-size: 12px; font-weight: bold; }}\
+            .section-head {{ color: {text_main}; font-size: 18px; font-weight: bold; }}\
             .path-entry {{ min-height: 28px; font-size: 12px; padding: 2px 8px; }}\
             .log-view, .log-view text {{ background-color: {well}; color: {text_main}; caret-color: {accent}; }}\
             .log-view {{ border: 1px solid {border}; border-radius: 8px; }}\
@@ -599,7 +600,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              check:checked {{ background-color: {accent}; border-color: {accent}; color: {on_accent}; }}\
              check, radio {{ background-color: transparent; border: 1px solid {text_muted}; }}\
              checkbutton > label {{ color: {text_main}; }}\
-             separator {{ background-color: {border}; }}\
+             separator {{ background-color: color-mix(in srgb, {border} 55%, {text_main}); min-height: 1px; min-width: 1px; }}\
              listbox, listbox > row {{ background-color: transparent; }}\
              listbox > row {{ color: {text_main}; }}\
              listbox > row:selected {{ background-color: color-mix(in srgb, {accent} 25%, transparent); }}\
@@ -625,6 +626,10 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              scrollbar.vertical slider {{ background-color: alpha({text_muted}, 0.45); border-radius: 1px; min-width: 2px; min-height: 24px; border: none; padding: 0; margin: 0; }}\
              scrollbar.horizontal slider {{ background-color: alpha({text_muted}, 0.45); border-radius: 1px; min-height: 2px; min-width: 24px; border: none; padding: 0; margin: 0; }}\
              scrollbar.vertical slider:hover {{ background-color: {accent}; }}\
+             .rail-scroll scrollbar.horizontal {{ min-height: 12px; background: transparent; }}\
+             .rail-scroll scrollbar.horizontal trough {{ min-height: 12px; background-color: transparent; }}\
+             .rail-scroll scrollbar.horizontal slider {{ min-height: 8px; min-width: 40px; border-radius: 4px; background-color: alpha({text_muted}, 0.6); }}\
+             .rail-scroll scrollbar.horizontal slider:hover {{ background-color: {accent}; }}\
              .game-card {{ background-color: {card}; border-radius: 22px; min-width: 200px; min-height: 140px; border: {game_border_width}px solid {game_border}; padding: 0; }}\
              .game-card:hover {{ background-color: {hover}; }}\
              .accent-strip {{ background-color: {strip_color}; border-radius: 0 0 20px 20px; padding: 6px 10px; }}\
@@ -645,7 +650,8 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .danger-btn {{ background-color: color-mix(in srgb, #E5484D 12%, transparent); border: 1.5px solid #E5484D; color: #E5484D; border-radius: 15px; min-height: 30px; padding: 0 14px; font-size: 14px; font-weight: bold; }}\
              .danger-btn:hover {{ background-color: color-mix(in srgb, #E5484D 22%, transparent); }}\
              .mc-tile {{ border-radius: 14px; }}
-             .mc-tile:hover {{ border-color: {accent}; }}
+             .mc-tile:hover, .gog-tile:hover {{ border-color: {accent}; background-color: {hover};
+               box-shadow: 0 6px 18px color-mix(in srgb, {accent} 35%, transparent); }}\
              .mc-head {{ background-color: {panel}; border: 1px solid {border}; border-radius: 14px; padding: 6px 10px; }}
              .mc-account {{ background-color: transparent; background-image: none; border: none; box-shadow: none; padding: 0; margin: 0; min-width: 0; min-height: 0; }}
              .mc-account > button {{ background-color: {well}; border: 1.5px solid {accent}; padding: 4px 8px; border-radius: 10px; }}
@@ -661,6 +667,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .source-link {{ color: {text_sec}; font-size: 12px; }}\
              .source-link:hover, .source-link.field {{ text-decoration-line: underline; }}\
              .add-btn {{ font-size: 14px; min-height: 30px; padding: 0 14px; border-radius: 15px; background-color: {accent}; color: {on_accent}; border: none; font-weight: bold; }}\
+             .add-btn:disabled {{ opacity: 0.55; }}\
              .add-btn:hover {{ opacity: 0.85; }}\
              .settings-btn {{ font-size: 14px; min-height: 36px; padding: 0 16px; border-radius: 20px; background-color: {well}; color: {text_main}; border: 1.5px solid {accent}; font-weight: bold; }}\
              .settings-btn:hover {{ background-color: {hover}; }}\
@@ -710,7 +717,16 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .import-mode {{ background-color: {well}; border: 1px solid {border}; border-radius: 12px; padding: 10px 12px; }}\
              .import-mode:hover {{ border-color: {accent}; }}\
              .import-mode:checked {{ background-color: color-mix(in srgb, {accent} 14%, transparent); border-color: {accent}; }}\
-             .import-dot {{ min-width: 10px; min-height: 10px; padding: 0; margin: 0; border-radius: 999px; background-color: {accent}; }}\
+             .import-dot {{ min-width: 10px; min-height: 10px; padding: 0; margin: 0; border-radius: 999px; background-color: transparent; border: 1.5px solid {text_muted}; }}\
+             .import-dot-green {{ border-color: #00E639; }}\
+             .import-mode:checked .import-dot-green {{ background-color: #00E639; }}\
+             .import-dot-red {{ border-color: #E5484D; }}\
+             .import-mode:checked .import-dot-red {{ background-color: #E5484D; }}\
+             .import-mode:disabled {{ opacity: 0.55; }}\
+             .import-opt-title {{ color: {text_main}; font-size: 14px; font-weight: bold; }}\
+             .import-mode:checked .import-opt-title {{ color: {text_main}; }}\
+             .import-mode:hover .import-opt-title {{ color: {text_main}; }}\
+             .import-mode:disabled .import-opt-title {{ color: {text_muted}; }}\
              .import-warn {{ color: {text_main}; font-size: 12px; font-weight: 600; }}\
              tooltip.background {{ background-color: {tab_bar_bg}; border-radius: 8px; border: 1px solid {border}; padding: 12px; }}\
              tooltip label {{ color: {text_main}; font-size: 13px; }}"

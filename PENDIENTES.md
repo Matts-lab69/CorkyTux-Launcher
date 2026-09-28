@@ -272,7 +272,26 @@ Consecuencia: con `XDG_DATA_HOME` puesto se veían las carátulas y se importaba
 - `scan_lutris` deduplica por slug entre raíces: un juego no aparece dos veces
   durante una migración a Flatpak a medias.
 
+## Pendiente separado: carpetas por tienda (Epic-Games / GOG-Games)
+
+- `~/Games/Heroic` es convención de Heroic: no usarla como base propia.
+  Nuevos installs: `~/Games/Epic-Games` y `~/Games/GOG-Games` (el launcher
+  crea si falta). Condiciones: launcher aparte del plugin; el guard de
+  Remove sigue negando `~/Games/Heroic` (legacy) además de las nuevas
+  bases y `~/Games`; un único origen del default; Bloody Hell se queda
+  donde está (sin reinstalar).
+
 ## Hallazgos nuevos (anotados, NO arreglados)
+
+### Botón Stop no detiene juegos lanzados fuera del launcher
+- Stop solo controla procesos hijo del launcher. Un juego abierto a mano
+  (o por otro launcher) no se detiene desde aquí. Documentar en UI si
+  hace falta; no cambiar comportamiento sin diseño.
+
+### Lector duplicado de installs.json en remove_modal.rs
+- `remove_modal.rs` lee `plugins/heroic-store/installs.json` con lector
+  propio en vez de reutilizar el del backend. Unificar cuando se toque
+  ese archivo (un solo origen de lectura).
 
 ### DLC de Fortnite fallan en el modal "View"
 - Los add-ons "Contenido de LEGO® Fortnite" (`94bc5ec13f8f438c97fdbef3e9019e27`)

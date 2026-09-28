@@ -108,6 +108,9 @@ El patrón destructivo conserva `#E5484D`; `Remove` lo usa como acción destruct
 | `.icon-ghost` y `.source-link` | Indicadores transparentes o textuales. | Son referencias visuales para la opción C, no clases para reutilizar sin ajustes. |
 | `.destructive-action` | Geometría de 36 px, 14 px bold, padding horizontal de 16 px y radio 20 px. | Aporta ritmo, no color destructivo. |
 | `.dark-btn` | Botón negro con borde blanco. | Excluido: tendría demasiado peso para una acción opcional. |
+| `.section-head` | Encabezado de sección compartido (Stores Epic/GOG): 18 px bold, `text_main`. | Se usa en los 9 encabezados de sección; `.frame-title` (12 px) se conserva para cuentas y otros marcos. |
+| `.import-opt-title` | Título de opción del Import Manager: 14 px bold, `text_main` en reposo, `:checked` y `:hover`; `text_muted` en `:disabled`. Fija el color que Adwaita aclara al seleccionar en tema claro. |
+| `.import-dot-green` / `.import-dot-red` | Indicador de opción del Import Manager: círculo 10 px, borde verde `#00E639` (prueba) o rojo `#E5484D` (permanente); relleno solo con `:checked`. | Sin colores nuevos (tokens ya usados en badges FREE y danger); foco por teclado del `ToggleButton` nativo. |
 | `.mc-account > button`, `.import-mode:checked`, filas selected/hover | Ya combinan `well`, `hover` y `color-mix` con accent para distinguir superficies y estados. | Confirman que un relleno tenue es un patrón propio del producto, no una invención local. |
 
 ## Estructura real verificada
