@@ -131,7 +131,17 @@ pub(crate) fn removal_target_safe(
         main_c.join(exe_rel)
     };
     match canon(&cand) {
-        Some(c) => c.starts_with(&main_c) && c.is_file(),
+        // Archivo dentro de main (caso general), o la propia carpeta del
+        // juego cuando el "exe" registrado ES la carpeta (juegos RPG Maker
+        // por carpeta: Executable == MainPath). Deny-list y solape con
+        // otros installs ya se comprobaron arriba.
+        Some(c) => {
+            if c.is_file() {
+                c.starts_with(&main_c)
+            } else {
+                c == main_c && c.is_dir()
+            }
+        }
         None => false,
     }
 }
@@ -188,6 +198,22 @@ mod tests {
         std::fs::write(dir.join("sub").join("J.exe"), b"x").unwrap();
         assert!(!removal_target_safe(&ms, "J.exe", &d, some));
         assert!(removal_target_safe(&ms, "sub/J.exe", &d, some));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn aprueba_juego_por_carpeta() {
+        // RPG Maker por carpeta: Executable == MainPath (un dir).
+        let dir = mktmp("corky_rm_folder");
+        let d = deny();
+        let empty: Vec<String> = vec![];
+        let some = Some(empty.as_slice());
+        let ms = dir.display().to_string();
+        assert!(removal_target_safe(&ms, &ms, &d, some));
+        // Subcarpeta como exe: sigue negado (conservador).
+        assert!(!removal_target_safe(&ms, "sub", &d, some));
+        // Carpeta denegada aunque coincida consigo misma.
+        assert!(!removal_target_safe("/h/Games", "/h/Games", &d, some));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

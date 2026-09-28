@@ -223,6 +223,15 @@ pub fn show_add_game_modal(
     exe_error.set_visible(false);
     page2.append(&exe_error);
 
+    // RPG engine hint: tells whether the chosen folder is a supported
+    // RPG Maker game (MV/MZ/2k3) before adding.
+    let eng_hint = gtk::Label::new(None);
+    eng_hint.set_halign(gtk::Align::Center);
+    eng_hint.set_wrap(true);
+    eng_hint.add_css_class("time-label");
+    eng_hint.set_visible(false);
+    page2.append(&eng_hint);
+
     // C++ parity: single centered 144px accent Next pill
     let p2_nav = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     p2_nav.set_halign(gtk::Align::Center);
@@ -317,6 +326,7 @@ pub fn show_add_game_modal(
         let wiz_c = wiz.clone();
         let refresh_c = refresh_candidates.clone();
         let choose_btn_c = choose_btn.clone();
+        let eng_hint_c = eng_hint.clone();
         choose_btn.connect_clicked(move |_| {
             choose_btn_c.set_sensitive(false);
             if let Some(dir) = state_c.config.pick_folder("Select game folder") {
@@ -329,13 +339,48 @@ pub fn show_add_game_modal(
                     let mut w = wiz_c.borrow_mut();
                     w.dir = dir_str.clone();
                     w.candidates = vec![dir_str.clone()];
-                    w.exe = dir_str;
+                    w.exe = dir_str.clone();
                     drop(w);
                     refresh_c();
+                    // Engine feedback: is this folder an allowed RPG Maker game?
+                    eng_hint_c.set_text("Detecting engine…");
+                    eng_hint_c.set_visible(true);
+                    let dir_c = dir_str.clone();
+                    let (tx, rx) = std::sync::mpsc::channel::<String>();
+                    std::thread::spawn(move || {
+                        let txt = match crate::backend::external::RpgMakerManager::scan(&dir_c) {
+                            Ok(doc) => {
+                                let eng = doc.get("engine").and_then(|v| v.as_str()).unwrap_or("unknown");
+                                let var = doc.get("variant").and_then(|v| v.as_str()).unwrap_or("");
+                                let auth = doc.get("authoritative").and_then(|v| v.as_bool()).unwrap_or(false);
+                                match (eng, var) {
+                                    ("mv_mz", "mz") => format!("RPG Maker MZ {} — supported", if auth { "(verified)" } else { "(hint)" }),
+                                    ("mv_mz", _) => format!("RPG Maker MV {} — supported", if auth { "(verified)" } else { "(hint)" }),
+                                    ("2k3", _) => format!("RPG Maker 2000/2003 {} — supported", if auth { "(verified)" } else { "(hint)" }),
+                                    ("unsupported", _) => String::from("XP/VX/VX Ace — not supported (no portable runtime)"),
+                                    _ => doc.get("reason").and_then(|v| v.as_str())
+                                        .map(|r| format!("Not detected as RPG Maker: {}", r))
+                                        .unwrap_or_else(|| String::from("Not detected as RPG Maker")),
+                                }
+                            }
+                            Err(e) => format!("Detect failed: {}", e),
+                        };
+                        let _ = tx.send(txt);
+                    });
+                    let hint_c = eng_hint_c.clone();
+                    glib::idle_add_local(move || match rx.try_recv() {
+                        Ok(txt) => {
+                            hint_c.set_text(&txt);
+                            glib::ControlFlow::Break
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                        Err(_) => glib::ControlFlow::Break,
+                    });
                     choose_btn_c.set_sensitive(true);
                     return;
                 }
                 let found = scan_candidates(&dir_str, emu, &exec);
+                eng_hint_c.set_visible(false);
                 let mut w = wiz_c.borrow_mut();
                 w.dir = dir_str;
                 w.candidates = found.clone();

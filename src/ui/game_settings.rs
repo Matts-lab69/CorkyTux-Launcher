@@ -1495,12 +1495,15 @@ fn build_rpg_tab(
     }
     page.append(&pm_frame);
 
-    // Installed runtimes with remove (status lists, remove frees disk).
-    // Refreshes on show and after every install/remove.
-    let (lr_frame, lr_inner) = make_frame("Installed runtimes");
+    // Installed runtimes with remove, inside the Runtime frame (one
+    // frame, not two). Refreshes on show and after every install/remove.
+    let lr_head = gtk::Label::new(Some("Installed runtimes"));
+    lr_head.set_halign(gtk::Align::Start);
+    lr_head.add_css_class("info-value");
+    lr_head.set_margin_top(8);
+    rt_inner.append(&lr_head);
     let lr_list = gtk::Box::new(gtk::Orientation::Vertical, 4);
-    lr_inner.append(&lr_list);
-    page.append(&lr_frame);
+    rt_inner.append(&lr_list);
     {
         let lr_c = lr_list.clone();
         let parent_c = parent.clone();
@@ -1536,26 +1539,35 @@ fn build_rpg_tab(
                         lr_c2.remove(&c);
                     }
                     for (kind, items) in [("nwjs", nw), ("easyrpg", er)] {
-                        let head = gtk::Label::new(Some(
-                            if kind == "nwjs" { "NW.js" } else { "EasyRPG Player" }));
-                        head.set_halign(gtk::Align::Start);
-                        head.add_css_class("info-value");
-                        lr_c2.append(&head);
                         if items.is_empty() {
-                            let none = gtk::Label::new(Some("none installed"));
+                            let none = gtk::Label::new(Some(
+                                if kind == "nwjs" { "NW.js: none installed" }
+                                else { "EasyRPG Player: none installed" }));
                             none.set_halign(gtk::Align::Start);
                             none.add_css_class("time-label");
                             lr_c2.append(&none);
+                            continue;
                         }
                         for line in items {
                             let ver = line.split_whitespace().next().unwrap_or("").to_string();
                             let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                            let lbl = gtk::Label::new(Some(&line));
-                            lbl.set_halign(gtk::Align::Start);
-                            lbl.set_hexpand(true);
-                            lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                            lbl.add_css_class("time-label");
-                            row.append(&lbl);
+                            let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                            col.set_hexpand(true);
+                            let v_lbl = gtk::Label::new(Some(
+                                &format!("{} ({})", ver, if kind == "nwjs" { "NW.js" } else { "EasyRPG" })));
+                            v_lbl.set_halign(gtk::Align::Start);
+                            v_lbl.add_css_class("info-value");
+                            col.append(&v_lbl);
+                            // Ruta completa en tooltip; visible recortada.
+                            let rest = line.split_whitespace().skip(1).collect::<Vec<_>>().join(" ");
+                            let p_lbl = gtk::Label::new(Some(&rest));
+                            p_lbl.set_halign(gtk::Align::Start);
+                            p_lbl.set_opacity(0.7);
+                            p_lbl.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+                            p_lbl.set_tooltip_text(Some(&rest));
+                            p_lbl.add_css_class("time-label");
+                            col.append(&p_lbl);
+                            row.append(&col);
                             if !ver.is_empty() {
                                 let rm = gtk::Button::with_label("Remove");
                                 rm.add_css_class("flat");
