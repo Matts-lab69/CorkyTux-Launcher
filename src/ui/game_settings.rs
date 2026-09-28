@@ -741,6 +741,59 @@ fn build_run_tab(
         });
     }
 
+    // Isolation (sandbox Bottles-style, launch-time): existing prefixes are
+    // never moved or modified; the sandbox exposes prefix + game folder +
+    // GPU, audio/display and saves, hiding the rest of $HOME.
+    let (iso_frame, iso_inner) = make_frame("Isolation");
+    let global_iso = state.config.launcher_value("IsolateNewPrefixes")
+        .map(|v| v == "1").unwrap_or(false);
+    let game_iso_raw = state.config.game_value(game_name, "Isolated");
+    let (eff_iso, _) = crate::backend::isolation::decide(
+        game_iso_raw.as_deref(), global_iso);
+    let iso_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let iso_sw = gtk::Switch::new();
+    iso_sw.set_halign(gtk::Align::End);
+    iso_sw.set_active(eff_iso);
+    iso_sw.set_sensitive(crate::backend::isolation::bwrap_available());
+    let iso_lbl = gtk::Label::new(Some("Isolate this game"));
+    iso_lbl.set_hexpand(true);
+    iso_box.append(&iso_lbl);
+    iso_box.append(&iso_sw);
+    iso_inner.append(&iso_box);
+    let iso_sub = gtk::Label::new(Some(
+        if crate::backend::isolation::bwrap_available() {
+            "Runs under bubblewrap with a private $HOME (prefix, game folder, GPU, audio and saves stay visible)."
+        } else {
+            "bubblewrap missing: the game launches UNSANDBOXED with a warning."
+        }));
+    iso_sub.set_halign(gtk::Align::Start);
+    iso_sub.set_wrap(true);
+    iso_sub.add_css_class("time-label");
+    iso_inner.append(&iso_sub);
+    save_switch(state, game_name, "Isolated", &iso_sw);
+    let iso_paths = gtk::Entry::new();
+    iso_paths.set_placeholder_text(Some("Extra writable paths, separated by ;"));
+    iso_paths.set_text(&state.config.game_value(game_name, "IsolatePaths").unwrap_or_default());
+    {
+        let state_c = state.clone();
+        let game_c = game_name.to_string();
+        iso_paths.connect_changed(move |e| {
+            state_c.config.set_game_value(&game_c, "IsolatePaths", &e.text().to_string());
+        });
+    }
+    iso_inner.append(&iso_paths);
+    page.append(&iso_frame);
+    // Juegos Steam lanzados por el cliente (steam://): el sandbox no aplica
+    // (proceso ajeno) → la opción se oculta para no prometer de más.
+    // Misma condición que run_game para la ruta Steam.
+    {
+        let sid = state.config.game_value(game_name, "SteamID").unwrap_or_default();
+        let sid = sid.trim().to_string();
+        if !sid.is_empty() && sid.chars().all(|c| c.is_ascii_digit()) {
+            iso_frame.set_visible(false);
+        }
+    }
+
     wrap_scroll(page)
 }
 
@@ -1358,12 +1411,16 @@ fn build_rpg_tab(
     save_entry(state, game_name, "RpgRuntime", &rt_entry);
     rt_inner.append(&rt_entry);
     let rt_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    // Set below by the Installed-runtimes section; install buttons
+    // trigger it so the list refreshes without reopening settings.
+    let rt_refresh: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
     for kind in ["nwjs", "easyrpg"] {
         let btn = gtk::Button::with_label(&format!("Install latest {}", if kind == "nwjs" { "NW.js" } else { "EasyRPG" }));
         btn.add_css_class("settings-btn");
         btn.set_hexpand(true);
         let parent_c = parent.clone();
         let kind_c = kind.to_string();
+        let refresh_c0 = rt_refresh.clone();
         btn.connect_clicked(move |b| {
             b.set_sensitive(false);
             let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
@@ -1377,10 +1434,14 @@ fn build_rpg_tab(
             let parent_cc = parent_c.clone();
             let kind_cc = kind_c.clone();
             let b_c = b.clone();
+            let refresh_c = refresh_c0.clone();
             glib::idle_add_local(move || match rx.try_recv() {
                 Ok(Ok(v)) => {
                     b_c.set_sensitive(true);
                     helpers::present_msg(&parent_cc, "Runtime installed", &format!("{} {}", kind_cc, v));
+                    if let Some(f) = refresh_c.borrow().as_ref() {
+                        f();
+                    }
                     glib::ControlFlow::Break
                 }
                 Ok(Err(e)) => {
@@ -1399,6 +1460,154 @@ fn build_rpg_tab(
     }
     rt_inner.append(&rt_row);
     page.append(&rt_frame);
+
+    // Consentimientos por juego (modelo upstream docs/box-rpg/security.md:
+    // todo acceso extra es opt-in por lanzamiento; aquí persisten como
+    // standing consent visible). Ambos off = sandbox máximo.
+    let (pm_frame, pm_inner) = make_frame("Permissions");
+    for (key, label, sub) in [
+        ("RpgAllowNet", "Allow network",
+            "Shares host + internet with the game (online/self-updating games only)."),
+        ("RpgAllowWrites", "Allow game folder writes",
+            "Self-updating games can patch themselves. Never combine with untrusted games."),
+    ] {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let sw = gtk::Switch::new();
+        sw.set_halign(gtk::Align::End);
+        sw.set_valign(gtk::Align::Center);
+        sw.set_active(state.config.game_value(game_name, key)
+            .map(|v| v == "true").unwrap_or(false));
+        let mid = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        mid.set_hexpand(true);
+        let lbl = gtk::Label::new(Some(label));
+        lbl.set_halign(gtk::Align::Start);
+        lbl.add_css_class("info-value");
+        mid.append(&lbl);
+        let s = gtk::Label::new(Some(sub));
+        s.set_halign(gtk::Align::Start);
+        s.set_wrap(true);
+        s.add_css_class("time-label");
+        mid.append(&s);
+        row.append(&mid);
+        row.append(&sw);
+        pm_inner.append(&row);
+        save_switch(state, game_name, key, &sw);
+    }
+    page.append(&pm_frame);
+
+    // Installed runtimes with remove (status lists, remove frees disk).
+    // Refreshes on show and after every install/remove.
+    let (lr_frame, lr_inner) = make_frame("Installed runtimes");
+    let lr_list = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    lr_inner.append(&lr_list);
+    page.append(&lr_frame);
+    {
+        let lr_c = lr_list.clone();
+        let parent_c = parent.clone();
+        let do_refresh: Rc<dyn Fn()> = Rc::new({
+            let rt_refresh_c = rt_refresh.clone();
+            move || {
+            while let Some(c) = lr_c.first_child() {
+                lr_c.remove(&c);
+            }
+            let wait = gtk::Label::new(Some("Loading…"));
+            wait.set_halign(gtk::Align::Start);
+            wait.add_css_class("time-label");
+            lr_c.append(&wait);
+            let (tx, rx) = std::sync::mpsc::channel::<(Vec<String>, Vec<String>)>();
+            std::thread::spawn(move || {
+                let (nw, er) = match crate::backend::external::RpgMakerManager::status() {
+                    Ok(doc) => {
+                        let get = |k: &str| doc.get(k).and_then(|v| v.as_array()).cloned()
+                            .unwrap_or_default().into_iter()
+                            .filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>();
+                        (get("nwjs_runtimes"), get("easyrpg_runtimes"))
+                    }
+                    Err(_) => (Vec::new(), Vec::new()),
+                };
+                let _ = tx.send((nw, er));
+            });
+            let lr_c2 = lr_c.clone();
+            let parent_c2 = parent_c.clone();
+            let refresh_c = rt_refresh_c.clone();
+            glib::idle_add_local(move || match rx.try_recv() {
+                Ok((nw, er)) => {
+                    while let Some(c) = lr_c2.first_child() {
+                        lr_c2.remove(&c);
+                    }
+                    for (kind, items) in [("nwjs", nw), ("easyrpg", er)] {
+                        let head = gtk::Label::new(Some(
+                            if kind == "nwjs" { "NW.js" } else { "EasyRPG Player" }));
+                        head.set_halign(gtk::Align::Start);
+                        head.add_css_class("info-value");
+                        lr_c2.append(&head);
+                        if items.is_empty() {
+                            let none = gtk::Label::new(Some("none installed"));
+                            none.set_halign(gtk::Align::Start);
+                            none.add_css_class("time-label");
+                            lr_c2.append(&none);
+                        }
+                        for line in items {
+                            let ver = line.split_whitespace().next().unwrap_or("").to_string();
+                            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                            let lbl = gtk::Label::new(Some(&line));
+                            lbl.set_halign(gtk::Align::Start);
+                            lbl.set_hexpand(true);
+                            lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                            lbl.add_css_class("time-label");
+                            row.append(&lbl);
+                            if !ver.is_empty() {
+                                let rm = gtk::Button::with_label("Remove");
+                                rm.add_css_class("flat");
+                                let kind_c = kind.to_string();
+                                let parent_c3 = parent_c2.clone();
+                                let refresh_c2 = refresh_c.clone();
+                                rm.connect_clicked(move |b| {
+                                    b.set_sensitive(false);
+                                    let (tx2, rx2) = std::sync::mpsc::channel::<Result<String, String>>();
+                                    let k2 = kind_c.clone();
+                                    let v2 = ver.clone();
+                                    std::thread::spawn(move || {
+                                        let _ = tx2.send(
+                                            crate::backend::external::RpgMakerManager::remove_runtime(&k2, &v2)
+                                                .map(|_| format!("{} {}", k2, v2)).map_err(|e| e.to_string()));
+                                    });
+                                    let parent_c4 = parent_c3.clone();
+                                    let refresh_c3 = refresh_c2.clone();
+                                    glib::idle_add_local(move || match rx2.try_recv() {
+                                        Ok(Ok(msg)) => {
+                                            helpers::present_msg(&parent_c4, "Runtime removed", &msg);
+                                            if let Some(f) = refresh_c3.borrow().as_ref() {
+                                                f();
+                                            }
+                                            glib::ControlFlow::Break
+                                        }
+                                        Ok(Err(e)) => {
+                                            helpers::present_msg(&parent_c4, "Remove failed", &e);
+                                            if let Some(f) = refresh_c3.borrow().as_ref() {
+                                                f();
+                                            }
+                                            glib::ControlFlow::Break
+                                        }
+                                        Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                                        Err(_) => glib::ControlFlow::Break,
+                                    });
+                                });
+                                row.append(&rm);
+                            }
+                            lr_c2.append(&row);
+                        }
+                    }
+                    glib::ControlFlow::Break
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                Err(_) => glib::ControlFlow::Break,
+            });
+            }
+        });
+        *rt_refresh.borrow_mut() = Some(do_refresh.clone());
+        do_refresh();
+    }
 
     let (dg_frame, dg_inner) = make_frame("Diagnose");
     let dg_scroll = gtk::ScrolledWindow::new();
@@ -1546,49 +1755,6 @@ fn build_graphics_tab(state: &AppState, game_name: &str) -> gtk::Box {
     save_switch(state, game_name, "MangoHud", &mh_sw);
 
     page.append(&gm_frame);
-
-    // Isolation (sandbox Bottles-style: prefijos existentes no se tocan,
-    // el sandbox se aplica al lanzar exponiendo prefijo + juego + GPU,
-    // audio/display y saves; el resto de $HOME queda oculto).
-    let (iso_frame, iso_inner) = make_frame("Isolation");
-    let global_iso = state.config.launcher_value("IsolateNewPrefixes")
-        .map(|v| v == "1").unwrap_or(false);
-    let game_iso_raw = state.config.game_value(game_name, "Isolated");
-    let (eff_iso, _) = crate::backend::isolation::decide(
-        game_iso_raw.as_deref(), global_iso);
-    let iso_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    let iso_sw = gtk::Switch::new();
-    iso_sw.set_halign(gtk::Align::End);
-    iso_sw.set_active(eff_iso);
-    iso_sw.set_sensitive(crate::backend::isolation::bwrap_available());
-    let iso_lbl = gtk::Label::new(Some("Isolate this game"));
-    iso_lbl.set_hexpand(true);
-    iso_box.append(&iso_lbl);
-    iso_box.append(&iso_sw);
-    iso_inner.append(&iso_box);
-    let iso_sub = gtk::Label::new(Some(
-        if crate::backend::isolation::bwrap_available() {
-            "Runs under bubblewrap with a private $HOME (prefix, game folder, GPU, audio and saves stay visible)."
-        } else {
-            "bubblewrap missing: the game launches UNSANDBOXED with a warning."
-        }));
-    iso_sub.set_halign(gtk::Align::Start);
-    iso_sub.set_wrap(true);
-    iso_sub.add_css_class("time-label");
-    iso_inner.append(&iso_sub);
-    save_switch(state, game_name, "Isolated", &iso_sw);
-    let iso_paths = gtk::Entry::new();
-    iso_paths.set_placeholder_text(Some("Extra writable paths, separated by ;"));
-    iso_paths.set_text(&state.config.game_value(game_name, "IsolatePaths").unwrap_or_default());
-    {
-        let state_c = state.clone();
-        let game_c = game_name.to_string();
-        iso_paths.connect_changed(move |e| {
-            state_c.config.set_game_value(&game_c, "IsolatePaths", &e.text().to_string());
-        });
-    }
-    iso_inner.append(&iso_paths);
-    page.append(&iso_frame);
 
     wrap_scroll(page)
 }
