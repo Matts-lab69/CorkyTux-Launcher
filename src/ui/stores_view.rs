@@ -987,6 +987,8 @@ impl StoresView {
             shown_games: Rc::new(RefCell::new(Vec::new())),
             gog_query: Rc::new(RefCell::new(String::new())),
             gog_sort: Rc::new(std::cell::Cell::new(0)),
+            epic_games: Rc::new(RefCell::new(Vec::new())),
+            compact: Rc::new(std::cell::Cell::new(false)),
             rails_box: gtk::Box::new(gtk::Orientation::Vertical, 8),
             rail_rows: Rc::new(RefCell::new(Vec::new())),
             rails_loaded: Rc::new(std::cell::Cell::new(false)),
@@ -1046,6 +1048,17 @@ impl StoresView {
                     vh.load_rails(true);
                 }
             });
+        }
+        // Tarjetas compactas en ventana angosta: re-render con tamaños
+        // chicos (sin red: Epic usa la última lista, GOG la vista en
+        // memoria). Solo actúa en transición para no loopear.
+        if let Ok(cond) = adw::BreakpointCondition::parse("max-width: 900px") {
+            let bp = adw::Breakpoint::new(cond);
+            let vh_a = view.clone();
+            bp.connect_apply(move |_| vh_a.apply_compact(true));
+            let vh_u = view.clone();
+            bp.connect_unapply(move |_| vh_u.apply_compact(false));
+            parent.add_breakpoint(bp);
         }
         // Full status at page build: --quick keeps `accounts` empty (quick=true
         // => accounts={"epic":""}) so the account row would fall back to the
@@ -1294,6 +1307,10 @@ struct StorePageHandle {
     shown_games: Rc<RefCell<Vec<StoreGame>>>,
     gog_query: Rc<RefCell<String>>,
     gog_sort: Rc<std::cell::Cell<u32>>,
+    /// Última lista Epic renderizada (para re-render compacto sin red).
+    epic_games: Rc<RefCell<Vec<StoreGame>>>,
+    /// Tarjetas compactas en ventana angosta (breakpoint 900px).
+    compact: Rc<std::cell::Cell<bool>>,
     // Rails Fase 1.5 (solo tab GOG): contenedor para ocultar con el tab
     // bloqueado, secciones con sus ítems, y flag de primera carga.
     rails_box: gtk::Box,
@@ -1848,20 +1865,25 @@ impl StorePageHandle {
         }
         self.lib_status.set_text(&format!("{} game(s)", games.len()));
         for g in games {
+            let (tile_w, img_px, cover_h) = self.card_sizes();
             let tile = gtk::FlowBoxChild::new();
-            tile.set_width_request(170);
+            tile.set_width_request(tile_w);
             let inner = gtk::Box::new(gtk::Orientation::Vertical, 0);
             inner.add_css_class("lib-card");
             inner.add_css_class("gog-tile");
             if !g.cover.is_empty() {
                 let coverbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
                 coverbox.add_css_class("lib-cover");
-                let pic = gtk::Picture::new();
-                pic.set_size_request(168, 190);
-                pic.set_content_fit(gtk::ContentFit::Cover);
-                pic.set_can_shrink(false);
-                crate::ui::minecraft_view::load_cover_async(&g.cover, &format!("store-gog-{}", g.app_id), &pic, 380);
-                coverbox.append(&pic);
+                coverbox.set_size_request(-1, cover_h);
+                coverbox.set_valign(gtk::Align::Center);
+                let img = gtk::Image::new();
+                img.set_pixel_size(img_px);
+                img.set_halign(gtk::Align::Center);
+                img.set_valign(gtk::Align::Center);
+                img.set_hexpand(true);
+                img.set_vexpand(true);
+                crate::ui::minecraft_view::load_mod_icon(&g.cover, &format!("store-gog-{}", g.app_id), &img, img_px);
+                coverbox.append(&img);
                 inner.append(&coverbox);
             }
             let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -2334,6 +2356,34 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
     v
 }
 
+    /// Tamaños de tarjeta según viewport: (ancho tile, cover px, alto cover).
+    /// Normal Epic 190/GOG 170; compacto en ventanas angostas.
+    fn card_sizes(&self) -> (i32, i32, i32) {
+        if self.store == "gog" {
+            if self.compact.get() { (140, 100, 120) } else { (170, 140, 160) }
+        } else if self.compact.get() {
+            (150, 110, 130)
+        } else {
+            (190, 150, 170)
+        }
+    }
+
+    /// Aplica el modo compacto y re-renderiza sin red (solo en transición).
+    fn apply_compact(&self, compact: bool) {
+        if self.compact.get() == compact {
+            return;
+        }
+        self.compact.set(compact);
+        if self.store == "gog" {
+            if !self.all_games.borrow().is_empty() {
+                self.render_filtered();
+            }
+        } else if !self.epic_games.borrow().is_empty() {
+            let g = self.epic_games.borrow().clone();
+            self.render_games(&g);
+        }
+    }
+
     fn render_games(&self, games: &[StoreGame]) {
         while let Some(c) = self.flow.first_child() {
             self.flow.remove(&c);
@@ -2347,21 +2397,27 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
             return;
         }
         self.lib_status.set_text(&format!("{} game(s)", games.len()));
+        *self.epic_games.borrow_mut() = games.to_vec();
         for g in games {
+            let (tile_w, img_px, cover_h) = self.card_sizes();
             let tile = gtk::FlowBoxChild::new();
-            tile.set_width_request(190);
+            tile.set_width_request(tile_w);
             let inner = gtk::Box::new(gtk::Orientation::Vertical, 0);
             inner.add_css_class("lib-card");
             inner.add_css_class("mc-tile");
             if !g.cover.is_empty() {
                 let coverbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
                 coverbox.add_css_class("lib-cover");
-                let pic = gtk::Picture::new();
-                pic.set_size_request(188, 210);
-                pic.set_content_fit(gtk::ContentFit::Cover);
-                pic.set_can_shrink(false);
-                crate::ui::minecraft_view::load_cover_async(&g.cover, &format!("store-{}-{}", self.store, g.app_id), &pic, 420);
-                coverbox.append(&pic);
+                coverbox.set_size_request(-1, cover_h);
+                coverbox.set_valign(gtk::Align::Center);
+                let img = gtk::Image::new();
+                img.set_pixel_size(img_px);
+                img.set_halign(gtk::Align::Center);
+                img.set_valign(gtk::Align::Center);
+                img.set_hexpand(true);
+                img.set_vexpand(true);
+                crate::ui::minecraft_view::load_mod_icon(&g.cover, &format!("store-{}-{}", self.store, g.app_id), &img, img_px);
+                coverbox.append(&img);
                 inner.append(&coverbox);
             }
             let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
