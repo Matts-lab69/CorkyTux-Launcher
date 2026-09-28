@@ -307,28 +307,30 @@ fn note(text: &str) -> gtk::Label {
 
 fn clean_md(s: &str) -> String {
     // Modrinth bodies are markdown/HTML: render as plain readable text.
+    // Regexes compiled once: this runs per description render while
+    // browsing, and compiling 7 patterns per call showed up hot.
+    static RE_IMG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static RE_LINK: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static RE_EMPTY: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static RE_FOOT: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static RE_BRACK: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static RE_TAG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re_img = RE_IMG.get_or_init(|| regex::Regex::new(r"!\[[^\]]*\]\([^\)]*\)").unwrap());
+    let re_link = RE_LINK.get_or_init(|| regex::Regex::new(r"\[([^\]]+)\]\([^\)]*\)").unwrap());
+    let re_empty = RE_EMPTY.get_or_init(|| regex::Regex::new(r"\[\]\([^\)]*\)").unwrap());
+    let re_foot = RE_FOOT.get_or_init(|| regex::Regex::new(r"\[[0-9]+\](:[^\n]*)?").unwrap());
+    let re_brack = RE_BRACK.get_or_init(|| regex::Regex::new(r"\[([^\[\]]+)\]").unwrap());
+    let re_tag = RE_TAG.get_or_init(|| regex::Regex::new(r"<[^>]*>").unwrap());
     let mut out = s.replace("\r\n", "\n");
-    if let Ok(re) = regex::Regex::new(r"!\[[^\]]*\]\([^\)]*\)") {
-        out = re.replace_all(&out, "").to_string();
-    }
-    if let Ok(re) = regex::Regex::new(r"\[([^\]]+)\]\([^\)]*\)") {
-        out = re.replace_all(&out, "$1").to_string();
-    }
+    out = re_img.replace_all(&out, "").to_string();
+    out = re_link.replace_all(&out, "$1").to_string();
     // empty links `[](url)` carry nothing readable: drop them entirely
-    if let Ok(re) = regex::Regex::new(r"\[\]\([^\)]*\)") {
-        out = re.replace_all(&out, "").to_string();
-    }
+    out = re_empty.replace_all(&out, "").to_string();
     // footnote refs like [16] and definitions like `[1]: https://…`
-    if let Ok(re) = regex::Regex::new(r"\[[0-9]+\](:[^\n]*)?") {
-        out = re.replace_all(&out, "").to_string();
-    }
+    out = re_foot.replace_all(&out, "").to_string();
     // lone brackets without a link target: `[Post it to our GitHub.]`
-    if let Ok(re) = regex::Regex::new(r"\[([^\[\]]+)\]") {
-        out = re.replace_all(&out, "$1").to_string();
-    }
-    if let Ok(re) = regex::Regex::new(r"<[^>]*>") {
-        out = re.replace_all(&out, "").to_string();
-    }
+    out = re_brack.replace_all(&out, "$1").to_string();
+    out = re_tag.replace_all(&out, "").to_string();
     let mut lines = Vec::new();
     for line in out.lines() {
         let mut l = line.trim().trim_start_matches(|c| c == '#' || c == '>' || c == '-' || c == '*' || c == '=').trim().to_string();
@@ -365,34 +367,35 @@ enum MdSeg {
 }
 
 fn md_segments(s: &str) -> Vec<MdSeg> {
+    static SEG_IMG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static SEG_LINK: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static SEG_DEF: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static SEG_TAG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static SEG_URL: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let seg_img = SEG_IMG.get_or_init(|| regex::Regex::new(r"!\[[^\]]*\]\([^\)]*\)").unwrap());
+    let seg_link = SEG_LINK.get_or_init(|| regex::Regex::new(r"\[([^\]]*)\]\(([^\)]+)\)").unwrap());
+    let seg_def = SEG_DEF.get_or_init(|| regex::Regex::new(r"\[[0-9]+\]:\s*(https?://[^\s]+)").unwrap());
+    let seg_tag = SEG_TAG.get_or_init(|| regex::Regex::new(r"<[^>]*>").unwrap());
+    let seg_url = SEG_URL.get_or_init(|| regex::Regex::new(r"https?://[^\s\)\]]+").unwrap());
     let mut out = s.replace("\r\n", "\n");
-    if let Ok(re) = regex::Regex::new(r"!\[[^\]]*\]\([^\)]*\)") {
-        out = re.replace_all(&out, "").to_string();
-    }
+    out = seg_img.replace_all(&out, "").to_string();
     // collect links first, replacing them with placeholders
     let mut links: Vec<(String, String)> = Vec::new();
-    if let Ok(re) = regex::Regex::new(r"\[([^\]]*)\]\(([^\)]+)\)") {
-        out = re.replace_all(&out, |caps: &regex::Captures| {
+    out = seg_link.replace_all(&out, |caps: &regex::Captures| {
             let label = caps.get(1).map(|m| m.as_str().trim().to_string()).unwrap_or_default();
             let url = caps.get(2).map(|m| m.as_str().trim().to_string()).unwrap_or_default();
             let label = if label.is_empty() { url.clone() } else { label };
             links.push((label.clone(), url.clone()));
             format!("@@LINK{}@@", links.len() - 1)
         }).to_string();
-    }
-    if let Ok(re) = regex::Regex::new(r"\[[0-9]+\]:\s*(https?://[^\s]+)") {
-        out = re.replace_all(&out, |caps: &regex::Captures| {
+    out = seg_def.replace_all(&out, |caps: &regex::Captures| {
             let url = caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
             links.push((url.clone(), url.clone()));
             format!("@@LINK{}@@", links.len() - 1)
         }).to_string();
-    }
-    if let Ok(re) = regex::Regex::new(r"<[^>]*>") {
-        out = re.replace_all(&out, "").to_string();
-    }
+    out = seg_tag.replace_all(&out, "").to_string();
     // bare urls last
-    if let Ok(re) = regex::Regex::new(r"https?://[^\s\)\]]+") {
-        out = re.replace_all(&out, |caps: &regex::Captures| {
+    out = seg_url.replace_all(&out, |caps: &regex::Captures| {
             let mut url = caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
             while url.ends_with(|c| ".,;:!?)".contains(c)) {
                 url.pop();
@@ -400,14 +403,14 @@ fn md_segments(s: &str) -> Vec<MdSeg> {
             links.push((url.clone(), url.clone()));
             format!("@@LINK{}@@", links.len() - 1)
         }).to_string();
-    }
     // footnote refs now meaningless
-    if let Ok(re) = regex::Regex::new(r"\[[0-9]+\]") {
-        out = re.replace_all(&out, "").to_string();
-    }
+    static SEG_FOOT2: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static SEG_PH: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    out = SEG_FOOT2.get_or_init(|| regex::Regex::new(r"\[[0-9]+\]").unwrap())
+        .replace_all(&out, "").to_string();
     // split into clean lines, re-emitting link segments
     let mut segs = Vec::new();
-    let link_re = regex::Regex::new(r"@@LINK(\d+)@@").unwrap();
+    let link_re = SEG_PH.get_or_init(|| regex::Regex::new(r"@@LINK(\d+)@@").unwrap());
     for line in out.lines() {
         let mut l = line.trim().trim_start_matches(|c| c == '#' || c == '>' || c == '-' || c == '*' || c == '=').trim().to_string();
         l = l.replace('|', " ");

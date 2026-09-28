@@ -23,7 +23,14 @@ needed there, and no release rebuild was done (LTO cost).
    139 MB freed (650 → 510 MB).
 2. Log modal re-read + repainted the whole Proton log 2×/s while open.
    Fix: skip when `(mtime, len)` fingerprint is unchanged.
-3. Session poller (2 s, by design), modal pumps (100 ms, die with the
+3. Markdown rendering compiled 13 regexes per description (`clean_md`
+   + `md_segments`, run per row while browsing Modrinth). Fix: static
+   `OnceLock` patterns. Measured: 200 renders 2.06 s → 0.44 s (4.7×).
+   Same for the per-launch GE-Proton version regex.
+4. Themed-image registry grew with dead WeakRefs between theme
+   switches (tile re-renders register hundreds). Fix: prune above
+   1500 entries on push.
+5. Session poller (2 s, by design), modal pumps (100 ms, die with the
    dialog), negative icon cache (1 h TTL, self-cleaning), bounded
    thumbnail decode (`max_px`), async cover slot gate: reviewed, no
    change — all terminate or are cheap by construction.

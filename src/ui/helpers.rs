@@ -307,7 +307,20 @@ pub fn load_themed_icon_sized(name: &str, is_dark: bool, size: i32) -> Option<gd
 /// widget converge (newest entry wins on refresh); callers that swap the
 /// asset name at runtime (play/stop) must re-track on every swap.
 pub fn track_themed_image(img: &gtk::Image, name: &str) {
-    THEMED_IMAGES.with(|v| v.borrow_mut().push((img.downgrade(), name.to_string())));
+    track_themed_image_inner(img, name);
+}
+
+/// Push with bounded growth: tile re-renders register hundreds of images
+/// whose widgets die on the next render; without a cap the dead WeakRefs
+/// sit here until the next theme switch. Prune above 1500 entries.
+fn track_themed_image_inner(img: &gtk::Image, name: &str) {
+    THEMED_IMAGES.with(|v| {
+        let mut list = v.borrow_mut();
+        list.push((img.downgrade(), name.to_string()));
+        if list.len() > 1500 {
+            list.retain(|(w, _)| w.upgrade().is_some());
+        }
+    });
 }
 
 /// Build a theme-aware image: its paintable follows Dark/Light switches
@@ -316,7 +329,7 @@ pub fn themed_image(name: &str, is_dark: bool, pixel_size: i32) -> gtk::Image {
     let img = gtk::Image::new();
     img.set_pixel_size(pixel_size);
     set_themed_paintable(&img, name, is_dark);
-    THEMED_IMAGES.with(|v| v.borrow_mut().push((img.downgrade(), name.to_string())));
+    track_themed_image_inner(&img, name);
     img
 }
 

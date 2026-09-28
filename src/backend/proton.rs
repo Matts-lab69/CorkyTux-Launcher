@@ -608,9 +608,10 @@ impl ProtonManager {
             .map(|p| p.version.clone())
             .unwrap_or_default();
 
-        let proton_version: u32 = Regex::new(r"GE-Proton(\d+)-")
-            .ok()
-            .and_then(|re| re.captures(&version))
+        static RE_GE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+        let proton_version: u32 = RE_GE
+            .get_or_init(|| Regex::new(r"GE-Proton(\d+)-").unwrap())
+            .captures(&version)
             .and_then(|c| c.get(1))
             .and_then(|m| m.as_str().parse().ok())
             .unwrap_or(11);
