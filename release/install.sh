@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ─── CorkyTux Installer v3.0.16 (Rust + GTK4/libadwaita) ──────────
+# ─── CorkyTux Installer (Rust + GTK4/libadwaita) ────────────────────
 # Installs prebuilt binary to user dir. NO sudo.
 # Supports: Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Version from the tarball dir (corkytux-X.Y.Z); "dev" for repo runs.
+APP_VERSION="$(basename "$SCRIPT_DIR" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+APP_VERSION="${APP_VERSION:-dev}"
 INSTALL_DIR="${HOME}/.local/share/corkytux"
 BIN_DIR="${HOME}/.local/bin"
 ICON_DIR="${HOME}/.local/share/icons"
 DESKTOP_DIR="${HOME}/.local/share/applications"
-APP_VERSION="3.0.19"
+DOCS_URL="https://github.com/Matts-lab69/CorkyTux-Launcher/blob/main/docs/BUILD.md"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -61,7 +64,7 @@ for candidate in "${SCRIPT_DIR}/corkytux" "${SCRIPT_DIR}/release/corkytux"; do
 done
 if [[ -z "$APP" ]]; then
   err "corkytux ELF binary not found in ${SCRIPT_DIR}"
-  echo "  See docs/BUILD.md to compile from source."
+  echo "  See ${DOCS_URL} to compile from source."
   exit 1
 fi
 log "Binary found: $(basename "$APP") ($(du -h "$APP" | cut -f1))"
@@ -132,6 +135,16 @@ if [[ -d /usr/share/icons/Adwaita || -d /usr/share/icons/hicolor || -d "${HOME}/
 else
   warn "No system icon theme found (bundled icons will be used)"
 fi
+# Bundled symbolic icons are SVG: they need librsvg (PNG UI art does not).
+svg_ok=false
+if ldconfig -p 2>/dev/null | grep -q "librsvg-2.so"; then
+  svg_ok=true
+else
+  for path in /usr/lib64 /usr/lib /usr/lib/x86_64-linux-gnu /usr/local/lib; do
+    [[ -f "${path}/librsvg-2.so.2" ]] && { svg_ok=true; break; }
+  done
+fi
+$svg_ok && log "SVG icons (librsvg) OK" || warn "librsvg2 not found (bundled symbolic icons need it)"
 
 # ─── Install missing? ────────────────────────────────────────────
 if [[ ${#missing_libs[@]} -gt 0 ]]; then
@@ -140,19 +153,19 @@ if [[ ${#missing_libs[@]} -gt 0 ]]; then
   echo ""
   case "$DISTRO_LIKE" in
     *gentoo*)
-      echo "  sudo emerge --ask gui-libs/gtk:4 gui-libs/libadwaita"
+      echo "  sudo emerge --ask gui-libs/gtk:4 gui-libs/libadwaita gnome-base/librsvg"
       ;;
     *debian*|*ubuntu*)
       echo "  sudo apt install libgtk-4-1 libadwaita-1-0 librsvg2-common libglib2.0-0"
       ;;
     *fedora*|*rhel*|*centos*)
-      echo "  sudo dnf install gtk4 libadwaita"
+      echo "  sudo dnf install gtk4 libadwaita librsvg2"
       ;;
     *arch*)
-      echo "  sudo pacman -S gtk4 libadwaita"
+      echo "  sudo pacman -S gtk4 libadwaita librsvg"
       ;;
     *suse*)
-      echo "  sudo zypper install gtk4 libadwaita"
+      echo "  sudo zypper install gtk4 libadwaita librsvg"
       ;;
     *) echo "  Install GTK4 + libadwaita packages for your distro." ;;
   esac
@@ -185,7 +198,7 @@ if [[ -n "$HELPER" ]]; then
   log "Store login helper: ${INSTALL_DIR}/webdriver_login"
 else
   warn "webdriver_login not found: the Epic/GOG sign-in will not work."
-  warn "See docs/BUILD.md to build it from source."
+  warn "See ${DOCS_URL} to build it from source."
 fi
 
 # UI assets (the launcher loads themed icons from INSTALL_DIR/assets)
