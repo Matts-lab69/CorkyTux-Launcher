@@ -2,6 +2,7 @@ pub mod config;
 pub mod theme;
 pub mod game_model;
 pub mod proton;
+pub mod isolation;
 pub mod plugins;
 pub mod integration;
 pub mod plugin_process;

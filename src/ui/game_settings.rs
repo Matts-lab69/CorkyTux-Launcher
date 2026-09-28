@@ -1547,6 +1547,49 @@ fn build_graphics_tab(state: &AppState, game_name: &str) -> gtk::Box {
 
     page.append(&gm_frame);
 
+    // Isolation (sandbox Bottles-style: prefijos existentes no se tocan,
+    // el sandbox se aplica al lanzar exponiendo prefijo + juego + GPU,
+    // audio/display y saves; el resto de $HOME queda oculto).
+    let (iso_frame, iso_inner) = make_frame("Isolation");
+    let global_iso = state.config.launcher_value("IsolateNewPrefixes")
+        .map(|v| v == "1").unwrap_or(false);
+    let game_iso_raw = state.config.game_value(game_name, "Isolated");
+    let (eff_iso, _) = crate::backend::isolation::decide(
+        game_iso_raw.as_deref(), global_iso);
+    let iso_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let iso_sw = gtk::Switch::new();
+    iso_sw.set_halign(gtk::Align::End);
+    iso_sw.set_active(eff_iso);
+    iso_sw.set_sensitive(crate::backend::isolation::bwrap_available());
+    let iso_lbl = gtk::Label::new(Some("Isolate this game"));
+    iso_lbl.set_hexpand(true);
+    iso_box.append(&iso_lbl);
+    iso_box.append(&iso_sw);
+    iso_inner.append(&iso_box);
+    let iso_sub = gtk::Label::new(Some(
+        if crate::backend::isolation::bwrap_available() {
+            "Runs under bubblewrap with a private $HOME (prefix, game folder, GPU, audio and saves stay visible)."
+        } else {
+            "bubblewrap missing: the game launches UNSANDBOXED with a warning."
+        }));
+    iso_sub.set_halign(gtk::Align::Start);
+    iso_sub.set_wrap(true);
+    iso_sub.add_css_class("time-label");
+    iso_inner.append(&iso_sub);
+    save_switch(state, game_name, "Isolated", &iso_sw);
+    let iso_paths = gtk::Entry::new();
+    iso_paths.set_placeholder_text(Some("Extra writable paths, separated by ;"));
+    iso_paths.set_text(&state.config.game_value(game_name, "IsolatePaths").unwrap_or_default());
+    {
+        let state_c = state.clone();
+        let game_c = game_name.to_string();
+        iso_paths.connect_changed(move |e| {
+            state_c.config.set_game_value(&game_c, "IsolatePaths", &e.text().to_string());
+        });
+    }
+    iso_inner.append(&iso_paths);
+    page.append(&iso_frame);
+
     wrap_scroll(page)
 }
 

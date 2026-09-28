@@ -127,6 +127,95 @@ impl ProtonManager {
     /// to the direct exe path). Legendary owns EOS/EAC wiring; we only
     /// add our env (anticheat runtimes, custom k=v) and track the child.
     #[allow(clippy::too_many_arguments)]
+    /// Legendary config (ours or Heroic's) holding `app`'s manifest.
+    /// Shared by the launch builder and the sandbox (which must expose it).
+    fn heroic_legendary_cfg(app: &str) -> Option<PathBuf> {
+        if app.is_empty() {
+            return None;
+        }
+        let home = std::env::var("HOME").unwrap_or_default();
+        let cfgs = [
+            PathBuf::from(&home).join(".config/legendary"),
+            PathBuf::from(&home).join(".config/heroic/legendaryConfig/legendary"),
+        ];
+        for cfg in &cfgs {
+            let has = std::fs::read_dir(cfg.join("manifests")).ok().map(|it| {
+                it.flatten().any(|e| {
+                    e.file_name().to_string_lossy().contains(app)
+                })
+            }).unwrap_or(false);
+            if has {
+                return Some(cfg.clone());
+            }
+        }
+        None
+    }
+
+    /// Aislamiento Bottles-style (Fase 4): envuelve `cmd` en bwrap cuando
+    /// el juego lo pide (clave `Isolated`) o el global `IsolateNewPrefixes`
+    /// lo marca por defecto. `rw`: prefijo compat + carpeta del juego +
+    /// extras; `ro`: Proton/umu/runtimes/bins; `chdir`: cwd del sandbox.
+    /// Sin bwrap se lanza igual pero con WARNING en voz alta (log +
+    /// Debug header): nunca fallo mudo, nunca downgrade silencioso.
+    /// El flujo no aislado queda byte-idéntico a antes.
+    fn isolate_cmd(
+        &self,
+        cmd: Command,
+        game_name: &str,
+        game: &std::collections::HashMap<String, String>,
+        mut rw: Vec<PathBuf>,
+        ro: Vec<PathBuf>,
+        chdir: Option<PathBuf>,
+    ) -> Command {
+        let config = super::ConfigManager::new();
+        let global = config
+            .launcher_value(super::isolation::GLOBAL_KEY)
+            .map(|v| v == "1")
+            .unwrap_or(false);
+        let (isolate, reason) =
+            super::isolation::decide(game.get("isolated").map(|v| v.as_str()), global);
+        if !isolate {
+            return cmd;
+        }
+        rw.extend(super::isolation::extra_paths(
+            game.get("isolatepaths").map(|v| v.as_str()).unwrap_or(""),
+        ));
+        let spec = super::isolation::SandboxSpec {
+            game_name: game_name.to_string(),
+            rw_dirs: rw,
+            ro_dirs: ro,
+            chdir,
+        };
+        if !super::isolation::bwrap_available() {
+            eprintln!(
+                "[CorkyTux] WARNING: isolation requested for '{}' ({}) but bubblewrap is missing/broken — launching UNSANDBOXED",
+                game_name, reason
+            );
+            return cmd;
+        }
+        eprintln!("[CorkyTux] isolation on for '{}' ({})", game_name, reason);
+        super::isolation::wrap_command(cmd, &spec)
+    }
+
+    /// Carpeta del juego para el sandbox: dir del ejecutable, o mainpath.
+    /// Solo dirs existentes (bwrap falla con orígenes ausentes).
+    fn game_dir_of(executable: &str, main_path: &str) -> Option<PathBuf> {
+        if !executable.is_empty() {
+            if let Some(p) = Path::new(executable).parent() {
+                if !p.as_os_str().is_empty() && p.is_dir() {
+                    return Some(p.to_path_buf());
+                }
+            }
+        }
+        if !main_path.is_empty() {
+            let p = PathBuf::from(main_path);
+            if p.is_dir() {
+                return Some(p);
+            }
+        }
+        None
+    }
+
     fn legendary_launch_cmd(
         game: &std::collections::HashMap<String, String>,
         proton_path: &std::path::Path,
@@ -146,24 +235,7 @@ impl ProtonManager {
         let leg = Self::heroic_legendary_bin()?;
         // Record must exist in a legendary config (ours or Heroic's own),
         // else `legendary launch` errors out.
-        let home = std::env::var("HOME").unwrap_or_default();
-        let cfgs = [
-            PathBuf::from(&home).join(".config/legendary"),
-            PathBuf::from(&home).join(".config/heroic/legendaryConfig/legendary"),
-        ];
-        let mut use_cfg: Option<PathBuf> = None;
-        for cfg in &cfgs {
-            let has = std::fs::read_dir(cfg.join("manifests")).ok().map(|it| {
-                it.flatten().any(|e| {
-                    e.file_name().to_string_lossy().contains(app.as_str())
-                })
-            }).unwrap_or(false);
-            if has {
-                use_cfg = Some(cfg.clone());
-                break;
-            }
-        }
-        let use_cfg = use_cfg?;
+        let use_cfg = Self::heroic_legendary_cfg(&app)?;
         // Legendary invokes --wine like plain wine (no verb), but the
         // Proton script requires one ("Need a verb"). Stable wrapper that
         // injects waitforexitandrun (also keeps session tracking, since it
@@ -1047,6 +1119,33 @@ impl ProtonManager {
                 } else {
                     leg_cmd
                 };
+                // Sandbox Bottles-style: prefijo + juego rw; Proton,
+                // legendary, tools y su config ro/rw según caso.
+                let leg_bin = Self::heroic_legendary_bin().unwrap_or_default();
+                let tools_dir = PathBuf::from(&std::env::var("HOME").unwrap_or_default())
+                    .join(".local/share/CorkyTux/tools");
+                let mut leg_ro = vec![proton_path.clone(), tools_dir];
+                if !leg_bin.as_os_str().is_empty() {
+                    leg_ro.push(PathBuf::from(&leg_bin));
+                }
+                let mut leg_rw = vec![actual_prefix.clone()];
+                if let Some(cfg) = Self::heroic_legendary_cfg(
+                    &game.get("heroicappid").cloned().unwrap_or_default(),
+                ) {
+                    leg_rw.push(cfg);
+                }
+                let leg_gdir = Self::game_dir_of(&executable, &main_path);
+                if let Some(d) = &leg_gdir {
+                    leg_rw.push(d.clone());
+                }
+                let mut wrapped_cmd = self.isolate_cmd(
+                    wrapped_cmd,
+                    game_name,
+                    &game,
+                    leg_rw,
+                    leg_ro,
+                    leg_gdir,
+                );
                 Self::attach_log_file(&mut wrapped_cmd, game_name);
                 let child = wrapped_cmd
                     .spawn()
@@ -1065,9 +1164,16 @@ impl ProtonManager {
         };
 
         let mut final_cmd;
+        let mut iso_ro: Vec<PathBuf> = vec![proton_path.clone()];
+        let mut steam_rt_sh: Option<PathBuf> = None;
 
         if use_umu {
             let umu_path = self.umu_executable().ok_or("umu-run not found")?;
+            if let Some(p) = Path::new(&umu_path).parent() {
+                if p.is_dir() {
+                    iso_ro.push(p.to_path_buf());
+                }
+            }
             final_cmd = Command::new(umu_path);
             final_cmd.env("PROTONPATH", &proton_path);
             // umu uses WINEPREFIX directly (no /pfx append).
@@ -1085,6 +1191,11 @@ impl ProtonManager {
             if steam_overlay {
                 let home = home_dir().unwrap_or_default();
                 if let Some(preload) = Self::steam_overlay_preload(&home) {
+                    if let Some(p) = Path::new(&preload).parent() {
+                        if p.is_dir() {
+                            iso_ro.push(p.to_path_buf());
+                        }
+                    }
                     final_cmd.env("LD_PRELOAD", &preload);
                     final_cmd.env("ENABLE_VK_LAYER_VALVE_steam_overlay_1", "1");
                     final_cmd.env("SteamOverlayGameId", &fake_steam_id);
@@ -1145,6 +1256,7 @@ impl ProtonManager {
                         .join(".config/heroic/tools/runtimes/eac_runtime");
                     if rt.is_dir() {
                         final_cmd.env("PROTON_EAC_RUNTIME", &rt);
+                        iso_ro.push(rt);
                     }
                 }
                 if game.get("heroicbattleye").map(|v| v == "true").unwrap_or(false) {
@@ -1152,6 +1264,7 @@ impl ProtonManager {
                         .join(".config/heroic/tools/runtimes/battleye_runtime");
                     if rt.is_dir() {
                         final_cmd.env("PROTON_BATTLEYE_RUNTIME", &rt);
+                        iso_ro.push(rt);
                     }
                 }
             }
@@ -1167,6 +1280,11 @@ impl ProtonManager {
             if steam_overlay {
                 let home = home_dir().unwrap_or_default();
                 if let Some(preload) = Self::steam_overlay_preload(&home) {
+                    if let Some(p) = Path::new(&preload).parent() {
+                        if p.is_dir() {
+                            iso_ro.push(p.to_path_buf());
+                        }
+                    }
                     final_cmd.env("LD_PRELOAD", &preload);
                     final_cmd.env("ENABLE_VK_LAYER_VALVE_steam_overlay_1", "1");
                     final_cmd.env("SteamOverlayGameId", &fake_steam_id);
@@ -1192,6 +1310,7 @@ impl ProtonManager {
             });
             if runtime_flag == "true" {
                 if let Some(runtime_sh) = self.find_steam_runtime(&proton_name) {
+                    steam_rt_sh = Some(runtime_sh.clone());
                     let mut rt_cmd = Command::new(runtime_sh);
                     rt_cmd.arg(final_cmd.get_program());
                     for arg in final_cmd.get_args() {
@@ -1208,7 +1327,7 @@ impl ProtonManager {
         }
 
         // Wrapper GameMode (gamemoderun antepuesto al programa completo)
-        let mut wrapped_cmd = if game_mode {
+        let wrapped_cmd = if game_mode {
             let mut gm = Command::new("gamemoderun");
             gm.arg(final_cmd.get_program());
             for arg in final_cmd.get_args() {
@@ -1223,6 +1342,28 @@ impl ProtonManager {
         } else {
             final_cmd
         };
+
+        // Sandbox Bottles-style (Fase 4): el flujo no aislado no cambia.
+        if let Some(rt) = &steam_rt_sh {
+            if let Some(p) = rt.parent() {
+                if p.is_dir() {
+                    iso_ro.push(p.to_path_buf());
+                }
+            }
+        }
+        let mut iso_rw = vec![actual_prefix.clone()];
+        let iso_chdir = Self::game_dir_of(&executable, &main_path);
+        if let Some(d) = &iso_chdir {
+            iso_rw.push(d.clone());
+        }
+        let mut wrapped_cmd = self.isolate_cmd(
+            wrapped_cmd,
+            game_name,
+            &game,
+            iso_rw,
+            iso_ro,
+            iso_chdir,
+        );
 
         Self::attach_log_file(&mut wrapped_cmd, game_name);
         let child = wrapped_cmd
@@ -1349,6 +1490,29 @@ impl ProtonManager {
                     let w = get("nativewayland");
                     if w.is_empty() { "default".to_string() } else { w }
                 },
+            ));
+        }
+        // Aislamiento: decisión efectiva + bwrap (Fase 4). Solo Wine/Proton
+        // (AppImage/emuladores/RPG van nativo y no pasan por el sandbox).
+        if !is_appimage && !is_rpg && !is_emu {
+            let global = config
+                .launcher_value(super::isolation::GLOBAL_KEY)
+                .map(|v| v == "1")
+                .unwrap_or(false);
+            let (active, reason) = super::isolation::decide(
+                game.get("isolated").map(|v| v.as_str()),
+                global,
+            );
+            let bw = if super::isolation::bwrap_available() {
+                "ready"
+            } else {
+                "MISSING - launches UNSANDBOXED with warning"
+            };
+            h.push_str(&format!(
+                "Isolation: {} ({}) · bubblewrap {}\n",
+                on(active),
+                reason,
+                bw
             ));
         }
         h.push_str("--- System ---\n");
@@ -2109,6 +2273,7 @@ impl ProtonManager {
             .unwrap_or_default();
         let (proton_name, _) = self.resolve_proton(&wanted)?;
         let prefix = self.ensure_individual_prefix(game_name);
+        let prefix_for_iso = prefix.clone();
         let real_prefix = if prefix.ends_with("pfx") {
             prefix
         } else {
@@ -2175,6 +2340,24 @@ impl ProtonManager {
             c.arg(tool);
             c
         };
+
+        // Wine tools también corren aislados (mismo prefijo, Proton ro).
+        // winetricks necesita su propio bin + el wineserver junto a wine.
+        let mut tool_ro: Vec<PathBuf> = candidate_dirs.clone();
+        if let Some(p) = Path::new(cmd.get_program()).parent() {
+            if p.is_dir() {
+                tool_ro.push(p.to_path_buf());
+            }
+        }
+        let game = config.game_section(game_name);
+        let mut cmd = self.isolate_cmd(
+            cmd,
+            game_name,
+            &game,
+            vec![prefix_for_iso.clone()],
+            tool_ro,
+            Some(prefix_for_iso),
+        );
 
         let child = cmd
             .spawn()

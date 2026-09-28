@@ -1512,6 +1512,18 @@ pub fn show_settings_modal(
     mh_status.add_css_class("time-label");
     misc_inner.append(&mh_status);
 
+    let bw_ok = crate::backend::isolation::bwrap_available();
+    misc_inner.append(&misc_switch("IsolateNewPrefixes", "Isolate new Wine/Proton prefixes (bubblewrap sandbox)", false, bw_ok, state));
+    let bw_status = gtk::Label::new(Some(if bw_ok {
+        "bubblewrap: ready — new games without an explicit choice launch sandboxed (private $HOME, prefix + game folder only)"
+    } else {
+        "bubblewrap: not installed or user namespaces blocked — isolation requests launch UNSANDBOXED with a warning"
+    }));
+    bw_status.set_halign(gtk::Align::Start);
+    bw_status.set_wrap(true);
+    bw_status.add_css_class("time-label");
+    misc_inner.append(&bw_status);
+
     let misc_scroll = gtk::ScrolledWindow::new();
     misc_scroll.set_vexpand(true);
     misc_scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
