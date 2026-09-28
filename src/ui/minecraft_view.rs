@@ -47,6 +47,23 @@ struct AddonRow {
     project_id: String,
 }
 
+/// Un update disponible para el diálogo "Update mods".
+#[derive(Clone)]
+struct PendingUpdate {
+    file: String,
+    title: String,
+    current: String,
+    latest: String,
+    platform: String,
+}
+
+/// Eventos del worker de updates hacia la UI.
+enum UpdEv {
+    Start { idx: usize, file: String },
+    Done { file: String, ok: bool, msg: String },
+    End,
+}
+
 /// `CONFIG_DIR` del plugin minecraft-launcher: sus datos, no su ejecutable.
 ///
 /// El script del plugin vive en `plugins_base_dir()` (~/.local/share). Ver el
@@ -81,6 +98,14 @@ fn inst_container(id: &str, isolated: bool) -> std::path::PathBuf {
         }
     }
     inst_dir(id, isolated)
+}
+
+/// Total de updates vs visibles por el filtro activo: el botón global
+/// "Update all" depende del total; el tooltip muestra los visibles como
+/// dato aparte (Fase 1.1).
+fn update_counts(files: &[String], visible_files: &[String]) -> (usize, usize) {
+    let shown = visible_files.iter().filter(|f| files.iter().any(|x| x == *f)).count();
+    (files.len(), shown)
 }
 
 fn dedup_disp(s: &str) -> String {
@@ -1179,9 +1204,42 @@ impl MinecraftView {
         head.append(&add_compact);
         lib_page.append(&head);
         {
+            // Modo icono (ventana estrecha): abre un popover con las mismas
+            // opciones de orden; elegir una mueve el DropDown, que conserva
+            // toda la lógica (notify → render + McSort). Sin duplicar.
             let sd = sort_drop.clone();
+            let cyc = sort_cycle.clone();
             sort_cycle.connect_clicked(move |_| {
-                sd.set_selected((sd.selected() + 1) % 4);
+                let pop = gtk::Popover::new();
+                let box_ = gtk::Box::new(gtk::Orientation::Vertical, 2);
+                box_.set_margin_top(6);
+                box_.set_margin_bottom(6);
+                box_.set_margin_start(6);
+                box_.set_margin_end(6);
+                let mut group: Option<gtk::CheckButton> = None;
+                for (i, name) in ["Name", "Most played", "Last played", "Game version"].iter().enumerate() {
+                    let chk = gtk::CheckButton::with_label(name);
+                    if let Some(g) = &group {
+                        chk.set_group(Some(g));
+                    } else {
+                        group = Some(chk.clone());
+                    }
+                    chk.set_active(sd.selected() as usize == i);
+                    let sdc = sd.clone();
+                    chk.connect_toggled(move |b| {
+                        if b.is_active() {
+                            sdc.set_selected(i as u32);
+                        }
+                    });
+                    box_.append(&chk);
+                }
+                pop.set_child(Some(&box_));
+                pop.set_parent(&cyc);
+                let popc = pop.clone();
+                pop.connect_closed(move |_| {
+                    popc.unparent();
+                });
+                pop.popup();
             });
         }
         if let Ok(c1100) = adw::BreakpointCondition::parse("max-width: 1100px") {
@@ -3152,7 +3210,12 @@ impl MinecraftView {
             row.append(&menu);
             self.addons_box.append(&row);
         }
-        // per-row Update buttons + update-all visibility
+        // per-row Update buttons + update-all visibility.
+        // El botón global depende del TOTAL de updates disponibles, no del
+        // filtro activo: se oculta mientras se chequea (evita mostrar el
+        // estado del filtro anterior) y al resolver muestra el conteo
+        // total, con los visibles por filtro como dato en el tooltip.
+        self.update_all_btn.set_visible(false);
         let ctx = self.inst_addon_ctx();
         let (tx, rx) = std::sync::mpsc::channel::<Vec<String>>();
         std::thread::spawn(move || {
@@ -3169,7 +3232,14 @@ impl MinecraftView {
         let upd_map_c = upd_map.clone();
         glib::idle_add_local(move || match rx.try_recv() {
             Ok(files) => {
-                v.update_all_btn.set_visible(!files.is_empty());
+                let visible: Vec<String> = upd_map_c.borrow().keys().cloned().collect();
+                let (total, shown) = update_counts(&files, &visible);
+                set_btn_icon_label(&v.update_all_btn, "corkytux-software-update-available-symbolic",
+                    &format!("Update all ({})", total));
+                v.update_all_btn.set_tooltip_text(Some(&format!(
+                    "{} update(s) available, {} shown by the current filter",
+                    total, shown)));
+                v.update_all_btn.set_visible(total > 0);
                 for (f, btn) in upd_map_c.borrow().iter() {
                     btn.set_visible(files.iter().any(|x| x == f));
                 }
@@ -3321,23 +3391,33 @@ impl MinecraftView {
             Some(c) => c,
             None => return,
         };
-        let (tx, rx) = std::sync::mpsc::channel::<Result<Vec<String>, String>>();
+        let (tx, rx) = std::sync::mpsc::channel::<Result<serde_json::Value, String>>();
         std::thread::spawn(move || {
             let res = MinecraftManager::mod_check_updates(&at, &mc, &loader, &mdir)
-                .map(|d| d.get("updates").and_then(|u| u.as_array()).cloned().unwrap_or_default()
-                    .into_iter().filter_map(|u| u.get("file").and_then(|x| x.as_str()).map(str::to_string)).collect::<Vec<_>>())
                 .map_err(|e| e.to_string());
             let _ = tx.send(res);
         });
         let v = self.clone();
         glib::idle_add_local(move || match rx.try_recv() {
-            Ok(Ok(files)) => {
-                let (mdir2, _, _, at2) = v.inst_addon_ctx().unwrap_or_default();
-                for f in &files {
-                    let _ = MinecraftManager::mod_update(f, &at2, &mdir2);
+            Ok(Ok(d)) => {
+                let plats: std::collections::HashMap<String, String> = v.load_addon_rows()
+                    .into_iter().map(|r| (r.file, r.platform)).collect();
+                let items = d.get("updates").and_then(|u| u.as_array()).cloned().unwrap_or_default()
+                    .into_iter().filter_map(|u| {
+                        let file = u.get("file")?.as_str()?.to_string();
+                        Some(PendingUpdate {
+                            title: u.get("title").and_then(|x| x.as_str()).unwrap_or(&file).to_string(),
+                            current: u.get("current").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                            latest: u.get("latest").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                            platform: plats.get(&file).cloned().unwrap_or_else(|| "modrinth".to_string()),
+                            file,
+                        })
+                    }).collect::<Vec<_>>();
+                if items.is_empty() {
+                    v.toast("Up to date", "No addon updates available.");
+                } else {
+                    v.show_update_dialog(items);
                 }
-                v.toast("Updated", &format!("{} addon(s) updated.", files.len()));
-                v.render_addons();
                 glib::ControlFlow::Break
             }
             Ok(Err(e)) => {
@@ -3347,6 +3427,234 @@ impl MinecraftView {
             Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
             Err(_) => glib::ControlFlow::Break,
         });
+    }
+
+    /// Diálogo "Update mods": lista con casillas, select all/none y
+    /// "Update selected (N)". Al confirmar pasa a vista de progreso.
+    fn show_update_dialog(&self, items: Vec<PendingUpdate>) {
+        let dlg = adw::Dialog::new();
+        dlg.set_title("Update mods");
+        dlg.set_content_width(520);
+        let (header, x_btn) = helpers::modal_header("Update mods");
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        content.add_css_class("modal-bg");
+        content.append(&header);
+        let sub = gtk::Label::new(Some(&format!("{} update(s) available. Uncheck to skip.", items.len())));
+        sub.set_halign(gtk::Align::Start);
+        sub.set_margin_start(16);
+        sub.set_margin_end(16);
+        sub.add_css_class("time-label");
+        content.append(&sub);
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_min_content_height(240);
+        scroll.set_margin_start(16);
+        scroll.set_margin_end(16);
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        scroll.set_child(Some(&list));
+        content.append(&scroll);
+        let checks: Vec<gtk::CheckButton> = items.iter().map(|it| {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            let chk = gtk::CheckButton::new();
+            chk.set_active(true);
+            chk.set_valign(gtk::Align::Center);
+            row.append(&chk);
+            let mid = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            mid.set_hexpand(true);
+            let t = gtk::Label::new(Some(&it.title));
+            t.set_halign(gtk::Align::Start);
+            t.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            t.add_css_class("mc-tile-name");
+            mid.append(&t);
+            let ver = if it.current.is_empty() { it.latest.clone() } else { format!("{} → {}", it.current, it.latest) };
+            let s = gtk::Label::new(Some(&format!("{}  •  {}", ver, it.platform)));
+            s.set_halign(gtk::Align::Start);
+            s.add_css_class("mc-tile-sub");
+            mid.append(&s);
+            row.append(&mid);
+            list.append(&row);
+            chk
+        }).collect();
+        let foot = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        foot.set_margin_start(16);
+        foot.set_margin_end(16);
+        foot.set_margin_bottom(16);
+        let sel_all = gtk::Button::with_label("Select all");
+        sel_all.add_css_class("flat");
+        let sel_none = gtk::Button::with_label("Select none");
+        sel_none.add_css_class("flat");
+        let go = gtk::Button::with_label(&format!("Update selected ({})", items.len()));
+        go.add_css_class("suggested-action");
+        go.set_hexpand(true);
+        go.set_halign(gtk::Align::End);
+        foot.append(&sel_all);
+        foot.append(&sel_none);
+        foot.append(&go);
+        content.append(&foot);
+        dlg.set_child(Some(&content));
+        {
+            let d = dlg.clone();
+            x_btn.connect_clicked(move |_| { d.close(); });
+        }
+        {
+            let c = checks.clone();
+            let g = go.clone();
+            let n_all = items.len();
+            let upd = move || {
+                let n = c.iter().filter(|b| b.is_active()).count();
+                g.set_label(&format!("Update selected ({})", n));
+                g.set_sensitive(n > 0);
+            };
+            for b in &checks {
+                let u = upd.clone();
+                b.connect_toggled(move |_| u());
+            }
+            sel_all.connect_clicked({
+                let c = checks.clone();
+                let g = go.clone();
+                move |_| { for b in &c { b.set_active(true); } g.set_label(&format!("Update selected ({})", n_all)); g.set_sensitive(true); }
+            });
+            sel_none.connect_clicked({
+                let c = checks.clone();
+                let g = go.clone();
+                move |_| { for b in &c { b.set_active(false); } g.set_label("Update selected (0)"); g.set_sensitive(false); }
+            });
+        }
+        let v = self.clone();
+        let d = dlg.clone();
+        go.connect_clicked(move |_| {
+            let sel = items.iter().zip(checks.iter())
+                .filter(|(_, b)| b.is_active()).map(|(it, _)| it.clone()).collect::<Vec<_>>();
+            d.close();
+            v.run_updates(sel);
+        });
+        dlg.present(Some(&self.parent));
+    }
+
+    /// Ejecuta los updates en segundo plano con vista de progreso:
+    /// barra + "X of N" + mod actual + resultado por mod. Cancelar
+    /// detiene los pendientes sin tocar el mod en curso (el reemplazo
+    /// en el plugin es atómico).
+    fn run_updates(&self, items: Vec<PendingUpdate>) {
+        if items.is_empty() {
+            return;
+        }
+        let (mdir, _mc, _loader, at) = match self.inst_addon_ctx() {
+            Some(c) => c,
+            None => return,
+        };
+        let dlg = adw::Dialog::new();
+        dlg.set_title("Updating mods");
+        dlg.set_content_width(520);
+        let (header, _x) = helpers::modal_header("Updating mods");
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        content.add_css_class("modal-bg");
+        content.append(&header);
+        let status = gtk::Label::new(Some(&format!("0 of {} — starting…", items.len())));
+        status.set_halign(gtk::Align::Start);
+        status.set_margin_start(16);
+        status.set_margin_end(16);
+        status.add_css_class("time-label");
+        content.append(&status);
+        let bar = gtk::ProgressBar::new();
+        bar.set_show_text(true);
+        bar.set_margin_start(16);
+        bar.set_margin_end(16);
+        content.append(&bar);
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_min_content_height(180);
+        scroll.set_margin_start(16);
+        scroll.set_margin_end(16);
+        let results = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        scroll.set_child(Some(&results));
+        content.append(&scroll);
+        let cancel = gtk::Button::with_label("Cancel");
+        cancel.add_css_class("settings-btn");
+        cancel.set_margin_start(16);
+        cancel.set_margin_end(16);
+        cancel.set_margin_bottom(16);
+        content.append(&cancel);
+        dlg.set_child(Some(&content));
+        let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let done_flag = std::rc::Rc::new(std::cell::Cell::new(false));
+        {
+            let f = cancel_flag.clone();
+            let done = done_flag.clone();
+            let dd = dlg.clone();
+            cancel.connect_clicked(move |_| {
+                if done.get() {
+                    dd.close();
+                } else {
+                    f.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+            });
+        }
+        let (tx, rx) = std::sync::mpsc::channel::<UpdEv>();
+        let total = items.len();
+        // Título por archivo para el progreso (rows actuales + seleccionados).
+        let mut titles: std::collections::HashMap<String, String> =
+            self.load_addon_rows().into_iter().map(|r| (r.file, r.title)).collect();
+        for it in &items {
+            titles.entry(it.file.clone()).or_insert_with(|| it.title.clone());
+        }
+        std::thread::spawn(move || {
+            for (idx, it) in items.iter().enumerate() {
+                if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                    break;
+                }
+                let _ = tx.send(UpdEv::Start { idx, file: it.file.clone() });
+                // El mod en curso siempre termina (atómico en el plugin);
+                // cancelar solo evita tomar más pendientes.
+                let (ok, msg) = match MinecraftManager::mod_update(&it.file, &at, &mdir) {
+                    Ok(_) => (true, String::new()),
+                    Err(e) => (false, e),
+                };
+                let _ = tx.send(UpdEv::Done { file: it.file.clone(), ok, msg });
+            }
+            let _ = tx.send(UpdEv::End);
+        });
+        let v = self.clone();
+        let counts = std::rc::Rc::new(std::cell::RefCell::new((0usize, 0usize)));
+        glib::idle_add_local(move || match rx.try_recv() {
+            Ok(UpdEv::Start { idx, file }) => {
+                let name = titles.get(&file).cloned().unwrap_or_else(|| file.clone());
+                status.set_text(&format!("{} of {} — {}", idx + 1, total, name));
+                glib::ControlFlow::Continue
+            }
+            Ok(UpdEv::Done { file, ok, msg }) => {
+                let name = titles.get(&file).cloned().unwrap_or_else(|| file.clone());
+                let lbl = if ok {
+                    counts.borrow_mut().0 += 1;
+                    format!("✓ {}", name)
+                } else {
+                    counts.borrow_mut().1 += 1;
+                    format!("✗ {} — {}", name, msg)
+                };
+                let l = gtk::Label::new(Some(&lbl));
+                l.set_halign(gtk::Align::Start);
+                l.set_wrap(true);
+                l.set_margin_start(4);
+                results.append(&l);
+                let done = counts.borrow().0 + counts.borrow().1;
+                bar.set_fraction(done as f64 / total as f64);
+                bar.set_text(Some(&format!("{} of {}", done, total)));
+                glib::ControlFlow::Continue
+            }
+            Ok(UpdEv::End) => {
+                let (ok_n, fail_n) = *counts.borrow();
+                let skipped = total - ok_n - fail_n;
+                status.set_text(&format!("Done: {} updated, {} failed, {} skipped.", ok_n, fail_n, skipped));
+                bar.set_fraction(1.0);
+                bar.set_text(Some(&format!("{} of {}", total, total)));
+                done_flag.set(true);
+                cancel.set_label("Close");
+                v.render_addons();
+                v.render_detail_cards();
+                glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(_) => glib::ControlFlow::Break,
+        });
+        dlg.present(Some(&self.parent));
     }
 
     fn rescan_addons(&self) {
@@ -6718,5 +7026,18 @@ mod tests {
         ];
         let merged = collect_instance_ids(&with_base, &[]);
         assert_eq!(merged, vec![("fabric-loader-0.19.3-26.2".to_string(), true)]);
+    }
+
+    #[test]
+    fn update_counts_total_vs_filtered() {
+        // El botón global depende del total; los visibles van al tooltip.
+        let files = vec!["a.jar".to_string(), "b.jar".to_string(), "c.jar".to_string()];
+        let visible = vec!["a.jar".to_string()];
+        assert_eq!(update_counts(&files, &visible), (3, 1));
+        assert_eq!(update_counts(&files, &files), (3, 3));
+        let empty: Vec<String> = Vec::new();
+        assert_eq!(update_counts(&empty, &empty), (0, 0));
+        // Visibles que ya no tienen update no cuentan.
+        assert_eq!(update_counts(&files, &["z.jar".to_string()]), (3, 0));
     }
 }
