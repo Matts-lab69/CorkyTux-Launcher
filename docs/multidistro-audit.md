@@ -1,585 +1,577 @@
-# Auditoría estática multi-distro
+# Multi-distro static audit
 
-Fecha: 2026-09-25 · HEAD auditado: `ac0e0fb` (rama `main`, sin push)
+Date: 2026-09-25 · Audited HEAD: `ac0e0fb` (branch `main`, not pushed)
 
-## Método y límites
+## Method and limits
 
-Auditoría **estática**: lectura de código, scripts de release y documentación.
-**No** se compiló, no se ejecutó la app, no se lanzaron procesos ni se tomaron
-capturas (regla de `AGENTS.md`). Cada hallazgo cita `archivo:línea` para que sea
-verificable sin abrir la app.
+Static **audit**: reading code, release scripts and documentation.
+I did **not** compile, did not run the app, did not launch processes or take
+screenshots (`AGENTS.md` rule). Every finding cites `file:line` so it is
+verifiable without opening the app.
 
-Por eso los hallazgos marcados *crítico* son fallos con impacto funcional
-comprobable por lectura, no regresiones observadas en ejecución. Los que
-requieren confirmación visual están listados aparte al final.
+That is why the findings marked *critical* are failures with functional impact
+verifiable by reading, not regressions observed while running. The ones that
+need visual confirmation are listed separately at the end.
 
-## Distros cubiertos por el proyecto
+## Distros covered by the project
 
-Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE (los cinco de
-`docs/BUILD.md`). La auditoría añade dos ejes que la tabla no cubre:
-**multi-arch** (x86_64 vs aarch64) y **entornos sin coreutils del sistema**
-(NixOS, contenedores mínimos).
+Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE (the five from
+`docs/BUILD.md`). The audit adds two axes the table does not cover:
+**multi-arch** (x86_64 vs aarch64) and **environments without the system
+coreutils** (NixOS, minimal containers).
 
-## Resumen
+## Summary
 
-| Severidad | Cantidad |
+| Severity | Count |
 | --- | --- |
-| Crítico | 6 |
-| Degradante | 30 |
-| Cosmético | 6 |
+| Critical | 6 |
+| Degrading | 30 |
+| Cosmetic | 6 |
 | **Total** | **42** |
 
-Cuentas del triage original, conservadas como registro. **Estado actual: los 6
-críticos están corregidos.** C08 lo está en 9 de sus 12 sitios (los 8 de
-`timeout` y el único de `ldconfig`); quedan 3 externalidades de bajo impacto.
-Ningún degradante ni cosmético se ha tocado.
+Counts from the original triage, kept as a record. **Current state: all 6
+criticals are fixed.** C08 is fixed in 9 of its 12 sites (the 8 `timeout` ones
+and the single `ldconfig` one); 3 low-impact external dependencies remain.
+No degrading or cosmetic finding has been touched.
 
-Definiciones:
+Definitions:
 
-- **Crítico**: función rota de forma silenciosa o acción de usuario imposible
-  en una distro/arquitectura oficialmente soportada.
-- **Degradante**: funciona pero con pérdida de función, warning falso o
-  acoplamiento innecesario.
-- **Cosmético**: deriva documental o inconsistencias sin efecto funcional.
+- **Critical**: a feature broken silently, or a user action impossible on an
+  officially supported distro/architecture.
+- **Degrading**: it works but with loss of function, a false warning, or
+  unnecessary coupling.
+- **Cosmetic**: documentation drift or inconsistencies with no functional effect.
 
 ---
 
-## Críticos
+## Criticals
 
-### C01 — Rutas de Steam hardcodeadas: el overlay no existe en Steam Flatpak/Snap
+### C01 — Hardcoded Steam paths: the overlay does not exist on Steam Flatpak/Snap
 
-**Estado: CORREGIDO.**
+**Status: FIXED.**
 
-- `src/backend/proton.rs:335-340` — `steam_client_path()` construye
-  `~/.steam/steam` sin variantes.
-- `src/backend/proton.rs:940-942` y `1035-1037` — el `gameoverlayrenderer.so`
-  del overlay se busca en `~/.steam/steam/ubuntu12_32` y
+- `src/backend/proton.rs:335-340` — `steam_client_path()` builds
+  `~/.steam/steam` with no variants.
+- `src/backend/proton.rs:940-942` and `1035-1037` — the overlay's
+  `gameoverlayrenderer.so` is looked up in `~/.steam/steam/ubuntu12_32` and
   `~/.steam/steam/ubuntu12_64`.
-- Contraste: `src/backend/proton.rs:480-485` (`find_steam_runtime`) **sí**
-  enumeraba las cuatro raíces, incluida
+- Contrast: `src/backend/proton.rs:480-485` (`find_steam_runtime`) **did**
+  enumerate the four roots, including
   `~/.var/app/com.valvesoftware.Steam/.steam/steam`.
 
-**Impacto:** con Steam instalado como Flatpak o Snap, el usuario activa
-`SteamOverlay` en la ficha del juego, el interruptor queda en "activo" y el
-overlay nunca se inyecta. No hay error ni aviso: pérdida silenciosa de una
-función que el usuario cree activa.
+**Impact:** with Steam installed as Flatpak or Snap, I enable `SteamOverlay` on
+the game entry, the switch stays "on" and the overlay is never injected. There
+is no error and no warning: a silent loss of a feature I believe is active.
 
-**Causa raíz:** la lista de raíces de Steam estaba duplicada en tres sitios y
-solo uno la mantenía actualizada.
+**Root cause:** the list of Steam roots was duplicated in three places and only
+one of them kept it up to date.
 
-**Fix aplicado:** `steam_roots(home)` es ahora la única lista, con las cuatro
-variantes (`~/.steam/steam`, `~/.local/share/Steam`,
-`~/.var/app/com.valvesoftware.Steam/data/Steam` y
-`~/.var/app/com.valvesoftware.Steam/.steam/steam`). La consumen:
+**Fix applied:** `steam_roots(home)` is now the only list, with the four
+variants (`~/.steam/steam`, `~/.local/share/Steam`,
+`~/.var/app/com.valvesoftware.Steam/data/Steam` and
+`~/.var/app/com.valvesoftware.Steam/.steam/steam`). Its consumers:
 
-1. `steam_client_path_for(home)` — la primera raíz que exista, con fallback a
-   `~/.steam/steam` para cuando no hay Steam instalado (Proton usa la variable
-   igualmente). `~/.steam/steam` va primero porque es la ruta que ya usaba
-   `STEAM_COMPAT_CLIENT_INSTALL_PATH` y, en una instalación normal, es un
-   enlace a `.local/share/Steam`: no cambia el comportamiento de nadie.
-2. `find_steam_runtime` — ahora itera el resolver en vez de su propia lista.
-3. `steam_overlay_preload(home)` — sustituye a los dos bloques de overlay
-   duplicados (rumbo y no-rumbo) y recorre **todas** las raíces, no solo la
-   primera. Mantiene el `':'` inicial que no pisa un `LD_PRELOAD` heredado.
+1. `steam_client_path_for(home)` — the first root that exists, with fallback to
+   `~/.steam/steam` for when Steam is not installed (Proton uses the variable
+   anyway). `~/.steam/steam` goes first because it is the path
+   `STEAM_COMPAT_CLIENT_INSTALL_PATH` already used and, in a normal install, it
+   is a link to `.local/share/Steam`: nobody's behavior changes.
+2. `find_steam_runtime` — now iterates the resolver instead of its own list.
+3. `steam_overlay_preload(home)` — replaces the two duplicated overlay blocks
+   (rum and non-rum) and walks **all** the roots, not just the first. It keeps
+   the leading `':'` that does not clobber an inherited `LD_PRELOAD`.
 
-**Hardcode extra que salió al implementarlo:** `legendary_launch_cmd` fijaba
-`STEAM_COMPAT_CLIENT_INSTALL_PATH` por su cuenta (línea 185-186), así que
-arreglar solo `steam_client_path()` no cubría el lanzamiento vía Heroic. Ahora
-usa `steam_client_path_for()`. Con esto la lista quedó en **un** sitio, que era
-el origen real del hallazgo.
+**Extra hardcode that surfaced while implementing it:** `legendary_launch_cmd`
+was setting `STEAM_COMPAT_CLIENT_INSTALL_PATH` on its own (lines 185-186), so
+fixing only `steam_client_path()` did not cover launching via Heroic. It now
+uses `steam_client_path_for()`. That leaves the list in **one** place, which
+was the real origin of the finding.
 
-### C03 — `component_status` solo reconoce tokens x86 y consulta dos binarios distintos de GameMode
+### C03 — `component_status` only recognizes x86 tokens and queries two different GameMode binaries
 
-**Estado: CORREGIDO** (decisiones tomadas por el usuario: derivar de `ARCH` +
-rutas del sistema, y sondear siempre `gamemoderun`).
+**Status: FIXED** (decisions I made: derive from `ARCH` + system paths, and
+always probe `gamemoderun`).
 
-- `src/backend/proton.rs:617-628` (versión auditada) — parseaba `ldconfig -p`
-  buscando `x86-64`/`lib64` para 64 bits y `i386`/`lib32` para 32 bits.
-- `src/backend/proton.rs:614` — `installed64` se inicializaba a `available`, así
-  que el bloque `ldconfig` solo podía **activar** flags, nunca corregirlos.
-- `src/backend/proton.rs:605` sondeaba `gamemoderun`; `src/backend/proton.rs:687`
-  sondeaba `gamemoded` para la misma característica.
+- `src/backend/proton.rs:617-628` (audited version) — parsed `ldconfig -p`
+  looking for `x86-64`/`lib64` for 64-bit and `i386`/`lib32` for 32-bit.
+- `src/backend/proton.rs:614` — `installed64` was initialized to `available`, so
+  the `ldconfig` block could only **turn on** flags, never correct them.
+- `src/backend/proton.rs:605` probed `gamemoderun`; `src/backend/proton.rs:687`
+  probed `gamemoded` for the same feature.
 
-**Impacto:**
+**Impact:**
 
-1. En aarch64 `ldconfig -p` imprime `aarch64`/`arm64`; ninguno de los dos
-   tokens matchea, luego `installed32` **jamás** podía ser `true` en ARM y la
-   UI afirmaba que no hay soporte 32-bit aunque el paquete estuviera instalado.
-2. Sin `ldconfig` (NixOS, contenedores) el bloque se saltaba entero y
-   `installed32` quedaba en `false` sin explicación.
-3. El defecto más serio era independiente de la arquitectura: como
-   `installed64` nacía en `available`, un `mangohud` instalado **sin** su
-   biblioteca de 64 bits se anunciaba como instalado. El flag no podía
-   ponerse a `false` nunca.
-4. `gamemoderun` es el cliente y `gamemoded` el daemon. Sondear el daemon no
-   dice si GameMode puede aplicarse: sin el socket de usuario activo el chequeo
-   falla aunque el cliente funcione, y con cliente pero daemon ausente el
-   chequeo pasa aunque no ocurra nada. Las dos tarjetas de la UI pueden
-   discrepar.
+1. On aarch64 `ldconfig -p` prints `aarch64`/`arm64`; neither token matches, so
+   `installed32` could **never** be `true` on ARM and the UI claimed there is no
+   32-bit support even with the package installed.
+2. Without `ldconfig` (NixOS, containers) the whole block was skipped and
+   `installed32` stayed `false` with no explanation.
+3. The most serious defect was architecture-independent: since `installed64`
+   was born as `available`, a `mangohud` installed **without** its 64-bit
+   library announced itself as installed. The flag could never be set to
+   `false`.
+4. `gamemoderun` is the client and `gamemoded` the daemon. Probing the daemon
+   says nothing about whether GameMode can be applied: without the active user
+   socket the check fails even when the client works, and with the client
+   present but the daemon missing the check passes even though nothing
+   happens. The two UI cards can disagree.
 
-**Fix aplicado:**
+**Fix applied:**
 
-1. `component_bits(lib)` deriva el soporte de `std::env::consts::ARCH`: el host
-   es de 64 bits si su arch es `x86_64`/`aarch64`/`powerpc64`/`riscv64`/`s390x`,
-   y puede ejecutar 32 bits si es `x86`/`x86_64`. En aarch64 `installed32` es
-   `false` **por construcción**, no por un token que no matche: no hay
-   distribuciones ARM de 32 bits con las que contar, y fingir lo contrario sería
-   peor que no medirlo.
-2. `library_present(lib, bits)` busca por prefijo de nombre base
-   (`libMangoHud.so` cubre `libMangoHud.so.1.2`) en los directorios reales:
-   el multiarch, `/usr/lib`, `/usr/lib64`, `/usr/local/lib`, `/lib`, los
-   subdirectorios `lib32`/`libx32` para 32 bits, y
-   `/run/current-system/sw/lib` para NixOS. El nombre del multiarch lo dice
-   `gcc -print-multiarch`, con `$MULTIARCH` y `<arch>-linux-gnu` como
+1. `component_bits(lib)` derives support from `std::env::consts::ARCH`: the
+   host is 64-bit if its arch is `x86_64`/`aarch64`/`powerpc64`/`riscv64`/`s390x`,
+   and can run 32-bit if it is `x86`/`x86_64`. On aarch64 `installed32` is
+   `false` **by construction**, not because of a token that fails to match:
+   there are no 32-bit ARM distros to count, and pretending otherwise would be
+   worse than not measuring.
+2. `library_present(lib, bits)` searches by base name prefix
+   (`libMangoHud.so` covers `libMangoHud.so.1.2`) in the real directories: the
+   multiarch dir, `/usr/lib`, `/usr/lib64`, `/usr/local/lib`, `/lib`, the
+   `lib32`/`libx32` subdirectories for 32-bit, and
+   `/run/current-system/sw/lib` for NixOS. The multiarch name comes from
+   `gcc -print-multiarch`, with `$MULTIARCH` and `<arch>-linux-gnu` as
    fallbacks.
-3. Los flags ahora **pueden ser negativos**: se resuelven de verdad en lugar de
-   solo activarse.
-4. Se eliminó la dependencia de `ldconfig` (cierra el último sitio de C08 de
-   este binario).
-5. `graphics_component_status()` sondea `gamemoderun`, igual que
-   `component_status()`. Se unificó en el **cliente**: es lo que CorkyTux
-   inyecta al lanzar, y que el daemon esté instalado no significa que GameMode
-   se aplique.
-6. `component_status_text()` **no se tocó**: su contrato es idéntico, así que
-   las etiquetas de la UI no cambian de forma.
+3. The flags can now **be negative**: they are truly resolved instead of only
+   being turned on.
+4. The `ldconfig` dependency is gone (that closes the last C08 site for this
+   binary).
+5. `graphics_component_status()` probes `gamemoderun`, same as
+   `component_status()`. I unified it on the **client**: that is what CorkyTux
+   injects at launch, and the daemon being installed does not mean GameMode
+   gets applied.
+6. `component_status_text()` **was not touched**: its contract is identical, so
+   the UI labels do not change shape.
 
-**Verificación estática contra el sistema real:** en este host
-(`x86_64`, sin `gcc -print-multiarch` funcional, sin `MULTIARCH`) el fallback da
-`x86_64-linux-gnu`; existen `/usr/lib/libMangoHud.so`,
-`/usr/lib/libgamemodeauto.so.0` (symlink) y `/usr/bin/gamemoderun`, así que
-`available` e `installed64` siguen en `true` como antes del cambio, y
-`installed32` en `false` porque no hay multilib. Sin regresión en x86.
+**Static verification against the real system:** on this host
+(`x86_64`, without a working `gcc -print-multiarch`, without `MULTIARCH`) the
+fallback yields `x86_64-linux-gnu`; `/usr/lib/libMangoHud.so`,
+`/usr/lib/libgamemodeauto.so.0` (symlink) and `/usr/bin/gamemoderun` exist, so
+`available` and `installed64` stay `true` as before the change, and
+`installed32` is `false` because there is no multilib. No x86 regression.
 
-### C08 — Dependencia dura de binarios externos (`timeout`, `ldconfig`, `pgrep`, `pidof`, `which`) en 12 sitios
+### C08 — Hard dependency on external binaries (`timeout`, `ldconfig`, `pgrep`, `pidof`, `which`) in 12 sites
 
-**Estado: PARCIALMENTE CORREGIDO.** Los 8 usos de `timeout` y el único de
-`ldconfig` están eliminados (9 de 12); quedan 3: `pgrep`, `pidof` y `which`.
+**Status: PARTIALLY FIXED.** The 8 uses of `timeout` and the single one of
+`ldconfig` are removed (9 of 12); 3 remain: `pgrep`, `pidof` and `which`.
 
-Reparto verificado en el triage:
+Distribution verified in the triage:
 
-| Binario | Call sites |
+| Binary | Call sites |
 | --- | --- |
-| `timeout` | **corregidos**: `plugins.rs:552`, `plugins.rs:620`, `plugins.rs:690`, `plugins.rs:727`, `integration.rs:601`, `integration.rs:609`, `integration.rs:666`, `proton.rs:1314` |
-| `ldconfig` | **corregido** con C03: `proton.rs:617` ya no lo invoca |
-| `pgrep` | **corregidos** los 2 de `import_move.rs` (C14); queda `proton.rs:261` |
+| `timeout` | **fixed**: `plugins.rs:552`, `plugins.rs:620`, `plugins.rs:690`, `plugins.rs:727`, `integration.rs:601`, `integration.rs:609`, `integration.rs:666`, `proton.rs:1314` |
+| `ldconfig` | **fixed** with C03: `proton.rs:617` no longer invokes it |
+| `pgrep` | **fixed** the 2 in `import_move.rs` (C14); `proton.rs:261` remains |
 | `pidof` | `proton.rs:825` |
 | `which` | `integration.rs:27`, `proton.rs:597`, `proton.rs:822` |
 
-`timeout`, `ldconfig`, `pgrep` y `pidof` son de coreutils/procps, no de la
-base POSIX. En NixOS ninguno está en el `PATH` por defecto; en contenedores
-de distros mínimos suele faltar alguno.
+`timeout`, `ldconfig`, `pgrep` and `pidof` come from coreutils/procps, not from
+the POSIX base. On NixOS none of them is in the default `PATH`; in containers
+of minimal distros one of them is usually missing.
 
-**Impacto:** no es un problema uniforme, y esa es la parte grave. Hay tres
-modos de fallo distintos:
+**Impact:** it is not a uniform problem, and that is the serious part. There
+are three distinct failure modes:
 
-- **Falla silenciosa** — `plugins.rs:727`: si `timeout` no existe,
-  `Command::new` falla, la función cae en `_ => return Vec::new()` y la
-  pestaña de Emuladores queda vacía **sin ningún mensaje de error**.
-- **Falla abierta y peligrosa** — un prefix en uso se declaraba libre (C14;
-  ya corregido, pero el patrón sigue latente en `proton.rs:261`).
-- **Falla ruidosa** — `plugins.rs:552/620/690` e `integration.rs:601`: el
-  usuario ve un error que no menciona la causa real.
+- **Silent failure** — `plugins.rs:727`: if `timeout` does not exist,
+  `Command::new` fails, the function falls into `_ => return Vec::new()` and the
+  Emulators tab comes up empty **with no error message at all**.
+- **Open and dangerous failure** — a prefix in use was declared free (C14;
+  already fixed, but the pattern is still latent in `proton.rs:261`).
+- **Noisy failure** — `plugins.rs:552/620/690` and `integration.rs:601`: I see
+  an error that does not mention the real cause.
 
-**Fix aplicado (`timeout`):** `plugin_process::output_with_timeout()` sustituye
-a `timeout(1)` con las mismas ocho llamadas:
+**Fix applied (`timeout`):** `plugin_process::output_with_timeout()` replaces
+`timeout(1)` for the same eight calls:
 
-1. `spawn` + `try_wait` en bucle de 25 ms contra un `Instant` de corte; al
-   agotarlo, `kill` + `wait`. Sin dormir más que el intervalo de sondeo, y sin
-   depender de ningún binario externo.
-2. stdout y stderr se leen en hilos propios para que un plugin que llene el
-   buffer del pipe no se bloquee a sí mismo esperando su salida.
-3. `join_reader()` une esos lectores **con un margen de 2 s**: si el plugin
-   dejó nietos con el pipe abierto, el `join` directo habría colgado la
-   interfaz, algo que la versión anterior no cubría.
-4. El timeout devuelve un error con el límite de segundos en el mensaje, en
-   vez del código 124 de `timeout(1)` que los llamadores no interpretaban.
-5. `list_emulators_in` sigue devolviendo lista vacía —es el contrato de sus
-   4 llamadores, y cambiarlo tocaría la UI—, pero ahora deja el motivo en
-   `stderr` (`[emu] corky-list …`) para que un fallo sea diagnosticable.
+1. `spawn` + `try_wait` in a 25 ms loop against a deadline `Instant`; once
+   exhausted, `kill` + `wait`. It never sleeps longer than the poll interval,
+   and it does not depend on any external binary.
+2. stdout and stderr are read in their own threads so a plugin that fills the
+   pipe buffer does not block itself waiting for its output.
+3. `join_reader()` joins those readers **with a 2 s margin**: if the plugin
+   left children with the pipe open, a direct `join` would have hung the
+   interface, something the previous version did not cover.
+4. The timeout returns an error with the seconds limit in the message, instead
+   of `timeout(1)`'s exit code 124 that the callers did not interpret.
+5. `list_emulators_in` still returns an empty list —that is the contract of its
+   4 callers, and changing it would touch the UI—, but now it leaves the reason
+   in `stderr` (`[emu] corky-list …`) so a failure can be diagnosed.
 
-De paso, `wineserver -k` en `proton.rs:1317` deja de perder `ws.to_str()`:
-se pasa el `PathBuf` directo, así que un prefix no-UTF8 ya no degrada a
-programa vacío.
+Along the way, `wineserver -k` in `proton.rs:1317` stops dropping
+`ws.to_str()`: the `PathBuf` is passed directly, so a non-UTF8 prefix no longer
+degrades to an empty program.
 
-**Fix pendiente:** eliminar `pgrep`, `pidof` y `which` de los 3 sitios que
-quedan. `pidof` se puede sustituir por `/proc` (el mismo patrón que se aplicó
-en C14) y `which` por una búsqueda en `$PATH`, que es POSIX.
+**Pending fix:** remove `pgrep`, `pidof` and `which` from the 3 sites that
+remain. `pidof` can be replaced by `/proc` (the same pattern applied in C14) and
+`which` by a `$PATH` search, which is POSIX.
 
-### C09 — El registro de plugins elige el primer `.tar.gz` sin filtrar por arquitectura
+### C09 — The plugin registry picks the first `.tar.gz` without filtering by architecture
 
-**Estado: CORREGIDO.**
+**Status: FIXED.**
 
-- `src/backend/plugins.rs:347-363` (versión auditada) — itera `assets` y hace
-  `break` en el primer nombre que termina en `.tar.gz`.
-- `src/backend/plugins.rs:418` — lo descarga como `{tag}.tar.gz` y lo extrae
-  sin verificar nada más que `size >= 100` (línea 448-452).
+- `src/backend/plugins.rs:347-363` (audited version) — iterates `assets` and
+  `break`s on the first name ending in `.tar.gz`.
+- `src/backend/plugins.rs:418` — downloads it as `{tag}.tar.gz` and extracts it
+  without checking anything other than `size >= 100` (lines 448-452).
 
-**Impacto:** en un release que publique `plugin-x86_64.tar.gz` y
-`plugin-aarch64.tar.gz`, un host aarch64 instala el binario x86_64 según el
-orden de la API. El plugin se instala "con éxito" y luego falla con
-`Exec format error` en cada invocación, sin que la UI distinga "instalado" de
-"instalado y utilizable".
+**Impact:** on a release publishing `plugin-x86_64.tar.gz` and
+`plugin-aarch64.tar.gz`, an aarch64 host installs the x86_64 binary according to
+API order. The plugin installs "successfully" and then fails with
+`Exec format error` on every invocation, with the UI not distinguishing
+"installed" from "installed and usable".
 
-**Severidad real (verificada contra la API el 2026-09-25):** hoy los cinco
-releases publicados usan nombres sin arquitectura —`heroic-store-1.0.8.tar.gz`,
+**Real severity (verified against the API on 2026-09-25):** today the five
+published releases use names without architecture —`heroic-store-1.0.8.tar.gz`,
 `minecraft-launcher-1.1.0.tar.gz`, `emulator-manager-1.1.0.tar.gz`,
-`dependency-installer-2.1.3.tar.gz`, `heroic-store-1.0.7.tar.gz`—, así que el
-fallo es **latente**, no activo: hace falta que alguien publique un par de
-assets por arquitectura. Se corrigió igualmente porque el día que se publique,
-el síntoma (instalación correcta y fallo en cada uso) es de los más caros de
-diagnosticar.
+`dependency-installer-2.1.3.tar.gz`, `heroic-store-1.0.7.tar.gz`—, so the
+failure is **latent**, not active: someone has to publish a pair of
+per-architecture assets first. I fixed it anyway because on the day that
+happens, the symptom (correct install and failure on every use) is one of the
+most expensive to diagnose.
 
-**Fix aplicado:** `asset_arch_ok()` decide si un asset sirve para este host, y
-`fetch_registry()` recorre **todos** los `.tar.gz` del release en vez de romper
-en el primero:
+**Fix applied:** `asset_arch_ok()` decides whether an asset serves this host, and
+`fetch_registry()` walks **all** of the release's `.tar.gz` instead of breaking
+at the first:
 
-1. Un asset **sin token de arquitectura** se acepta: es el caso de los releases
-   actuales y no hay forma de distinguirlo de un asset universal.
-2. Un asset **con token** solo se acepta si el token mapea a
-   `std::env::consts::ARCH`, cubriendo los alias habituales: `x86_64`/`amd64`/
+1. An asset **without an architecture token** is accepted: that is the case of
+   the current releases and there is no way to tell it apart from a universal
+   asset.
+2. An asset **with a token** is only accepted if the token maps to
+   `std::env::consts::ARCH`, covering the usual aliases: `x86_64`/`amd64`/
    `x64`, `aarch64`/`arm64`, `i386`–`i686`/`x86`, `arm`/`armv7l`/`armhf`,
-   `ppc64`/`ppc64le` y `riscv64`/`s390x`.
-3. Los tokens se separan por `-` y `.`, **nunca por `_`**: `x86_64` lleva guion
-   bajo, y partirlo produciría dos tokens sin significado que además
-   colisionarían con `x86`.
-4. Un release cuyos assets son todos de otra arquitectura se **omite** del
-   registro, con el motivo en stderr, en vez de ofrecer una descarga que no
-   puede funcionar.
+   `ppc64`/`ppc64le` and `riscv64`/`s390x`.
+3. Tokens are split on `-` and `.`, **never on `_`**: `x86_64` has an
+   underscore, and splitting it would produce two meaningless tokens that would
+   also collide with `x86`.
+4. A release whose assets are all of another architecture is **omitted** from
+   the registry, with the reason on stderr, instead of offering a download that
+   cannot work.
 
-**Pendiente relacionado (D05):** la API de GitHub ya publica un campo `digest`
-(`sha256:…`) por asset. Verificarlo cierra el hallazgo de integridad y de paso
-da un error de confianza por separado del de compatibilidad.
+**Related pending item (D05):** the GitHub API already publishes a `digest`
+field (`sha256:…`) per asset. Verifying it closes the integrity finding and, in
+passing, gives a trust error separate from the compatibility one.
 
-### C10 — El escaneo de Lutris ignora `XDG_DATA_HOME` y Lutris Flatpak, en el mismo archivo que sí los respeta
+### C10 — The Lutris scan ignores `XDG_DATA_HOME` and Lutris Flatpak, in the same file that does respect them
 
-**Estado: CORREGIDO.**
+**Status: FIXED.**
 
-- `src/backend/integration.rs:852-857` — `pga.db` en
-  `~/.local/share/lutris/pga.db` hardcodeado.
-- `src/backend/integration.rs:871-876` — `games/` en
-  `~/.local/share/lutris/games` hardcodeado.
-- Contrasto, **450 líneas antes en el mismo archivo**:
-  `src/backend/integration.rs:395-397` sí resolvía `XDG_DATA_HOME` con fallback
-  a `~/.local/share`, y `403-407` sí añadía la ruta Flatpak de Lutris.
+- `src/backend/integration.rs:852-857` — `pga.db` hardcoded to
+  `~/.local/share/lutris/pga.db`.
+- `src/backend/integration.rs:871-876` — `games/` hardcoded to
+  `~/.local/share/lutris/games`.
+- Contrast, **450 lines earlier in the same file**:
+  `src/backend/integration.rs:395-397` did resolve `XDG_DATA_HOME` with fallback
+  to `~/.local/share`, and `403-407` did add Lutris's Flatpak path.
 
-**Impacto:**
+**Impact:**
 
-1. Con `XDG_DATA_HOME` configurado (habitual en setups de tiling) Lutris
-   instala en `~/data/lutris`: la UI resolvía bien las carátulas (línea 399)
-   pero el escaneo de juegos miraba `~/.local/share/lutris` y no encontraba
-   nada. El resultado es "carátulas sí, juegos no", que parece un bug de
-   Lutris y no de CorkyTux.
-2. Con Lutris como Flatpak, `~/.var/app/net.lutris.Lutris/data/lutris` se
-   usaba para artwork pero nunca para `pga.db` ni para `games/`: se importaba
-   0 juegos.
+1. With `XDG_DATA_HOME` configured (common in tiling setups) Lutris installs
+   into `~/data/lutris`: the UI resolved the covers correctly (line 399) but the
+   game scan looked at `~/.local/share/lutris` and found nothing. The result is
+   "covers yes, games no", which looks like a Lutris bug and not a CorkyTux one.
+2. With Lutris as Flatpak, `~/.var/app/net.lutris.Lutris/data/lutris` was used
+   for artwork but never for `pga.db` nor for `games/`: 0 games imported.
 
-**Fix aplicado:** un único resolver `lutris_data_roots(home)` que devuelve las
-raíces de datos de Lutris en orden de preferencia, consumido por el escaneo y
-por el artwork:
+**Fix applied:** a single resolver `lutris_data_roots(home)` that returns
+Lutris's data roots in preference order, consumed by both the scan and the
+artwork:
 
-1. `$XDG_DATA_HOME` si es absoluto y no vacío (un valor vacío o relativo se
-   ignora en vez de construir rutas bajo el CWD), con el default del spec
-   `~/.local/share` como fallback.
-2. `~/.var/app/net.lutris.Lutris/data`, que es donde el sandbox Flatpak
-   reescribe el home del proceso.
+1. `$XDG_DATA_HOME` if it is absolute and non-empty (an empty or relative value
+   is ignored instead of building paths under the CWD), with the spec default
+   `~/.local/share` as fallback.
+2. `~/.var/app/net.lutris.Lutris/data`, which is where the Flatpak sandbox
+   rewrites the process home.
 
-De cada raíz cuelga `lutris/` (base de datos, juegos, carátulas) e
-`icons/hicolor/...` (iconos de apps), así que ambos consumidores derivan sus
-rutas del mismo sitio.
+From each root hang `lutris/` (database, games, covers) and
+`icons/hicolor/...` (app icons), so both consumers derive their paths from the
+same place.
 
-Se corrigió además un tercer hardcode del mismo tipo que el triage no había
-listado: `lutris_yml_info()` volvía a construir `~/.local/share/lutris/games`
-por su cuenta, así que arreglar solo `scan_lutris` no bastaba. Ahora recibe el
-`games_dir` del llamador, y la capa SQLite lo deriva de `db.parent()`, que por
-construcción pertenece a la misma raíz que la base de datos.
+I also fixed a third hardcode of the same kind that the triage had not listed:
+`lutris_yml_info()` was rebuilding `~/.local/share/lutris/games` on its own, so
+fixing only `scan_lutris` was not enough. It now receives the `games_dir` from
+the caller, and the SQLite layer derives it from `db.parent()`, which by
+construction belongs to the same root as the database.
 
-Como ahora se recorren varias raíces, `scan_lutris` deduplica por `slug` (la
-primera raíz gana) para que un juego no aparezca dos veces durante una
-migración a Flatpak a medias.
+Since several roots are now walked, `scan_lutris` dedupes by `slug` (first root
+wins) so a game does not show up twice during a half-done Flatpak migration.
 
-### C14 — `prefix_in_use` falla abierta cuando `pgrep` no existe
+### C14 — `prefix_in_use` fails open when `pgrep` does not exist
 
-**Estado: CORREGIDO** (ver "Fix aplicado" al final de la sección; el resto de
-críticos sigue abierto).
+**Status: FIXED** (see "Fix applied" at the end of the section; the rest of the
+criticals stay open).
 
-- `src/backend/import_move.rs:351-374` (versión auditada).
-- Línea 353-356: si `Command::new("pgrep")` falla, `running = false` y la
-  función devuelve `false` (prefix libre).
-- Línea 360-361: `lock.exists()` — `wineserver.lock` es un socket unix; un
-  socket que quedó de una sesión que murió sigue existiendo.
-- Línea 365-370: el fallback compara `prefix.display()` como substring
-  crudo contra la línea de `pgrep -af`, sin pasar por el `norm()` que sí usa
-  el agrupado de prefixos compartidos (línea 410).
+- `src/backend/import_move.rs:351-374` (audited version).
+- Lines 353-356: if `Command::new("pgrep")` fails, `running = false` and the
+  function returns `false` (prefix free).
+- Lines 360-361: `lock.exists()` — `wineserver.lock` is a unix socket; a socket
+  left over from a dead session still exists.
+- Lines 365-370: the fallback compares `prefix.display()` as a raw substring
+  against the `pgrep -af` line, without going through the `norm()` that shared
+  prefix grouping does use (line 410).
 
-**Impacto:** dos fallos opuestos, ambos sobre datos de juegos.
+**Impact:** two opposite failures, both over game data.
 
-- Sin `pgrep` (NixOS, contenedor): la función afirma que un prefix **en uso
-  está libre** y el import permanente lo mueve mientras el juego corre. La
-  copia es la que sobrevive, pero el original desaparece y Heroic/Lutris se
-  rompen. Es el único hallazgo de la auditoría con potencial de pérdida de
-  datos.
-- Con un `wineserver.lock` obsoleto: el import queda **bloqueado
-  permanentemente** hasta que el usuario borre el socket a mano, sin
-  explicación en la UI.
-- Con el path del prefix escrito de otra forma en la config (por ejemplo
-  `..` o un symlink), el substring no matchea y vuelve el primer caso.
+- Without `pgrep` (NixOS, container): the function claims a prefix **in use is
+  free** and the permanent import moves it while the game is running. The copy
+  is the one that survives, but the original disappears and Heroic/Lutris
+  break. It is the only finding in the audit with data-loss potential.
+- With a stale `wineserver.lock`: the import stays **permanently blocked**
+  until I delete the socket by hand, with no explanation in the UI.
+- With the prefix path written differently in the config (for example `..` or a
+  symlink), the substring does not match and the first case returns.
 
-**Fix aplicado:** se sustituyó el booleano por un tri-estado
-`PrefixUsage { Busy, Free, Unknown }` y se eliminó la dependencia de `pgrep`:
+**Fix applied:** the boolean was replaced with a tri-state
+`PrefixUsage { Busy, Free, Unknown }` and the `pgrep` dependency removed:
 
-1. `wineserver_pids()` enumera `/proc/*/comm` directamente. Sin `pgrep` no
-   hay falso "libre", y de paso desaparece una de las 12 llamadas de C08. Se
-   compara `comm` por subcadena, no por igualdad, para no perder variantes
-   como `wineserver-preloader`; el nombre de CorkyTux no contiene
-   `wineserver`, así que no hay autocompresión.
-2. `wineprefix_of(pid)` lee `WINEPREFIX` de `/proc/<pid>/environ`, que es la
-   atribución **exacta**: wineserver recibe el prefix por entorno, nunca por
-   línea de comandos, así que el substring sobre `pgrep -af` no era fiable.
-3. Ambos lados pasan por `norm()`, que canonicaliza, así que la comparación ya
-   no depende de cómo esté escrito el path en la configuración.
-4. Un `wineserver.lock` obsoleto ya no bloquea nada: el estado se decide por
-   procesos vivos, no por la presencia del socket.
-5. Si hay wineservers vivos pero su entorno es ilegible (otro usuario,
-   procfs con `hidepid`), el resultado es `Unknown` y se **bloquea** con el
-   nuevo `Blocker::UsageUndeterminable` en vez de arriesgar los datos. La UI
-   lo renderiza sin cambios: `import_manager.rs` usa `b.message()` de forma
-   genérica.
+1. `wineserver_pids()` enumerates `/proc/*/comm` directly. Without `pgrep`
+   there is no false "free", and one of the 12 C08 calls disappears as a bonus.
+   `comm` is compared by substring, not equality, so variants like
+   `wineserver-preloader` are not lost; the CorkyTux name does not contain
+   `wineserver`, so there is no self-matching.
+2. `wineprefix_of(pid)` reads `WINEPREFIX` from `/proc/<pid>/environ`, which is
+   **exact** attribution: wineserver receives the prefix through the
+   environment, never through the command line, so the substring over
+   `pgrep -af` was not reliable.
+3. Both sides go through `norm()`, which canonicalizes, so the comparison no
+   longer depends on how the path is written in the configuration.
+4. A stale `wineserver.lock` no longer blocks anything: the state is decided by
+   live processes, not by the presence of the socket.
+5. If there are live wineservers but their environment is unreadable (another
+   user, procfs with `hidepid`), the result is `Unknown` and it **blocks** with
+   the new `Blocker::UsageUndeterminable` instead of risking the data. The UI
+   renders it unchanged: `import_manager.rs` uses `b.message()` generically.
 
-El `Fix:` del triage original ("invertir el default y normalizar el path") se
-cumple, pero con mejor base: la atribución por `/proc` sustituye al heuristic
-en lugar de solo parchearlo.
+The original triage `Fix:` ("invert the default and normalize the path") is
+fulfilled, but on a better basis: `/proc` attribution replaces the heuristic
+instead of merely patching it.
 
 ---
 
-## Degradantes
+## Degrading
 
-| ID | Ubicación | Hallazgo |
+| ID | Location | Finding |
 | --- | --- | --- |
-| D01 | `src/backend/config.rs:463-483` | `all_proton_paths()` solo escanea rutas de usuario; nunca `compatibilitytools.d` de Steam ni Proton del gestor de paquetes. En SteamOS/Bazzite/Nobara la UI dice "No Proton builds installed" con Proton funcionando. Mitigado por el auto-descargador de CorkyTux, pero no para quien ya tiene Proton. |
-| D02 | `src/backend/proton.rs:821-838` | El auto-arranque de Steam para el overlay depende de `which steam` + `pidof steam`; ambos fallan con Steam Flatpak/Snap. |
-| D03 | `src/backend/proton.rs:645-663` | `detect_game_arch_simple` solo reconoce `0x10b`/`0x20b`; no hay ARM64EC (`0xa641`) ni aarch64 (`0xaa64`), así que la etiqueta cae a "all". |
-| D04 | `src/backend/proton.rs:413-421` | `is_foreign_arch` solo contrasta aarch64/arm64 contra x86_64; no cubre nomenclatura i686 ni armv7. |
-| D05 | `src/backend/plugins.rs:418-461` | Descarga y extrae un tarball remoto sin checksum ni firma; la única validación es `size >= 100`. |
-| D06 | `src/backend/plugins.rs:327-345` | API de GitHub sin autenticar: 60 req/h por IP. Falla en redes NAT/CGNAT (universidad, oficina, móvil) con 403. |
-| D07 | `src/backend/plugins.rs:371` | `body.chars().take(200)` corta la descripción a mitad de frase y muestra markdown crudo. |
-| D08 | `src/backend/plugins.rs:552,620,690` | Escaneo/instalación de dependencias y DLL dependen de `timeout`; sin él el error no menciona la causa. |
-| D09 | `src/backend/integration.rs:589-593,601,609,666` | Extracción de iconos exige `timeout` + `icoextract`/`ffmpeg`; degrada a icono genérico sin aviso. |
-| D10 | `src/backend/integration.rs:394-407` vs `850-876` | La ruta de artwork y la de juegos usan resolvers distintos (ver C10). |
-| D11 | `src/backend/integration.rs:1261-1281` | Descubrimiento de `libraryfolders.vdf` no cubre Steam Flatpak. |
-| D12 | `src/backend/shortcuts.rs:138` | `Exec={exe}` sin comillas: una ruta de instalación con espacios rompe el `.desktop`. |
-| D13 | `src/backend/shortcuts.rs:135-143` | `Name`, `Comment` y `X-CorkyTux-Game` sin escapar: un nombre de juego con salto de línea inyecta claves en el `.desktop`. |
-| D14 | `src/backend/shortcuts.rs:33-54` | Menú de apps hardcodea `~/.local/share/applications`; el directorio de escritorio depende de `xdg-user-dir`, y si falta se **crea** un `~/Desktop` que el usuario no usa. |
-| D15 | `src/backend/shortcuts.rs:157,180` | `.desktop` con modo 0755; la especificación sugiere 0644. |
-| D16 | `src/backend/plugin_process.rs:88-95` | Directorio de plugins hardcodeado, sin `XDG_DATA_HOME`. Coherente con el resto del proyecto, pero no con el estándar. |
-| D17 | `src/backend/plugin_process.rs:97-100` | `plugin_available` comprueba existencia, no el bit de ejecución: un plugin sin permiso aparece instalado y falla al invocar. |
-| D18 | `src/backend/config.rs:583-590` | `dirs::home_dir()` es solo `$HOME`, duplicado en `proton.rs:9`, `plugins.rs:8`, `integration.rs:8`. Con `HOME` vacío, `plugin_process` cae a `"."` (CWD). |
-| D19 | `src/ui/import_manager.rs:357` | `PathBuf::from(HOME.unwrap_or_default()).join("Games")` con `HOME` vacío produce la ruta **relativa** `Games`: el import escribiría en el CWD. |
-| D20 | `src/main.rs:220-221` | El `IconTheme` solo añade `~/.local/share/corkytux/assets/icons`; ejecutado desde el árbol de fuentes no encuentra ningún asset empaquetado. |
-| D21 | `src/ui/details_panel.rs:557-563` | El prefix por defecto que se **muestra** está hardcodeado a `~/.local/share/Steam/...`; puede divergir del path que usa el lanzamiento. |
-| D22 | `release/install.sh:86` | El fallback de libs prueba `/usr/lib/x86_64-linux-gnu`; en aarch64 el multiarch es `aarch64-linux-gnu` → warning falso de "missing libs" y prompt de continuar. |
-| D23 | `release/install.sh:84` | Sin `ldconfig` el chequeo cae al barrido de rutas, que no incluye `/run/current-system/sw/lib` (NixOS). |
-| D24 | `release/install.sh:56-61` | Depende del binario `file`; sin él el instalador aborta con "corkytux ELF binary not found" aunque el binario exista. |
-| D25 | `release/install.sh:201-212` | `Exec=` e `Icon=` sin comillas en el `.desktop` que genera el instalador. |
-| D26 | `release/install.sh:107-111` | Detección de Steam por `command -v steam` o `~/.steam`; no ve Flatpak ni Snap. |
-| D27 | `release/install.sh:119-122` | Recomienda `pip install --user`, que no funciona en Gentoo y está bloqueado por PEP 668 en Debian 12+ y Fedora. |
-| D28 | `release/build-release.sh:8-9` | El nombre del tarball usa `uname -m` crudo (`armv7l`, `i686`) sin normalizar ni comprobar que el binario compile para esa arquitectura. |
-| D29 | `release/install.sh:47-52` | Crea `~/Games` incondicionalmente en cada instalación, aunque el usuario nunca use el Import Manager. |
-| D30 | `release/install.sh:222-226` | El aviso de `PATH` solo menciona bash y zsh; en fish, nushell o csh el symlink de `~/.local/bin` sigue sin usarse. |
+| D01 | `src/backend/config.rs:463-483` | `all_proton_paths()` only scans user paths; never Steam's `compatibilitytools.d` nor the package manager's Proton. On SteamOS/Bazzite/Nobara the UI says "No Proton builds installed" with Proton working. Mitigated by CorkyTux's auto-downloader, but not for anyone who already has Proton. |
+| D02 | `src/backend/proton.rs:821-838` | Steam auto-start for the overlay depends on `which steam` + `pidof steam`; both fail with Steam Flatpak/Snap. |
+| D03 | `src/backend/proton.rs:645-663` | `detect_game_arch_simple` only recognizes `0x10b`/`0x20b`; there is no ARM64EC (`0xa641`) nor aarch64 (`0xaa64`), so the label falls back to "all". |
+| D04 | `src/backend/proton.rs:413-421` | `is_foreign_arch` only contrasts aarch64/arm64 against x86_64; it does not cover i686 naming nor armv7. |
+| D05 | `src/backend/plugins.rs:418-461` | Downloads and extracts a remote tarball with no checksum and no signature; the only validation is `size >= 100`. |
+| D06 | `src/backend/plugins.rs:327-345` | Unauthenticated GitHub API: 60 req/h per IP. Fails on NAT/CGNAT networks (university, office, mobile) with 403. |
+| D07 | `src/backend/plugins.rs:371` | `body.chars().take(200)` cuts the description mid-sentence and shows raw markdown. |
+| D08 | `src/backend/plugins.rs:552,620,690` | Dependency and DLL scanning/installation depends on `timeout`; without it the error does not mention the cause. |
+| D09 | `src/backend/integration.rs:589-593,601,609,666` | Icon extraction requires `timeout` + `icoextract`/`ffmpeg`; it degrades to a generic icon with no warning. |
+| D10 | `src/backend/integration.rs:394-407` vs `850-876` | The artwork path and the games path use different resolvers (see C10). |
+| D11 | `src/backend/integration.rs:1261-1281` | `libraryfolders.vdf` discovery does not cover Steam Flatpak. |
+| D12 | `src/backend/shortcuts.rs:138` | `Exec={exe}` without quotes: an install path with spaces breaks the `.desktop`. |
+| D13 | `src/backend/shortcuts.rs:135-143` | `Name`, `Comment` and `X-CorkyTux-Game` unescaped: a game name with a newline injects keys into the `.desktop`. |
+| D14 | `src/backend/shortcuts.rs:33-54` | The app menu hardcodes `~/.local/share/applications`; the desktop directory depends on `xdg-user-dir`, and if that is missing a `~/Desktop` I do not use gets **created**. |
+| D15 | `src/backend/shortcuts.rs:157,180` | `.desktop` with mode 0755; the specification suggests 0644. |
+| D16 | `src/backend/plugin_process.rs:88-95` | Hardcoded plugin directory, without `XDG_DATA_HOME`. Consistent with the rest of the project, but not with the standard. |
+| D17 | `src/backend/plugin_process.rs:97-100` | `plugin_available` checks existence, not the executable bit: a plugin without permission appears installed and fails when invoked. |
+| D18 | `src/backend/config.rs:583-590` | `dirs::home_dir()` is only `$HOME`, duplicated in `proton.rs:9`, `plugins.rs:8`, `integration.rs:8`. With `HOME` empty, `plugin_process` falls to `"."` (CWD). |
+| D19 | `src/ui/import_manager.rs:357` | `PathBuf::from(HOME.unwrap_or_default()).join("Games")` with `HOME` empty produces the **relative** path `Games`: the import would write into the CWD. |
+| D20 | `src/main.rs:220-221` | The `IconTheme` only adds `~/.local/share/corkytux/assets/icons`; run from the source tree it finds no packaged asset. |
+| D21 | `src/ui/details_panel.rs:557-563` | The default prefix that is **displayed** is hardcoded to `~/.local/share/Steam/...`; it can diverge from the path used at launch. |
+| D22 | `release/install.sh:86` | The libs fallback tries `/usr/lib/x86_64-linux-gnu`; on aarch64 the multiarch is `aarch64-linux-gnu` → false "missing libs" warning and a continue prompt. |
+| D23 | `release/install.sh:84` | Without `ldconfig` the check falls to the path sweep, which does not include `/run/current-system/sw/lib` (NixOS). |
+| D24 | `release/install.sh:56-61` | Depends on the `file` binary; without it the installer aborts with "corkytux ELF binary not found" even though the binary exists. |
+| D25 | `release/install.sh:201-212` | `Exec=` and `Icon=` without quotes in the `.desktop` the installer generates. |
+| D26 | `release/install.sh:107-111` | Steam detection via `command -v steam` or `~/.steam`; it does not see Flatpak nor Snap. |
+| D27 | `release/install.sh:119-122` | Recommends `pip install --user`, which does not work on Gentoo and is blocked by PEP 668 on Debian 12+ and Fedora. |
+| D28 | `release/build-release.sh:8-9` | The tarball name uses raw `uname -m` (`armv7l`, `i686`) without normalizing or checking that the binary builds for that architecture. |
+| D29 | `release/install.sh:47-52` | Creates `~/Games` unconditionally on every install, even though the Import Manager may never be used. |
+| D30 | `release/install.sh:222-226` | The `PATH` warning only mentions bash and zsh; in fish, nushell or csh the `~/.local/bin` symlink stays unused. |
 
-## Cosméticos
+## Cosmetic
 
-| ID | Ubicación | Hallazgo |
+| ID | Location | Finding |
 | --- | --- | --- |
-| K01 | `Cargo.toml:3`, `release/uninstall.sh:12`, `release/build-release.sh:3`, `release/install.sh:4`, `docs/BUILD.md:1,37,45`, `README.md:101-102` | Deriva de versión: el código está en `3.0.19`; los docs dicen `3.0.11`, el uninstaller `3.0.11`, el builder `3.0.13` y la cabecera del installer `3.0.16`. |
-| K02 | `README.md:148-161` | El mapa de arquitectura omite `plugins.rs`, `integration.rs`, `import_move.rs`, `theme.rs`, `shortcuts.rs` y `external.rs`. |
-| K03 | `README.md:101`, `docs/BUILD.md:37` | Solo se documenta el tarball `x86_64` aunque `build-release.sh` usa `uname -m`. |
-| K04 | `src/ui/import_manager.rs:19` | El texto visible al usuario dice "a Games folder in your /home"; es incorrecto en `/var/home` (Fedora Silverblue). |
-| K05 | `docs/DEPENDENCY_INSTALLER_HOTFIX.md:43-44` | Rutas absolutas del home del autor en instrucciones meant to be copy-pasted (corregido: `$HOME`). |
-| K06 | `src/Cargo.toml` | Manifiesto heredado (package `demo`, `cdylib`) conviviendo con el `Cargo.toml` real; confunde a cualquier lectura de dependencias. |
+| K01 | `Cargo.toml:3`, `release/uninstall.sh:12`, `release/build-release.sh:3`, `release/install.sh:4`, `docs/BUILD.md:1,37,45`, `README.md:101-102` | Version drift: the code is at `3.0.19`; the docs say `3.0.11`, the uninstaller `3.0.11`, the builder `3.0.13` and the installer header `3.0.16`. |
+| K02 | `README.md:148-161` | The architecture map omits `plugins.rs`, `integration.rs`, `import_move.rs`, `theme.rs`, `shortcuts.rs` and `external.rs`. |
+| K03 | `README.md:101`, `docs/BUILD.md:37` | Only the `x86_64` tarball is documented even though `build-release.sh` uses `uname -m`. |
+| K04 | `src/ui/import_manager.rs:19` | The user-visible text says "a Games folder in your /home"; it is wrong on `/var/home` (Fedora Silverblue). |
+| K05 | `docs/DEPENDENCY_INSTALLER_HOTFIX.md:43-44` | The author's absolute home paths in instructions meant to be copy-pasted (fixed: `$HOME`). |
+| K06 | `src/Cargo.toml` | Legacy manifest (package `demo`, `cdylib`) coexisting with the real `Cargo.toml`; it confuses any dependency reading. |
 
 ---
 
-## Pendiente de confirmación visual
+## Pending visual confirmation
 
-Requiere que el usuario abra la app; el agente no la ejecuta.
+It requires me to open the app; the agent does not run it.
 
-1. Matriz de estados transitorios de la fila de emuladores: `Installing…`,
-   `.add-btn:disabled` y el ancho de 96 px (ya registrado en `DESIGN.md`).
-2. Centrado de los iconos Papirus y del monograma en el slot de 48 px.
-   **El `Align::Center` ya está en HEAD desde `ac0e0fb`**; si los iconos se ven
-   sin centrar, casi siempre es que se está ejecutando un binario anterior al
-   fix (ver "Binario en uso" más abajo), no que el CSS falle.
-3. `Found in system` estático y `Set as linked` clickeable en la misma fila.
-4. Aviso `*** BUG *** In pixman_region32_init_rect: Invalid rectangle passed`.
-   Refinado el 2026-09-25 con tres ejecuciones: **7 avisos**, luego **5**, luego
-   **1** — mismo binario, mismos assets, y la última ya con el binario
-   reinstalado sobre el del lanzador.
+1. Transient-state matrix of the emulator row: `Installing…`,
+   `.add-btn:disabled` and the 96 px width (already recorded in `DESIGN.md`).
+2. Centering of the Papirus icons and of the monogram in the 48 px slot.
+   **`Align::Center` is already in HEAD since `ac0e0fb`**; if the icons look
+   uncentered, it is almost always because a binary older than the fix is
+   running (see "Binary in use" below), not because the CSS fails.
+3. Static `Found in system` and clickable `Set as linked` on the same row.
+4. `*** BUG *** In pixman_region32_init_rect: Invalid rectangle passed` warning.
+   Refined on 2026-09-25 with three runs: **7 warnings**, then **5**, then
+   **1** — same binary, same assets, and the last one already with the binary
+   reinstalled over the launcher's.
 
-   ### Lo que sí se ha descartado por lectura
+   ### What I did rule out by reading
 
-   - **Carga de texturas con dimensión 0**: todos los caminos de
-     `helpers.rs` están guardingados —`nw/nh … .max(1)` en `load_texture`
-     (`helpers.rs:162-163`), `if w <= 0 || h <= 0 { return None }` en
-     `load_card_banner` (`helpers.rs:178`), y `Pixbuf::new(...)?` que falla
-     en vez de crear una superficie vacía.
-   - **`background-image` sobre un widget vacío**: las 6 reglas CSS que lo
-     mencionan (`helpers.rs:570,571,597,650,652,653`) son todas
-     `background-image: none`, es decir **quitan** fondo. Ninguna lo añade.
-   - **La ruta de adopción de sesión**: `adopt_session()`
-     (`proton.rs:1516-1532`) solo escribe estado y hace un `eprintln`; no
-     crea widgets. El log aparece antes de los avisos por orden de arranque,
-     no por causalidad.
+   - **Texture loading with dimension 0**: all of the paths in
+     `helpers.rs` are guarded —`nw/nh … .max(1)` in `load_texture`
+     (`helpers.rs:162-163`), `if w <= 0 || h <= 0 { return None }` in
+     `load_card_banner` (`helpers.rs:178`), and `Pixbuf::new(...)?` which fails
+     instead of creating an empty surface.
+   - **`background-image` on an empty widget**: the 6 CSS rules that mention it
+     (`helpers.rs:570,571,597,650,652,653`) are all
+     `background-image: none`, that is they **remove** background. None adds
+     it.
+   - **The session adoption path**: `adopt_session()`
+     (`proton.rs:1516-1532`) only writes state and does an `eprintln`; it does
+     not create widgets. The log shows up before the warnings because of
+     startup order, not causality.
 
-   ### Lo que el conteo variable implica
+   ### What the variable count implies
 
-   El número de avisos **cambia entre ejecuciones**: 7, 5, 1 y 8, en cuatro
-   arranques. No hay tendencia ni correlación con el uso: es ruido. Un defecto
-   determinista —un asset de tamaño 0, una ruta de código fija— daría un conteo
-   constante, así que la causa es una **condición de temporización o de primer
-   frame**, no un bug de dibujo determinista.
+   The number of warnings **changes between runs**: 7, 5, 1 and 8, across four
+   startups. There is no trend nor correlation with usage: it is noise. A
+   deterministic defect —a 0-size asset, a fixed code path— would give a
+   constant count, so the cause is a **timing or first-frame condition**, not a
+   deterministic drawing bug.
 
-   **Corrección de una inferencia previa:** con solo las dos primeras muestras
-   (7 y 5) se tendía a concluir que el conteo decrecía y que la cuarta
-   ejecución, con 1 aviso, lo confirmaba. La quinta muestra (8) lo refuta. No
-   hay decrecimiento; la varianza es simplemente alta y no debe leerse como
-   tendencia.
+   **Correction of a previous inference:** with only the first two samples
+   (7 and 5) I tended to conclude that the count was decreasing and that the
+   fourth run, with 1 warning, confirmed it. The fifth sample (8) refutes it.
+   There is no decrease; the variance is simply high and must not be read as a
+   trend.
 
-   Quedan 46 reglas `border-radius` en el CSS, que es el disparador conocido
-   restante cuando un rectángulo redondeado se calcula sobre una asignación de
-   ancho o alto 0.
+   There remain 46 `border-radius` rules in the CSS, which is the known
+   remaining trigger when a rounded rectangle is computed over a width or
+   height allocation of 0.
 
-   **Hipótesis abierta, sin confirmar:** el salto de 1 a 8 avisos ocurrió en
-   la ejecución inmediatamente posterior a sustituir `GtkImage` por
-   `GtkPicture` en las filas de emulador. Si el número de emuladores listados
-   fuera 8, encajaría con un aviso por fila —un `GtkPicture` con
-   `can_shrink` recibiendo una asignación 0 en un frame intermedio. No se ha
-   confirmado: los conteos previos (7, 5, 1) ya variaban sin `GtkPicture`, así
-   que la correlación con una sola muestra no prueba nada. Habría que contar
-   las filas y comparar.
+   **Open hypothesis, unconfirmed:** the jump from 1 to 8 warnings happened on
+   the run immediately after replacing `GtkImage` with `GtkPicture` in the
+   emulator rows. If the number of listed emulators were 8, it would fit one
+   warning per row —a `GtkPicture` with `can_shrink` receiving a 0 allocation
+   on an intermediate frame. It is unconfirmed: the earlier counts (7, 5, 1)
+   already varied without `GtkPicture`, so correlation with a single sample
+   proves nothing. I would have to count the rows and compare.
 
-   **Para cerrarlo de verdad** hace falta aislar en ejecución (GTK Inspector
-   sobre el primer frame, o bisect del orden de construcción de widgets), lo
-   que excede la autorización actual de "compila y abre". Hasta entonces se
-   queda como cosmético: la app funciona y el aviso no impide nada.
+   **To actually close it** I need to isolate it at runtime (GTK Inspector on
+   the first frame, or a bisect of the widget construction order), which
+   exceeds the current "compile and open" authorization. Until then it stays
+   cosmetic: the app works and the warning prevents nothing.
 
-   **Actualización 2026-09-27 — cerrado como cosmético conocido, sin fix.**
-   Auditoría por lectura (sin debugger): el sospechoso principal pasó a ser
-   cada tile de la biblioteca —`.game-card { border-radius: 22px }` y
-   `.accent-strip { border-radius: 0 0 20px 20px }` (`helpers.rs`) sobre
-   `GtkPicture(can_shrink, Cover)` cuyo paintable llega async
-   (`game_card.rs`, `load_cover_async`). Es la única hipótesis que explica
-   conteos variables con mismo binario y mismos assets: cuántas pictures
-   quedan en tamaño 0 depende del timing de cada arranque. La de filas de
-   emulador queda degradada a secundaria (8 filas vs docenas de tiles).
-   Confianza media-alta en la familia, baja en nombrar el widget exacto.
-   Decisión: no hay experimento ni fix (requerirían debugger o re-descargar
-   ~576 MB de covers). La app funciona y el aviso no impide nada.
+   **Update 2026-09-27 — closed as a known cosmetic, no fix.**
+   Audit by reading (no debugger): the main suspect became every library tile
+   —`.game-card { border-radius: 22px }` and
+   `.accent-strip { border-radius: 0 0 20px 20px }` (`helpers.rs`) over
+   `GtkPicture(can_shrink, Cover)` whose paintable arrives async
+   (`game_card.rs`, `load_cover_async`). It is the only hypothesis that explains
+   variable counts with the same binary and the same assets: how many pictures
+   remain at size 0 depends on the timing of each startup. The emulator-row one
+   is downgraded to secondary (8 rows vs dozens of tiles). Medium-high
+   confidence in the family, low in naming the exact widget. Decision: no
+   experiment and no fix (they would require a debugger or re-downloading
+   ~576 MB of covers). The app works and the warning prevents nothing.
 
-## Medición del centrado de los iconos (2026-09-25)
+## Icon centering measurement (2026-09-25)
 
-Medido con `rsvg-convert` + análisis del canal alfa, sin ejecutar la app. Los
-12 SVG de `assets/icons/emulators/` declaran `width="48" height="48"` (aspecto
-1:1 exacto, ninguno con `viewBox`), así que no hay deformación por escala.
+Measured with `rsvg-convert` + alpha channel analysis, without running the app.
+The 12 SVGs in `assets/icons/emulators/` declare `width="48" height="48"` (exact
+1:1 aspect, none with a `viewBox`), so there is no scaling distortion.
 
-| Grupo | bbox (unidades de viewBox) | centro | desfase |
+| Group | bbox (viewBox units) | center | offset |
 | --- | --- | --- | --- |
-| Los 11 iconos Papirus restantes | — | — | ≤ 0,4 px a 40 px |
-| `mupen64plus-qt.svg`, bbox global | 41,0 × 43,0 · x[6,0; 47,0] y[4,0; 47,0] | (26,5; 25,5) | **(+2,51; +1,50)** |
-| `mupen64plus-qt.svg`, **logo solo** (M + fondo) | 36,0 × 41,1 · x[6,0; 42,0] y[4,0; 45,1] | **(24,0; 24,5)** | **(+0,00; +0,54)** |
-| `mupen64plus-qt.svg`, distintivo verde | 22,0 × 23,0 · x[25,0; 47,0] y[24,0; 47,0] | (36,0; 35,5) | (+12,00; +11,51) |
+| The 11 remaining Papirus icons | — | — | ≤ 0.4 px at 40 px |
+| `mupen64plus-qt.svg`, global bbox | 41.0 × 43.0 · x[6.0; 47.0] y[4.0; 47.0] | (26.5; 25.5) | **(+2.51; +1.50)** |
+| `mupen64plus-qt.svg`, **logo only** (M + background) | 36.0 × 41.1 · x[6.0; 42.0] y[4.0; 45.1] | **(24.0; 24.5)** | **(+0.00; +0.54)** |
+| `mupen64plus-qt.svg`, green badge | 22.0 × 23.0 · x[25.0; 47.0] y[24.0; 47.0] | (36.0; 35.5) | (+12.00; +11.51) |
 
-**El desfase global NO es un defecto: es el distintivo verde.** Es un círculo de
-estado en la esquina inferior derecha (elementos `<circle>`/`<rect>` del asset,
-`cx=36 cy=35 r=11`), colocado ahí a propósito por Papirus. El logo principal
-—la "M" y su fondo redondeado— está **centrado en horizontal con exactitud
-numérica** (+0,00) y a +0,54 unidades en vertical, que son 0,45 px a tamaño de
-render de 40 px: imperceptible.
+**The global offset is NOT a defect: it is the green badge.** It is a status
+circle in the bottom-right corner (`<circle>`/`<rect>` elements of the asset,
+`cx=36 cy=35 r=11`), deliberately placed there by Papirus. The main logo —the
+"M" and its rounded background— is **horizontally centered with numeric
+exactness** (+0.00) and +0.54 units vertically, which is 0.45 px at a 40 px
+render size: imperceptible.
 
-### Por qué NO se recorta
+### Why I do NOT crop it
 
-Se simuló el ajuste literal pedido (añadir `viewBox="2.51 1.50 48 48"`, que
-centra el bbox global) sobre una copia temporal. Resultado:
+I simulated the literal requested adjustment (adding `viewBox="2.51 1.50 48 48"`,
+which centers the global bbox) on a temporary copy. Result:
 
-| Medida | Antes | Después del `viewBox` |
+| Measurement | Before | After the `viewBox` |
 | --- | --- | --- |
-| Logo principal | (+0,00; +0,54) | **(−2,52; −0,96)** |
-| Distintivo verde | (+12,00; +11,51) | (+9,49; +10,01) |
-| bbox global | (+2,51; +1,50) | (−0,01; +0,00) |
+| Main logo | (+0.00; +0.54) | **(−2.52; −0.96)** |
+| Green badge | (+12.00; +11.51) | (+9.49; +10.01) |
+| Global bbox | (+2.51; +1.50) | (−0.01; +0.00) |
 
-El recorte centró el bbox global y **movió el logo 2,1 px a la izquierda y
-0,8 px arriba**, que es justo lo que se pretendía eliminar. Intercambia una
-asimetría de distintivo de 0,45 px e imperceptible por un descentrado visible
-del logo. **El asset se deja intacto** y la afirmación de
-`assets/icons/ATTRIBUTION.md` de que son "unmodified copies" sigue siendo
-cierta.
+The crop centered the global bbox and **moved the logo 2.1 px to the left and
+0.8 px up**, which is exactly what it was meant to remove. It trades a
+0.45 px, imperceptible badge asymmetry for a visible off-center logo. **The
+asset is left untouched** and the claim in `assets/icons/ATTRIBUTION.md` that
+they are "unmodified copies" remains true.
 
-## Verificación del enlace de emuladores (2026-09-25)
+## Emulator link verification (2026-09-25)
 
-Revisión estática de la cadena completa, sin ejecutar el plugin. **El linkeo
-funciona correctamente.** La cadena es:
+Static review of the full chain, without running the plugin. **The linking
+works correctly.** The chain is:
 
 1. `emulator-manager corky-list` → `get_source()` / `get_path()` /
-   `get_launch_args()` y `settings` desde el catálogo `EMULATORS`.
-2. `list_emulators_in()` (`plugins.rs:828-847`) lee `path` de forma
-   incondicional y `source` del campo explícito del plugin, con inferencia de
-   compatibilidad para backends antiguos. `native = (source == "linked")`.
+   `get_launch_args()` and `settings` from the `EMULATORS` catalog.
+2. `list_emulators_in()` (`plugins.rs:828-847`) reads `path` unconditionally
+   and `source` from the plugin's explicit field, with compatibility inference
+   for older backends. `native = (source == "linked")`.
 3. `Set as linked` → `link_emulator_in(dir, emu.name, emu.path)`
-   (`settings.rs:2645`). `emu.name` es la clave del catálogo y `emu.path` el
-   resultado de `shutil.which` del plugin, así que los dos coinciden.
-4. `link_emulator()` (plugin, línea 341) valida `os.path.isfile` **y**
-   `os.access(X_OK)`, y rellena `launch_args`, `description` y `extensions`
-   desde `EMULATORS` cuando no se pasan explícitamente. Por eso volver a
-   enlazar melonDS o Dolphin recupera `-e {rom}` y sus extensiones: la
-   información no se pierde.
-5. `get_source()` vuelve a leer `linked.json` y devuelve `"linked"`; la fila
-   queda con el badge `Linked`.
+   (`settings.rs:2645`). `emu.name` is the catalog key and `emu.path` the
+   plugin's `shutil.which` result, so the two match.
+4. `link_emulator()` (plugin, line 341) validates `os.path.isfile` **and**
+   `os.access(X_OK)`, and fills in `launch_args`, `description` and
+   `extensions` from `EMULATORS` when they are not passed explicitly. That is
+   why relinking melonDS or Dolphin recovers `-e {rom}` and its extensions:
+   the information is not lost.
+5. `get_source()` reads `linked.json` again and returns `"linked"`; the row
+   ends up with the `Linked` badge.
 
-Además `link_emulator` es **auto-sanable**: si la ruta enlazada deja de existir
-o de ser ejecutable, `get_source()` no devuelve `"linked"` sino que cae a
-`"system"` o `"none"`, y la fila vuelve a ser accionable.
+Also, `link_emulator` is **self-healing**: if the linked path stops existing or
+stops being executable, `get_source()` does not return `"linked"` but falls to
+`"system"` or `"none"`, and the row becomes actionable again.
 
-### Observación: el enlace es una puerta de un solo sentido
+### Observation: the link is a one-way door
 
-`show_btn` (`settings.rs:2572`) solo incluye `system | appimage | none`. Una
-fila `linked` **no tiene botón**, y `corky-unlink` / `unlink_emulator()`
-existen en el plugin pero **no se invocan desde ningún sitio del código Rust**
-(`grep` de `unlink` en `src/`: cero resultados). Es coherente con la decisión de
-diseño de compactar la fila `linked`, pero significa que la única forma de
-desenlazar desde el launcher es romper el enlace moviendo o borrando el
-binario, o editando `linked.json` a mano.
+`show_btn` (`settings.rs:2572`) only includes `system | appimage | none`. A
+`linked` row **has no button**, and `corky-unlink` / `unlink_emulator()` exist
+in the plugin but **are not invoked from anywhere in the Rust code** (`grep` for
+`unlink` in `src/`: zero results). It is consistent with the design decision to
+compact the `linked` row, but it means the only way to unlink from the launcher
+is to break the link by moving or deleting the binary, or by editing
+`linked.json` by hand.
 
-**No verificado por ejecución:** la comprobación es de código, no funcional. Un
-test real exigiría invocar `emulator-manager corky-link`, que es un script y
-queda fuera de la autorización actual.
+**Not verified by running:** the check is a code check, not functional. A real
+test would require invoking `emulator-manager corky-link`, which is a script
+and falls outside the current authorization.
 
-## Binario en uso (2026-09-25)
+## Binary in use (2026-09-25)
 
-`~/.local/share/applications/corkytux.desktop` lanza
-`~/.local/share/corkytux/corkytux`, cuyo binario es **anterior a `ac0e0fb`**
-(compilado 02:58:41; el fix es de 05:18:26). Se confirmó por strings: ese
-binario **no contiene** `emu-system-notice` ni `Found in system`, mientras que
-`target/debug/corkytux` (05:55) sí. Antes del fix, `icon_slot` usaba
-`Align::Start` y la imagen no tenía `set_size_request`, es decir la imagen
-quedaba anclada a la esquina superior izquierda del slot: ese es el síntoma
-"iconos sin centrar". Para que el lanzador del menú vea el fix hay que
-reinstalar el binario y los assets.
+`~/.local/share/applications/corkytux.desktop` launches
+`~/.local/share/corkytux/corkytux`, whose binary is **older than `ac0e0fb`**
+(compiled 02:58:41; the fix is from 05:18:26). I confirmed it with strings:
+that binary **does not contain** `emu-system-notice` nor `Found in system`,
+while `target/debug/corkytux` (05:55) does. Before the fix, `icon_slot` used
+`Align::Start` and the image had no `set_size_request`, that is the image
+stayed anchored to the top-left corner of the slot: that is the "uncentered
+icons" symptom. For the menu launcher to see the fix I have to reinstall the
+binary and the assets.
 
-## Orden de corrección
+## Fix order
 
-1. ~~**C14**~~ — **hecho**: tri-estado `PrefixUsage` + atribución por
-   `/proc/<pid>/environ` en vez de `pgrep`.
-2. ~~**C08**~~ — **hecho en su parte grande**: `output_with_timeout()` cubre los
-   8 sitios de `timeout` (incluida la pestaña de Emuladores que salía vacía sin
-   error) y C03 eliminó el único `ldconfig`. Quedan 3 externalidades de bajo
-   impacto: `pgrep`, `pidof` y `which`.
-3. ~~**C10**~~ — **hecho**: `lutris_data_roots()` compartido por escaneo y
-   artwork.
-4. ~~**C09**~~ — **hecho**: `asset_arch_ok()` filtra por `std::env::consts::ARCH`.
-5. ~~**C01**~~ — **hecho**: `steam_roots()` compartido por los cuatro
-   consumidores.
-6. ~~**C03**~~ — **hecho**: soporte 32/64 derivado de `ARCH` y rutas del sistema,
-   y `gamemoderun` como único criterio de GameMode.
-7. El resto de degradantes por lotes. El siguiente con mejor relación
-   esfuerzo/impacto es **D05**: la API ya publica `digest: sha256:…`, así que
-   verificar la descarga es directamente implementable. Después, D12, D13, D19
-   y D22.
+1. ~~**C14**~~ — **done**: tri-state `PrefixUsage` + attribution via
+   `/proc/<pid>/environ` instead of `pgrep`.
+2. ~~**C08**~~ — **done in its large part**: `output_with_timeout()` covers the
+   8 `timeout` sites (including the Emulators tab that came up empty with no
+   error) and C03 removed the single `ldconfig`. 3 low-impact external
+   dependencies remain: `pgrep`, `pidof` and `which`.
+3. ~~**C10**~~ — **done**: `lutris_data_roots()` shared by scan and artwork.
+4. ~~**C09**~~ — **done**: `asset_arch_ok()` filters by `std::env::consts::ARCH`.
+5. ~~**C01**~~ — **done**: `steam_roots()` shared by the four consumers.
+6. ~~**C03**~~ — **done**: 32/64 support derived from `ARCH` and system paths,
+   and `gamemoderun` as the only GameMode criterion.
+7. The rest of the degrading ones in batches. The next with the best
+   effort/impact ratio is **D05**: the API already publishes
+   `digest: sha256:…`, so verifying the download is directly implementable.
+   Then D12, D13, D19 and D22.
