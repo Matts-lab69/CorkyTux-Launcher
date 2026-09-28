@@ -78,6 +78,7 @@ mod imp {
         pub session_prefix: RefCell<String>,
         pub session_proton_dir: RefCell<String>,
         pub session_appimage: Cell<bool>,
+        pub session_rpg: Cell<bool>,
         pub session_watch: RefCell<String>,
     }
 
@@ -1583,6 +1584,33 @@ impl ProtonManager {
         if child.is_none() && self.imp().session_game.borrow().is_empty() {
             return Ok((String::new(), 0));
         }
+        // Sesión RPG: sin hijo local ni prefix/proton (lanzamiento detached
+        // de box-rpg); va ANTES del early-return de sesión vacía, que si no
+        // la taparía. Stop va a las sesiones y el tiempo se banca igual.
+        if self.imp().session_rpg.get() {
+            let game = self.imp().session_game.borrow().clone();
+            if !game.is_empty() {
+                if let Some(dir) = super::ConfigManager::new().game_value(&game, "Executable") {
+                    let _ = super::external::RpgMakerManager::stop(&dir);
+                }
+            }
+            self.imp().game_running.set(false);
+            self.imp().session_rpg.set(false);
+            let secs = self
+                .imp()
+                .session_start
+                .borrow_mut()
+                .take()
+                .map(|t| t.elapsed().as_secs())
+                .unwrap_or(0);
+            let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
+            *self.imp().session_prefix.borrow_mut() = String::new();
+            *self.imp().session_proton_dir.borrow_mut() = String::new();
+            self.imp().session_appimage.set(false);
+            self.imp().session_rpg.set(false);
+            *self.imp().session_watch.borrow_mut() = String::new();
+            return Ok((game, secs));
+        }
         if child.is_none() && !self.imp().session_appimage.get()
             && self.imp().session_prefix.borrow().is_empty()
             && self.imp().session_proton_dir.borrow().is_empty()
@@ -1645,6 +1673,7 @@ impl ProtonManager {
         *self.imp().session_prefix.borrow_mut() = String::new();
         *self.imp().session_proton_dir.borrow_mut() = String::new();
         self.imp().session_appimage.set(false);
+        self.imp().session_rpg.set(false);
         *self.imp().session_watch.borrow_mut() = String::new();
         Ok((game, secs))
     }
@@ -1662,6 +1691,7 @@ impl ProtonManager {
         *self.imp().session_start.borrow_mut() = Some(std::time::Instant::now());
         self.imp().game_running.set(true);
         self.imp().session_appimage.set(false);
+        self.imp().session_rpg.set(false);
         *self.imp().session_watch.borrow_mut() = String::new();
     }
 
@@ -1770,6 +1800,31 @@ impl ProtonManager {
                 }
             }
         }
+        // Sesiones RPG supervisadas por box-rpg (sin hijo local): viva
+        // mientras el plugin reporte sesiones; gracia de 8s tras lanzar
+        // (el supervisor tarda en registrar). Igual que AppImage.
+        if self.imp().session_rpg.get() {
+            let game = self.imp().session_game.borrow().clone();
+            if !game.is_empty() {
+                let dir = super::ConfigManager::new()
+                    .game_value(&game, "Executable")
+                    .unwrap_or_default();
+                if !super::external::RpgMakerManager::sessions(&dir).is_empty() {
+                    self.imp().game_running.set(true);
+                    return None;
+                }
+                let young = self
+                    .imp()
+                    .session_start
+                    .borrow()
+                    .map(|t| t.elapsed().as_secs() < 8)
+                    .unwrap_or(false);
+                if young {
+                    self.imp().game_running.set(true);
+                    return None;
+                }
+            }
+        }
         let code = match code {
             Some(c) => c,
             None => {
@@ -1816,6 +1871,7 @@ impl ProtonManager {
             }
         }
         *self.imp().session_watch.borrow_mut() = String::new();
+        self.imp().session_rpg.set(false);
         if game.is_empty() {
             None
         } else {
@@ -2161,9 +2217,24 @@ impl ProtonManager {
             return Err("RPG Maker plugin not installed".into());
         }
         let runtime = game.get("rpgruntime").cloned().unwrap_or_default();
-        super::external::RpgMakerManager::run_with_runtime(dir.trim(), runtime.trim())
-            .map(|_| ())
-            .map_err(|e| format!("RPG launch failed: {}", e))
+        // Consentimientos por juego (modelo upstream: opt-in explícito,
+        // ambos off por defecto). Persistidos = standing consent.
+        let allow_net = game.get("rpgallownet").map(|v| v == "true").unwrap_or(false);
+        let allow_writes = game.get("rpgallowwrites").map(|v| v == "true").unwrap_or(false);
+        super::external::RpgMakerManager::run_with_options(
+            dir.trim(),
+            runtime.trim(),
+            allow_net,
+            allow_writes,
+        )
+        .map(|_| ())
+        .map_err(|e| format!("RPG launch failed: {}", e))?;
+        // Sesión real como AppImage: Play↔Stop, tiempo y Stop vía box-rpg.
+        // El plugin lanza detached (sin hijo que vigilar); la vida se
+        // pregunta a sus sesiones supervisadas.
+        self.begin_session(game_name);
+        self.imp().session_rpg.set(true);
+        Ok(())
     }
 
     pub fn run_game_debug(&self, game_name: &str) -> Result<(), String> {

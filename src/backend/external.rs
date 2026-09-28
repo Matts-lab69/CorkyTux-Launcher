@@ -105,11 +105,53 @@ impl RpgMakerManager {
         plugin_process::run_single_json(&Self::exe(), &["run", path])
     }
 
+    pub fn sessions(path: &str) -> Vec<String> {
+        plugin_process::run_single_json(&Self::exe(), &["sessions", path])
+            .ok()
+            .and_then(|d| d.get("sessions").cloned())
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|s| s.as_str().map(str::to_string))
+            .collect()
+    }
+
+    pub fn stop(path: &str) -> Result<serde_json::Value, String> {
+        plugin_process::run_single_json(&Self::exe(), &["stop", path])
+    }
+
+    pub fn remove_runtime(kind: &str, version: &str) -> Result<serde_json::Value, String> {
+        plugin_process::run_single_json(&Self::exe(), &["runtime-remove", kind, version])
+    }
+
+    pub fn config_show() -> Result<serde_json::Value, String> {
+        plugin_process::run_single_json(&Self::exe(), &["config-show"])
+    }
+
     pub fn run_with_runtime(path: &str, runtime: &str) -> Result<serde_json::Value, String> {
-        if runtime.trim().is_empty() {
-            return Self::run(path);
+        Self::run_with_options(path, runtime, false, false)
+    }
+
+    /// Lanzamiento con consentimientos explícitos (modelo upstream:
+    /// todo acceso extra es opt-in). Ambos default off.
+    pub fn run_with_options(
+        path: &str,
+        runtime: &str,
+        allow_network: bool,
+        allow_writes: bool,
+    ) -> Result<serde_json::Value, String> {
+        let mut args: Vec<&str> = vec!["run", path];
+        if !runtime.trim().is_empty() {
+            args.push("--runtime");
+            args.push(runtime.trim());
         }
-        plugin_process::run_single_json(&Self::exe(), &["run", path, "--runtime", runtime])
+        if allow_network {
+            args.push("--allow-network");
+        }
+        if allow_writes {
+            args.push("--allow-game-writes");
+        }
+        plugin_process::run_single_json(&Self::exe(), &args)
     }
 
     pub fn diagnose(path: &str, runtime: Option<&str>) -> Result<serde_json::Value, String> {
