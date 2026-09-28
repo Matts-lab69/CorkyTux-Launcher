@@ -27,7 +27,7 @@ const DESC_TEST: &str = "Registers the game with its current paths, as they are.
 ///
 /// `pf` was already computed by the caller (`import_move::preflight`), which
 /// only reads: nothing here touches the disk or rechecks anything.
-pub fn ask<F>(parent: &adw::ApplicationWindow, label: &str, pf: &Preflight, on_done: F)
+pub fn ask<F>(parent: &adw::ApplicationWindow, label: &str, store_tag: &str, pf: &Preflight, on_done: F)
 where
     F: Fn(Option<ImportMode>) + 'static,
 {
@@ -81,7 +81,11 @@ where
     head.add_css_class("title-label");
     body.append(&head);
 
-    let lead = gtk::Label::new(Some("Choose how it is registered. Import test does not move any files."));
+    let dest = format!("~/Games/{}-Games",
+        if store_tag == "epic" { "Epic" } else { "GOG" });
+    let lead = gtk::Label::new(Some(&format!(
+        "Choose how it is registered. Import test does not move any files. Permanent moves into {}.",
+        dest)));
     lead.set_halign(gtk::Align::Start);
     lead.set_wrap(true);
     lead.add_css_class("time-label");
@@ -98,11 +102,11 @@ where
     }
 
     // Mode 1: test. Always available, it is the current behaviour.
-    let test = mode_toggle("Import test", DESC_TEST, false, None);
+    let test = mode_toggle("Import test", DESC_TEST, DotColor::Green, None);
     body.append(&test);
 
     // Mode 2: permanent, with the colour dot.
-    let permanent = mode_toggle("Import permanente", DESC_PERMANENT, true, Some(&test));
+    let permanent = mode_toggle("Import permanente", DESC_PERMANENT, DotColor::Red, Some(&test));
     permanent.set_sensitive(can_permanent);
     if !can_permanent && !space_blocked {
         let why = gtk::Label::new(Some("No games can be moved in this selection."));
@@ -123,7 +127,7 @@ where
             shared.len(),
             if shared.len() == 1 { "" } else { "s" }
         );
-        let group = mode_toggle("Move the shared-prefix group", &desc, true, Some(&test));
+        let group = mode_toggle("Move the shared-prefix group", &desc, DotColor::Red, Some(&test));
         group.set_sensitive(can_permanent);
         body.append(&group);
 
@@ -291,10 +295,18 @@ pub fn remap_exe(exe: &str, old_install: &str, new_install: &Path) -> String {
 
 /// Mode row: optional dot, name and description. The dot is an empty label
 /// with the `import-dot` class; there is no glyph anywhere in the text.
+/// Color semántico del indicador: verde = prueba (sin movimientos),
+/// rojo = permanente (mueve archivos).
+#[derive(Clone, Copy)]
+enum DotColor {
+    Green,
+    Red,
+}
+
 fn mode_toggle(
     title: &str,
     desc: &str,
-    dot: bool,
+    dot: DotColor,
     group: Option<&gtk::ToggleButton>,
 ) -> gtk::ToggleButton {
     let btn = gtk::ToggleButton::new();
@@ -305,15 +317,18 @@ fn mode_toggle(
 
     let outer = gtk::Box::new(gtk::Orientation::Vertical, 4);
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    if dot {
-        let d = gtk::Label::new(None);
-        d.add_css_class("import-dot");
-        d.set_valign(gtk::Align::Center);
-        row.append(&d);
-    }
+    let d = gtk::Label::new(None);
+    d.add_css_class("import-dot");
+    d.add_css_class(match dot {
+        DotColor::Green => "import-dot-green",
+        DotColor::Red => "import-dot-red",
+    });
+    d.set_valign(gtk::Align::Center);
+    row.append(&d);
     let t = gtk::Label::new(Some(title));
     t.set_halign(gtk::Align::Start);
     t.set_hexpand(true);
+    t.add_css_class("import-opt-title");
     row.append(&t);
     outer.append(&row);
 

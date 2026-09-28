@@ -29,6 +29,44 @@ struct StoreGame {
     description: String,
 }
 
+/// Ítem normalizado de un rail del catálogo público (sale/new/free).
+/// Todo opcional salvo id/title: la UI degrada por campo ausente.
+#[derive(Debug, Clone, PartialEq)]
+struct RailItem {
+    id: String,
+    title: String,
+    cover: String,
+    cover_h: String,
+    price_base: String,
+    price_final: String,
+    discount: String,
+    year: String,
+    free: bool,
+    store_url: String,
+}
+
+/// Parsea un ítem de `gog-rail` con defaults: sin id ni título se descarta.
+fn parse_rail_item(o: &serde_json::Value) -> Option<RailItem> {
+    let id = o.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let title = o.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    if id.is_empty() && title.is_empty() {
+        return None;
+    }
+    let strf = |k: &str| o.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    Some(RailItem {
+        id,
+        title,
+        cover: strf("cover"),
+        cover_h: strf("cover_h"),
+        price_base: strf("price_base"),
+        price_final: strf("price_final"),
+        discount: strf("discount"),
+        year: strf("year"),
+        free: o.get("free").and_then(|x| x.as_bool()).unwrap_or(false),
+        store_url: strf("store_url"),
+    })
+}
+
 
 
 pub struct StoresView {
@@ -229,7 +267,7 @@ fn url_encode(s: &str) -> String {
     out
 }
 
-fn card(title: &str) -> (gtk::Frame, gtk::Box) {
+fn card_box() -> (gtk::Frame, gtk::Box) {
     let f = gtk::Frame::new(None);
     f.add_css_class("page-card");
     let inner = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -237,13 +275,23 @@ fn card(title: &str) -> (gtk::Frame, gtk::Box) {
     inner.set_margin_bottom(6);
     inner.set_margin_start(8);
     inner.set_margin_end(8);
-    let t = gtk::Label::new(Some(title));
-    t.set_halign(gtk::Align::Start);
-    t.add_css_class("frame-title");
-    inner.append(&t);
     f.set_child(Some(&inner));
     (f, inner)
 }
+
+fn card_head(title: &str, cls: &str) -> gtk::Label {
+    let t = gtk::Label::new(Some(title));
+    t.set_halign(gtk::Align::Start);
+    t.add_css_class(cls);
+    t
+}
+
+fn card(title: &str) -> (gtk::Frame, gtk::Box) {
+    let (f, inner) = card_box();
+    inner.append(&card_head(title, "frame-title"));
+    (f, inner)
+}
+
 
 impl StoresView {
     pub fn new(
@@ -358,6 +406,17 @@ impl StoresView {
             let v = vista.clone();
             *h.reabrir.borrow_mut() = Some(Rc::new(move || v.chequear_dependencias()));
         }
+        // Refresco post-operación para quien no tiene handle (remove_modal):
+        // misma ruta que Refresh manual, sin recargar la página.
+        {
+            let v = vista.clone();
+            *state.stores_changed.borrow_mut() = Some(Rc::new(move || {
+                for h in v.handles.borrow().iter() {
+                    h.refresh_library(false);
+                    h.schedule_status_check();
+                }
+            }));
+        }
         vista
     }
 
@@ -423,13 +482,17 @@ impl StoresView {
 
         // free games (Epic only, truly 100% off) + buy section
         if store == "epic" {
-            let (promo_frame, promo_inner) = card("Free games now");
+            let promo_head = card_head("Free games now", "section-head");
+            page.append(&promo_head);
+            let (promo_frame, promo_inner) = card_box();
             let promo_lbl = note("Loading…");
             promo_inner.append(&promo_lbl);
             // Scrollable list so long catalogs don't stretch the page.
             let promo_list = gtk::Box::new(gtk::Orientation::Horizontal, 12);
             let promo_scroll = gtk::ScrolledWindow::new();
             promo_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
+            promo_scroll.set_overlay_scrolling(false);
+            promo_scroll.add_css_class("rail-scroll");
             promo_scroll.set_min_content_height(170);
             promo_scroll.set_propagate_natural_height(true);
             promo_scroll.set_vexpand(false);
@@ -501,14 +564,24 @@ impl StoresView {
                 Err(_) => glib::ControlFlow::Break,
             });
             // All real Epic offers (any % off, verified dates/prices).
-            let (deals_frame, deals_inner) = card("Deals");
+            // Encabezado fuera del recuadro (igual que rails GOG); el
+            // resto de secciones conserva su título interno.
+            let deals_head = card_head("Deals", "section-head");
+            page.append(&deals_head);
+            let (deals_frame, deals_inner) = card_box();
             let deals_lbl = note("Loading…");
             deals_inner.append(&deals_lbl);
             // Scrollable list so 80 deals don't stretch the page.
             let deals_list = gtk::Box::new(gtk::Orientation::Horizontal, 12);
             let deals_scroll = gtk::ScrolledWindow::new();
             deals_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
-            deals_scroll.set_min_content_height(215);
+            deals_scroll.set_overlay_scrolling(false);
+            deals_scroll.add_css_class("rail-scroll");
+            // Altura explícita (no solo mínima): el mínimo era ignorado en
+            // este rail y el viewport cortaba los precios. 140 tarjeta +
+            // 4 gap + ~20 precio + respiro.
+            deals_scroll.set_size_request(-1, 190);
+            deals_scroll.set_min_content_height(190);
             deals_scroll.set_propagate_natural_height(true);
             deals_scroll.set_vexpand(false);
             deals_scroll.set_child(Some(&deals_list));
@@ -673,9 +746,16 @@ impl StoresView {
                     let seen_c = seen.clone();
                     let loader_c = loader.clone();
                     let epoch_c = epoch.clone();
+                    let loading_c = loading.clone();
                     *goto_slot.borrow_mut() = Some(Rc::new(move |p: usize| {
                         let n = pages_c.get().max(1);
                         let p = p.clamp(1, n);
+                        // No pisar una carga en curso: el bump de epoch
+                        // descartaría su respuesta y el loader haría
+                        // early-return → "Loading…" eterno.
+                        if loading_c.get() {
+                            return;
+                        }
                         epoch_c.set(epoch_c.get().wrapping_add(1));
                         while let Some(c) = list_c.first_child() {
                             list_c.remove(&c);
@@ -760,7 +840,9 @@ impl StoresView {
                 }
             }
             // Epic has no public search API: browser search with the query.
-            let (shop_frame, shop_inner) = card("Buy on Epic");
+            let shop_head = card_head("Buy on Epic", "section-head");
+            page.append(&shop_head);
+            let (shop_frame, shop_inner) = card_box();
             let shop_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
             let shop_q = gtk::SearchEntry::new();
             shop_q.set_placeholder_text(Some("Search the Epic store…"));
@@ -791,117 +873,11 @@ impl StoresView {
                 shop_q.connect_activate(move |_| g.borrow()());
             }
         }
-        if store == "gog" {
-            // GOG public catalog: real search with covers, prices, buy links.
-            let (shop_frame, shop_inner) = card("Buy on GOG");
-            let shop_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-            let shop_q = gtk::SearchEntry::new();
-            shop_q.set_placeholder_text(Some("Search the GOG store…"));
-            shop_q.set_hexpand(true);
-            shop_row.append(&shop_q);
-            let shop_go = gtk::Button::with_label("Search");
-            shop_go.add_css_class("settings-btn");
-            shop_row.append(&shop_go);
-            shop_inner.append(&shop_row);
-            let shop_status = note("");
-            shop_inner.append(&shop_status);
-            let shop_results = gtk::Box::new(gtk::Orientation::Vertical, 6);
-            shop_inner.append(&shop_results);
-            page.append(&shop_frame);
-            let st3 = state.clone();
-            let do_shop = Rc::new(RefCell::new(Box::new(move || {}) as Box<dyn Fn()>));
-            *do_shop.borrow_mut() = {
-                let q = shop_q.clone();
-                let res0 = shop_results.clone();
-                let lbl0 = shop_status.clone();
-                let st0 = st3.clone();
-                Box::new(move || {
-                    let res = res0.clone();
-                    let lbl = lbl0.clone();
-                    let stc = st0.clone();
-                    let query = q.text().to_string().trim().to_string();
-                    if query.is_empty() {
-                        return;
-                    }
-                    while let Some(c) = res.first_child() {
-                        res.remove(&c);
-                    }
-                    lbl.set_text("Searching GOG…");
-                    let (tx, rx) = std::sync::mpsc::channel::<Vec<(String, String, String, String, String, String)>>();
-                    std::thread::spawn(move || {
-                        let _ = tx.send(StoreManager::gog_store_search(&query, 10).ok()
-                            .and_then(|d| d.get("results").cloned())
-                            .and_then(|v| v.as_array().cloned()).unwrap_or_default()
-                            .into_iter().map(|p| (
-                                p.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                p.get("cover").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                p.get("price").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                p.get("developer").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                p.get("store_url").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                p.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                            )).collect::<Vec<_>>());
-                    });
-                    crate::backend::plugin_process::poll_once_local(rx, move |r2| match r2 {
-                        Ok(items) => {
-                            while let Some(c) = res.first_child() {
-                                res.remove(&c);
-                            }
-                            if items.is_empty() {
-                                lbl.set_text("No results.");
-                            } else {
-                                lbl.set_text(&format!("{} result(s) — buying happens on gog.com", items.len()));
-                            }
-                            for (t, cover, price, dev, url, gid) in items {
-                                let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                                if !cover.is_empty() {
-                                    let img = gtk::Image::new();
-                                    img.set_pixel_size(64);
-                                    img.set_valign(gtk::Align::Center);
-                                    crate::ui::minecraft_view::load_mod_icon(&cover, &format!("gogshop-{}", gid), &img, 64);
-                                    row.append(&img);
-                                }
-                                let mid = gtk::Box::new(gtk::Orientation::Vertical, 2);
-                                mid.set_hexpand(true);
-                                let lbl = gtk::Label::new(Some(&t));
-                                lbl.set_halign(gtk::Align::Start);
-                                lbl.add_css_class("details-title");
-                                mid.append(&lbl);
-                                let sub = gtk::Label::new(Some(&format!("{}  •  {}", dev, price)));
-                                sub.set_halign(gtk::Align::Start);
-                                sub.set_opacity(0.6);
-                                sub.add_css_class("time-label");
-                                mid.append(&sub);
-                                row.append(&mid);
-                                if !url.is_empty() {
-                                    let buy = gtk::Button::with_label(if price == "$0.00" { "Get" } else { "Buy" });
-                                    buy.add_css_class("add-btn");
-                                    buy.set_valign(gtk::Align::Center);
-                                    let stcc = stc.clone();
-                                    let uc = url.clone();
-                                    buy.connect_clicked(move |_| { stcc.integration.open_url(&uc); });
-                                    row.append(&buy);
-                                }
-                                res.append(&row);
-                            }
-                            glib::ControlFlow::Break
-                        }
-                        Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-                        Err(_) => glib::ControlFlow::Break,
-                    });
-                })
-            };
-            {
-                let g = do_shop.clone();
-                shop_go.connect_clicked(move |_| g.borrow()());
-            }
-            {
-                let g = do_shop.clone();
-                shop_q.connect_activate(move |_| g.borrow()());
-            }
-        }
 
         // library card
-        let (lib_frame, lib_inner) = card("Library");
+        let lib_head = card_head("Library", "section-head");
+        page.append(&lib_head);
+        let (lib_frame, lib_inner) = card_box();
         let lib_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let lib_status = note("Press Refresh.");
         lib_status.set_hexpand(true);
@@ -1011,6 +987,9 @@ impl StoresView {
             shown_games: Rc::new(RefCell::new(Vec::new())),
             gog_query: Rc::new(RefCell::new(String::new())),
             gog_sort: Rc::new(std::cell::Cell::new(0)),
+            rails_box: gtk::Box::new(gtk::Orientation::Vertical, 8),
+            rail_rows: Rc::new(RefCell::new(Vec::new())),
+            rails_loaded: Rc::new(std::cell::Cell::new(false)),
             last_logged: Rc::new(std::cell::Cell::new(false)),
             loaded: Rc::new(std::cell::Cell::new(false)),
             desc_killer: Rc::new(RefCell::new(None)),
@@ -1063,7 +1042,8 @@ impl StoresView {
                 if vh.store == "epic" {
                     vh.refresh_descriptions();
                 } else {
-                    vh.refresh_library(false);
+                    vh.refresh_library(true);
+                    vh.load_rails(true);
                 }
             });
         }
@@ -1094,6 +1074,130 @@ impl StoresView {
                     vv3.show_game_info(&g);
                 }
             });
+            // Secciones de rails bajo la biblioteca (orden aprobado: Shelf →
+            // rails → Buy on GOG, que vive más abajo).
+            view.build_rail_sections();
+            page.append(&view.rails_box);
+        }
+        if store == "gog" {
+            // GOG public catalog: real search with covers, prices, buy links.
+            let shop_head = card_head("Buy on GOG", "section-head");
+            page.append(&shop_head);
+            let (shop_frame, shop_inner) = card_box();
+            let shop_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            let shop_q = gtk::SearchEntry::new();
+            shop_q.set_placeholder_text(Some("Search the GOG store…"));
+            shop_q.set_hexpand(true);
+            shop_row.append(&shop_q);
+            let shop_go = gtk::Button::with_label("Search");
+            shop_go.add_css_class("settings-btn");
+            shop_row.append(&shop_go);
+            shop_inner.append(&shop_row);
+            let shop_status = note("");
+            shop_inner.append(&shop_status);
+            let shop_results = gtk::Box::new(gtk::Orientation::Vertical, 6);
+            shop_inner.append(&shop_results);
+            page.append(&shop_frame);
+            let st3 = state.clone();
+            let do_shop = Rc::new(RefCell::new(Box::new(move || {}) as Box<dyn Fn()>));
+            *do_shop.borrow_mut() = {
+                let q = shop_q.clone();
+                let res0 = shop_results.clone();
+                let lbl0 = shop_status.clone();
+                let st0 = st3.clone();
+                Box::new(move || {
+                    let res = res0.clone();
+                    let lbl = lbl0.clone();
+                    let stc = st0.clone();
+                    let query = q.text().to_string().trim().to_string();
+                    if query.is_empty() {
+                        return;
+                    }
+                    while let Some(c) = res.first_child() {
+                        res.remove(&c);
+                    }
+                    lbl.set_text("Searching GOG…");
+                    let (tx, rx) = std::sync::mpsc::channel::<Vec<(String, String, String, String, String, String)>>();
+                    std::thread::spawn(move || {
+                        let _ = tx.send(StoreManager::gog_store_search(&query, 10).ok()
+                            .and_then(|d| d.get("results").cloned())
+                            .and_then(|v| v.as_array().cloned()).unwrap_or_default()
+                            .into_iter().map(|p| (
+                                p.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                p.get("cover").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                p.get("price").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                p.get("developer").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                p.get("store_url").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                p.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                            )).collect::<Vec<_>>());
+                    });
+                    crate::backend::plugin_process::poll_once_local(rx, move |r2| match r2 {
+                        Ok(items) => {
+                            while let Some(c) = res.first_child() {
+                                res.remove(&c);
+                            }
+                            if items.is_empty() {
+                                lbl.set_text("No results.");
+                            } else {
+                                lbl.set_text(&format!("{} result(s) — buying happens on gog.com", items.len()));
+                            }
+                            for (t, cover, price, dev, url, gid) in items {
+                                let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                                if !cover.is_empty() {
+                                    let img = gtk::Image::new();
+                                    img.set_pixel_size(64);
+                                    img.set_valign(gtk::Align::Center);
+                                    crate::ui::minecraft_view::load_mod_icon(&cover, &format!("gogshop-{}", gid), &img, 64);
+                                    row.append(&img);
+                                }
+                                let mid = gtk::Box::new(gtk::Orientation::Vertical, 2);
+                                mid.set_hexpand(true);
+                                let lbl = gtk::Label::new(Some(&t));
+                                lbl.set_halign(gtk::Align::Start);
+                                lbl.add_css_class("details-title");
+                                mid.append(&lbl);
+                                let sub = gtk::Label::new(Some(&format!("{}  •  {}", dev, price)));
+                                sub.set_halign(gtk::Align::Start);
+                                sub.set_opacity(0.6);
+                                sub.add_css_class("time-label");
+                                mid.append(&sub);
+                                row.append(&mid);
+                                if !url.is_empty() {
+                                    let buy = gtk::Button::with_label(if price == "$0.00" { "Get" } else { "Buy" });
+                                    buy.add_css_class("add-btn");
+                                    buy.set_valign(gtk::Align::Center);
+                                    let stcc = stc.clone();
+                                    let uc = url.clone();
+                                    buy.connect_clicked(move |_| { stcc.integration.open_url(&uc); });
+                                    row.append(&buy);
+                                }
+                                res.append(&row);
+                            }
+                            glib::ControlFlow::Break
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                        Err(_) => glib::ControlFlow::Break,
+                    });
+                })
+            };
+            {
+                let g = do_shop.clone();
+                shop_go.connect_clicked(move |_| g.borrow()());
+            }
+            {
+                let g = do_shop.clone();
+                shop_q.connect_activate(move |_| g.borrow()());
+            }
+        }
+
+        if store == "gog" {
+            // Buy on GOG arriba de On Sale; biblioteca propia al fondo.
+            page.remove(&view.rails_box);
+            page.append(&view.rails_box);
+            page.remove(&lib_head);
+            page.append(&lib_head);
+            page.remove(&lib_frame);
+            page.append(&lib_frame);
         }
         view.refresh_auth(false);
         (page, view)
@@ -1121,6 +1225,22 @@ struct TileStatus {
     brow: gtk::Box,
     inst_lbl: Rc<RefCell<Option<gtk::Label>>>,
     btn: gtk::Button,
+}
+
+/// Una sección de rail editorial (On Sale / Discover / Free to Keep):
+/// Lote por página de rail (paridad con PER_PAGE=10 de Deals Epic).
+const GOG_RAIL_PAGE: usize = 10;
+
+/// fila horizontal con scroll + nota de degradación + pool + página visible.
+#[derive(Clone)]
+struct RailRow {
+    list: String,
+    row: gtk::Box,
+    scroll: gtk::ScrolledWindow,
+    pager: gtk::Box,
+    note: gtk::Label,
+    items: Rc<RefCell<Vec<RailItem>>>,
+    page: Rc<std::cell::Cell<usize>>,
 }
 
 impl TileStatus {
@@ -1174,6 +1294,11 @@ struct StorePageHandle {
     shown_games: Rc<RefCell<Vec<StoreGame>>>,
     gog_query: Rc<RefCell<String>>,
     gog_sort: Rc<std::cell::Cell<u32>>,
+    // Rails Fase 1.5 (solo tab GOG): contenedor para ocultar con el tab
+    // bloqueado, secciones con sus ítems, y flag de primera carga.
+    rails_box: gtk::Box,
+    rail_rows: Rc<RefCell<Vec<RailRow>>>,
+    rails_loaded: Rc<std::cell::Cell<bool>>,
     // Último estado de sesión visto por refresh_auth: distingue "sin sesión"
     // de "logueado pero biblioteca vacía" en los mensajes de estado vacío.
     last_logged: Rc<std::cell::Cell<bool>>,
@@ -1263,6 +1388,11 @@ impl StorePageHandle {
         }
         self.loaded.set(true);
         self.refresh_library(false);
+        // Rails una sola vez (caché TTL mediante; Refresh fuerza).
+        if self.store == "gog" && !self.rails_loaded.get() {
+            self.rails_loaded.set(true);
+            self.load_rails(false);
+        }
     }
 
     /// Aplica el estado de dependencias al tab: panel "Setup incomplete" si
@@ -1279,12 +1409,14 @@ impl StorePageHandle {
             self.incomplete_box.set_visible(true);
             self.auth_frame.set_visible(false);
             self.lib_frame.set_visible(false);
+            self.rails_box.set_visible(false);
             self.browser_row.set_visible(false);
             self.bloqueado.set(true);
         } else {
             self.incomplete_box.set_visible(false);
             self.auth_frame.set_visible(true);
             self.lib_frame.set_visible(true);
+            self.rails_box.set_visible(true);
             let sin_browser = f.login_bloqueado();
             self.login_btn.set_visible(!sin_browser);
             self.browser_row.set_visible(sin_browser);
@@ -1724,6 +1856,7 @@ impl StorePageHandle {
             inner.set_margin_start(8);
             inner.set_margin_end(8);
             inner.add_css_class("page-card");
+            inner.add_css_class("gog-tile");
             if !g.cover.is_empty() {
                 let img = gtk::Image::new();
                 img.set_pixel_size(150);
@@ -1761,6 +1894,384 @@ impl StorePageHandle {
             tile.set_child(Some(&inner));
             self.flow.insert(&tile, -1);
         }
+    }
+
+    /// Secciones de rails Fase 1.5 (solo tab GOG): cabecera + nota + fila
+    /// horizontal con foco por teclado. Se construyen una vez; el contenido
+    /// llega con load_rails.
+    fn build_rail_sections(&self) {
+        for (list, titulo) in [("sale", "On Sale"), ("new", "Discover"), ("free", "Free to Keep")] {
+            let sec = gtk::Box::new(gtk::Orientation::Vertical, 4);
+            let head = gtk::Label::new(Some(titulo));
+            head.set_halign(gtk::Align::Start);
+            head.add_css_class("section-head");
+            sec.append(&head);
+            let note_lbl = note("");
+            note_lbl.set_visible(false);
+            sec.append(&note_lbl);
+            let scroll = gtk::ScrolledWindow::new();
+            scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
+            scroll.set_overlay_scrolling(false);
+            scroll.set_min_content_height(288);
+            scroll.add_css_class("rail-scroll");
+            scroll.set_propagate_natural_height(true);
+            // Scrollbar siempre visible (no overlay): es el affordance de que
+            // hay más contenido. Nativo del tema, cero CSS nuevo.
+            // Box, no FlowBox: el FlowBox envuelve a 2 filas cuando el
+            // viewport es más angosto que la fila (bug visto en On Sale),
+            // y el scroll vertical está prohibido acá. La Box nunca envuelve:
+            // el desborde sale por scroll horizontal. Teclado por Tab/Enter
+            // (los botones son focables nativamente).
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            scroll.set_child(Some(&row));
+            sec.append(&scroll);
+            // Pager local (vocabulario Epic: settings-btn/add-btn). Oculto
+            // con una sola página; no toca el pager de Deals.
+            let pager = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            pager.set_halign(gtk::Align::Center);
+            pager.set_visible(false);
+            sec.append(&pager);
+            self.rails_box.append(&sec);
+            let items = Rc::new(RefCell::new(Vec::new()));
+            self.rail_rows.borrow_mut().push(RailRow {
+                list: list.to_string(),
+                row: row.clone(),
+                scroll: scroll.clone(),
+                pager: pager.clone(),
+                note: note_lbl,
+                items: items.clone(),
+                page: Rc::new(std::cell::Cell::new(0)),
+            });
+        }
+    }
+
+    /// Carga los 3 rails en un hilo (secuencial): caché TTL mediante, sin red
+    /// si están vigentes. `force` (Refresh) bypassea la caché del plugin.
+    fn load_rails(&self, force: bool) {
+        let (tx, rx) = std::sync::mpsc::channel::<
+            Vec<(String, Vec<RailItem>, bool, String)>,
+        >();
+        std::thread::spawn(move || {
+            let mut out: Vec<(String, Vec<RailItem>, bool, String)> = Vec::new();
+            for list in ["sale", "new", "free"] {
+                match StoreManager::gog_rail(list, force) {
+                    Ok(d) => {
+                        let items = d
+                            .get("items")
+                            .and_then(|x| x.as_array())
+                            .cloned()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .filter_map(|o| parse_rail_item(&o))
+                            .collect::<Vec<_>>();
+                        let partial =
+                            d.get("partial").and_then(|x| x.as_bool()).unwrap_or(false);
+                        let warn = d
+                            .get("warning")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        out.push((list.to_string(), items, partial, warn));
+                    }
+                    Err(e) => out.push((list.to_string(), Vec::new(), true, e.to_string())),
+                }
+            }
+            let _ = tx.send(out);
+        });
+        let vh = self.clone();
+        crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
+            Ok(rails) => {
+                vh.render_rails(&rails);
+                glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(_) => glib::ControlFlow::Break,
+        });
+    }
+
+    /// Pinta cada rail: tarjetas o nota dim si falló/vacío. Nunca rompe la
+    /// página por un rail caído (criterio die() de Fase 1).
+    fn render_rails(&self, rails: &[(String, Vec<RailItem>, bool, String)]) {
+        for (list, items, partial, warning) in rails {
+            let rows = self.rail_rows.borrow();
+            let Some(sec) = rows.iter().find(|r| &r.list == list) else {
+                continue;
+            };
+            while let Some(c) = sec.row.first_child() {
+                sec.row.remove(&c);
+            }
+            *sec.items.borrow_mut() = items.clone();
+            if items.is_empty() {
+                let texto = if *partial {
+                    format!(
+                        "Couldn't load this rail{}.",
+                        if warning.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" {}", warning.chars().take(80).collect::<String>())
+                        }
+                    )
+                } else if list == "sale" {
+                    "Nothing on sale right now.".to_string()
+                } else {
+                    "Nothing here right now.".to_string()
+                };
+                sec.note.set_visible(true);
+                sec.note.set_text(&texto);
+            } else {
+                sec.note.set_visible(false);
+                // Refresh (mismo handler) resetea a página 1 con pool nuevo.
+                sec.page.set(0);
+                self.render_rail_page(sec);
+                if *partial {
+                    sec.note.set_visible(true);
+                    let texto = format!(
+                        "Partial results{}.",
+                        if warning.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" {}", warning.chars().take(80).collect::<String>())
+                        }
+                    );
+                    sec.note.set_text(&texto);
+                }
+            }
+        }
+    }
+
+    /// Pinta la página visible de un rail (lote GOG_RAIL_PAGE del pool) +
+    /// su pager. Solo los tiles visibles se construyen, así que solo sus
+    /// covers se descargan (fetch en rail_card/discover_card). Al cambiar
+    /// de página el scroll vuelve al inicio.
+    fn render_rail_page(&self, sec: &RailRow) {
+        while let Some(c) = sec.row.first_child() {
+            sec.row.remove(&c);
+        }
+        while let Some(c) = sec.pager.first_child() {
+            sec.pager.remove(&c);
+        }
+        let items = sec.items.borrow();
+        let total = items.len();
+        let npages = total.div_ceil(GOG_RAIL_PAGE).max(1);
+        let cur = sec.page.get().min(npages - 1);
+        sec.page.set(cur);
+        let accent = self.state.theme.accent_color();
+        let ini = cur * GOG_RAIL_PAGE;
+        for it in items.iter().skip(ini).take(GOG_RAIL_PAGE) {
+            sec.row.append(&self.rail_card(it, &sec.list, &accent));
+        }
+        sec.scroll.hadjustment().set_value(0.0);
+        // Pager oculto con una sola página. Botones nativos (foco por
+        // teclado incluido), vocabulario Epic, sin CSS nuevo.
+        sec.pager.set_visible(npages > 1);
+        if npages <= 1 {
+            return;
+        }
+        let mk = |label: &str, target: usize, enabled: bool, primary: bool| {
+            let b = gtk::Button::with_label(label);
+            b.add_css_class(if primary { "add-btn" } else { "settings-btn" });
+            b.set_sensitive(enabled);
+            let vv = self.clone();
+            let ss = sec.clone();
+            b.connect_clicked(move |_| {
+                ss.page.set(target);
+                vv.render_rail_page(&ss);
+            });
+            b
+        };
+        sec.pager.append(&mk("\u{00AB}", cur.saturating_sub(1), cur > 0, false));
+        for n in 0..npages {
+            sec.pager.append(&mk(&(n + 1).to_string(), n, n != cur, n == cur));
+        }
+        sec.pager.append(&mk("\u{00BB}", (cur + 1).min(npages - 1), cur + 1 < npages, false));
+    }
+
+    /// Tarjeta de rail: base portrait común + línea según variante + badge ↗.
+    /// Variante A (On Sale): pie ancla con numeral de descuento grande en
+    /// accent; el resto disciplinado.
+    /// Tarjeta de rail: base según variante + badge ↗. Botón plano (fondo
+    /// transparente): click con mouse y Tab/Enter abren la tienda externa.
+    /// Discover usa variante B (cover horizontal + ficha solapada); el resto
+    /// usa la base portrait común.
+    fn rail_card(&self, item: &RailItem, variant: &str, accent: &str) -> gtk::Button {
+        if variant == "new" {
+            return self.discover_card(item);
+        }
+        let tile = gtk::Button::new();
+        tile.add_css_class("flat");
+        tile.set_width_request(150);
+        let overlay = gtk::Overlay::new();
+        let inner = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        inner.set_margin_top(8);
+        inner.set_margin_bottom(8);
+        inner.set_margin_start(8);
+        inner.set_margin_end(8);
+        inner.add_css_class("page-card");
+        inner.add_css_class("gog-tile");
+        if !item.cover.is_empty() {
+            let img = gtk::Image::new();
+            img.set_pixel_size(150);
+            img.set_halign(gtk::Align::Center);
+            crate::ui::minecraft_view::load_mod_icon(
+                &item.cover,
+                &format!("store-gog-rail-{}", item.id),
+                &img,
+                150,
+            );
+            inner.append(&img);
+        }
+        let name = gtk::Label::new(Some(&item.title));
+        name.set_halign(gtk::Align::Center);
+        name.set_wrap(true);
+        name.set_lines(2);
+        name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        name.set_max_width_chars(14);
+        name.set_size_request(-1, 40);
+        inner.append(&name);
+        match variant {
+            // On Sale, variante A: numeral grande en accent a la izquierda +
+            // columna con final bold y base tachada debajo.
+            "sale" => {
+                let pie = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                pie.set_halign(gtk::Align::Center);
+                pie.set_valign(gtk::Align::Center);
+                let num = gtk::Label::new(None);
+                num.set_markup(&format!(
+                    "<span size=\"20000\" weight=\"bold\" foreground=\"{}\">{}</span>",
+                    accent,
+                    glib::markup_escape_text(&item.discount)
+                ));
+                pie.append(&num);
+                let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                col.set_valign(gtk::Align::Center);
+                let fin = gtk::Label::new(None);
+                fin.set_markup(&format!(
+                    "<b>{}</b>",
+                    glib::markup_escape_text(&item.price_final)
+                ));
+                col.append(&fin);
+                if !item.price_base.is_empty() && item.price_base != item.price_final {
+                    let base = gtk::Label::new(None);
+                    base.set_markup(&format!(
+                        "<small><s>{}</s></small>",
+                        glib::markup_escape_text(&item.price_base)
+                    ));
+                    base.set_opacity(0.6);
+                    base.add_css_class("time-label");
+                    col.append(&base);
+                }
+                pie.append(&col);
+                inner.append(&pie);
+            }
+            // Discover: año, solo si viene.
+            "new" => {
+                if !item.year.is_empty() {
+                    let y = gtk::Label::new(Some(&item.year));
+                    y.set_halign(gtk::Align::Center);
+                    y.set_opacity(0.6);
+                    y.add_css_class("time-label");
+                    inner.append(&y);
+                }
+            }
+            // Free to Keep: badge neon-green (clase existente del tema).
+            _ => {
+                let tag_text = if item.free {
+                    "FREE".to_string()
+                } else {
+                    item.price_final.clone()
+                };
+                let tag = gtk::Label::new(Some(&tag_text));
+                tag.set_halign(gtk::Align::Center);
+                if item.free {
+                    tag.add_css_class("neon-green");
+                } else {
+                    tag.add_css_class("details-title");
+                }
+                inner.append(&tag);
+            }
+        }
+        overlay.set_child(Some(&inner));
+        let ext = gtk::Label::new(Some("↗"));
+        ext.set_halign(gtk::Align::End);
+        ext.set_valign(gtk::Align::Start);
+        ext.set_opacity(0.6);
+        ext.add_css_class("time-label");
+        overlay.add_overlay(&ext);
+        tile.set_child(Some(&overlay));
+        // Click directo en el botón (sin índice): abre la tienda externa.
+        // Son juegos no propios: no hay ficha interna.
+        let url = item.store_url.clone();
+        let vv = self.clone();
+        tile.connect_clicked(move |_| {
+            if !url.is_empty() {
+                vv.state.integration.open_url(&url);
+            }
+        });
+        tile
+    }
+
+    /// Variante B de Discover: cover horizontal full-bleed + ficha solapada
+    /// -24px con título y año en una línea. GtkPicture con caja fija y
+    /// can_shrink(false): estable aunque el paintable llegue async.
+    fn discover_card(&self, item: &RailItem) -> gtk::Button {
+        let tile = gtk::Button::new();
+        tile.add_css_class("flat");
+        tile.set_width_request(220);
+        let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        outer.add_css_class("page-card");
+        outer.add_css_class("gog-tile");
+        let cover_url = if item.cover_h.is_empty() { &item.cover } else { &item.cover_h };
+        if !cover_url.is_empty() {
+            let pic = gtk::Picture::new();
+            pic.set_size_request(204, 124);
+            pic.set_content_fit(gtk::ContentFit::Cover);
+            pic.set_can_shrink(false);
+            crate::ui::minecraft_view::load_cover_async(
+                cover_url,
+                &format!("store-gog-rail-{}", item.id),
+                &pic,
+                408,
+            );
+            outer.append(&pic);
+        }
+        let ficha = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        ficha.set_halign(gtk::Align::Center);
+        ficha.set_margin_top(-24);
+        ficha.set_margin_start(8);
+        ficha.set_margin_end(8);
+        ficha.add_css_class("page-card");
+        let titulo = gtk::Label::new(Some(&item.title));
+        titulo.set_halign(gtk::Align::Start);
+        titulo.set_hexpand(true);
+        titulo.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        titulo.set_lines(1);
+        titulo.add_css_class("details-title");
+        ficha.append(&titulo);
+        if !item.year.is_empty() {
+            let anio = gtk::Label::new(Some(&item.year));
+            anio.set_valign(gtk::Align::BaselineCenter);
+            anio.set_opacity(0.6);
+            anio.add_css_class("time-label");
+            ficha.append(&anio);
+        }
+        outer.append(&ficha);
+        let overlay = gtk::Overlay::new();
+        overlay.set_child(Some(&outer));
+        let ext = gtk::Label::new(Some("↗"));
+        ext.set_halign(gtk::Align::End);
+        ext.set_valign(gtk::Align::Start);
+        ext.set_opacity(0.6);
+        ext.add_css_class("time-label");
+        overlay.add_overlay(&ext);
+        tile.set_child(Some(&overlay));
+        let url = item.store_url.clone();
+        let vv = self.clone();
+        tile.connect_clicked(move |_| {
+            if !url.is_empty() {
+                vv.state.integration.open_url(&url);
+            }
+        });
+        tile
     }
 
 /// Línea "category · systems" de la tarjeta GOG: cada mitad se oculta si está
@@ -1974,7 +2485,15 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
                     let img = gtk::Image::new();
                     img.set_pixel_size(160);
                     img.set_valign(gtk::Align::Start);
-                    crate::ui::minecraft_view::load_mod_icon(&cover, &format!("store-{}-info", game_c.app_id), &img, 160);
+                    // Clave -v2 solo en GOG (el cover pasó a vertical v2 y los
+                    // PNG viejos son el background horizontal): Epic conserva
+                    // la suya. Huérfanos sin borrar.
+                    let ckey = if self.store == "gog" {
+                        format!("store-{}-info-v2", game_c.app_id)
+                    } else {
+                        format!("store-{}-info", game_c.app_id)
+                    };
+                    crate::ui::minecraft_view::load_mod_icon(&cover, &ckey, &img, 160);
                     top.append(&img);
                 }
                 let tcol = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -2045,6 +2564,7 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
                     let label = match desc_src {
                         "steam" => "Fuente: Steam",
                         "wikipedia" => "Fuente: Wikipedia",
+                        "gog" => "Fuente: GOG",
                         _ => "Fuente: Epic Store",
                     };
                     let url = info.get("source_url").and_then(|x| x.as_str())
@@ -2101,8 +2621,15 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
         Some((desc, src, url, lang))
     }
 
-    fn default_games_dir() -> String {
-        format!("{}/Games/Heroic", std::env::var("HOME").unwrap_or_default())
+    /// Base de installs por tienda (origen único; el plugin usa el
+    /// --path que se le pasa). ~/Games/Heroic queda como legacy ajeno.
+    fn default_games_dir(store: &str) -> String {
+        let base = std::env::var("HOME").unwrap_or_default();
+        if store == "epic" {
+            format!("{}/Games/Epic-Games", base)
+        } else {
+            format!("{}/Games/GOG-Games", base)
+        }
     }
 
     fn install_or_import(&self, game: &StoreGame) {
@@ -2131,8 +2658,8 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
     // plugin events, importing into the native library on success.
     fn start_install(&self, game: &StoreGame) {
         let (bar, status) = self.progress(&format!("Installing {}", game.title));
-        std::fs::create_dir_all(Self::default_games_dir()).ok();
-        let rx = StoreManager::spawn_install(self.store.clone(), game.app_id.clone(), Self::default_games_dir());
+        std::fs::create_dir_all(Self::default_games_dir(&self.store)).ok();
+        let rx = StoreManager::spawn_install(self.store.clone(), game.app_id.clone(), Self::default_games_dir(&self.store));
         let vh = self.clone();
         let game_c = game.clone();
         crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
@@ -2157,6 +2684,9 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
                     // In-place status update instead of a full re-render:
                     // the tile flips to "installed"/Import without flicker.
                     vh.schedule_status_check();
+                    // La tarjeta se re-renderiza por la misma ruta que
+                    // Refresh manual (la página no se recarga).
+                    vh.refresh_library(false);
                     false
                 }
                 crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
@@ -2338,7 +2868,7 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
 
     /// Boton "Import" de un juego ya instalado en Heroic. Pasa por el Import
     /// Manager antes de registrar nada: el modo test es el comportamiento
-    /// actual, el permanente mueve los archivos a ~/Games.
+    /// actual, el permanente mueve los archivos a ~/Games/<Tienda>-Games.
     fn import_with_manager(&self, game: &StoreGame) {
         let cands = vec![MoveCandidate {
             label: game.title.clone(),
@@ -2349,7 +2879,8 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
             prefix_path: None,
             executable: PathBuf::from(&game.executable),
         }];
-        let games_dir = import_manager::games_root();
+        let games_dir = import_manager::games_root().join(format!(
+            "{}-Games", if self.store == "epic" { "Epic" } else { "GOG" }));
 
         // El preflight recorre el arbol para medirlo, asi que va fuera del
         // hilo de GTK.
@@ -2382,7 +2913,8 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
         // por invocacion.
         let cands_c = cands.clone();
         let pf_c = pf.clone();
-        import_manager::ask(&self.parent, &game.title, &pf, move |mode| {
+        let tag = self.store.clone();
+        import_manager::ask(&self.parent, &game.title, &tag, &pf, move |mode| {
             let Some(mode) = mode else { return };
             if mode == ImportMode::Test {
                 // Sin cambios: exactamente lo que hacia el boton antes.
@@ -2395,6 +2927,8 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
                     false,
                     false,
                 );
+                vh.schedule_status_check();
+                vh.refresh_library(false);
                 return;
             }
             vh.start_move(&game_c, cands_c.clone(), pf_c.clone(), mode);
@@ -2407,7 +2941,8 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
     fn start_move(&self, game: &StoreGame, cands: Vec<MoveCandidate>, pf: Preflight, mode: ImportMode) {
         let (bar, status) = self.progress(&format!("Moving {}", game.title));
         status.set_text("Preparing the move…");
-        let games_dir = import_manager::games_root();
+        let games_dir = import_manager::games_root().join(format!(
+            "{}-Games", if self.store == "epic" { "Epic" } else { "GOG" }));
 
         let (tx, rx) = std::sync::mpsc::channel::<(ExecPlan, Vec<(String, MoveOutcome)>)>();
         std::thread::spawn(move || {
@@ -2484,6 +3019,8 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
             false,
             false,
         );
+        self.schedule_status_check();
+        self.refresh_library(false);
     }
 
     fn progress(&self, title: &str) -> (gtk::ProgressBar, gtk::Label) {
@@ -2839,6 +3376,17 @@ fn login_failure_message(why: &str, detail: &str) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn base_por_tienda() {
+        let e = StorePageHandle::default_games_dir("epic");
+        let g = StorePageHandle::default_games_dir("gog");
+        let o = StorePageHandle::default_games_dir("otra");
+        assert!(e.ends_with("/Games/Epic-Games"), "{}", e);
+        assert!(g.ends_with("/Games/GOG-Games"), "{}", g);
+        assert!(o.ends_with("/Games/GOG-Games"), "{}", o);
+        assert!(!e.contains("Heroic") && !g.contains("Heroic"));
+    }
+
     /// Falta solo legendary: Epic bloqueado (binario + navegador pendientes),
     /// GOG solo sin login.
     #[test]
@@ -3076,5 +3624,27 @@ mod tests {
         // Instalados primero.
         let v = super::StorePageHandle::filtrar_ordenar(&juegos, "", 2);
         assert!(v[0].installed);
+    }
+
+    /// parse_rail_item: completo pasa, vacío se descarta, parcial con defaults.
+    #[test]
+    fn parse_rail_item_completo_minimo_y_descarte() {
+        let lleno = serde_json::json!({
+            "id": "123", "title": "Knytt", "cover": "http://x/y.jpg",
+            "price_base": "$9.99", "price_final": "$0.00", "discount": "-100%",
+            "year": "2013", "free": true, "store_url": "https://x"
+        });
+        let r = super::parse_rail_item(&lleno).expect("completo");
+        assert_eq!(r.id, "123");
+        assert_eq!(r.price_final, "$0.00");
+        assert!(r.free);
+        let minimo = serde_json::json!({"id": "9", "title": "T"});
+        let r = super::parse_rail_item(&minimo).expect("mínimo");
+        assert_eq!(r.cover, "");
+        assert!(!r.free);
+        assert!(super::parse_rail_item(
+            &serde_json::json!({"cover": "x"})).is_none());
+        assert!(super::parse_rail_item(
+            &serde_json::json!({})).is_none());
     }
 }

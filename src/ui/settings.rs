@@ -122,7 +122,13 @@ fn bulk_import_via_manager<F>(
 ) where
     F: Fn(MovedPaths, String) + 'static,
 {
-    let games_dir = import_manager::games_root();
+    // Destino por tienda (igual que el import simple): la primera
+    // candidatura manda; el modal muestra el mismo dir.
+    let tag_dir = match cands.first().map(|c| c.store_tag.as_str()) {
+        Some("epic") => "Epic",
+        _ => "GOG",
+    };
+    let games_dir = import_manager::games_root().join(format!("{}-Games", tag_dir));
     let (tx, rx) = std::sync::mpsc::channel::<Preflight>();
     let wc = cands.clone();
     let wd = games_dir.clone();
@@ -135,6 +141,7 @@ fn bulk_import_via_manager<F>(
     let ready: Rc<F> = Rc::new(on_ready);
     let parent_poll = parent.clone();
     let label_poll = label.to_string();
+    let tag_poll = tag_dir.clone();
     let cands_poll = cands.clone();
     let dir_poll = games_dir.clone();
 
@@ -150,7 +157,8 @@ fn bulk_import_via_manager<F>(
             // seguir siendo Fn.
             let parent_a2 = parent_a.clone();
             let pf2 = pf.clone();
-            import_manager::ask(&parent_a, &label_poll, &pf, move |mode| {
+            let tag_a = tag_poll.clone();
+            import_manager::ask(&parent_a, &label_poll, &tag_a, &pf, move |mode| {
                 let Some(mode) = mode else { return };
                 let ready_b = ready_a.clone();
                 let parent_b = parent_a2.clone();

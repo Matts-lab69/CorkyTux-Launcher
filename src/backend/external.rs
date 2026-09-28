@@ -158,6 +158,16 @@ impl StoreManager {
         plugin_process::run_single_json(&Self::exe(), &["bins"])
     }
 
+    /// Un rail editorial del catálogo público de GOG (sale/new/free), con
+    /// caché TTL en el plugin. Sin login, sin sesión.
+    pub fn gog_rail(list: &str, refresh: bool) -> Result<serde_json::Value, String> {
+        let mut args = vec!["gog-rail", "--list", list];
+        if refresh {
+            args.push("--refresh");
+        }
+        plugin_process::run_single_json(&Self::exe(), &args)
+    }
+
     pub fn auth(store: &str, code: &str) -> Result<serde_json::Value, String> {
         let mut args = vec!["auth", "--store", store];
         let code_owned;

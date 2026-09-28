@@ -72,6 +72,10 @@ pub struct AppState {
     pub install_warn_count: Rc<RefCell<Option<gtk::Label>>>,
     pub prefix_warn_btn: Rc<RefCell<Option<gtk::Button>>>,
     pub prefix_warn_count: Rc<RefCell<Option<gtk::Label>>>,
+    /// Refresco de las tarjetas de Stores tras instalar/desinstalar/
+    /// importar/quitar (lo registra StoresView; lo invoca remove_modal,
+    /// que no tiene handle propio). Misma ruta que Refresh manual.
+    pub stores_changed: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
 }
 
 impl AppState {
@@ -94,6 +98,7 @@ impl AppState {
             install_warn_count: Rc::new(RefCell::new(None)),
             prefix_warn_btn: Rc::new(RefCell::new(None)),
             prefix_warn_count: Rc::new(RefCell::new(None)),
+            stores_changed: Rc::new(RefCell::new(None)),
         }
     }
 }
