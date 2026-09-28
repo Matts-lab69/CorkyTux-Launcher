@@ -2,22 +2,42 @@
 /target/
 **/*.rs.bk
 
-# Build / release artifacts
+# Binaries and release artifacts (shipped as release assets, never tracked)
+/corkytux
 *.tar.gz
 build/
 build-release/
 /release/corkytux
 
-# IDE
+# Local backups
+*.bak
+*.bak-*
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+
+# Env and secrets
+.env
+*.pem
+*.key
+
+# Caches and editor files
+.cache/
 .idea/
 .vscode/*
 !.vscode/extensions.json
 *.iml
+*.swp
+*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
+# Agent screenshots and scratch reference (regenerable, out of tree)
+docs/ui-before/
 docs/ui-reference/

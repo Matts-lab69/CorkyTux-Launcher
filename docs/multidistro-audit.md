@@ -394,7 +394,7 @@ en lugar de solo parchearlo.
 | K02 | `README.md:148-161` | El mapa de arquitectura omite `plugins.rs`, `integration.rs`, `import_move.rs`, `theme.rs`, `shortcuts.rs` y `external.rs`. |
 | K03 | `README.md:101`, `docs/BUILD.md:37` | Solo se documenta el tarball `x86_64` aunque `build-release.sh` usa `uname -m`. |
 | K04 | `src/ui/import_manager.rs:19` | El texto visible al usuario dice "a Games folder in your /home"; es incorrecto en `/var/home` (Fedora Silverblue). |
-| K05 | `docs/DEPENDENCY_INSTALLER_HOTFIX.md:43-44` | Rutas absolutas `/home/mattsgaming/...` en instrucciones meant to be copy-pasted. |
+| K05 | `docs/DEPENDENCY_INSTALLER_HOTFIX.md:43-44` | Rutas absolutas del home del autor en instrucciones meant to be copy-pasted (corregido: `$HOME`). |
 | K06 | `src/Cargo.toml` | Manifiesto heredado (package `demo`, `cdylib`) conviviendo con el `Cargo.toml` real; confunde a cualquier lectura de dependencias. |
 
 ---

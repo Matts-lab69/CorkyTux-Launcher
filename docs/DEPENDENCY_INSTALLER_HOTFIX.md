@@ -40,8 +40,8 @@ The plugin binary is fetched from GitHub, not built from this repo.
 After updating the plugin, reapply the patch locally:
 
 ```bash
-PATCH="/home/mattsgaming/CorkyTux-Launcher/vendor/patches/dependency-installer-dotnet-hotfix.patch"
-PLUGIN="/home/mattsgaming/.local/share/CorkyTux/plugins/dependency-installer/dependency-installer"
+PATCH="$HOME/CorkyTux-Launcher/vendor/patches/dependency-installer-dotnet-hotfix.patch"
+PLUGIN="$HOME/.local/share/CorkyTux/plugins/dependency-installer/dependency-installer"
 
 cp "$PLUGIN" "$PLUGIN.bak"
 patch -p1 --directory "$(dirname "$PLUGIN")" < "$PATCH"

@@ -68,7 +68,7 @@ Epic/GOG stores, AppImages, RPG Maker, dependencies, DLLs and more
 - Embedded WebKit Epic login with auto-capture, GOG token auth
 - Library with covers, detail view, free promos (100% only), Epic deals
   (%/price/end verified), GOG store search + buy with prices
-- Installs go to native library (`~/Games/Heroic`) with launcher Proton/prefix
+- Installs go to the native library (`~/Games/Epic-Games`, `~/Games/GOG-Games`) with launcher Proton/prefix
 
 ### Emulators & tools (Plugins)
 - **Emulator manager** (`emulator-manager`) — 12+ retro emulators
@@ -146,18 +146,23 @@ prints the exact install command for your distro.
 ## Architecture
 
 ```
-src/main.rs             Adw window (1200x700, min 640x400), pages games/minecraft/stores
+src/main.rs             Adw window, pages games/minecraft/stores
 src/ui/sidebar.rs       library, filters, search, Minecraft/Store toggles
 src/ui/center.rs        Recently Played cards
 src/ui/details_panel.rs banner, Play/Stop, async cached install size
-src/ui/game_settings.rs Proton/prefix, EAC/BE, EOS, WineVDesktop, env, args
+src/ui/game_settings.rs Proton/prefix, EAC/BE, EOS, WineVDesktop, env, args, isolation
 src/ui/settings.rs      visuals, paths, protons, plugins, integrations, about
 src/ui/minecraft_view.rs MC library/detail/browse (Modrinth/CurseForge)
 src/ui/stores_view.rs   Epic/GOG tabs, session, library, promos, deals
 src/backend/proton.rs   Proton/umu launch, EAC/BE envs, legendary launch, playtime/logs
+src/backend/isolation.rs bubblewrap sandbox (private HOME, prefix+game rw, runners ro)
 src/backend/plugin_process.rs  JSON-lines spawn + 50ms pump
 src/backend/game_model.rs GameEntry <-> Games.ini
 src/backend/config.rs   Launcher.ini + Games.ini
+docs/                   BUILD, audits (multidistro, perf), wine-isolation design
+assets/                 bundled icons (light + dark)
+release/                install.sh, uninstall.sh, desktop entry (scripts only)
+plugins/<name>/         separate repo (CorkyTux-Plugins): plugin binary + plugin.json
 ```
 
 ---
