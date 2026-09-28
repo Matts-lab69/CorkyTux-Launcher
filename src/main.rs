@@ -1657,6 +1657,14 @@ fn main() {
             }
         }
     }
+    // Purga LRU del caché de iconos/covers una vez por arranque (los
+    // thumbnails se regeneran solos; evita crecimiento sin cota).
+    {
+        let (n, bytes) = crate::ui::minecraft_view::prune_icon_cache(512 * 1024 * 1024, 1500);
+        if n > 0 {
+            eprintln!("[CorkyTux] icon cache pruned: {} files, {} MB freed", n, bytes / 1024 / 1024);
+        }
+    }
     let app = adw::Application::builder()
         .application_id("com.corkytux.CorkyTux").build();
     app.connect_activate(|app| {

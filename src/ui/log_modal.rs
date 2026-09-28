@@ -1,6 +1,8 @@
 use adw::prelude::*;
 use gtk::prelude::*;
 use gtk::{self, glib};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::backend::theme::ThemeManager;
 use crate::ui::helpers;
@@ -293,7 +295,29 @@ impl LogModal {
         let head = header.to_string();
         let adj = self.scroll.vadjustment();
         buf.set_text(&format!("{}\nStarting...\n", head));
+        // El log de Proton crece a MBs: no re-leer ni repintar 2×/s si el
+        // archivo no cambió (misma huella mtime+len). Ahorra CPU y evita
+        // parpadeo del scroll en partidas largas.
+        let seen: Rc<RefCell<(u64, u64)>> = Rc::new(RefCell::new((0, 0)));
         glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
+            let fp_now = std::fs::metadata(crate::backend::proton::ProtonManager::log_path(&game))
+                .ok()
+                .map(|m| {
+                    let t = m.modified().ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    (t, m.len())
+                })
+                .unwrap_or((0, 0));
+            if *seen.borrow() == fp_now && fp_now != (0, 0) {
+                if p.is_game_running() {
+                    return glib::ControlFlow::Continue;
+                }
+                status.set_text("Game stopped");
+                return glib::ControlFlow::Break;
+            }
+            *seen.borrow_mut() = fp_now;
             let text = crate::backend::proton::ProtonManager::read_log(&game);
             if !text.is_empty() {
                 let saved = adj.value();

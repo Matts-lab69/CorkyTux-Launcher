@@ -554,9 +554,71 @@ fn page_scroll(page: &gtk::Box, max: i32) -> gtk::ScrolledWindow {
 }
 
 fn icon_cache_path(filename: &str) -> std::path::PathBuf {
+    icon_cache_dir().join(filename)
+}
+
+fn icon_cache_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
         .join(".cache/CorkyTux/modicons")
-        .join(filename)
+}
+
+/// Purga LRU del caché de iconos/covers: sin cota crecía sin fin (650 MB
+/// vistos). Borra por mtime (más viejos primero) hasta quedar bajo
+/// `max_bytes` y `max_files`. Solo `*-icon.png`, `*-icon.missing` y
+/// `*-raw.bin` de más de un día (descargas interrumpidas). Los
+/// thumbnails se regeneran solos al re-descargar. Devuelve
+/// (archivos borrados, bytes liberados).
+pub(crate) fn prune_icon_cache(max_bytes: u64, max_files: usize) -> (usize, u64) {
+    prune_cache_dir(&icon_cache_dir(), max_bytes, max_files)
+}
+
+fn prune_cache_dir(dir: &std::path::Path, max_bytes: u64, max_files: usize) -> (usize, u64) {
+    let mut entries: Vec<(std::time::SystemTime, u64, std::path::PathBuf)> = Vec::new();
+    let mut total: u64 = 0;
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return (0, 0);
+    };
+    for e in rd.flatten() {
+        let p = e.path();
+        if !p.is_file() {
+            continue;
+        }
+        let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let is_raw = name.ends_with("-raw.bin");
+        if !(name.ends_with("-icon.png") || name.ends_with("-icon.missing") || is_raw) {
+            continue;
+        }
+        let Ok(m) = e.metadata() else {
+            continue;
+        };
+        // Raws en curso (descarga viva) no se tocan.
+        if is_raw {
+            let age = m.modified().ok().and_then(|t| t.elapsed().ok())
+                .map(|d| d.as_secs()).unwrap_or(0);
+            if age < 86400 {
+                continue;
+            }
+        }
+        let mtime = m.modified().unwrap_or(std::time::UNIX_EPOCH);
+        total += m.len();
+        entries.push((mtime, m.len(), p));
+    }
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut removed = 0usize;
+    let mut freed = 0u64;
+    let mut count = entries.len();
+    for (_, len, p) in &entries {
+        if total <= max_bytes && count <= max_files {
+            break;
+        }
+        if std::fs::remove_file(p).is_ok() {
+            removed += 1;
+            freed += len;
+            total -= len;
+            count -= 1;
+        }
+    }
+    (removed, freed)
 }
 
 // Negative cache: a hard failure skips refetch for 1h (no infinite
@@ -7039,5 +7101,54 @@ mod tests {
         assert_eq!(update_counts(&empty, &empty), (0, 0));
         // Visibles que ya no tienen update no cuentan.
         assert_eq!(update_counts(&files, &["z.jar".to_string()]), (3, 0));
+    }
+
+    #[cfg(unix)]
+    fn set_mtime(p: &std::path::Path, secs_ago: u64) {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() - secs_ago)
+            .unwrap_or(0) as libc::time_t;
+        let times = [
+            libc::timespec { tv_sec: t, tv_nsec: 0 },
+            libc::timespec { tv_sec: t, tv_nsec: 0 },
+        ];
+        let c = CString::new(p.as_os_str().as_bytes()).unwrap();
+        unsafe {
+            libc::utimensat(libc::AT_FDCWD, c.as_ptr(), times.as_ptr(), 0);
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn prune_cache_dir_lru() {
+        use std::io::Write;
+        let root = std::env::temp_dir().join(format!("corkytux-prune-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        // a (viejo) < b < c (nuevo); keep.txt nunca se toca.
+        for n in ["a-icon.png", "b-icon.png", "c-icon.png"] {
+            let mut f = fs::File::create(root.join(n)).unwrap();
+            f.write_all(&[7u8; 10]).unwrap();
+        }
+        fs::write(root.join("keep.txt"), b"data").unwrap();
+        set_mtime(&root.join("a-icon.png"), 300);
+        set_mtime(&root.join("b-icon.png"), 200);
+        set_mtime(&root.join("c-icon.png"), 100);
+        // 30 bytes con límite 25: borra el más viejo (a) y queda en 20.
+        let (removed, freed) = prune_cache_dir(&root, 25, 100);
+        assert_eq!((removed, freed), (1, 10));
+        assert!(!root.join("a-icon.png").exists());
+        assert!(root.join("b-icon.png").exists());
+        assert!(root.join("c-icon.png").exists());
+        assert!(root.join("keep.txt").exists());
+        // Límite por cantidad: max 1 archivo borra el más viejo (b).
+        let (removed2, _) = prune_cache_dir(&root, u64::MAX, 1);
+        assert_eq!(removed2, 1);
+        assert!(!root.join("b-icon.png").exists());
+        assert!(root.join("c-icon.png").exists());
+        let _ = fs::remove_dir_all(&root);
     }
 }
