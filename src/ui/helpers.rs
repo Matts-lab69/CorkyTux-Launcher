@@ -700,10 +700,18 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              dropdown > button {{ border: 1.5px solid {accent}; }}\
              entry {{ background-color: {well}; color: {text_main}; border: 1px solid {border}; }}\
              entry placeholder {{ color: {text_muted}; }}\
-             dropdown popover {{ background-color: {panel}; }}\
+             dropdown popover, dropdown popover.background {{ background-color: transparent; border: none; box-shadow: none; padding: 0; }}\
+             dropdown popover > contents {{ background-color: {panel}; color: {text_main}; border: 1px solid {border}; border-radius: 12px; }}\
              dropdown popover row:hover {{ background-color: color-mix(in srgb, {accent} 15%, transparent); }}\
              dropdown popover row:selected {{ background-color: color-mix(in srgb, {accent} 25%, transparent); }}\
-             popover, popover.background, popover > contents {{ background-color: {panel}; color: {text_main}; }}\
+             popover, popover.background, popover.menu {{ background-color: transparent; border: none; box-shadow: none; padding: 0; color: {text_main}; }}\
+             popover > contents {{ background-color: {panel}; color: {text_main}; border: 1px solid {border}; border-radius: 12px; box-shadow: 0 8px 24px alpha(black, 0.25); }}\
+             popover > arrow {{ background-color: {panel}; border: 1px solid {border}; }}\
+             popover modelbutton {{ color: {text_main}; border-radius: 8px; padding: 6px 10px; }}\
+             popover modelbutton:hover {{ background-color: color-mix(in srgb, {accent} 18%, transparent); }}\
+             popover modelbutton:focus-visible {{ outline: 2px solid {accent}; outline-offset: -2px; }}\
+             popover modelbutton:disabled {{ color: {text_muted}; }}\
+             popover separator {{ background-color: color-mix(in srgb, {border} 55%, {text_main}); min-height: 1px; min-width: 1px; }}\
              listview, listview > row {{ background-color: transparent; }}\
              listview > row {{ color: {text_main}; }}\
              listview > row:selected {{ background-color: color-mix(in srgb, {accent} 25%, transparent); }}\
