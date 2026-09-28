@@ -1,18 +1,18 @@
-//! Modal obligatorio "Install dependencies" de Stores.
+//! The mandatory "Install dependencies" modal for Stores.
 //!
-//! Lista solo las herramientas que faltan (legendary, gogdl, Chromium de
-//! login), con un único botón "Install All" y sin X ni "Close": mientras falte
-//! algo no se puede usar Stores. Tras ≥1 intento fallido aparece el link
-//! "Skip for now", que cierra sin instalar nada (la UI muestra entonces el
-//! estado "Setup incomplete" con botón para reabrir).
+//! It lists only the missing tools (legendary, gogdl, the login Chromium),
+//! with a single "Install All" button and no X and no "Close": while something
+//! is missing, Stores can't be used. After ≥1 failed attempt the "Skip for now"
+//! link appears and closes without installing anything (the UI then shows the
+//! "Setup incomplete" state with a button to reopen).
 //!
-//! El éxito total cierra solo: un modal sin ninguna salida posible sería un
-//! bug, no una decisión de diseño.
+//! Total success closes by itself: a modal with no way out would be a bug, not
+//! a design decision.
 
 use adw::prelude::*;
 use std::rc::Rc;
 
-/// Qué herramienta falta.
+/// Which tool is missing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DepId {
     Legendary,
@@ -20,7 +20,7 @@ pub enum DepId {
     Chromium,
 }
 
-/// Ficha de cada dependencia: nombre, descripción y peso medidos.
+/// Each dependency's card: name, description and measured size.
 pub struct DepInfo {
     pub id: DepId,
     pub nombre: &'static str,
@@ -49,11 +49,11 @@ pub const DEPS: [DepInfo; 3] = [
     },
 ];
 
-/// Cómo terminó el modal (siempre se cierra por una de estas dos vías).
+/// How the modal ended (it always closes through one of these two ways).
 pub enum InstallOutcome {
-    /// Todo listo: el llamador refresca y el modal ya se cerró solo.
+    /// All ready: the caller refreshes and the modal already closed itself.
     TodoOk,
-    /// El usuario pidió salir sin instalar: mostrar "Setup incomplete".
+    /// Out without installing: show "Setup incomplete".
     Skip,
 }
 
@@ -72,7 +72,7 @@ struct FilaWidgets {
     estado: gtk::Label,
 }
 
-/// Estado lógico de una fila, espejo del widget para decisiones sin GTK.
+/// Logical state of a row, mirrored from the widget for GTK-free decisions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FilaEstado {
     Espera,
@@ -81,17 +81,17 @@ enum FilaEstado {
     Fallo,
 }
 
-/// El link "Skip for now" aparece en cuanto ALGUNA fila está en Failed, sin
-/// importar el estado de las demás (en progreso, éxito u otro fallo). No se
-/// espera a que terminen todas: esa espera era el bug (una fila en progreso
-/// bloqueaba el link aunque otra ya hubiera fallado).
+/// The "Skip for now" link shows as soon as ANY row is Failed, whatever the
+/// other rows do (in progress, success, another failure). It doesn't wait for
+/// all of them: that wait was the bug (a row in progress blocked the link even
+/// after another one had already failed).
 fn mostrar_skip(estados: &[FilaEstado]) -> bool {
     estados.iter().any(|s| *s == FilaEstado::Fallo)
 }
 
-/// Verde neón fijo para "Ready": hardcodeado a propósito, NO sigue el tema
-/// claro/oscuro (decisión de diseño explícita). Se registra una sola vez con
-/// un provider propio que ningún cambio de tema toca.
+/// Fixed neon green for "Ready": hardcoded on purpose, it does NOT follow the
+/// light/dark theme (explicit design decision). Registered once with its own
+/// provider, so no theme change can touch it.
 const READY_CSS: &str = ".deps-ready { color: #39FF14; }";
 
 fn asegurar_css_ready() {
@@ -109,12 +109,13 @@ fn asegurar_css_ready() {
         }
     });
 }
-/// Mapea un error libre del backend a un motivo corto en inglés para la fila.
+/// Maps a free-form backend error to a short English reason for the row.
 ///
-/// Los textos de `cmd_setup` son excepciones de Python sin formato fijo y los
-/// de `--prefetch` son mensajes humanos en español: se clasifican por palabra
-/// clave y, si nada matchea, se muestra el texto crudo recortado. Nunca se
-/// inventa un diagnóstico.
+/// `cmd_setup` texts are unformatted Python exceptions and `--prefetch` ones
+/// are human messages in Spanish, so I classify them by keyword and, when
+/// nothing matches, show the raw text truncated. I never invent a diagnosis.
+/// The Spanish keywords below are the plugin's own wording — they stay on
+/// purpose, that's what the tool actually prints.
 pub fn motivo_corto(origen: &str, texto: &str) -> String {
     let t = format!("{} {}", origen, texto).to_lowercase();
     for clave in [
@@ -125,6 +126,10 @@ pub fn motivo_corto(origen: &str, texto: &str) -> String {
         "timed out",
         "network",
         "unreachable",
+        "cut off",
+        "rejected the download",
+        // Plugin wording: heroic-store and the RPG runtime still answer in
+        // Spanish, so I keep matching their own words.
         "red al conectar",
         "conexi",
         "cortó",
@@ -134,7 +139,7 @@ pub fn motivo_corto(origen: &str, texto: &str) -> String {
             return "no connection".to_string();
         }
     }
-    for clave in ["no space", "errno 28", "espacio en disco", "sin espacio"] {
+    for clave in ["no space", "disk space", "errno 28", "espacio en disco", "sin espacio"] {
         if t.contains(clave) {
             return "no disk space".to_string();
         }
@@ -147,9 +152,9 @@ pub fn motivo_corto(origen: &str, texto: &str) -> String {
     }
 }
 
-/// Instala lo pendiente en un hilo propio: primero legendary/gogdl vía
-/// `cmd_setup` (que salta lo ya presente), después Chromium vía
-/// `webdriver_login --prefetch` con progreso JSON por stdout.
+/// Installs what's pending in its own thread: legendary/gogdl first through
+/// `cmd_setup` (which skips whatever is already there), then Chromium through
+/// `webdriver_login --prefetch` with JSON progress on stdout.
 fn instalar(
     pendientes: Vec<DepId>,
     helper: Option<std::path::PathBuf>,
@@ -178,7 +183,7 @@ fn instalar(
                     })
                     .unwrap_or_default();
                 for (id, nombre) in [(DepId::Legendary, "legendary"), (DepId::Gogdl, "gogdl")] {
-                    // `idx_de` solo da `Some` si el ítem está pendiente.
+                    // `idx_de` only returns `Some` for a pending item.
                     let Some(i) = idx_de(id) else { continue };
                     match fallos.iter().find(|e| e.starts_with(nombre)) {
                         Some(e) => enviar(Avance::FilaFallo(i, motivo_corto("setup", e))),
@@ -275,9 +280,9 @@ fn instalar(
 
 /// Abre el modal con las filas pendientes (`pendientes` en orden DEPS).
 ///
-/// Sin X y sin botón de cierre: las únicas salidas son éxito total
-/// (auto-cierre + `InstallOutcome::TodoOk`) o el link "Skip for now", que
-/// aparece solo tras ≥1 intento fallido (`InstallOutcome::Skip`).
+/// No X and no close button: the only exits are total success (auto-close +
+/// `InstallOutcome::TodoOk`) and the "Skip for now" link, which only shows
+/// after ≥1 failed attempt (`InstallOutcome::Skip`).
 pub fn present(
     parent: &impl IsA<gtk::Widget>,
     pendientes: Vec<DepId>,
@@ -290,12 +295,12 @@ pub fn present(
     let dialog = adw::Dialog::new();
     dialog.set_title("Install dependencies");
     dialog.set_content_width(480);
-    // Sin salida por gesto: ni X (no hay botón) ni Esc. OJO: con can-close en
-    // false, `close()` queda VETADO incluso programático (semántica de
-    // libadwaita): todas las salidas usan `force_close()`.
+    // No gesture exit: no X (there's no button) and no Esc. Careful: with
+    // can-close false, `close()` is BLOCKED even programmatically (libadwaita
+    // semantics), so every exit uses `force_close()`.
     dialog.set_can_close(false);
-    // La modalidad/transiencia la da `present(parent)`: AdwDialog no es
-    // GtkWindow y no tiene set_transient_for/set_modal.
+    // Modality/transience comes from `present(parent)`: AdwDialog isn't a
+    // GtkWindow and has no set_transient_for/set_modal.
 
     let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
     content.add_css_class("modal-bg");
@@ -310,7 +315,7 @@ pub fn present(
     inner.set_margin_end(16);
     content.append(&inner);
 
-    // Cabecera sin X: mismo título y separador que `modal_header`.
+    // Header without X: same title and separator as `modal_header`.
     let titulo = gtk::Label::new(Some("Install dependencies"));
     titulo.add_css_class("modal-title");
     titulo.set_halign(gtk::Align::Start);
@@ -376,8 +381,8 @@ pub fn present(
     instalar_btn.set_hexpand(true);
     inner.append(&instalar_btn);
 
-    // Válvula de escape: link chico, solo tras ≥1 intento fallido. No compite
-    // con "Install All" y no aparece en el primer render.
+    // Escape valve: a small link, only after ≥1 failed attempt. It doesn't
+    // compete with "Install All" and never shows on the first render.
     let skip = gtk::Button::with_label("Skip for now");
     skip.add_css_class("flat");
     skip.add_css_class("dim-label");
@@ -466,10 +471,9 @@ pub fn present(
             l();
         });
     }
-    // Sin auto-arranque: la instalación empieza SOLO al apretar "Install All".
-    // (Una versión anterior llamaba `lanzar()` acá y el modal instalaba solo
-    // al abrirse, lo que además hacía aparecer el link de skip sin que el
-    // usuario hubiera intentado nada.)
+    // No autostart: installing begins ONLY on pressing "Install All". (An
+    // earlier version called `lanzar()` here, so the modal installed itself on
+    // open — which also made the skip link appear before any attempt.)
     {
         let t = terminado.clone();
         let d = dialog.clone();
@@ -479,8 +483,8 @@ pub fn present(
         });
     }
 
-    // Poller como el de ProtonModal: drena el canal cada 100 ms y muere con
-    // el diálogo.
+    // Poller like ProtonModal's: drains the channel every 100 ms and dies with
+    // the dialog.
     {
         let estado = estado.clone();
         let rx_poll = rx.clone();
@@ -542,9 +546,9 @@ pub fn present(
                         if let Some(s) = e.estados.get_mut(i) {
                             *s = FilaEstado::Fallo;
                         }
-                        // FIX del timing: el link aparece con el primer fallo,
-                        // sin esperar a que el resto termine. Monotónico: una
-                        // vez visible no se oculta (regla aprobada).
+                        // Timing fix: the link shows on the first failure,
+                        // without waiting for the rest. Monotonic: once visible
+                        // it never hides (rule I settled on).
                         if mostrar_skip(&e.estados) {
                             e.skip.set_visible(true);
                         }
@@ -554,11 +558,11 @@ pub fn present(
                         e.instalar_btn.set_sensitive(true);
                         if e.listas >= e.total {
                             e.barra.set_text(Some("All dependencies installed."));
-                            // Éxito total: auto-cierre. Es la única salida
-                            // "limpia"; quedarse abierto sin nada que hacer
-                            // sería la trampa que el diseño quiere evitar.
-                            // `force_close`: `close()` está vetado por el
-                            // can-close en false (fue el bug del auto-cierre).
+                            // Total success: auto-close. It's the only clean
+                            // exit; staying open with nothing left to do is
+                            // the trap this design avoids. `force_close`:
+                            // `close()` is blocked by can-close false (that was
+                            // the auto-close bug).
                             let dd = d.clone();
                             let tt = t.clone();
                             glib::timeout_add_local_once(
@@ -571,8 +575,8 @@ pub fn present(
                         } else {
                             e.fallos_acumulados += 1;
                             e.barra.set_text(Some("Press Install All to retry."));
-                            // El link ya se mostró con el primer fallo
-                            // (regla `mostrar_skip`); acá no se decide nada.
+                            // The link already showed on the first failure
+                            // (`mostrar_skip` rule); nothing is decided here.
                         }
                     }
                 }
@@ -592,13 +596,19 @@ mod tests {
     #[test]
     fn motivo_corto_detecta_sin_conexion() {
         assert_eq!(motivo_corto("setup", "gogdl: <urlopen error [Errno -2] Name or service not known>"), "no connection");
+        // Plugin wording, still matched.
         assert_eq!(motivo_corto("chrome", "fallo de red al conectar: bla"), "no connection");
         assert_eq!(motivo_corto("chrome", "la descarga se cortó o falló tras 4 intentos"), "no connection");
+        // The login helper's own English wording.
+        assert_eq!(motivo_corto("chrome", "the download was cut off or failed after 4 attempts"), "no connection");
+        assert_eq!(motivo_corto("chrome", "the server rejected the download: 403"), "no connection");
     }
 
     #[test]
     fn motivo_corto_detecta_sin_espacio() {
         assert_eq!(motivo_corto("setup", "gogdl: [Errno 28] No space left on device"), "no disk space");
+        assert_eq!(motivo_corto("chrome", "could not write to disk: no space left"), "no disk space");
+        // Plugin wording, still matched.
         assert_eq!(motivo_corto("chrome", "no se pudo escribir en disco: sin espacio"), "no disk space");
     }
 
@@ -614,14 +624,15 @@ mod tests {
         assert!(DEPS.iter().any(|d| d.id == DepId::Chromium && d.peso == "~188 MB"));
     }
 
-    /// Caso del bug reportado: fila A en Failed, fila B todavía en progreso
-    /// (ni éxito ni fallo) → el link ya debe estar visible, sin esperar a B.
+    /// The reported bug: row A Failed, row B still in progress (neither
+    /// success nor failure) → the link must already be visible, without
+    /// waiting for B.
     #[test]
     fn mostrar_skip_con_un_fallo_y_otra_en_progreso() {
         assert!(mostrar_skip(&[FilaEstado::Fallo, FilaEstado::Activa]));
     }
 
-    /// Sin ningún fallo no hay link, en ningún estado intermedio ni final.
+    /// With no failure there's no link, in no intermediate or final state.
     #[test]
     fn mostrar_skip_sin_fallos_oculto() {
         assert!(!mostrar_skip(&[FilaEstado::Espera, FilaEstado::Espera]));
@@ -630,7 +641,7 @@ mod tests {
         assert!(!mostrar_skip(&[]));
     }
 
-    /// Fallo junto a éxito también muestra el link (no importa el resto).
+    /// A failure next to a success also shows the link (rest ignored).
     #[test]
     fn mostrar_skip_con_fallo_y_exito() {
         assert!(mostrar_skip(&[FilaEstado::Lista, FilaEstado::Fallo]));

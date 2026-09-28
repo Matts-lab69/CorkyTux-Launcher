@@ -72,7 +72,7 @@ pub struct GameEntry {
     pub source: GameSource,
     pub executor: String,
     pub emu_settings: HashMap<String, String>,
-    // === C++ parity fields ===
+    // Fields I keep so old configs keep loading
     pub lutris_runner: String,
     pub environment: String,
     pub args_before: String,
@@ -170,7 +170,7 @@ impl GameEntry {
             ("Source".into(), self.source.as_str().to_string()),
             ("Executor".into(), self.executor.clone()),
         ];
-        // C++ parity fields
+        // Legacy fields I keep writing for old configs
         if !self.lutris_runner.is_empty() { pairs.push(("LutrisRunner".into(), self.lutris_runner.clone())); }
         if !self.environment.is_empty() { pairs.push(("Environment".into(), self.environment.clone())); }
         if !self.args_before.is_empty() { pairs.push(("ArgsBefore".into(), self.args_before.clone())); }
@@ -391,8 +391,8 @@ impl GameModel {
                 filtered.sort_by(|a, b| b.time_spent.cmp(&a.time_spent));
             }
             FilterMode::Recent => {
-                // C++ parity: Recently Added = orden de inserción invertido,
-                // NO lastPlayed (eso alimenta el RecentModel de "Recently Played").
+                // I match the legacy layout here: Recently Added means reverse
+                // insertion order, NOT lastPlayed (that feeds my "Recently Played" model).
                 filtered.reverse();
             }
         }

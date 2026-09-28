@@ -112,8 +112,8 @@ impl IniFile {
 
     pub fn get_value(&self, section: &str, key: &str) -> Option<String> {
         self.get_section(section).and_then(|s| {
-            // Exact match first, then case-insensitive (C++ writes
-            // lowercase keys: banner, mainPath, steamID, executor...).
+            // Exact match first, then case-insensitive (I match the legacy
+            // layout, which writes lowercase keys: banner, mainpath, steamid...).
             s.keys
                 .iter()
                 .find(|(k, _)| k == key)
@@ -298,7 +298,7 @@ impl ConfigManager {
                         GAMES_BACKED_UP.store(true, Ordering::SeqCst);
                         prune_games_backups(&path);
                     }
-                    Err(e) => eprintln!("[CorkyTux] backup Games.ini falló: {}", e),
+                    Err(e) => eprintln!("[CorkyTux] Games.ini backup failed: {}", e),
                 }
             }
         }
@@ -325,8 +325,8 @@ impl ConfigManager {
         self.imp().games_ini.borrow().section_names()
     }
 
-    /// Section map with lowercased keys (C++ writes lowercase keys:
-    /// executable, mainPath→mainpath, steamID, executor...). Callers must
+    /// Section map with lowercased keys (I match the legacy layout, which
+    /// writes lowercase keys: executable, mainpath, steamid...). Callers must
     /// use lowercase key names.
     pub fn game_section(&self, name: &str) -> HashMap<String, String> {
         let ini = self.imp().games_ini.borrow();
@@ -440,7 +440,7 @@ impl ConfigManager {
         None
     }
 
-    /// C++ basePathFor parity: ~/.local/share/CorkyTux/<what>,
+    /// I match the legacy basePathFor layout: ~/.local/share/CorkyTux/<what>,
     /// overridable via "<what>Path" launcher key. Creates the default dir.
     pub fn base_path_for(&self, for_what: &str) -> PathBuf {
         let key = format!("{}Path", for_what);
@@ -482,8 +482,8 @@ impl ConfigManager {
         paths
     }
 
-    /// C++ sharedPrefixes parity: comma-separated proton names in
-    /// the "sharedPrefixes" launcher key.
+    /// I match the legacy sharedPrefixes layout: comma-separated proton names
+    /// in the "sharedPrefixes" launcher key.
     pub fn shared_prefixes(&self) -> Vec<String> {
         match self.launcher_value("sharedPrefixes") {
             Some(val) => val
@@ -517,8 +517,8 @@ impl ConfigManager {
         }
     }
 
-    /// C++ sharedPrefixPath parity: prefixesDir/shared-<slug>, None when
-    /// the proton has no shared prefix registered.
+    /// I match the legacy sharedPrefixPath layout: prefixesDir/shared-<slug>,
+    /// None when the proton has no shared prefix registered.
     pub fn shared_prefix_path(&self, proton_name: &str) -> Option<PathBuf> {
         if !self.shared_prefixes().contains(&proton_name.to_string()) {
             return None;
@@ -529,7 +529,8 @@ impl ConfigManager {
         )
     }
 
-    /// C++ addSharedPrefix parity: registers + creates dir, returns path.
+    /// I match the legacy addSharedPrefix behavior: register + create dir,
+    /// return path.
     pub fn add_shared_prefix(&self, proton_name: &str) -> PathBuf {
         let mut list = self.shared_prefixes();
         if !list.contains(&proton_name.to_string()) {
@@ -543,7 +544,7 @@ impl ConfigManager {
     }
 
     pub fn remove_shared_prefix(&self, proton_name: &str) {
-        // C++ parity: the shared prefix directory goes away too.
+        // I match the legacy behavior: the shared prefix directory goes away too.
         if let Some(path) = self.shared_prefix_path(proton_name) {
             std::fs::remove_dir_all(&path).ok();
         }

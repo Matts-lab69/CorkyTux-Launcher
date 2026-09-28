@@ -15,7 +15,7 @@ use gtk::{self};
 use crate::backend::import_move::{Blocker, ImportMode, Preflight};
 use crate::ui::helpers;
 
-/// Description of "Import permanente". From the spec, untranslated.
+/// Description of "Permanent import". I keep it worded per my spec.
 const DESC_PERMANENT: &str = "Your games will be imported into the launcher and also moved to a Games folder in your /home (only install_path and prefix_path are moved). This avoids warnings or bugs caused by unregistered paths or lost executables.";
 
 const DESC_TEST: &str = "Registers the game with its current paths, as they are. No files are moved.";
@@ -106,7 +106,7 @@ where
     body.append(&test);
 
     // Mode 2: permanent, with the colour dot.
-    let permanent = mode_toggle("Import permanente", DESC_PERMANENT, DotColor::Red, Some(&test));
+    let permanent = mode_toggle("Permanent import", DESC_PERMANENT, DotColor::Red, Some(&test));
     permanent.set_sensitive(can_permanent);
     if !can_permanent && !space_blocked {
         let why = gtk::Label::new(Some("No games can be moved in this selection."));
@@ -199,8 +199,7 @@ where
     {
         let d = dlg.clone();
         let finish = finish.clone();
-        // close() devuelve bool: el let _ lo descarta para que el
-        // closure devuelva ().
+        // close() returns bool: I discard it with let _ so the closure returns ().
         x_btn.connect_clicked(move |_| {
             finish(None);
             let _ = d.close();
@@ -217,9 +216,8 @@ where
         });
     }
     {
-        // Escape or any other close: None unless it was confirmed.
-        // adw::Dialog no es un gtk::Window y no tiene close-request: la
-        // senal es "closed", sin valor de retorno.
+        // Escape or any other close means None unless confirmed. I use "closed"
+        // since adw::Dialog has no close-request signal.
         let finish = finish.clone();
         dlg.connect_closed(move |_| finish(None));
     }
@@ -294,9 +292,9 @@ pub fn remap_exe(exe: &str, old_install: &str, new_install: &Path) -> String {
 }
 
 /// Mode row: optional dot, name and description. The dot is an empty label
-/// with the `import-dot` class; there is no glyph anywhere in the text.
-/// Color semántico del indicador: verde = prueba (sin movimientos),
-/// rojo = permanente (mueve archivos).
+/// with the `import-dot` class; I put no glyph anywhere in the text.
+/// I color the dot by meaning: green = test (moves nothing),
+/// red = permanent (moves files).
 #[derive(Clone, Copy)]
 enum DotColor {
     Green,

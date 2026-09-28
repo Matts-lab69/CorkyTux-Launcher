@@ -295,9 +295,9 @@ impl LogModal {
         let head = header.to_string();
         let adj = self.scroll.vadjustment();
         buf.set_text(&format!("{}\nStarting...\n", head));
-        // El log de Proton crece a MBs: no re-leer ni repintar 2×/s si el
-        // archivo no cambió (misma huella mtime+len). Ahorra CPU y evita
-        // parpadeo del scroll en partidas largas.
+        // Proton logs grow to MBs: no re-reading or repainting twice a second
+        // while the file is unchanged (same mtime+len fingerprint). Saves CPU
+        // and stops the scroll from flickering in long sessions.
         let seen: Rc<RefCell<(u64, u64)>> = Rc::new(RefCell::new((0, 0)));
         glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
             let fp_now = std::fs::metadata(crate::backend::proton::ProtonManager::log_path(&game))

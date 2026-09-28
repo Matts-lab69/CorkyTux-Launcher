@@ -16,9 +16,9 @@ use crate::ui::import_manager;
 struct StoreGame {
     app_id: String,
     title: String,
-    /// Género simple de GOG (`category`); vacío si no viene. Epic no lo usa.
+    /// I store the plain GOG genre (`category`); I leave it empty when missing. I ignore it for Epic.
     category: String,
-    /// Sistemas de GOG (`worksOn` filtrado a trues); vacío = no mostrar.
+    /// I store filtered GOG `worksOn` systems; empty means I show nothing.
     systems: Vec<String>,
     version: String,
     installed: bool,
@@ -29,8 +29,8 @@ struct StoreGame {
     description: String,
 }
 
-/// Ítem normalizado de un rail del catálogo público (sale/new/free).
-/// Todo opcional salvo id/title: la UI degrada por campo ausente.
+/// I normalize one public-catalog rail item (sale/new/free). I require
+/// only id/title; I degrade gracefully per missing field.
 #[derive(Debug, Clone, PartialEq)]
 struct RailItem {
     id: String,
@@ -45,7 +45,7 @@ struct RailItem {
     store_url: String,
 }
 
-/// Parsea un ítem de `gog-rail` con defaults: sin id ni título se descarta.
+/// I parse one `gog-rail` item with defaults: I drop it without id and title.
 fn parse_rail_item(o: &serde_json::Value) -> Option<RailItem> {
     let id = o.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
     let title = o.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -91,8 +91,8 @@ impl StoresView {
         for h in self.handles.borrow().iter() {
             h.ensure_loaded();
         }
-        // Trigger del modal de dependencias: chequeo async (no frena la
-        // apertura), modal si falta algo, nunca si está completo.
+        // I trigger my dependency check async (never blocks opening):
+        // I show the modal when something is missing, never when complete.
         self.chequear_dependencias();
         // (a) lightweight installed-status re-verify on entry: local
         // registry + disk, no network, debounced, applied in place.
@@ -108,12 +108,12 @@ impl StoresView {
         }
     }
 
-    /// Trigger del modal de dependencias: pre-chequeo barato en cada entrada
-    /// (sin red), chequeo completo + modal solo si el pre-chequeo marca algo.
+    /// I trigger my dependency modal: I run a cheap pre-check on every entry
+    /// (no network), then the full check + modal only when it flags something.
     ///
-    /// Corre UNA vez por entrada a Stores: ni loop ni polling mientras el
-    /// usuario está parado en la pantalla. Lo pendiente nunca se cachea, así
-    /// que borrar algo afuera y reentrar siempre lo detecta.
+    /// I run ONCE per Stores entry: no loop or polling while I sit on screen.
+    /// I never cache pending state, so deleting something externally and
+    /// re-entering always surfaces it.
     pub fn chequear_dependencias(&self) {
         let vista = self.clone();
         let (tx, rx) = std::sync::mpsc::channel::<Chequeo>();
@@ -127,8 +127,8 @@ impl StoresView {
         });
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
             Ok(Chequeo::TodoBien) => {
-                // Todo presente: UI normal. Si algo se había bloqueado y se
-                // restauró afuera, hay que cargar lo que el bloqueo frenó.
+                // I found everything present: normal UI. If something was blocked
+                // and got restored externally, I load what the block had held back.
                 for h in vista.handles.borrow().iter() {
                     h.aplicar_faltantes(&Faltantes::default());
                     if !h.bloqueado.get() {
@@ -152,8 +152,7 @@ impl StoresView {
                         helper,
                         move |salida| match salida {
                             crate::ui::deps_modal::InstallOutcome::TodoOk => {
-                                // Re-chequeo de verdad y refresco de lo
-                                // desbloqueado tras instalar.
+                                // I re-check for real and refresh what installing unlocked.
                                 v.chequear_dependencias();
                                 for h in v.handles.borrow().iter() {
                                     h.refresh_auth(false);
@@ -208,7 +207,7 @@ fn note(text: &str) -> gtk::Label {
     l
 }
 
-/// Diagonal "Reclamado" corner ribbon over a free-promos card when the
+/// I draw a diagonal "Claimed" corner ribbon over a free-promos card when the
 /// title is already in the Epic library. The band is a rotated rect
 /// anchored near the top-right corner (offset inward so it cuts the
 /// corner); excess is clipped by the card's overflow. The DrawingArea is
@@ -240,12 +239,12 @@ fn claimed_overlay(card: gtk::Button, theme: &crate::backend::theme::ThemeManage
         cr.stroke().ok();
         cr.set_font_size(11.0);
         cr.set_source_rgba(ink.red() as f64, ink.green() as f64, ink.blue() as f64, 1.0);
-        if let Ok(te) = cr.text_extents("Reclamado") {
+        if let Ok(te) = cr.text_extents("Claimed") {
             cr.move_to(
                 -te.x_bearing() - te.width() / 2.0,
                 -(te.y_bearing() + te.height() / 2.0),
             );
-            let _ = cr.show_text("Reclamado");
+            let _ = cr.show_text("Claimed");
         }
         cr.restore().ok();
     });
@@ -314,9 +313,9 @@ impl StoresView {
         col.set_hexpand(true);
         scroll.set_child(Some(&col));
 
-        // header: bloque centrado con ícono grande + título grande. Sin botón
-        // manual de instalación: todo el flujo es automático por detección
-        // (modal al entrar + "Setup incomplete" por tab).
+        // I build a centered header with a big icon + big title. I offer no
+        // manual install button: I detect everything automatically (entry
+        // modal + per-tab "Setup incomplete").
         let head = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         head.set_halign(gtk::Align::Center);
         let hicon = gtk::Image::from_icon_name("corkytux-system-software-install-symbolic");
@@ -400,14 +399,14 @@ impl StoresView {
             handles: handles_slot.clone(),
             deals: deals_map.clone(),
         };
-        // Los botones "Install dependencies" (panel incomplete + fila del
-        // login) reabren el modal con un re-chequeo fresco.
+        // I reopen my modal with a fresh re-check from both "Install
+        // dependencies" buttons (incomplete panel + login row).
         for h in vista.handles.borrow().iter() {
             let v = vista.clone();
             *h.reabrir.borrow_mut() = Some(Rc::new(move || v.chequear_dependencias()));
         }
-        // Refresco post-operación para quien no tiene handle (remove_modal):
-        // misma ruta que Refresh manual, sin recargar la página.
+        // I refresh after operations for callers without a handle (remove_modal):
+        // I reuse my manual Refresh path, without reloading the page.
         {
             let v = vista.clone();
             *state.stores_changed.borrow_mut() = Some(Rc::new(move || {
@@ -445,8 +444,8 @@ impl StoresView {
         auth_row.append(&login_btn);
         login_box.append(&auth_row);
         auth_inner.append(&login_box);
-        // Sin navegador no hay login, pero la biblioteca sigue visible: fila
-        // compacta con botón para reabrir el modal. Oculta por defecto.
+        // Without a browser I disable login but keep the library visible: I show
+        // a compact row with a button to reopen the modal. I hide it by default.
         let browser_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let browser_lbl = note("Login needs the login browser.");
         browser_lbl.set_hexpand(true);
@@ -510,7 +509,7 @@ impl StoresView {
                               p.get("cover")?.as_str().unwrap_or("").to_string(),
                               p.get("store_url")?.as_str().unwrap_or("").to_string()))
                     }).collect::<Vec<_>>();
-                // Owned titles (casefolded) for the "Reclamado" ribbon.
+                // I casefold owned titles for my "Claimed" ribbon.
                 // Library failure => empty set => no ribbons (never a
                 // false positive when the library can't be read).
                 let owned: std::collections::HashSet<String> = StoreManager::library("epic", false)
@@ -564,8 +563,8 @@ impl StoresView {
                 Err(_) => glib::ControlFlow::Break,
             });
             // All real Epic offers (any % off, verified dates/prices).
-            // Encabezado fuera del recuadro (igual que rails GOG); el
-            // resto de secciones conserva su título interno.
+            // I keep my heading outside the card (like my GOG rails); the
+            // remaining sections keep their internal titles.
             let deals_head = card_head("Deals", "section-head");
             page.append(&deals_head);
             let (deals_frame, deals_inner) = card_box();
@@ -577,9 +576,9 @@ impl StoresView {
             deals_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
             deals_scroll.set_overlay_scrolling(false);
             deals_scroll.add_css_class("rail-scroll");
-            // Altura explícita (no solo mínima): el mínimo era ignorado en
-            // este rail y el viewport cortaba los precios. 140 tarjeta +
-            // 4 gap + ~20 precio + respiro.
+            // I set an explicit height (not just minimum): I saw the minimum
+            // ignored on this rail, clipping prices. 140 card + 4 gap +
+            // ~20 price + breathing room.
             deals_scroll.set_size_request(-1, 190);
             deals_scroll.set_min_content_height(190);
             deals_scroll.set_propagate_natural_height(true);
@@ -750,9 +749,9 @@ impl StoresView {
                     *goto_slot.borrow_mut() = Some(Rc::new(move |p: usize| {
                         let n = pages_c.get().max(1);
                         let p = p.clamp(1, n);
-                        // No pisar una carga en curso: el bump de epoch
-                        // descartaría su respuesta y el loader haría
-                        // early-return → "Loading…" eterno.
+                        // I never step on an in-flight load: my epoch bump
+                        // would drop its response and my loader would
+                        // early-return -> eternal "Loading…".
                         if loading_c.get() {
                             return;
                         }
@@ -886,9 +885,9 @@ impl StoresView {
         refresh_btn.add_css_class("settings-btn");
         lib_row.append(&refresh_btn);
         lib_inner.append(&lib_row);
-        // Toolbar Fase 1, solo tab GOG: búsqueda + orden en memoria sobre la
-        // lista completa (sin red). Epic mantiene su UI intacta. El cableado
-        // va tras construir el handle (necesita el `view`).
+        // I add my GOG-only toolbar: in-memory search + sort over the full
+        // list (no network). I leave Epic UI untouched. I wire it after
+        // building the handle (it needs the `view`).
         let gog_search: Option<gtk::SearchEntry>;
         let gog_sort_dd: Option<gtk::DropDown>;
         if store == "gog" {
@@ -921,8 +920,8 @@ impl StoresView {
         lib_inner.append(&flow);
         page.append(&lib_frame);
 
-        // Estado "Setup incomplete": tapa el tab cuando falta el binario.
-        // Oculto por defecto; lo muestra `aplicar_faltantes`.
+        // I cover the tab with "Setup incomplete" when my binary is missing.
+        // I hide it by default; `aplicar_faltantes` shows it.
         let incomplete_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
         incomplete_box.set_halign(gtk::Align::Center);
         incomplete_box.set_valign(gtk::Align::Center);
@@ -941,7 +940,7 @@ impl StoresView {
         incomplete_box.set_visible(false);
         page.append(&incomplete_box);
 
-        // Lo pone StoresView tras construir los handles.
+        // I set this from StoresView after building the handles.
         let reabrir: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
         {
             let r = reabrir.clone();
@@ -1003,13 +1002,12 @@ impl StoresView {
             status_running: Rc::new(std::cell::Cell::new(false)),
         };
 
-        // auth wiring: login automatizado en un Firefox real, para ambas
-        // tiendas. El plugin devuelve la URL (`auth` sin código → evento
-        // `auth_url`) y a partir de ahí se la pasa a `webdriver_login`, que
-        // abre su propia ventana, espera al login y devuelve el código. No hay
-        // webview embebido porque el SSO de Google se cuelga en WebKitGTK, y
-        // no hay modal de código: el código se captura solo o se explica por qué
-        // no se pudo.
+        // I wire automated login in a real Firefox for both stores. My plugin
+        // returns the URL (`auth` without code -> `auth_url` event) and I hand
+        // it to `webdriver_login`, which opens its own window, waits for login,
+        // and returns the code. I use no embedded webview because Google SSO
+        // hangs in WebKitGTK, and no code modal: I auto-capture the code or
+        // explain why I could not.
         {
             let vh = view.clone();
             login_btn.connect_clicked(move |_| {
@@ -1049,9 +1047,9 @@ impl StoresView {
                 }
             });
         }
-        // Tarjetas compactas en ventana angosta: re-render con tamaños
-        // chicos (sin red: Epic usa la última lista, GOG la vista en
-        // memoria). Solo actúa en transición para no loopear.
+        // I render compact cards in narrow windows (no network: I reuse my
+        // last Epic list, my in-memory GOG view). I act only on transition
+        // so I never loop.
         if let Ok(cond) = adw::BreakpointCondition::parse("max-width: 900px") {
             let bp = adw::Breakpoint::new(cond);
             let vh_a = view.clone();
@@ -1064,8 +1062,8 @@ impl StoresView {
         // => accounts={"epic":""}) so the account row would fall back to the
         // store literal ("epic"). Non-quick fills the real displayName (e.g. "Matyy_y").
         //
-        // Cableado del toolbar GOG + apertura de ficha por click en tarjeta.
-        // Solo tab GOG (Epic no tiene toolbar ni tarjetas clicables).
+        // I wire my GOG toolbar + card-click opens the detail page.
+        // GOG tab only (I give Epic no toolbar or clickable cards).
         if s == "gog" {
             if let (Some(search), Some(sort_dd)) = (gog_search, gog_sort_dd) {
                 let vv = view.clone();
@@ -1087,8 +1085,8 @@ impl StoresView {
                     vv3.show_game_info(&g);
                 }
             });
-            // Secciones de rails bajo la biblioteca (orden aprobado: Shelf →
-            // rails → Buy on GOG, que vive más abajo).
+            // I stack rail sections under the library: Shelf -> rails ->
+            // Buy on GOG further below.
             view.build_rail_sections();
             page.append(&view.rails_box);
         }
@@ -1204,7 +1202,7 @@ impl StoresView {
         }
 
         if store == "gog" {
-            // Buy on GOG arriba de On Sale; biblioteca propia al fondo.
+            // I keep Buy on GOG above On Sale; my own library stays at the bottom.
             page.remove(&view.rails_box);
             page.append(&view.rails_box);
             page.remove(&lib_head);
@@ -1240,11 +1238,11 @@ struct TileStatus {
     btn: gtk::Button,
 }
 
-/// Una sección de rail editorial (On Sale / Discover / Free to Keep):
-/// Lote por página de rail (paridad con PER_PAGE=10 de Deals Epic).
+/// I model one editorial rail section (On Sale / Discover / Free to Keep):
+/// I page each rail the same way I page Epic Deals (PER_PAGE=10).
 const GOG_RAIL_PAGE: usize = 10;
 
-/// fila horizontal con scroll + nota de degradación + pool + página visible.
+/// I render a horizontal scrolling row + degradation note + pool + visible page.
 #[derive(Clone)]
 struct RailRow {
     list: String,
@@ -1290,10 +1288,10 @@ struct StorePageHandle {
     acc_row: gtk::Box,
     acc_name: gtk::Label,
     acc_avatar: gtk::Label,
-    // Estado "Setup incomplete": `incomplete_box` tapa el tab cuando falta el
-    // binario (ni login ni biblioteca); `browser_row` solo tapa el login
-    // cuando falta el navegador. `bloqueado` frena cargas inútiles del plugin.
-    // `reabrir` lo pone StoresView y reabre el modal de dependencias.
+    // I cover the tab with "Setup incomplete" (`incomplete_box`) when my binary
+    // is missing (no login, no library); `browser_row` covers only login when
+    // my browser is missing. I use `bloqueado` to stop useless plugin loads.
+    // StoresView sets `reabrir` to reopen my dependency modal.
     auth_frame: gtk::Frame,
     lib_frame: gtk::Frame,
     incomplete_box: gtk::Box,
@@ -1301,8 +1299,8 @@ struct StorePageHandle {
     browser_row: gtk::Box,
     bloqueado: Rc<std::cell::Cell<bool>>,
     reabrir: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
-    // Grilla GOG Fase 1: lista completa + vista filtrada/ordenada en memoria,
-    // query y modo de orden del toolbar (solo tab GOG; Epic no los usa).
+    // I keep my GOG grid as full list + filtered/sorted in-memory view,
+    // with toolbar query and sort mode (GOG tab only; I skip Epic).
     all_games: Rc<RefCell<Vec<StoreGame>>>,
     shown_games: Rc<RefCell<Vec<StoreGame>>>,
     gog_query: Rc<RefCell<String>>,
@@ -1311,13 +1309,13 @@ struct StorePageHandle {
     epic_games: Rc<RefCell<Vec<StoreGame>>>,
     /// Tarjetas compactas en ventana angosta (breakpoint 900px).
     compact: Rc<std::cell::Cell<bool>>,
-    // Rails Fase 1.5 (solo tab GOG): contenedor para ocultar con el tab
-    // bloqueado, secciones con sus ítems, y flag de primera carga.
+    // I keep my rails (GOG tab only): a container I hide with a blocked tab,
+    // sections with their items, and a first-load flag.
     rails_box: gtk::Box,
     rail_rows: Rc<RefCell<Vec<RailRow>>>,
     rails_loaded: Rc<std::cell::Cell<bool>>,
-    // Último estado de sesión visto por refresh_auth: distingue "sin sesión"
-    // de "logueado pero biblioteca vacía" en los mensajes de estado vacío.
+    // I remember my last session state from refresh_auth: I tell "no session"
+    // apart from "logged in but empty library" in empty-state messages.
     last_logged: Rc<std::cell::Cell<bool>>,
     loaded: Rc<std::cell::Cell<bool>>,
     // Background description batch (library card "Refresh" on Epic).
@@ -1405,16 +1403,16 @@ impl StorePageHandle {
         }
         self.loaded.set(true);
         self.refresh_library(false);
-        // Rails una sola vez (caché TTL mediante; Refresh fuerza).
+        // I load rails once (I honor my TTL cache; Refresh forces).
         if self.store == "gog" && !self.rails_loaded.get() {
             self.rails_loaded.set(true);
             self.load_rails(false);
         }
     }
 
-    /// Aplica el estado de dependencias al tab: panel "Setup incomplete" si
-    /// falta el binario (ni login ni biblioteca), o solo bloqueo del login si
-    /// falta el navegador. Sin faltantes, UI normal.
+    /// I apply my dependency state to the tab: I show "Setup incomplete" when
+    /// my binary is missing (no login, no library), or block only login when
+    /// my browser is missing. With nothing missing I show normal UI.
     fn aplicar_faltantes(&self, f: &Faltantes) {
         let nombre = if self.store == "epic" { "Epic" } else { "GOG" };
         if f.tab_bloqueado(&self.store) {
@@ -1533,20 +1531,20 @@ impl StorePageHandle {
 
     /// Login automatizado en un navegador real, sin paso manual.
     ///
-    /// El plugin emite la URL (`auth` sin código → evento `auth_url`) y a partir
-    /// de ahí no interviene: el launcher se la pasa a `webdriver_login`, que
-    /// abre su propia ventana de Chromium, espera a que la persona termine de
-    /// autenticarse y devuelve el código por stdout.
+    /// My plugin emits the URL (`auth` without code -> `auth_url` event) and
+    /// then steps aside: I hand it to `webdriver_login`, which opens its own
+    /// Chromium window, waits for me to finish signing in, and returns the
+    /// code on stdout.
     ///
-    /// Chromium y no el navegador del sistema, y no Firefox: el hCaptcha de
-    /// Epic rechaza el reto si `navigator.webdriver` es `true`, y cualquier
-    /// Firefox gobernado por WebDriver lo pone en `true` sin forma de
-    /// desactivarlo. Chromium lanzado a mano por CDP deja el valor en `false`.
-    /// El comentario de `src/bin/webdriver_login.rs` tiene la tabla completa.
+    /// I use Chromium, not my system browser, and not Firefox: Epic hCaptcha
+    /// rejects the challenge when `navigator.webdriver` is `true`, and any
+    /// WebDriver-driven Firefox sets it to `true` with no way to turn it off.
+    /// Hand-launched Chromium over CDP keeps it `false`. I keep the full table
+    /// in `src/bin/webdriver_login.rs`.
     ///
-    /// No hay ruta manual. Ni modal de código, ni copiar y pegar, ni se le pide
-    /// al usuario que desactive nada. Si el login no se puede completar, se
-    /// dice por qué y el botón "Log in" vuelve a quedar pulsable.
+    /// I offer no manual path. No code modal, no copy-paste, and I never ask
+    /// anyone to disable anything. When login cannot complete, I say why and
+    /// I leave the "Log in" button clickable.
     fn begin_browser_login(&self) {
         self.login_btn.set_sensitive(false);
         let rx = StoreManager::spawn_auth_begin(self.store.clone());
@@ -1570,7 +1568,7 @@ impl StorePageHandle {
                 false
             }
             PluginEvent::Done(val) => {
-                // El plugin ya quedó autenticado (p. ej. una sesión viva).
+                // I found my plugin already authenticated (e.g. a live session).
                 let who = val
                     .get("account")
                     .and_then(|x| x.as_str())
@@ -1598,16 +1596,15 @@ impl StorePageHandle {
         });
     }
 
-    /// Lanza `webdriver_login` en segundo plano y espera a que devuelva el código.
+    /// I launch `webdriver_login` in the background and wait for its code.
     ///
-    /// El helper es un proceso aparte a propósito: hablar WebDriver es asíncrono
-    /// y el launcher es síncrono, así que meter ese runtime en el binario
-    /// principal significaría arrastrar tokio/hyper a toda la app. Aquí solo se
-    /// leen sus stdout y su código de salida.
+    /// I keep the helper as a separate process on purpose: speaking WebDriver
+    /// is async and my launcher is sync, so pulling that runtime into my main
+    /// binary would drag tokio/hyper into the whole app. Here I only read its
+    /// stdout and exit code.
     ///
-    /// El watchdog cubre el caso de que el proceso muera sin escribir nada. El
-    /// límite de tiempo del login lo pone el propio helper (180 s), que además
-    /// devuelve en su mensaje la última URL que vio; el de aquí es un margen.
+    /// My watchdog covers the helper dying silently. The helper itself owns the
+    /// login timeout (180 s) and reports the last URL it saw; mine is just margin.
     fn watch_login_helper(&self, url: String) {
         let rx = spawn_login_helper(url);
         let vh = self.clone();
@@ -1740,8 +1737,8 @@ impl StorePageHandle {
                 } else {
                     vh.render_games(&games);
                 }
-                // Degradación parcial del plugin: nota no bloqueante, nunca
-                // página de error (el `die(3)` se eliminó en Fase 1).
+                // I degrade partially on plugin failure: a non-blocking note,
+                // never an error page (I removed the old `die(3)` abort).
                 if let Some(w) = warn {
                     let cur = vh.lib_status.text().to_string();
                     vh.lib_status.set_text(&format!("{} · partial: {}", cur, w.chars().take(80).collect::<String>()));
@@ -1789,7 +1786,7 @@ impl StorePageHandle {
                             .map(|g| StoreGame {
                                 app_id: g.get("app_id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
                                 title: g.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                // Lote Epic: sin categoría/sistemas (campos GOG).
+                                // I build my Epic batch without category/systems (GOG-only fields).
                                 category: String::new(),
                                 systems: Vec::new(),
                                 version: g.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string(),
@@ -1829,7 +1826,7 @@ impl StorePageHandle {
                     vh.desc_running.set(false);
                     *vh.desc_killer.borrow_mut() = None;
                     vh.lib_status.set_text(&format!("Error: {message}"));
-                    vh.state_toast("No se pudieron actualizar las descripciones", &message);
+                    vh.state_toast("Could not update the descriptions", &message);
                     false
                 }
                 _ => true,
@@ -1837,8 +1834,8 @@ impl StorePageHandle {
         });
     }
 
-    /// Re-render GOG desde la lista completa con query y orden actuales.
-    /// Todo en memoria, sin red. Epic no pasa por acá.
+    /// I re-render GOG from my full list with the current query and order.
+    /// All in memory, no network. I keep Epic out of this path.
     fn render_filtered(&self) {
         let all = self.all_games.borrow().clone();
         let q = self.gog_query.borrow().clone();
@@ -1847,8 +1844,8 @@ impl StorePageHandle {
         self.render_gog_cards(&v, !all.is_empty());
     }
 
-    /// Línea "category · systems" de la tarjeta GOG: cada mitad se oculta si
-    /// está vacía (los campos son opcionales en la respuesta de GOG).
+    /// I build my GOG card "category · systems" line: I hide each half
+    /// when empty (both fields are optional in the GOG response).
     fn render_gog_cards(&self, games: &[StoreGame], hay_mas: bool) {
         while let Some(c) = self.flow.first_child() {
             self.flow.remove(&c);
@@ -1891,7 +1888,7 @@ impl StorePageHandle {
             body.set_margin_bottom(10);
             body.set_margin_start(8);
             body.set_margin_end(8);
-            // Misma jerarquía que Epic: badge de tienda + estado.
+            // I mirror my Epic hierarchy: store badge + status.
             let brow = gtk::Box::new(gtk::Orientation::Horizontal, 4);
             brow.set_halign(gtk::Align::Center);
             let badge = gtk::Label::new(Some("GOG"));
@@ -1922,17 +1919,16 @@ impl StorePageHandle {
                 body.append(&meta_lbl);
             }
             inner.append(&body);
-            // Sin botones en la tarjeta (diseño GOG Fase 1): click abre la
-            // ficha, que sí tiene Install/Import. Las tarjetas Epic quedan
-            // intactas con sus botones.
+            // I put no buttons on my GOG card: a click opens the detail page,
+            // which owns Install/Import. I leave my Epic cards with buttons.
             tile.set_child(Some(&inner));
             self.flow.insert(&tile, -1);
         }
     }
 
-    /// Secciones de rails Fase 1.5 (solo tab GOG): cabecera + nota + fila
-    /// horizontal con foco por teclado. Se construyen una vez; el contenido
-    /// llega con load_rails.
+    /// I build my rail sections (GOG tab only): header + note + keyboard-
+    /// focusable horizontal row. I construct them once; content arrives via
+    /// load_rails.
     fn build_rail_sections(&self) {
         for (list, titulo) in [("sale", "On Sale"), ("new", "Discover"), ("free", "Free to Keep")] {
             let sec = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -1950,17 +1946,16 @@ impl StorePageHandle {
             scroll.add_css_class("rail-scroll");
             scroll.set_propagate_natural_height(true);
             // Scrollbar siempre visible (no overlay): es el affordance de que
-            // hay más contenido. Nativo del tema, cero CSS nuevo.
-            // Box, no FlowBox: el FlowBox envuelve a 2 filas cuando el
-            // viewport es más angosto que la fila (bug visto en On Sale),
-            // y el scroll vertical está prohibido acá. La Box nunca envuelve:
-            // el desborde sale por scroll horizontal. Teclado por Tab/Enter
-            // (los botones son focables nativamente).
+            // I hint that more content exists. I stay theme-native, zero new CSS.
+            // I use Box, not FlowBox: FlowBox wrapped to 2 rows when my viewport
+            // went narrower than the row (I saw it on On Sale), and I forbid
+            // vertical scroll here. My Box never wraps: overflow goes through
+            // horizontal scroll. I support Tab/Enter (buttons focus natively).
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
             scroll.set_child(Some(&row));
             sec.append(&scroll);
-            // Pager local (vocabulario Epic: settings-btn/add-btn). Oculto
-            // con una sola página; no toca el pager de Deals.
+            // I keep a local pager (my Epic vocabulary: settings-btn/add-btn).
+            // I hide it on a single page; it never touches my Deals pager.
             let pager = gtk::Box::new(gtk::Orientation::Horizontal, 6);
             pager.set_halign(gtk::Align::Center);
             pager.set_visible(false);
@@ -1979,8 +1974,8 @@ impl StorePageHandle {
         }
     }
 
-    /// Carga los 3 rails en un hilo (secuencial): caché TTL mediante, sin red
-    /// si están vigentes. `force` (Refresh) bypassea la caché del plugin.
+    /// I load my 3 rails on a thread (sequential): I honor my TTL cache, no
+    /// network when fresh. `force` (Refresh) bypasses my plugin cache.
     fn load_rails(&self, force: bool) {
         let (tx, rx) = std::sync::mpsc::channel::<
             Vec<(String, Vec<RailItem>, bool, String)>,
@@ -2023,8 +2018,8 @@ impl StorePageHandle {
         });
     }
 
-    /// Pinta cada rail: tarjetas o nota dim si falló/vacío. Nunca rompe la
-    /// página por un rail caído (criterio die() de Fase 1).
+    /// I paint each rail: cards, or a dim note on failure/empty. I never
+    /// break the page over one fallen rail (I dropped the old die() rule).
     fn render_rails(&self, rails: &[(String, Vec<RailItem>, bool, String)]) {
         for (list, items, partial, warning) in rails {
             let rows = self.rail_rows.borrow();
@@ -2054,7 +2049,7 @@ impl StorePageHandle {
                 sec.note.set_text(&texto);
             } else {
                 sec.note.set_visible(false);
-                // Refresh (mismo handler) resetea a página 1 con pool nuevo.
+                // I reset Refresh (same handler) to page 1 with a fresh pool.
                 sec.page.set(0);
                 self.render_rail_page(sec);
                 if *partial {
@@ -2073,10 +2068,10 @@ impl StorePageHandle {
         }
     }
 
-    /// Pinta la página visible de un rail (lote GOG_RAIL_PAGE del pool) +
-    /// su pager. Solo los tiles visibles se construyen, así que solo sus
+    /// I paint one rail's visible page (a GOG_RAIL_PAGE batch from my pool) +
+    /// its pager. I build only visible tiles, so only their
     /// covers se descargan (fetch en rail_card/discover_card). Al cambiar
-    /// de página el scroll vuelve al inicio.
+    /// On page change I scroll back to the start.
     fn render_rail_page(&self, sec: &RailRow) {
         while let Some(c) = sec.row.first_child() {
             sec.row.remove(&c);
@@ -2095,8 +2090,8 @@ impl StorePageHandle {
             sec.row.append(&self.rail_card(it, &sec.list, &accent));
         }
         sec.scroll.hadjustment().set_value(0.0);
-        // Pager oculto con una sola página. Botones nativos (foco por
-        // teclado incluido), vocabulario Epic, sin CSS nuevo.
+        // I hide my pager on a single page. I use native buttons (keyboard
+        // focus included), my Epic vocabulary, no new CSS.
         sec.pager.set_visible(npages > 1);
         if npages <= 1 {
             return;
@@ -2120,13 +2115,12 @@ impl StorePageHandle {
         sec.pager.append(&mk("\u{00BB}", (cur + 1).min(npages - 1), cur + 1 < npages, false));
     }
 
-    /// Tarjeta de rail: base portrait común + línea según variante + badge ↗.
-    /// Variante A (On Sale): pie ancla con numeral de descuento grande en
-    /// accent; el resto disciplinado.
-    /// Tarjeta de rail: base según variante + badge ↗. Botón plano (fondo
-    /// transparente): click con mouse y Tab/Enter abren la tienda externa.
-    /// Discover usa variante B (cover horizontal + ficha solapada); el resto
-    /// usa la base portrait común.
+    /// I build my rail card: shared portrait base + per-variant line + badge.
+    /// Variant A (On Sale): an anchored footer with a big accent discount
+    /// numeral; I keep the rest disciplined. I use a flat button (transparent
+    /// background): mouse click and Tab/Enter open the external store.
+    /// Discover uses variant B (horizontal cover + overlapping card); I keep
+    /// the shared portrait base for the rest.
     fn rail_card(&self, item: &RailItem, variant: &str, accent: &str) -> gtk::Button {
         if variant == "new" {
             return self.discover_card(item);
@@ -2163,8 +2157,8 @@ impl StorePageHandle {
         name.set_size_request(-1, 40);
         inner.append(&name);
         match variant {
-            // On Sale, variante A: numeral grande en accent a la izquierda +
-            // columna con final bold y base tachada debajo.
+            // For On Sale variant A I render a big accent numeral on the left +
+            // a column with bold final price and struck base below.
             "sale" => {
                 let pie = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                 pie.set_halign(gtk::Align::Center);
@@ -2197,7 +2191,7 @@ impl StorePageHandle {
                 pie.append(&col);
                 inner.append(&pie);
             }
-            // Discover: año, solo si viene.
+            // For Discover I show the year, only when present.
             "new" => {
                 if !item.year.is_empty() {
                     let y = gtk::Label::new(Some(&item.year));
@@ -2207,7 +2201,7 @@ impl StorePageHandle {
                     inner.append(&y);
                 }
             }
-            // Free to Keep: badge neon-green (clase existente del tema).
+            // For Free to Keep I use a neon-green badge (my existing theme class).
             _ => {
                 let tag_text = if item.free {
                     "FREE".to_string()
@@ -2232,8 +2226,8 @@ impl StorePageHandle {
         ext.add_css_class("time-label");
         overlay.add_overlay(&ext);
         tile.set_child(Some(&overlay));
-        // Click directo en el botón (sin índice): abre la tienda externa.
-        // Son juegos no propios: no hay ficha interna.
+        // I open the external store on direct button click (no index).
+        // These are not owned games: I show no internal detail page.
         let url = item.store_url.clone();
         let vv = self.clone();
         tile.connect_clicked(move |_| {
@@ -2244,8 +2238,8 @@ impl StorePageHandle {
         tile
     }
 
-    /// Variante B de Discover: cover horizontal full-bleed + ficha solapada
-    /// -24px con título y año en una línea. GtkPicture con caja fija y
+    /// I build Discover variant B: full-bleed horizontal cover + overlapping card
+    /// at -24px with title and year on one line. I use GtkPicture with a fixed box and
     /// can_shrink(false): estable aunque el paintable llegue async.
     fn discover_card(&self, item: &RailItem) -> gtk::Button {
         let tile = gtk::Button::new();
@@ -2308,9 +2302,9 @@ impl StorePageHandle {
         tile
     }
 
-/// Línea "category · systems" de la tarjeta GOG: cada mitad se oculta si está
-/// vacía, porque ambos campos son opcionales en la respuesta de GOG
-/// (`worksOn` viene roto seguido, `category` puede venir vacío).
+/// GOG card "category · systems" line: each half hides when empty, since both
+/// fields are optional in GOG's response (`worksOn` arrives comma-broken,
+/// `category` can be empty).
 fn meta_line(category: &str, systems: &[String]) -> String {
     let mut parts: Vec<String> = Vec::new();
     let cat = category.trim();
@@ -2328,8 +2322,8 @@ fn meta_line(category: &str, systems: &[String]) -> String {
     parts.join(" · ")
 }
 
-/// Filtro por título/categoría + orden en memoria para la grilla GOG.
-/// Puro y testeable: la UI solo lo aplica y renderiza.
+/// Title/category filter plus in-memory sort for the GOG grid. Pure and
+/// testable: the UI just applies it and renders.
 fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame> {
     let q = query.trim().to_lowercase();
     let mut v: Vec<StoreGame> = juegos
@@ -2344,7 +2338,7 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
     match sort {
         // Title Z–A.
         1 => v.sort_by(|a, b| b.title.to_lowercase().cmp(&a.title.to_lowercase())),
-        // Installed first, después A–Z.
+        // Installed first, then A–Z.
         2 => v.sort_by(|a, b| {
             b.installed
                 .cmp(&a.installed)
@@ -2356,8 +2350,8 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
     v
 }
 
-    /// Tamaños de tarjeta según viewport: (ancho tile, cover px, alto cover).
-    /// Normal Epic 190/GOG 170; compacto en ventanas angostas.
+    /// Card sizes per viewport: (tile width, cover px, cover height). Regular
+    /// Epic 190 / GOG 170; compact in narrow windows.
     fn card_sizes(&self) -> (i32, i32, i32) {
         if self.store == "gog" {
             if self.compact.get() { (140, 100, 120) } else { (170, 140, 160) }
@@ -2368,7 +2362,7 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
         }
     }
 
-    /// Aplica el modo compacto y re-renderiza sin red (solo en transición).
+    /// Applies compact mode and re-renders without network (transitions only).
     fn apply_compact(&self, compact: bool) {
         if self.compact.get() == compact {
             return;
@@ -2520,8 +2514,8 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
             Ok(Ok(doc)) => {
                 vh.render_game_info(&b2, &doc, &game_c, &dd0);
-                // Degradación parcial (Fase 1): si la ficha vino incompleta se
-                // avisa en vez de mostrarla como si estuviera entera.
+                // Partial degradation: an incomplete sheet gets a warning
+                // instead of being shown as if it were whole.
                 if doc.get("partial").and_then(|x| x.as_bool()).unwrap_or(false) {
                     let w = doc.get("warning").and_then(|x| x.as_str()).unwrap_or("");
                     b2.append(&note(&format!("Incomplete info{}.", if w.is_empty() { String::new() } else { format!(": {}", w.chars().take(90).collect::<String>()) })));
@@ -2559,9 +2553,9 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
                     let img = gtk::Image::new();
                     img.set_pixel_size(160);
                     img.set_valign(gtk::Align::Start);
-                    // Clave -v2 solo en GOG (el cover pasó a vertical v2 y los
-                    // PNG viejos son el background horizontal): Epic conserva
-                    // la suya. Huérfanos sin borrar.
+                    // -v2 key on GOG only: the cover became vertical v2 while
+                    // the old PNGs are the horizontal background, so Epic keeps
+                    // its own key. Orphans stay, no cleanup.
                     let ckey = if self.store == "gog" {
                         format!("store-{}-info-v2", game_c.app_id)
                     } else {
@@ -2589,19 +2583,17 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
                 }
                 top.append(&tcol);
                 body.append(&top);
-                // Cascade: real description -> catalog version/date -> neutral message.
-                // "Catálogo de Epic" clarifies the date is Epic's own record,
-                // not the user's local install time.
+                // Cascade: real description -> catalog version/date -> neutral
+                // message. "Epic catalog" makes clear the date is Epic's own
+                // record, not the local install time.
                 let na_text = if !ver.is_empty() {
                     if last_upd.is_empty() {
-                        format!("Última versión: {ver} (dato del catálogo de Epic)")
+                        format!("Latest version: {ver} (Epic catalog record)")
                     } else {
-                        format!(
-                            "Última versión: {ver} (última actualización conocida por Epic: {last_upd})"
-                        )
+                        format!("Latest version: {ver} (last update known to Epic: {last_upd})")
                     }
                 } else {
-                    "Sin descripción disponible".to_string()
+                    "No description available".to_string()
                 };
                 let has_desc = !desc.is_empty();
                 let shown = if has_desc { desc } else { na_text };
@@ -2695,7 +2687,7 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
         Some((desc, src, url, lang))
     }
 
-    /// Base de installs por tienda (origen único; el plugin usa el
+    /// I own my per-store install base (single origin; my plugin uses the
     /// --path que se le pasa). ~/Games/Heroic queda como legacy ajeno.
     fn default_games_dir(store: &str) -> String {
         let base = std::env::var("HOME").unwrap_or_default();
@@ -2758,8 +2750,8 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
                     // In-place status update instead of a full re-render:
                     // the tile flips to "installed"/Import without flicker.
                     vh.schedule_status_check();
-                    // La tarjeta se re-renderiza por la misma ruta que
-                    // Refresh manual (la página no se recarga).
+                    // I re-render my card through the same path as
+                    // I re-render through my manual Refresh path (no page reload).
                     vh.refresh_library(false);
                     false
                 }
@@ -2940,24 +2932,23 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
         self.state_toast("Added to library", &name);
     }
 
-    /// Boton "Import" de un juego ya instalado en Heroic. Pasa por el Import
-    /// Manager antes de registrar nada: el modo test es el comportamiento
-    /// actual, el permanente mueve los archivos a ~/Games/<Tienda>-Games.
+    /// I gate my "Import" button for a Heroic-installed game through my Import
+    /// Manager before registering anything: test mode is my current behavior,
+    /// permanent mode moves files into ~/Games/<Store>-Games.
     fn import_with_manager(&self, game: &StoreGame) {
         let cands = vec![MoveCandidate {
             label: game.title.clone(),
             store_tag: if self.store == "epic" { "Epic" } else { "GOG" }.to_string(),
             install_path: PathBuf::from(&game.install_path),
-            // Heroic: el prefix_path que CorkyTux registra es suyo, no del
-            // launcher, asi que no se mueve (decision D3).
+            // For Heroic I never move the prefix_path CorkyTux registers:
+            // it belongs to Heroic, not to my launcher.
             prefix_path: None,
             executable: PathBuf::from(&game.executable),
         }];
         let games_dir = import_manager::games_root().join(format!(
             "{}-Games", if self.store == "epic" { "Epic" } else { "GOG" }));
 
-        // El preflight recorre el arbol para medirlo, asi que va fuera del
-        // hilo de GTK.
+        // I run preflight off my GTK thread: it walks the tree to measure it.
         let (tx, rx) = std::sync::mpsc::channel::<Preflight>();
         let wc = cands.clone();
         let wd = games_dir.clone();
@@ -2969,8 +2960,8 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
         let game_c = game.clone();
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
             Ok(pf) => {
-                // cands se clona: el closure es FnMut y puede correr mas de
-                // una vez, asi que no se puede mover la captura.
+                // I clone cands: my closure is FnMut and can run more than
+                // once, so I cannot move the capture.
                 vh.ask_import_mode(&game_c, cands.clone(), pf);
                 glib::ControlFlow::Break
             }
@@ -2982,16 +2973,16 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
     fn ask_import_mode(&self, game: &StoreGame, cands: Vec<MoveCandidate>, pf: Preflight) {
         let vh = self.clone();
         let game_c = game.clone();
-        // Duenos para el closure: ask toma &pf como argumento hermano y el
-        // closure tiene que seguir siendo Fn, asi que duena copias y clona
-        // por invocacion.
+        // I duplicate owners for my closure: ask takes &pf as a sibling
+        // argument and my closure must stay Fn, so I copy owners and
+        // clone per call.
         let cands_c = cands.clone();
         let pf_c = pf.clone();
         let tag = self.store.clone();
         import_manager::ask(&self.parent, &game.title, &tag, &pf, move |mode| {
             let Some(mode) = mode else { return };
             if mode == ImportMode::Test {
-                // Sin cambios: exactamente lo que hacia el boton antes.
+                // No changes: I do exactly what my button did before.
                 vh.import_to_library(
                     &game_c.title,
                     &vh.store,
@@ -3009,9 +3000,9 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
         });
     }
 
-    /// Modo permanente: mueve y despues registra con las rutas nuevas. El
-    /// progreso es indeterminado porque la copia va con `cp -a`, que no
-    /// reporta bytes; el total se muestra al final.
+    /// I run permanent mode: I move then register with the new paths. My
+    /// progress stays indeterminate because I copy with `cp -a`, which
+    /// reports no bytes; I show the total at the end.
     fn start_move(&self, game: &StoreGame, cands: Vec<MoveCandidate>, pf: Preflight, mode: ImportMode) {
         let (bar, status) = self.progress(&format!("Moving {}", game.title));
         status.set_text("Preparing the move…");
@@ -3034,8 +3025,8 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
                 glib::ControlFlow::Break
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
-                // Un pulso por vuelta del poll (cada 50 ms): barra viva sin
-                // lanzar un timer extra que haya que cancelar despues.
+                // I pulse once per poll turn (every 50 ms): a live bar without
+                // launching an extra timer I must cancel later.
                 bar.pulse();
                 glib::ControlFlow::Continue
             }
@@ -3062,8 +3053,8 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
 
         match mine {
             Some(MoveOutcome::Failed(msg)) => {
-                // No se importa nada: el original esta intacto y el usuario
-                // decide si reintenta en modo test.
+                // I import nothing: my original stays intact and I let the user
+                // retry in test mode.
                 self.state_toast("Could not move the game", &msg);
                 return;
             }
@@ -3134,7 +3125,7 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
 }
 
 
-/// Ejecuta `webdriver_login` y devuelve su código, o el motivo del fallo.
+/// I run `webdriver_login` and return its code, or my failure reason.
 ///
 /// Vive en un hilo propio porque el helper puede tardar hasta 180 s: el hilo
 /// se queda esperando en `output()` y el bucle de GTK sigue respondiendo igual.
@@ -3153,8 +3144,8 @@ fn spawn_login_helper(
 
 fn run_login_helper(url: &str) -> Result<String, (String, String)> {
     let bin = login_helper_path().map_err(|e| ("helper".to_string(), e))?;
-    // stderr va a un archivo, no a una tubería: así no puede haber interbloqueo
-    // por descriptores llenos y además queda el registro para diagnosticar.
+    // I send stderr to a file, not a pipe: full descriptors can never deadlock
+    // me, and I keep the log for diagnosis.
     let log = login_helper_log_path();
     let stderr = std::fs::OpenOptions::new()
         .create(true)
@@ -3178,8 +3169,8 @@ fn run_login_helper(url: &str) -> Result<String, (String, String)> {
 
     if !out.status.success() {
         let raw = String::from_utf8_lossy(&out.stderr).trim().to_string();
-        // El helper responde `ERRO:<motivo>:<mensaje>`. Se separan los dos
-        // campos para poder dar un mensaje distinto por causa.
+        // My helper answers `ERRO:<reason>:<message>`. I split both fields
+        // so I can give one message per cause.
         let (why, msg) = match raw.strip_prefix("ERRO:") {
             Some(rest) => match rest.split_once(':') {
                 Some((w, m)) => (w.to_string(), m.to_string()),
@@ -3207,13 +3198,13 @@ fn run_login_helper(url: &str) -> Result<String, (String, String)> {
     Ok(code)
 }
 
-/// Dónde está el binario helper.
+/// I locate my helper binary here.
 ///
-/// Vive al lado del launcher: en desarrollo los dos están en `target/debug/` y
-/// en una instalación los dos en `~/.local/share/corkytux/`. El override por
-/// entorno existe para poder probar otro binario sin recompilar.
+/// I keep it next to my launcher: in development both live in `target/debug/`
+/// and in an install both live in `~/.local/share/corkytux/`. I support an env
+/// override so I can try another binary without rebuilding.
 ///
-/// `pub(crate)` porque el modal de dependencias lo necesita para `--prefetch`.
+/// I expose `pub(crate)` because my dependency modal needs it for `--prefetch`.
 pub(crate) fn login_helper_path() -> Result<PathBuf, String> {
     if let Ok(custom) = std::env::var("CORKYTUX_LOGIN_HELPER") {
         let p = PathBuf::from(custom);
@@ -3247,7 +3238,7 @@ pub(crate) fn login_helper_path() -> Result<PathBuf, String> {
     ))
 }
 
-/// Registro de stderr del helper, para poder diagnosticar un login fallido.
+/// I keep my helper stderr log so I can diagnose a failed login.
 fn login_helper_log_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
     let dir = PathBuf::from(home).join(".local/share/corkytux/logs");
@@ -3257,34 +3248,35 @@ fn login_helper_log_path() -> PathBuf {
 
 // ─── dependencias de Stores (modal "Install dependencies") ─────────────────
 
-/// Resultado del chequeo de entrada a Stores: pre-chequeo barato primero,
-/// chequeo completo solo si el pre-chequeo marcó algo.
+/// I model my Stores entry check: cheap pre-check first, full check only
+/// when my pre-check flags something.
 enum Chequeo {
     TodoBien,
     Falta(Faltantes),
 }
 
-/// Qué herramientas faltan para Stores. Todo el modal, el trigger y el estado
-/// "Setup incomplete" se deciden con esto; no hay banderas de sesión.
+/// I track which tools Stores lacks. I decide my whole modal, trigger, and
+/// "Setup incomplete" state from this; I keep no session flags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 struct Faltantes {
-    /// Falta el binario de Epic (legendary).
+    /// I miss my Epic binary (legendary).
     legendary: bool,
-    /// Falta el binario de GOG (gogdl).
+    /// I miss my GOG binary (gogdl).
     gogdl: bool,
-    /// Falta la caché del Chromium de login.
+    /// I miss my login Chromium cache.
     chromium: bool,
 }
 
 impl Faltantes {
-    /// El modal aparece si y solo si falta algo. Sin memoria: el skip no deja
-    /// marca, así que reentrar a Stores con algo pendiente lo muestra de nuevo.
+    /// I show my modal if and only if something is missing. I keep no memory:
+    /// skipping leaves no mark, so re-entering Stores with something pending
+    /// shows it again.
     fn hay_algo(&self) -> bool {
         self.legendary || self.gogdl || self.chromium
     }
 
-    /// Nombres a mostrar para una tienda ("epic"/"gog"): su binario si falta,
-    /// más el navegador si falta. Orden fijo: binario, navegador.
+    /// I name what one store ("epic"/"gog") shows: its binary when missing,
+    /// plus my browser when missing. I keep a fixed order: binary, browser.
     fn para_tienda(&self, store: &str) -> Vec<&'static str> {
         let mut v = Vec::new();
         if store == "epic" && self.legendary {
@@ -3299,17 +3291,17 @@ impl Faltantes {
         v
     }
 
-    /// Sin binario no hay nada que mostrar en el tab: ni login ni biblioteca.
+    /// Without a binary I show nothing in the tab: neither login nor library.
     fn tab_bloqueado(&self, store: &str) -> bool {
         (store == "epic" && self.legendary) || (store == "gog" && self.gogdl)
     }
 
-    /// Sin navegador solo se bloquea el login; lo ya logueado sigue andando.
+    /// Without a browser I block only login; what is already logged in keeps working.
     fn login_bloqueado(&self) -> bool {
         self.chromium
     }
 
-    /// Filas del modal en orden DEPS: solo las que faltan.
+    /// I list my modal rows in DEPS order: only the missing ones.
     fn filas_modal(&self) -> Vec<DepId> {
         let mut v = Vec::new();
         if self.legendary {
@@ -3325,10 +3317,10 @@ impl Faltantes {
     }
 }
 
-/// Corre `webdriver_login --probe` y devuelve si el Chromium está cacheado.
+/// I run `webdriver_login --probe` and return whether Chromium is cached.
 ///
-/// `None` si el helper falta o responde ilegible: el llamador lo trata como
-/// faltante (el modal ofrece instalarlo) en vez de asumir que está.
+/// I return `None` when my helper is missing or answers gibberish: my caller
+    /// treats it as missing (my modal offers to install it) instead of assuming.
 fn probe_chrome_cached() -> Option<bool> {
     let bin = login_helper_path().ok()?;
     let out = std::process::Command::new(&bin)
@@ -3345,8 +3337,8 @@ fn probe_chrome_cached() -> Option<bool> {
     v.get("cached")?.as_bool()
 }
 
-/// Reúne qué falta: bins del plugin (`status` sin `--quick`, chequeo real,
-/// sin la caché de 60 s) + caché de Chromium (`--probe`). Nada se reimplementa.
+/// I gather what is missing: my plugin bins (`status` without `--quick`, a real
+    /// check skipping my 60 s cache) + my Chromium cache (`--probe`). I reimplement nothing.
 fn faltantes_actuales() -> Faltantes {
     let (leg_ok, gog_ok) = match StoreManager::status(false) {
         Ok(st) => {
@@ -3361,7 +3353,7 @@ fn faltantes_actuales() -> Faltantes {
                 .unwrap_or(false);
             (leg, gog)
         }
-        // Si el status falla no se puede afirmar que estén: se ofrecen.
+        // When status fails I cannot claim they exist: I offer them.
         Err(_) => (false, false),
     };
     Faltantes {
@@ -3374,10 +3366,10 @@ fn faltantes_actuales() -> Faltantes {
     }
 }
 
-/// Pre-chequeo liviano de entrada a Stores, sin red: presencia de bins
-/// (subcomando `bins` del plugin, solo filesystem) + caché de Chromium
-/// (`--probe`, solo filesystem). Es lo único que corre en cada entrada;
-/// el chequeo completo con red solo sigue si esto marca algo.
+/// I pre-check Stores entry lightly, no network: bin presence (my plugin
+    /// `bins` subcommand, filesystem only) + my Chromium cache (`--probe`,
+    /// filesystem only). This is all I run on every entry; my full networked
+    /// check follows only when this flags something.
 fn precheck_actual() -> Faltantes {
     let (leg_ok, gog_ok) = match StoreManager::bins() {
         Ok(v) => {
@@ -3392,7 +3384,7 @@ fn precheck_actual() -> Faltantes {
                 .unwrap_or(false);
             (leg, gog)
         }
-        // Si ni el `bins` responde no se puede afirmar que estén: se ofrecen.
+        // When even `bins` stays silent I cannot claim they exist: I offer them.
         Err(_) => (false, false),
     };
     Faltantes {
@@ -3405,12 +3397,12 @@ fn precheck_actual() -> Faltantes {
     }
 }
 
-/// Traduce el motivo de fallo del helper a un mensaje accionable.
+/// I translate my helper failure reason into an actionable message.
 ///
-/// Cada motivo que el helper puede devolver tiene su propio mensaje, y todos
-/// dicen qué hacer y terminan pidiendo reintentar. Ninguno sugiere desactivar
-/// nada: el perfil que usa el helper es efímero y no carga las extensiones ni
-/// las protecciones del navegador del usuario.
+/// I give every reason my helper can return its own message, and I end all
+    /// of them by asking for a retry. I never suggest disabling anything:
+    /// my helper profile is ephemeral and loads neither the user extensions
+    /// nor browser protections.
 fn login_failure_message(why: &str, detail: &str) -> String {
     let base = match why {
         "chrome" => "CorkyTux could not prepare the browser it uses to show the login \
@@ -3436,8 +3428,8 @@ fn login_failure_message(why: &str, detail: &str) -> String {
             .to_string(),
         _ => "The automated store login failed. Press Log in to retry.".to_string(),
     };
-    // El detalle solo se añade si aporta algo: el motivo de un timeout ya
-    // incluye la última URL vista, que es lo que hace falta para diagnosticar.
+    // I add detail only when it helps: my timeout reason already includes
+    // the last URL seen, which is what I need to diagnose.
     if detail.trim().is_empty() {
         base
     } else {
@@ -3461,7 +3453,7 @@ mod tests {
         assert!(!e.contains("Heroic") && !g.contains("Heroic"));
     }
 
-    /// Falta solo legendary: Epic bloqueado (binario + navegador pendientes),
+    /// I cover missing legendary only: I block Epic (binary + browser pending),
     /// GOG solo sin login.
     #[test]
     fn granularidad_falta_solo_legendary() {
@@ -3475,7 +3467,7 @@ mod tests {
         assert_eq!(f.filas_modal(), vec![DepId::Legendary, DepId::Chromium]);
     }
 
-    /// Falta solo gogdl: espejo del caso Epic.
+    /// I cover missing gogdl only: mirror of my Epic case.
     #[test]
     fn granularidad_falta_solo_gogdl() {
         let f = Faltantes { legendary: false, gogdl: true, chromium: true };
@@ -3486,7 +3478,7 @@ mod tests {
         assert_eq!(f.filas_modal(), vec![DepId::Gogdl, DepId::Chromium]);
     }
 
-    /// Falta solo Chromium: ningún tab bloqueado, solo el login. La
+    /// I cover missing Chromium only: I block no tab, only login. My
     /// biblioteca de lo ya logueado sigue visible.
     #[test]
     fn granularidad_falta_solo_chromium() {
@@ -3498,7 +3490,7 @@ mod tests {
         assert_eq!(f.filas_modal(), vec![DepId::Chromium]);
     }
 
-    /// Falta todo: ambos tabs bloqueados, tres filas en orden.
+    /// I cover everything missing: I block both tabs, three rows in order.
     #[test]
     fn granularidad_falta_todo() {
         let f = Faltantes { legendary: true, gogdl: true, chromium: true };
@@ -3507,8 +3499,8 @@ mod tests {
         assert_eq!(f.filas_modal(), vec![DepId::Legendary, DepId::Gogdl, DepId::Chromium]);
     }
 
-    /// Falta SOLO gogdl (legendary y Chromium presentes): una fila, GOG
-    /// bloqueado, Epic intacto con login.
+    /// I cover ONLY gogdl missing (legendary and Chromium present): one row, GOG
+    /// blocked, Epic intact with login.
     #[test]
     fn granularidad_falta_solo_gogdl_sin_nada_mas() {
         let f = Faltantes { legendary: false, gogdl: true, chromium: false };
@@ -3521,7 +3513,7 @@ mod tests {
         assert_eq!(f.filas_modal(), vec![DepId::Gogdl]);
     }
 
-    /// Falta SOLO legendary: espejo del caso GOG.
+    /// I cover ONLY legendary missing: mirror of my GOG case.
     #[test]
     fn granularidad_falta_solo_legendary_sin_nada_mas() {
         let f = Faltantes { legendary: true, gogdl: false, chromium: false };
@@ -3532,27 +3524,27 @@ mod tests {
         assert_eq!(f.filas_modal(), vec![DepId::Legendary]);
     }
 
-    /// Ciclo fallo→skip→reentrada→modal: el skip no deja marca persistente,
-    /// así que reentrar con algo pendiente vuelve a pedir el modal. Solo
-    /// completar (nada faltante) lo silencia.
+    /// I cycle failure->skip->re-entry->modal: skipping leaves no persistent
+    /// mark, so re-entering with something pending asks for my modal again. Only
+    /// completing (nothing missing) silences it.
     #[test]
     fn ciclo_skip_no_silencia_el_modal() {
         let pendiente = Faltantes { legendary: false, gogdl: true, chromium: true };
         assert!(pendiente.hay_algo(), "antes del skip: modal");
-        // El skip no muta nada persistente: mismo valor, mismo modal.
+        // I mutate nothing persistent on skip: same value, same modal.
         let tras_skip = pendiente;
         assert!(tras_skip.hay_algo(), "tras el skip: modal de nuevo al reentrar");
         let completo = Faltantes::default();
-        assert!(!completo.hay_algo(), "completo: nunca más");
+        assert!(!completo.hay_algo(), "complete: never again");
         assert!(completo.filas_modal().is_empty());
     }
 
-    /// Escenario del bug del trigger: todo instalado → los archivos
-    /// desaparecen por fuera del modal → re-chequeo → se detecta la falta y
-    /// hay que mostrar el modal. (El `deps_ok` cacheado impedía re-chequear;
-    /// eliminado: cada entrada evalúa de nuevo.)
+    /// I replay my trigger bug: all installed -> files vanish
+    /// outside my modal -> I re-check -> I detect the gap and
+    /// I must show my modal. (My cached `deps_ok` blocked re-checking;
+    /// I removed it: I evaluate fresh on every entry.)
     ///
-    /// Hermético y sin red: HOME temporal + copia del script real del plugin
+    /// I stay hermetic with no network: temp HOME + a copy of my real plugin script
     /// + helper real localizado junto al binario de test. Toca procesos
     /// reales (`bins` en Python, `--probe` en Rust) contra ese sandbox.
     #[test]
@@ -3571,16 +3563,16 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&base);
 
-        // Sandbox: copia del script del plugin + bins + caché de Chromium.
+        // I sandbox: a copy of my plugin script + bins + Chromium cache.
         let script_origen = std::path::PathBuf::from(&orig_home)
             .join(".local/share/CorkyTux/plugins/heroic-store/heroic-store");
         assert!(
             script_origen.is_file(),
-            "falta el plugin instalado para copiar al sandbox: {}",
+            "the installed plugin to copy into the sandbox is missing: {}",
             script_origen.display()
         );
         let script = base.join(".local/share/CorkyTux/plugins/heroic-store/heroic-store");
-        std::fs::create_dir_all(script.parent().expect("padre del script")).unwrap();
+        std::fs::create_dir_all(script.parent().expect("the script parent")).unwrap();
         std::fs::copy(&script_origen, &script).unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
 
@@ -3591,17 +3583,17 @@ mod tests {
         std::fs::write(&leg, b"x").unwrap();
         std::fs::write(&gog, b"x").unwrap();
 
-        // Helper real: el binario junto al harness de test (lo construye
-        // `cargo test` al compilar todos los targets).
+        // I use my real helper: the binary next to my test harness (built by
+        // `cargo test` when compiling all targets).
         let exe = std::env::current_exe().expect("current_exe");
         let helper = exe
             .parent()
             .and_then(|d| d.parent())
             .map(|d| d.join("webdriver_login"))
-            .expect("ruta del helper");
+            .expect("the helper path");
         assert!(
             helper.is_file(),
-            "falta el helper compilado para --probe: {}",
+            "the compiled helper for --probe is missing: {}",
             helper.display()
         );
         let chrome = base.join(
@@ -3613,30 +3605,30 @@ mod tests {
         std::env::set_var("HOME", &base);
         std::env::set_var("CORKYTUX_LOGIN_HELPER", &helper);
 
-        // Estado inicial: todo instalado → sin modal.
+        // I start with all installed -> no modal.
         let antes = precheck_actual();
         assert!(
             !antes.hay_algo(),
-            "con todo presente no hay modal: {:?}",
+            "with everything present there is no modal: {:?}",
             antes
         );
 
-        // Borrado externo, sin pasar por el modal (el escenario del bug).
+        // I delete externally, bypassing my modal (my bug scenario).
         std::fs::remove_file(&leg).unwrap();
         std::fs::remove_file(&gog).unwrap();
         std::fs::remove_file(&chrome).unwrap();
 
-        // Re-chequeo: detecta las tres faltas → modal.
+        // I re-check: I detect all three gaps -> modal.
         let despues = precheck_actual();
         assert!(
             despues.hay_algo(),
-            "tras el borrado externo hay modal: {:?}",
+            "after the external deletion there is a modal: {:?}",
             despues
         );
         assert_eq!(
             despues,
             Faltantes { legendary: true, gogdl: true, chromium: true },
-            "las tres faltas detectadas"
+            "all three gaps detected"
         );
         assert_eq!(despues.filas_modal().len(), 3);
 
@@ -3648,7 +3640,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    /// meta_line: cada mitad se oculta si está vacía (campos opcionales).
+    /// I test meta_line: I hide each half when empty (optional fields).
     #[test]
     fn meta_line_oculta_mitades_vacias() {
         assert_eq!(
@@ -3669,7 +3661,7 @@ mod tests {
         );
     }
 
-    /// filtrar_ordenar: filtro por título/categoría + 3 órdenes.
+    /// I test filtrar_ordenar: I filter by title/category + 3 orders.
     #[test]
     fn filtrar_ordenar_filtra_y_ordena() {
         let g = |t: &str, c: &str, inst: bool| super::StoreGame {
@@ -3686,10 +3678,10 @@ mod tests {
             description: String::new(),
         };
         let juegos = vec![g("Zeta", "RPG", false), g("alpha", "Adv", true), g("Mid", "RPG", false)];
-        // Vacío + default: todo A–Z insensible a mayúsculas.
+        // I check empty + default: all A-Z case-insensitive.
         let v = super::StorePageHandle::filtrar_ordenar(&juegos, "", 0);
         assert_eq!(v.iter().map(|x| x.title.as_str()).collect::<Vec<_>>(), vec!["alpha", "Mid", "Zeta"]);
-        // Filtro matchea título o categoría.
+        // I match my filter on title or category.
         let v = super::StorePageHandle::filtrar_ordenar(&juegos, "rpg", 0);
         assert_eq!(v.len(), 2);
         // Z–A.
@@ -3700,7 +3692,7 @@ mod tests {
         assert!(v[0].installed);
     }
 
-    /// parse_rail_item: completo pasa, vacío se descarta, parcial con defaults.
+    /// I test parse_rail_item: full passes, empty drops, partial gets defaults.
     #[test]
     fn parse_rail_item_completo_minimo_y_descarte() {
         let lleno = serde_json::json!({
@@ -3713,7 +3705,7 @@ mod tests {
         assert_eq!(r.price_final, "$0.00");
         assert!(r.free);
         let minimo = serde_json::json!({"id": "9", "title": "T"});
-        let r = super::parse_rail_item(&minimo).expect("mínimo");
+        let r = super::parse_rail_item(&minimo).expect("minimal item");
         assert_eq!(r.cover, "");
         assert!(!r.free);
         assert!(super::parse_rail_item(

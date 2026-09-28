@@ -167,7 +167,7 @@ impl PluginManager {
                             .unwrap_or_default()
                             .to_string_lossy()
                             .to_string();
-                        // C++ parity: manifest is plugin.json; plugin.ini kept as fallback
+                        // I match the legacy layout: manifest is plugin.json; I keep plugin.ini as fallback
                         let parsed = self
                             .parse_plugin_json(&path.join("plugin.json"), &id)
                             .or_else(|| self.parse_plugin_ini(&path.join("plugin.ini")));
@@ -296,7 +296,7 @@ impl PluginManager {
     }
 
     pub fn set_enabled(&self, plugin_id: &str, enabled: bool) {
-        // C++ parity: [Plugins] section, "1"/"0"
+        // I match the legacy layout: [Plugins] section, "1"/"0"
         super::ConfigManager::new().set_launcher_value_in(
             "Plugins",
             &format!("{}.enabled", plugin_id),
@@ -324,17 +324,17 @@ impl PluginManager {
 
     // --- Remote registry (GitHub Releases, C++ parity) ---
 
-    /// ¿Este asset sirve para la arquitectura de este host?
+    /// I check whether this asset fits my host CPU.
     ///
-    /// Un asset sin token de arquitectura (`plugin.tar.gz`) se acepta: es el
-    /// caso de los releases actuales y no se puede distinguir de uno universal.
-    /// Un asset CON token (`plugin-x86_64.tar.gz`) solo se acepta si el token
-    /// mapea a nuestra `ARCH`: sin esta comprobación, un host aarch64 podía
-    /// quedarse con el binario x86_64, instalarlo "con éxito" y fallar en cada
-    /// invocación con `Exec format error`.
+    /// I accept an asset with no arch token (`plugin.tar.gz`): that is the
+    /// shape of current releases and I cannot tell it apart from a universal
+    /// one. I only accept an asset WITH a token (`plugin-x86_64.tar.gz`) when
+    /// it maps to my `ARCH`: without this check an aarch64 host could grab
+    /// the x86_64 binary, "install" it fine, and fail every launch with
+    /// `Exec format error`.
     ///
-    /// Los tokens se separan por `-` y `.`, nunca por `_`, porque `x86_64` lleva
-    /// guion bajo y partirlo daria dos tokens que no significan nada.
+    /// I split tokens on `-` and `.`, never `_`, because `x86_64` carries an
+    /// underscore and splitting it would yield two meaningless tokens.
     fn asset_arch_ok(name: &str) -> bool {
         let host = std::env::consts::ARCH;
         let mut saw_arch = false;
@@ -354,7 +354,7 @@ impl PluginManager {
                 return true;
             }
         }
-        // Sin token de arch reconocido: asset único, se asume compatible.
+        // No recognized arch token: single asset, I assume it fits.
         !saw_arch
     }
 
@@ -381,8 +381,8 @@ impl PluginManager {
                 .and_then(|x| x.as_str())
                 .unwrap_or_default()
                 .to_string();
-            // Todos los .tar.gz del release, no solo el primero: el orden de la
-            // API no es una garantía de compatibilidad.
+            // I consider every .tar.gz in the release, not just the first: API
+            // order is no compatibility guarantee.
             let mut candidates: Vec<(String, String)> = Vec::new();
             for a in v
                 .get("assets")
@@ -410,12 +410,12 @@ impl PluginManager {
                 .iter()
                 .find(|(name, _)| Self::asset_arch_ok(name))
                 .cloned();
-            // Release solo con assets de otra arquitectura: se omite en vez de
-            // ofrecer una descarga que no puede funcionar.
+            // Release with assets for another arch only: I skip it instead of
+            // offering a download that cannot work.
             let Some((asset_name, asset_url)) = picked else {
                 let names: Vec<&str> = candidates.iter().map(|(n, _)| n.as_str()).collect();
                 eprintln!(
-                    "[plugins] release {} sin asset para {} (hay: {})",
+                    "[plugins] release {} has no asset for {} (has: {})",
                     tag,
                     std::env::consts::ARCH,
                     names.join(", ")
@@ -517,7 +517,7 @@ impl PluginManager {
         if !status.success() {
             return Err("Extraction failed".into());
         }
-        // Detect the fresh dir containing plugin.json (C++ parity)
+        // I detect the fresh dir holding plugin.json, like the legacy code did
         let after: Vec<String> = fs::read_dir(&dir)
             .map(|entries| {
                 entries
@@ -539,7 +539,7 @@ impl PluginManager {
         Ok(tag.to_string())
     }
 
-    // --- Dependency Installer + DLL Overrides Automator (C++ applyScanPlugins parity) ---
+    // --- Dependency Installer + DLL Overrides Automator (I port the legacy applyScanPlugins behavior) ---
     //
     // Both are JSON-protocol scripts. All helpers below are thread-safe
     // associated fns (fresh state, plain-data results) for background use.
@@ -552,8 +552,8 @@ impl PluginManager {
         dir.join("dll-overrides-automator").join("dll-overrides-automator")
     }
 
-    /// Corre un plugin y devuelve su documento JSON final. `limit_secs` es el
-    /// limite de tiempo; se aplica en proceso, sin depender de `timeout(1)`.
+    /// I run a plugin and return its final JSON document. `limit_secs` is my
+    /// time budget; I enforce it in-process, without relying on `timeout(1)`.
     fn run_json(cmd: &mut Command, limit_secs: u64) -> Result<serde_json::Value, String> {
         let output = super::plugin_process::output_with_timeout(
             cmd,
@@ -755,7 +755,7 @@ impl PluginManager {
         Ok(v.get("overrides").and_then(|x| x.as_str()).unwrap_or("").to_string())
     }
 
-    // --- Emulator Manager integration (C++ parity) ---
+    // --- Emulator Manager integration (I match the legacy layout) ---
 
     fn emulator_manager_exe(&self) -> PathBuf {
         Self::emulator_manager_exe_in(&self.plugins_dir())
@@ -777,12 +777,11 @@ impl PluginManager {
 
     /// Thread-safe (no self): queries `emulator-manager corky-list`.
     ///
-    /// El limite de 15 s se aplica en proceso. Antes lo ponia `timeout(1)`, que
-    /// no existe en el PATH por defecto de NixOS ni en contenedores minimos: si
-    /// faltaba, esta funcion caia en la rama `_` y la pestana de Emuladores se
-    /// quedaba vacia sin ningun aviso. Los fallos se siguen reportando como
-    /// lista vacia porque es el contrato de los llamadores, pero ahora el motivo
-    /// queda en stderr para poder diagnosticarlo.
+    /// I enforce the 15s budget in-process. It used to rely on `timeout(1)`,
+    /// which is missing from the default NixOS PATH and minimal containers: when
+    /// absent this function fell into the `_` branch and my Emulators tab stayed
+    /// empty with no warning. I still report failures as an empty list because
+    /// that is my callers' contract, but now I leave the reason on stderr.
     pub fn list_emulators_in(dir: &Path) -> Vec<EmuInfo> {
         let exe = Self::emulator_manager_exe_in(dir);
         if !exe.exists() {
@@ -798,28 +797,28 @@ impl PluginManager {
             Ok(o) if o.success => o,
             Ok(o) => {
                 eprintln!(
-                    "[emu] corky-list salio con codigo {:?}: {}",
+                    "[emu] corky-list exited with code {:?}: {}",
                     o.code,
                     o.stderr.trim()
                 );
                 return Vec::new();
             }
             Err(e) => {
-                eprintln!("[emu] corky-list fallo: {}", e);
+                eprintln!("[emu] corky-list failed: {}", e);
                 return Vec::new();
             }
         };
         let v: serde_json::Value = match serde_json::from_str(&output.stdout) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("[emu] corky-list devolvio JSON invalido: {}", e);
+                eprintln!("[emu] corky-list returned invalid JSON: {}", e);
                 return Vec::new();
             }
         };
         if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) != true {
             eprintln!(
-                "[emu] corky-list reporto ok=false: {}",
-                v.get("error").and_then(|e| e.as_str()).unwrap_or("sin detalle")
+                "[emu] corky-list reported ok=false: {}",
+                v.get("error").and_then(|e| e.as_str()).unwrap_or("no detail")
             );
             return Vec::new();
         }
@@ -970,11 +969,11 @@ impl PluginManager {
         Ok(name.to_string())
     }
 
-    /// Suelta un emulador enlazado, dejando el binario intacto.
+    /// I release a linked emulator, leaving the binary intact.
     ///
-    /// El plugin expone `corky-unlink` desde siempre, pero el launcher no lo
-    /// invocaba: enlazar era una puerta de un solo sentido y la unica salida era
-    /// romper el enlace borrando el binario o editando `linked.json` a mano.
+    /// The plugin always exposed `corky-unlink`, but I never called it: linking
+    /// was a one-way door and the only exit was deleting the binary or editing
+    /// `linked.json` by hand.
     pub fn unlink_emulator(&self, name: &str) -> Result<String, String> {
         Self::unlink_emulator_in(&self.plugins_dir(), name)
     }
@@ -997,9 +996,9 @@ impl PluginManager {
                 err
             });
         }
-        // El plugin responde {"ok":bool,"message":str}: se propaga el motivo
-        // en vez de tragarselo, porque "no estaba enlazado" es informacion
-        // util si la fila se quedo desincronizada.
+        // The plugin answers {"ok":bool,"message":str}: I propagate the reason
+        // instead of swallowing it, because "was not linked" is useful info
+        // when a row went stale.
         let v: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
         let ok = v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
         let msg = v.get("message").and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -1084,7 +1083,7 @@ impl PluginManager {
     }
 
     /// Executor choices for AddGame: only INSTALLED emulator-manager
-    /// entries (C++: plugins.emulators.filter(e => e.installed)),
+    /// entries (I match the legacy filter: emulators where installed),
     /// then emulator-type plugins (installed by definition).
     pub fn list_emulator_plugins(&self) -> Vec<(String, String)> {
         let mut out: Vec<(String, String)> = self

@@ -67,7 +67,7 @@ pub fn classify(value: serde_json::Value) -> PluginEvent {
             message: value
                 .get("message")
                 .and_then(|v| v.as_str())
-                .unwrap_or("error desconocido")
+                .unwrap_or("unknown error")
                 .to_string(),
             exit_code: None,
             // Set by the plugin's die(): lets the UI differentiate error
@@ -85,22 +85,20 @@ pub fn classify(value: serde_json::Value) -> PluginEvent {
     }
 }
 
-/// Raíz de los **ejecutables** de los plugins.
+/// Root of the plugin **executables**.
 ///
-/// Ojo con esto, porque hay dos raíces de plugins y confundirlas rompe el
-/// login de las tiendas:
+/// I keep two plugin roots apart because mixing them broke store logins:
 ///
-/// * `~/.local/share/CorkyTux/plugins/<id>/` — lo de aquí. El script que el
-///   launcher instala y ejecuta. Es la única copia que corre.
-/// * `~/.config/CorkyTux/plugins/<id>/` — el `CONFIG_DIR` del propio plugin,
-///   su estado mutable: `bin/legendary`, `bin/gogdl`, `installs.json`,
-///   `accounts.json`, locks, cachés. La usan `proton.rs`, `minecraft_view.rs`
-///   y `external.rs`, y está bien: son datos, no código.
+/// * `~/.local/share/CorkyTux/plugins/<id>/` — this one. The script I
+///   install and run. It is the only copy that executes.
+/// * `~/.config/CorkyTux/plugins/<id>/` — the plugin's own `CONFIG_DIR`,
+///   its mutable state: `bin/legendary`, `bin/gogdl`, `installs.json`,
+///   `accounts.json`, locks, caches. I read those from `proton.rs`,
+///   `minecraft_view.rs` and `external.rs`, and that is fine: data, not code.
 ///
-/// Antes estas dos se cruzaban y el script del pluginvivía en las dos, así que
-/// un cambio a mano caía en la copia muerta y el launcher seguía ejecutando la
-/// vieja. Para cuando toques el código de un plugin, edita el repo del plugin
-/// y reinstálalo; no parchees la copia instalada.
+/// I used to mix both roots and the plugin script lived in each, so a manual
+/// edit landed on the dead copy while I kept running the old one. When I touch
+/// plugin code I edit the plugin repo and reinstall; I never patch the copy.
 pub fn plugins_base_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     PathBuf::from(home).join(".local").join("share").join("CorkyTux").join("plugins")
@@ -115,11 +113,10 @@ pub fn plugin_available(plugin_id: &str, entry: &str) -> bool {
     exe.exists()
 }
 
-/// Salida de un proceso terminado dentro de su limite de tiempo.
+/// Output of a process that finished within its time limit.
 ///
-/// `std::process::Output` no se puede construir a mano en stable, asi que este
-/// tipo expone lo que los llamadores necesitan: codigo de salida y los dos
-/// streams.
+/// I shape this myself because `std::process::Output` cannot be built by hand
+/// on stable; it exposes what my callers need: exit code and both streams.
 #[derive(Debug, Clone)]
 pub struct TimedOutput {
     pub success: bool,
@@ -128,13 +125,13 @@ pub struct TimedOutput {
     pub stderr: String,
 }
 
-/// Margen para vaciar los pipes tras salir el hijo. Un nieto que herede el
-/// stdout lo mantendria abierto para siempre; sin este margen, el `join`
-/// colgaria la interfaz.
+/// Grace window to drain pipes after the child exits. A grandchild holding
+/// stdout open would block forever; without this margin the `join` would hang
+/// my UI.
 const PIPE_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
 
-/// Une un lector de pipe con margen: si no termina a tiempo se cede su
-/// resultado y el hilo se queda desprendido en vez de bloquear al llamador.
+/// I join a pipe reader with a margin: on timeout I drop its result and let
+/// the thread detach instead of blocking my caller.
 fn join_reader(h: std::thread::JoinHandle<String>) -> String {
     let deadline = std::time::Instant::now() + PIPE_GRACE;
     while !h.is_finished() {
@@ -146,17 +143,16 @@ fn join_reader(h: std::thread::JoinHandle<String>) -> String {
     h.join().unwrap_or_default()
 }
 
-/// Ejecuta `cmd` capturando stdout y stderr, y lo mata si pasa de `limit`.
+/// I run `cmd` capturing stdout/stderr and kill it past `limit`.
 ///
-/// Sustituye a `timeout(1)`. Ese binario viene de coreutils, no de POSIX, y no
-/// existe en el PATH por defecto de NixOS ni en contenedores minimos; cuando
-/// faltaba, cada llamador caia en una rama distinta: la mayoria mostraba un
-/// error que no mencionaba la causa, pero `list_emulators_in` devolvia una
-/// lista vacia sin avisar.
+/// I wrote this to replace `timeout(1)`. That binary comes from coreutils, not
+/// POSIX, and it is missing from the default NixOS PATH and minimal containers;
+/// when absent each caller failed differently, and `list_emulators_in` even
+/// returned an empty list with no warning.
 ///
-/// `cmd` se queda con stdout y stderr en pipe aunque el llamador los hubiera
-/// puesto a null. Misma semantica de muerte que `timeout(1)` sin
-/// `--foreground`: solo se senala al hijo directo, no al grupo de procesos.
+/// I keep `cmd` on piped stdout/stderr even if the caller set null. Same kill
+/// semantics as `timeout(1)` without `--foreground`: I only signal the direct
+/// child, not the process group.
 pub fn output_with_timeout(
     cmd: &mut Command,
     limit: std::time::Duration,
@@ -167,10 +163,10 @@ pub fn output_with_timeout(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("No se pudo ejecutar el proceso: {}", e))?;
+        .map_err(|e| format!("Could not spawn process: {}", e))?;
 
-    // Los streams se leen en hilos aparte: si el plugin llena el buffer del pipe
-    // (64 KiB) mientras esperamos su salida, ambos lados se bloquearian.
+    // I drain the streams on side threads: if the plugin fills the pipe
+    // buffer (64 KiB) while I wait for its exit, both sides would deadlock.
     let mut out_handle = child.stdout.take().map(|mut s| {
         std::thread::spawn(move || {
             let mut buf = Vec::new();
@@ -204,8 +200,8 @@ pub fn output_with_timeout(
     if timed_out {
         let _ = child.kill();
         let _ = child.wait();
-        // Con margen, no con `join` a secas: si el plugin dejo nietos con el
-        // pipe abierto, el join directo colgaria en lugar de devolver el error.
+        // I join with a margin, not plain `join`: if the plugin left
+        // grandchildren holding the pipe, a direct join would hang.
         if let Some(h) = out_handle.take() {
             let _ = join_reader(h);
         }
@@ -213,15 +209,15 @@ pub fn output_with_timeout(
             let _ = join_reader(h);
         }
         return Err(format!(
-            "el proceso excedio el limite de {} s y fue terminado",
+            "process exceeded the {}s limit and was terminated",
             limit.as_secs()
         ));
     }
 
     let status = match status {
         Some(Ok(status)) => status,
-        Some(Err(e)) => return Err(format!("espera del proceso falló: {}", e)),
-        None => return Err("espera del proceso falló".to_string()),
+        Some(Err(e)) => return Err(format!("process wait failed: {}", e)),
+        None => return Err("process wait failed".to_string()),
     };
     let stdout = out_handle.map(join_reader).unwrap_or_default();
     let stderr = err_handle.map(join_reader).unwrap_or_default();
@@ -259,14 +255,14 @@ pub fn run_single_json(exe: &Path, args: &[&str]) -> Result<serde_json::Value, S
         .args(args)
         .stdin(Stdio::null())
         .output()
-        .map_err(|e| format!("No se pudo ejecutar {}: {}", exe.display(), e))?;
+        .map_err(|e| format!("Could not execute {}: {}", exe.display(), e))?;
     let body = String::from_utf8_lossy(&output.stdout).to_string();
     if let Some(doc) = parse_final_doc(&body) {
         if doc.get("type").and_then(|t| t.as_str()) == Some("error") {
-            return Err(doc.get("message").and_then(|m| m.as_str()).unwrap_or("error del plugin").to_string());
+            return Err(doc.get("message").and_then(|m| m.as_str()).unwrap_or("plugin error").to_string());
         }
         if doc.get("ok").and_then(|o| o.as_bool()) == Some(false) {
-            return Err(doc.get("message").and_then(|m| m.as_str()).unwrap_or("operación fallida").to_string());
+            return Err(doc.get("message").and_then(|m| m.as_str()).unwrap_or("operation failed").to_string());
         }
         return Ok(doc);
     }
@@ -275,14 +271,14 @@ pub fn run_single_json(exe: &Path, args: &[&str]) -> Result<serde_json::Value, S
         let out = body.trim().to_string();
         let msg = if !err.is_empty() { err } else { out };
         return Err(if msg.is_empty() {
-            format!("El plugin salió con código {:?}", output.status.code())
+            format!("Plugin exited with code {:?}", output.status.code())
         } else if msg.len() > 300 {
             msg[..300].to_string()
         } else {
             msg
         });
     }
-    Err("El plugin no devolvió JSON".into())
+    Err("Plugin returned no JSON".into())
 }
 
 pub fn spawn_streaming(exe: PathBuf, args: Vec<String>) -> mpsc::Receiver<PluginEvent> {
@@ -318,7 +314,7 @@ fn spawn_streaming_inner(
             }
             Err(e) => {
                 let _ = tx.send(PluginEvent::Error {
-                    message: format!("no se pudo ejecutar {}: {}", exe.display(), e),
+                    message: format!("could not execute {}: {}", exe.display(), e),
                     exit_code: None,
                     code: None,
                 });
@@ -366,9 +362,9 @@ fn spawn_streaming_inner(
                 if !status.success() && !saw_error {
                     let tail = stderr_tail(&stderr_text);
                     let message = if tail.is_empty() {
-                        format!("el proceso terminó con código {:?}", status.code())
+                        format!("process exited with code {:?}", status.code())
                     } else {
-                        format!("el proceso terminó con código {:?}: {}", status.code(), tail)
+                        format!("process exited with code {:?}: {}", status.code(), tail)
                     };
                     let _ = tx.send(PluginEvent::Error {
                         message,
@@ -382,7 +378,7 @@ fn spawn_streaming_inner(
                     k.clear();
                 }
                 let _ = tx.send(PluginEvent::Error {
-                    message: format!("espera del proceso falló: {}", e),
+                    message: format!("process wait failed: {}", e),
                     exit_code: None,
                     code: None,
                 });

@@ -112,10 +112,10 @@ impl ProtonManager {
 
     fn heroic_legendary_bin() -> Option<PathBuf> {
         let home = std::env::var("HOME").unwrap_or_default();
-        // Esto NO es la raíz de plugins: es el `CONFIG_DIR` del plugin
-        // heroic-store, donde él descarga sus binarios de terceros. El script
-        // del plugin vive en `plugins_base_dir()` (~/.local/share). Ver el
-        // contrato de las dos raíces en `plugin_process::plugins_base_dir`.
+        // Not the plugin root: this is heroic-store's own CONFIG_DIR, where it
+        // drops the third-party binaries it downloads. The plugin script itself
+        // lives in `plugins_base_dir()` (~/.local/share) — the two-root contract
+        // is documented in `plugin_process::plugins_base_dir`.
         let owned = PathBuf::from(&home)
             .join(".config/CorkyTux/plugins/heroic-store/bin/legendary");
         if owned.is_file() {
@@ -155,10 +155,10 @@ impl ProtonManager {
     /// Aislamiento Bottles-style (Fase 4): envuelve `cmd` en bwrap cuando
     /// el juego lo pide (clave `Isolated`) o el global `IsolateNewPrefixes`
     /// lo marca por defecto. `rw`: prefijo compat + carpeta del juego +
-    /// extras; `ro`: Proton/umu/runtimes/bins; `chdir`: cwd del sandbox.
-    /// Sin bwrap se lanza igual pero con WARNING en voz alta (log +
-    /// Debug header): nunca fallo mudo, nunca downgrade silencioso.
-    /// El flujo no aislado queda byte-idéntico a antes.
+    /// extras; `ro`: Proton/umu/runtimes/bins; `chdir`: sandbox cwd.
+    /// Without bwrap I still launch, but loudly (log + Debug header):
+    /// never a silent failure, never a silent downgrade.
+    /// The non-isolated path stays byte-identical to before.
     fn isolate_cmd(
         &self,
         cmd: Command,
@@ -198,8 +198,8 @@ impl ProtonManager {
         super::isolation::wrap_command(cmd, &spec)
     }
 
-    /// Carpeta del juego para el sandbox: dir del ejecutable, o mainpath.
-    /// Solo dirs existentes (bwrap falla con orígenes ausentes).
+    /// Game folder for the sandbox: the executable's dir, else mainpath.
+    /// Existing dirs only — bwrap errors out on missing sources.
     fn game_dir_of(executable: &str, main_path: &str) -> Option<PathBuf> {
         if !executable.is_empty() {
             if let Some(p) = Path::new(executable).parent() {
@@ -409,36 +409,35 @@ impl ProtonManager {
         std::fs::write(&reg, out.join("\n") + "\n").is_ok()
     }
 
-    /// Instala de Steam que hay que probar, en orden de preferencia.
+    /// Steam installs worth probing, in preference order.
     ///
-    /// Antes esta lista solo vivía en `find_steam_runtime`, mientras
-    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` y los dos resolvers del overlay
-    /// hardcodeaban `~/.steam/steam`. Con Steam instalado como Flatpak o Snap,
-    /// el interruptor del overlay quedaba activo en la ficha del juego y no
-    /// inyectaba nada: pérdida silenciosa de una función que el usuario creía
-    /// activa. Un único sitio, cuatro variantes.
+    /// This list used to live only in `find_steam_runtime` while
+    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` and the two overlay resolvers
+    /// hardcoded `~/.steam/steam`. With Steam installed as Flatpak or Snap the
+    /// overlay switch stayed on in the game page and injected nothing: a
+    /// silently dead feature. One list, four variants.
     ///
-    /// `~/.steam/steam` va primero porque es la ruta que ya usaba
-    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH`, y en una instalación normal es un
-    /// enlace a `.local/share/Steam`: no cambia el comportamiento de nadie.
-    /// No se filtran por existencia para que cada llamador pueda elegir entre
-    /// "primer candidateo" y "recorrerlos todos".
+    /// `~/.steam/steam` comes first because that's the path
+    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` already used, and on a normal install
+    /// it's a symlink into `.local/share/Steam`, so nobody's behavior changes.
+    /// I don't filter by existence, so each caller can pick between "first
+    /// candidate" and "walk them all".
     fn steam_roots(home: &std::path::Path) -> Vec<std::path::PathBuf> {
         vec![
             home.join(".steam/steam"),
             home.join(".local/share/Steam"),
-            // Flatpak: `data/Steam` es el home real del proceso sandboxeado y
-            // `.steam/steam` es el enlace que Steam crea ahí.
+            // Flatpak: `data/Steam` is the sandboxed process's real home, and
+            // `.steam/steam` is the symlink Steam plants there.
             home.join(".var/app/com.valvesoftware.Steam/data/Steam"),
             home.join(".var/app/com.valvesoftware.Steam/.steam/steam"),
         ]
     }
 
-    /// Valor de `LD_PRELOAD` para el overlay de Steam, o `None` si no hay
-    /// ningún `gameoverlayrenderer.so` que pre-cargar.
+    /// `LD_PRELOAD` value for the Steam overlay, or `None` when there's no
+    /// `gameoverlayrenderer.so` to preload.
     ///
-    /// El `':'` inicial no pisa un `LD_PRELOAD` heredado de la sesión; es la
-    /// convención que ya usaban los dos call sites que esto sustituye.
+    /// The leading `':'` doesn't clobber an inherited session `LD_PRELOAD`; it
+    /// was the convention both call sites already used before I factored this.
     fn steam_overlay_preload(home: &std::path::Path) -> Option<String> {
         let mut found: Vec<PathBuf> = Vec::new();
         for root in Self::steam_roots(home) {
@@ -467,13 +466,12 @@ impl ProtonManager {
         }
     }
 
-    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` para un `home` dado: la primera raíz
-    /// que exista, o la ruta histórica si ninguna (Proton la usa incluso sin
-    /// Steam instalado).
+    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` for a given `home`: the first root
+    /// that exists, or the historical path if none does (Proton uses it even
+    /// with Steam uninstalled).
     ///
-    /// Es `pub` porque `legendary_launch_cmd` necesita la misma ruta y no tiene
-    /// `&self`; antes la reconstruía por su cuenta y quedaba fuera de la lista
-    /// de variantes.
+    /// It's `pub` because `legendary_launch_cmd` needs the same path and has no
+    /// `&self`; it used to rebuild it by hand and stay out of the variant list.
     pub fn steam_client_path_for(home: &std::path::Path) -> PathBuf {
         Self::steam_roots(home)
             .into_iter()
@@ -593,10 +591,9 @@ impl ProtonManager {
         result
     }
 
-    /// Paridad con ProtonManager::findSteamRuntime (C++): localiza el
-    /// run.sh del Steam Linux Runtime que corresponde a la versión de
-    /// GE-Proton instalada, para dar soporte 32-bit en sistemas puramente
-    /// 64-bit (ausente por completo en la reescritura Rust original).
+    /// Finds the Steam Linux Runtime run.sh matching the installed GE-Proton
+    /// version, so purely 64-bit systems still get 32-bit support (the original
+    /// Rust rewrite had dropped this entirely).
     pub fn find_steam_runtime(&self, proton_name: &str) -> Option<PathBuf> {
         let home = home_dir()?;
 
@@ -739,20 +736,19 @@ impl ProtonManager {
         which("umu-run")
     }
 
-    /// Directorios donde vive una biblioteca, para un ancho de bits dado.
+    /// Where a library may live, for a given bit width.
     ///
-    /// En vez de parsear `ldconfig -p`: ese binario no existe en NixOS ni en
-    /// contenedores mínimos, y sus líneas solo distinguen atributos en x86, así
-    /// que en aarch64 el flag de 32 bits nunca podía activarse. Con rutas del
-    /// sistema la pregunta se responde en cualquier arquitectura, y el resultado
-    /// puede ser negativo: antes los flags solo se activaban, nunca se
-    /// desactivaban, así que un `mangohud` presente sin su biblioteca de 64
-    /// bits se anunciaba como instalado.
+    /// Not parsing `ldconfig -p`: that binary is missing on NixOS and in minimal
+    /// containers, and its output only distinguishes attributes on x86, so on
+    /// aarch64 the 32-bit flag could never turn on. With system paths the
+    /// question answers itself on any architecture, and the answer can be no:
+    /// the flags used to only ever be set, never cleared, so a `mangohud`
+    /// without its 64-bit library announced itself as installed.
     fn library_search_dirs(bits: u8) -> Vec<PathBuf> {
-        // El nombre del multiarch lo dice el compilador, no una constante:
-        // `aarch64-linux-gnu`, `x86_64-linux-gnu`, etc. Se invoca `gcc`
-        // directamente, sin `which`: si no está en el PATH, la llamada falla y
-        // se cae al patrón de abajo, que es el correcto en NixOS.
+        // The compiler knows the multiarch name, no hardcoded constant:
+        // `aarch64-linux-gnu`, `x86_64-linux-gnu`, etc. I call `gcc` directly
+        // instead of `which`: if it's off PATH the call fails and I fall
+        // through to the pattern below, which is the right answer on NixOS.
         let multiarch = std::env::var("MULTIARCH")
             .ok()
             .filter(|s| !s.trim().is_empty())
@@ -790,16 +786,16 @@ impl ProtonManager {
         dirs
     }
 
-    /// ¿Está esta biblioteca (por nombre base, p. ej. `libMangoHud.so`) en
-    /// alguno de los directorios de `bits`?
+    /// Is this library (by base name, e.g. `libMangoHud.so`) in any of the
+    /// `bits` directories?
     fn library_present(lib: &str, bits: u8) -> bool {
         for dir in Self::library_search_dirs(bits) {
-            // `read_dir` en vez de un glob: los nombres reales llevan sufijo de
-            // version (`libMangoHud.so.1.2`), asi que hay que comparar prefijos.
+            // `read_dir` instead of a glob: the real filenames carry a version
+            // suffix (`libMangoHud.so.1.2`), so prefixes are the comparison.
             let Ok(entries) = fs::read_dir(&dir) else { continue };
             for entry in entries.flatten() {
-                // `is_file` sigue los enlaces simbolicos, que es como suele
-                //.installarse la version actual de la biblioteca.
+                // `is_file` follows symlinks, which is how the current version
+                // of a library usually gets installed.
                 if entry.file_name().to_string_lossy().starts_with(lib)
                     && entry.path().is_file()
                 {
@@ -903,8 +899,8 @@ impl ProtonManager {
         format!("{}: not installed", display)
     }
 
-    /// Las mismas dos características que `component_status`, con el mismo
-    /// criterio: el cliente inyectado, no el daemon.
+    /// The same two capabilities as `component_status`, same criterion: the
+    /// injected client, not the daemon.
     pub fn graphics_component_status(&self) -> Vec<(GraphicsComponent, bool)> {
         let gamemode = Command::new("gamemoderun")
             .arg("--version")
@@ -928,7 +924,7 @@ impl ProtonManager {
 
     pub fn run_game(&self, game_name: &str) -> Result<(), String> {
         if self.is_game_running() {
-            return Err("Ya hay un juego en ejecución".into());
+            return Err("A game is already running".into());
         }
         let config = super::ConfigManager::new();
         let game = config.game_section(game_name);
@@ -1013,10 +1009,10 @@ impl ProtonManager {
         let mut launch_args = game.get("launchargs").cloned().unwrap_or_default();
         let steam_overlay = game.get("steamoverlay").map(|v| v == "true").unwrap_or(false);
         let fake_steam_id = game.get("fakesteamid").cloned().unwrap_or_else(|| "480".to_string());
-        // Epic Online Services auth (Fall Guys & co. abort with
-        // "no se encontró un código de intercambio" without it).
-        // Same as Heroic: fresh exchange code passed as launch args.
-        // Explicit toggle wins; otherwise auto-on for Heroic Epic games.
+        // Epic Online Services auth (Fall Guys & co. abort with "no se
+        // encontró un código de intercambio" without it). Same as Heroic: a
+        // fresh exchange code passed as launch args. The explicit toggle wins;
+        // otherwise it's auto-on for Heroic Epic games.
         let eos_on = match game.get("eosauth").map(|v| v.as_str()) {
             Some("false") | Some("0") => false,
             Some(_) => true,
@@ -1060,9 +1056,9 @@ impl ProtonManager {
             }
         }
 
-        // Resolve actual prefix (shared o por juego).
-        // C++ parity: shared prefix se indexa por proton; SharedPrefix
-        // del juego lo sobreescribe cuando está seteado.
+        // Resolve the real prefix (shared or per game). A shared prefix is
+        // keyed by the proton name, and the game's own SharedPrefix overrides
+        // that when set.
         let shared_key = if !shared_prefix_name.is_empty() {
             shared_prefix_name.clone()
         } else {
@@ -1121,8 +1117,9 @@ impl ProtonManager {
                 } else {
                     leg_cmd
                 };
-                // Sandbox Bottles-style: prefijo + juego rw; Proton,
-                // legendary, tools y su config ro/rw según caso.
+                // Bottles-style sandbox: prefix + game read-write; Proton,
+                // legendary, tools and their config read-only / read-write
+                // depending on the case.
                 let leg_bin = Self::heroic_legendary_bin().unwrap_or_default();
                 let tools_dir = PathBuf::from(&std::env::var("HOME").unwrap_or_default())
                     .join(".local/share/CorkyTux/tools");
@@ -1293,16 +1290,16 @@ impl ProtonManager {
                 }
             }
 
-            // Comando estándar Proton: proton waitforexitandrun game.exe
+            // Standard Proton command: proton waitforexitandrun game.exe
             final_cmd.arg("waitforexitandrun");
             for arg in split_quoted_args(&args_before) { final_cmd.arg(arg); }
             final_cmd.arg(&executable);
             for arg in split_quoted_args(&args_after) { final_cmd.arg(arg); }
             for arg in split_quoted_args(&launch_args) { final_cmd.arg(arg); }
 
-            // Steam Runtime (paridad con C++ findSteamRuntime): provee libs
-            // 32-bit (pulse/alsa) en sistemas puramente 64-bit. Solo aplica
-            // a la ruta Proton estándar, no a umu-launcher.
+            // Steam Runtime: provides 32-bit libs (pulse/alsa) on purely
+            // 64-bit systems. Only the standard Proton path uses it, never
+            // umu-launcher.
             let runtime_flag = game.get("steamruntime").cloned().unwrap_or_else(|| {
                 if config.launcher_value("gamesUsesSteamRuntime").map(|v| v == "1").unwrap_or(true) {
                     "true".to_string()
@@ -1494,8 +1491,9 @@ impl ProtonManager {
                 },
             ));
         }
-        // Aislamiento: decisión efectiva + bwrap (Fase 4). Solo Wine/Proton
-        // (AppImage/emuladores/RPG van nativo y no pasan por el sandbox).
+        // Isolation: the effective decision plus the bwrap wrap. Wine/Proton
+        // only — AppImages, emulators and RPG games run native and skip the
+        // sandbox.
         if !is_appimage && !is_rpg && !is_emu {
             let global = config
                 .launcher_value(super::isolation::GLOBAL_KEY)
@@ -1585,9 +1583,10 @@ impl ProtonManager {
         if child.is_none() && self.imp().session_game.borrow().is_empty() {
             return Ok((String::new(), 0));
         }
-        // Sesión RPG: sin hijo local ni prefix/proton (lanzamiento detached
-        // de box-rpg); va ANTES del early-return de sesión vacía, que si no
-        // la taparía. Stop va a las sesiones y el tiempo se banca igual.
+        // RPG session: no local child and no prefix/proton (box-rpg launches
+        // detached), so this goes BEFORE the empty-session early return, which
+        // would otherwise swallow it. Stop and elapsed time go to the sessions
+        // the plugin supervises.
         if self.imp().session_rpg.get() {
             let game = self.imp().session_game.borrow().clone();
             if !game.is_empty() {
@@ -2218,8 +2217,8 @@ impl ProtonManager {
             return Err("RPG Maker plugin not installed".into());
         }
         let runtime = game.get("rpgruntime").cloned().unwrap_or_default();
-        // Consentimientos por juego (modelo upstream: opt-in explícito,
-        // ambos off por defecto). Persistidos = standing consent.
+        // Per-game consents (upstream model: explicit opt-in, both off by
+        // default). Persisting the choice is the standing consent.
         let allow_net = game.get("rpgallownet").map(|v| v == "true").unwrap_or(false);
         let allow_writes = game.get("rpgallowwrites").map(|v| v == "true").unwrap_or(false);
         super::external::RpgMakerManager::run_with_options(
@@ -2230,9 +2229,9 @@ impl ProtonManager {
         )
         .map(|_| ())
         .map_err(|e| format!("RPG launch failed: {}", e))?;
-        // Sesión real como AppImage: Play↔Stop, tiempo y Stop vía box-rpg.
-        // El plugin lanza detached (sin hijo que vigilar); la vida se
-        // pregunta a sus sesiones supervisadas.
+        // A real session, like an AppImage: Play↔Stop, elapsed time and Stop
+        // all go through box-rpg. The plugin launches detached (no child to
+        // watch), so I ask its supervised sessions whether the game is alive.
         self.begin_session(game_name);
         self.imp().session_rpg.set(true);
         Ok(())
@@ -2300,7 +2299,7 @@ impl ProtonManager {
     /// C++ runCustomExe parity: resolves the game's proton + prefix internally.
     pub fn run_custom_exe(&self, game_name: &str, executable: &str) -> Result<(), String> {
         if self.is_game_running() {
-            return Err("Ya hay un juego en ejecución".into());
+            return Err("A game is already running".into());
         }
         let config = super::ConfigManager::new();
         let wanted = config.game_value(game_name, "Proton").unwrap_or_default();
@@ -2381,12 +2380,12 @@ impl ProtonManager {
         let wine_bin = wine_bin.ok_or("No Wine binary found")?;
 
         let mut cmd = if tool == "winetricks" {
-            // winetricks es un script externo, no un builtin de wine.
-            // Se ejecuta ÉL MISMO, con WINE= apuntando al wine de Proton
-            // para que no use el wine del sistema y corrompa el prefix.
+            // winetricks is an external script, not a wine builtin. I run that
+            // same script with WINE= pointing at Proton's wine, so it never
+            // touches the system wine and corrupts the prefix.
             let wt = which("winetricks")
-                .ok_or("winetricks no está instalado (sudo pacman -S winetricks / sudo apt install winetricks)")?;
-            // Asegurar prefix inicializado: winetricks falla en prefix vacío
+                .ok_or("winetricks is not installed (sudo pacman -S winetricks / sudo apt install winetricks)")?;
+            // winetricks fails on an empty prefix, so I make sure it's booted
             if !real_prefix.join("system.reg").exists() {
                 let _ = Command::new(&wine_bin)
                     .arg("wineboot")
@@ -2395,26 +2394,26 @@ impl ProtonManager {
             }
             let mut c = Command::new(wt);
             c.env("WINEPREFIX", &real_prefix);
-            c.env("WINE", &wine_bin);   // ← clave
-            // wineserver vive junto a wine64 en files/bin/
+            c.env("WINE", &wine_bin);   // the key line
+            // wineserver lives next to wine64 in files/bin/
             if let Some(dir) = wine_bin.parent() {
                 let ws = dir.join("wineserver");
                 if ws.exists() {
                     c.env("WINESERVER", &ws);
                 }
             }
-            c.arg("--gui");   // abre la GUI; cambiá el verbo si querés otra cosa
+            c.arg("--gui");   // opens the GUI; change the verb for another one
             c
         } else {
-            // tools normales (winecfg, taskmgr, control, explorer, cmd)
+            // regular tools (winecfg, taskmgr, control, explorer, cmd)
             let mut c = Command::new(&wine_bin);
             c.env("WINEPREFIX", &real_prefix);
             c.arg(tool);
             c
         };
 
-        // Wine tools también corren aislados (mismo prefijo, Proton ro).
-        // winetricks necesita su propio bin + el wineserver junto a wine.
+        // Wine tools run isolated too (same prefix, Proton read-only).
+        // winetricks needs its own binary plus the wineserver next to wine.
         let mut tool_ro: Vec<PathBuf> = candidate_dirs.clone();
         if let Some(p) = Path::new(cmd.get_program()).parent() {
             if p.is_dir() {

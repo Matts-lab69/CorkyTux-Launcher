@@ -18,12 +18,12 @@ pub struct DetailsPanel {
     play_button: gtk::Button,
     play_icon: gtk::Image,
     play_label: gtk::Label,
-    /// Nombre con el que `play_icon` esta registrado en THEMED_IMAGES.
-    /// Sirve para no re-registrar en cada tick del poller: el registro solo
-    /// hace falta cuando el icono cambia de verdad (Play <-> Stop).
+    /// I track the name `play_icon` is registered under in THEMED_IMAGES.
+    /// I use it to skip re-registering on every 2s poll tick: I only
+    /// re-register when the icon truly changes (Play <-> Stop).
     play_icon_name: std::cell::RefCell<String>,
-    /// Handles vivos (no snapshots): el recálculo de set_game lee el estado
-    /// actual en cada selección, así el botón no espera al poller de 2 s.
+    /// I keep live handles (not snapshots): set_game re-reads the current
+    /// state on every selection, so the button never waits for the 2s poller.
     proton: ProtonManager,
     theme: ThemeManager,
     time_label: gtk::Label,
@@ -121,7 +121,7 @@ impl DetailsPanel {
         banner_frame.set_child(Some(&banner));
         content.append(&banner_frame);
 
-        // C++ parity: play/stop glyph + label (was text-only).
+        // I show a play/stop glyph + label here (I replaced the old text-only button).
         let play_btn = gtk::Button::new();
         play_btn.add_css_class("play-btn");
         play_btn.set_halign(gtk::Align::Fill);
@@ -435,20 +435,18 @@ impl DetailsPanel {
             .set_icon_name(Some("image-x-generic-symbolic"));
     }
 
-    /// El tema se recibe vivo en cada llamada a propósito: guardarlo en el
-    /// struct lo congelaría al valor de construcción y el poller de 2 s lo
-    /// re-aplicaría para siempre (fue el bug del flip a tinta incorrecta
-    /// tras un toggle Dark→Light).
+    /// I take the theme live on every call on purpose: storing it in the
+    /// struct would freeze it at construction time and the 2s poller would
+    /// re-apply it forever (that was my dark-to-light ink flip bug after
+    /// a Dark->Light toggle).
     pub fn set_playing(&self, playing: bool, is_dark: bool) {
-        // Actualiza paintable y etiqueta. El registro en THEMED_IMAGES solo se
-        // renueva cuando el nombre cambia de verdad: el poller de 2 s llama a
-        // esta funcion en cada tick, y antes hacia `push` incondicional, con lo
-        // que el Vec crecia ~43.200 entradas por dia (la poda de
-        // refresh_themed_icons solo corre al cambiar de tema).
-        //
-        // No basta con registrar una sola vez en la construccion: al conmutar
-        // a Stop hay que re-registrar, o un cambio de tema posterior recargaria
-        // el icono como "play" mientras la etiqueta dice "Stop".
+        // I only re-register in THEMED_IMAGES when the name truly changes: the
+        // 2s poller calls this function every tick, and my old unconditional
+        // `push` grew the Vec ~43,200 entries per day (my
+        // refresh_themed_icons prune only runs on theme switch).
+        // I must also re-register when switching to Stop: registering only once
+        // at construction would reload a "play" icon on the next theme switch
+        // while the label says "Stop".
         let name = if playing { "stop" } else { "play" };
         self.play_label.set_text(if playing { "Stop" } else { "Play" });
         if let Some(tex) = helpers::load_themed_icon_sized(name, is_dark, 16) {
@@ -504,9 +502,9 @@ impl DetailsPanel {
                 let text = if path.exists() {
                     format!("Size: {}", format_size(query_path_size(path)))
                 } else {
-                    // Rama A: la carpeta existia al abrir el panel y
-                    // desaparecio antes de medir. Se pinta "--" igual que
-                    // los demas casos, pero el motivo queda en el log.
+                    // Branch A: I saw the folder when the panel opened but it
+                    // vanished before I measured. I paint "--" like the other
+                    // cases and keep the reason in the log.
                     eprintln!("[size] {}: path vanished during measure (path={})", gname_t, mpath);
                     "Size: --".to_string()
                 };
@@ -533,13 +531,12 @@ impl DetailsPanel {
                 Err(_) => glib::ControlFlow::Break,
             });
         } else if size.is_empty() {
-            // Rama B: nunca se midio (sin cache) y la carpeta no existe.
+            // Branch B: I never measured (no cache) and the folder is gone.
             eprintln!("[size] {}: path missing, nothing cached (path={})", game_name, main_path);
             self.install_size_label.set_text("Size: --");
         } else if !main_exists {
-            // Rama C: habia medida cacheada pero la carpeta desaparecio.
-            // La cache se borro arriba; el "--" comparte texto con B pero
-            // el motivo queda distinguido aqui, en el log.
+            // Branch C: I had a cached measure but the folder is gone. I cleared
+            // the cache above; the "--" text matches B but I log the reason here.
             eprintln!("[size] {}: path gone, dropping stale cache (path={})", game_name, main_path);
             self.install_size_label.set_text("Size: --");
         } else {
@@ -708,9 +705,9 @@ impl DetailsPanel {
         self.revealer.set_visible(true);
         self.revealer.set_reveal_child(true);
 
-        // Recálculo inmediato del botón Play/Stop con estado vivo: sin esto
-        // el texto quedaba rancio hasta el próximo tick del poller de 2 s al
-        // cambiar de selección. Misma fórmula del poller, mismo resultado.
+        // I recalc the Play/Stop button from live state right away: without
+        // this the text went stale until the next 2s poller tick on
+        // selection change. Same formula as the poller, same result.
         let playing = playing_state(
             name,
             self.proton.is_game_running(),
@@ -720,8 +717,9 @@ impl DetailsPanel {
     }
 }
 
-/// ¿El botón del juego seleccionado debe mostrar Stop? Misma fórmula que el
-/// poller de `main.rs`: corre algo, es de esta sesión y hay selección.
+/// Should the selected game's button show Stop? I use the same formula as
+/// my `main.rs` poller: something runs, it is from this session, and
+/// something is selected.
 fn playing_state(selected: &str, running: bool, session: &str) -> bool {
     running && session == selected && !selected.is_empty()
 }
@@ -782,14 +780,15 @@ fn format_size(bytes: u64) -> String {
 mod tests {
     use super::*;
 
-    /// El seleccionado corriendo muestra Stop.
+    /// I show Stop for the selected game while it is the one running.
     #[test]
     fn playing_state_stop_si_es_el_que_corre() {
         assert!(playing_state("Doom", true, "Doom"));
     }
 
-    /// Selección distinta al que corre, nada corriendo o sin selección:
-    /// Play. Son los casos que quedaban rancios hasta el tick del poller.
+    /// A selection other than the running game, nothing running, or no
+    /// selection means Play. These were the cases that went stale until the
+    /// poller ticked.
     #[test]
     fn playing_state_play_en_el_resto() {
         assert!(!playing_state("Doom", true, "Quake"));

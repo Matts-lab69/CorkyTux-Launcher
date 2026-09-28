@@ -47,7 +47,7 @@ struct AddonRow {
     project_id: String,
 }
 
-/// Un update disponible para el diálogo "Update mods".
+/// I track one pending update for the "Update mods" dialog.
 #[derive(Clone)]
 struct PendingUpdate {
     file: String,
@@ -57,17 +57,17 @@ struct PendingUpdate {
     platform: String,
 }
 
-/// Eventos del worker de updates hacia la UI.
+/// I forward update-worker events to the UI.
 enum UpdEv {
     Start { idx: usize, file: String },
     Done { file: String, ok: bool, msg: String },
     End,
 }
 
-/// `CONFIG_DIR` del plugin minecraft-launcher: sus datos, no su ejecutable.
+/// I point at the minecraft-launcher plugin CONFIG_DIR: its data, not its binary.
 ///
-/// El script del plugin vive en `plugins_base_dir()` (~/.local/share). Ver el
-/// contrato de las dos raíces en `plugin_process::plugins_base_dir`.
+/// I keep the plugin script itself under `plugins_base_dir()` (~/.local/share).
+/// See the two-root contract in `plugin_process::plugins_base_dir`.
 fn mc_root() -> std::path::PathBuf {
     std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
         .join(".config/CorkyTux/plugins/minecraft-launcher")
@@ -100,9 +100,8 @@ fn inst_container(id: &str, isolated: bool) -> std::path::PathBuf {
     inst_dir(id, isolated)
 }
 
-/// Total de updates vs visibles por el filtro activo: el botón global
-/// "Update all" depende del total; el tooltip muestra los visibles como
-/// dato aparte (Fase 1.1).
+/// I compare total vs filter-visible updates: my global "Update all"
+/// button uses the total, and I show the visible count in the tooltip.
 fn update_counts(files: &[String], visible_files: &[String]) -> (usize, usize) {
     let shown = visible_files.iter().filter(|f| files.iter().any(|x| x == *f)).count();
     (files.len(), shown)
@@ -565,12 +564,11 @@ fn icon_cache_dir() -> std::path::PathBuf {
         .join(".cache/CorkyTux/modicons")
 }
 
-/// Purga LRU del caché de iconos/covers: sin cota crecía sin fin (650 MB
-/// vistos). Borra por mtime (más viejos primero) hasta quedar bajo
-/// `max_bytes` y `max_files`. Solo `*-icon.png`, `*-icon.missing` y
-/// `*-raw.bin` de más de un día (descargas interrumpidas). Los
-/// thumbnails se regeneran solos al re-descargar. Devuelve
-/// (archivos borrados, bytes liberados).
+/// I prune the icon/cover LRU cache: uncapped it grew without bound (I saw
+/// 650 MB). I delete oldest-mtime-first until I am under `max_bytes` and
+/// `max_files`. I only touch `*-icon.png`, `*-icon.missing`, and day-old
+/// `*-raw.bin` leftovers from interrupted downloads. Thumbnails regenerate
+/// on re-download. I return (files removed, bytes freed).
 pub(crate) fn prune_icon_cache(max_bytes: u64, max_files: usize) -> (usize, u64) {
     prune_cache_dir(&icon_cache_dir(), max_bytes, max_files)
 }
@@ -1217,7 +1215,7 @@ impl MinecraftView {
         let account_head = gtk::Image::new();
         account_head.set_pixel_size(24);
         account_head.set_icon_name(Some("corkytux-avatar-default-symbolic"));
-        let account_label = gtk::Label::new(Some("Inicia sesión"));
+        let account_label = gtk::Label::new(Some("Sign in"));
         account_label.set_halign(gtk::Align::Start);
         account_label.add_css_class("mc-account-label");
         account_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -1232,7 +1230,7 @@ impl MinecraftView {
         let account_btn = gtk::MenuButton::new();
         account_btn.set_child(Some(&account_inner));
         account_btn.add_css_class("mc-account");
-        account_btn.set_tooltip_text(Some("Cuenta activa — clic para cambiar"));
+        account_btn.set_tooltip_text(Some("Active account — click to switch"));
         let account_pop = gtk::Popover::new();
         account_pop.set_autohide(true);
         account_btn.set_popover(Some(&account_pop));
@@ -1270,9 +1268,9 @@ impl MinecraftView {
         head.append(&add_compact);
         lib_page.append(&head);
         {
-            // Modo icono (ventana estrecha): abre un popover con las mismas
-            // opciones de orden; elegir una mueve el DropDown, que conserva
-            // toda la lógica (notify → render + McSort). Sin duplicar.
+            // I open a sort popover in narrow windows with the same options;
+            // picking one just moves the DropDown, which keeps all the logic
+            // (notify -> render + McSort). I duplicate nothing.
             let sd = sort_drop.clone();
             let cyc = sort_cycle.clone();
             sort_cycle.connect_clicked(move |_| {
@@ -2590,14 +2588,14 @@ impl MinecraftView {
     fn refresh_account_header(&self) {
         let (aid, name) = self.selected_account();
         if aid.is_empty() {
-            self.account_label.set_text("Inicia sesión");
+            self.account_label.set_text("Sign in");
             self.account_head.set_pixel_size(24);
             self.account_head.set_icon_name(Some("corkytux-avatar-default-symbolic"));
-            self.account_btn.set_tooltip_text(Some("Sin cuenta — clic para añadir"));
+            self.account_btn.set_tooltip_text(Some("No account — click to add"));
             return;
         }
         self.account_label.set_text(&name);
-        self.account_btn.set_tooltip_text(Some(&format!("{} — clic para cambiar", name)));
+        self.account_btn.set_tooltip_text(Some(&format!("{} — click to switch", name)));
         self.account_head.set_pixel_size(24);
         self.account_head.set_icon_name(Some("corkytux-avatar-default-symbolic"));
         let img = self.account_head.clone();
@@ -2632,7 +2630,7 @@ impl MinecraftView {
         let (cur_aid, cur_name) = self.selected_account();
         let accounts = self.data.borrow().accounts.clone();
         if accounts.is_empty() {
-            list.append(&note("Sin cuentas. Jugarás offline."));
+            list.append(&note("No accounts. You will play offline."));
         }
         for (aid, name, offline, ely) in &accounts {
             let row_btn = gtk::Button::new();
@@ -2694,7 +2692,7 @@ impl MinecraftView {
         }
         let sep = gtk::Separator::new(gtk::Orientation::Horizontal);
         list.append(&sep);
-        let add_btn = btn_with_icon("corkytux-list-add-symbolic", "Añadir cuenta…");
+        let add_btn = btn_with_icon("corkytux-list-add-symbolic", "Add account…");
         add_btn.add_css_class("settings-btn");
         {
             let v = self.clone();
@@ -2835,7 +2833,7 @@ impl MinecraftView {
             self.confirm_delete(&inst.id);
             return;
         }
-        // pre-flight: warn when no compatible Java exists ("te falta Java X")
+        // Pre-flight: I warn when no compatible Java exists ("you are missing Java X").
         let dir_s = inst_container(&inst.id, inst.isolated).display().to_string();
         let req = MinecraftManager::java_required(&inst.id, &dir_s).ok();
         let satisfied = req.as_ref().and_then(|d| d.get("satisfied")).and_then(|x| x.as_bool()).unwrap_or(true);
@@ -2845,7 +2843,7 @@ impl MinecraftView {
                 let m = d.get("max_java").and_then(|x| x.as_u64()).unwrap_or(99);
                 if m >= 99 { format!("Java {}", r) } else { format!("Java {}-{}", r, m) }
             }).unwrap_or("Java".to_string());
-            self.toast(&format!("Te falta {}", want),
+            self.toast(&format!("Missing {}", want),
                 &format!("{} needs {}. Install it in Settings → Java.", inst.disp, want));
             self.show_mc_settings();
             return;
@@ -3276,11 +3274,11 @@ impl MinecraftView {
             row.append(&menu);
             self.addons_box.append(&row);
         }
-        // per-row Update buttons + update-all visibility.
-        // El botón global depende del TOTAL de updates disponibles, no del
-        // filtro activo: se oculta mientras se chequea (evita mostrar el
-        // estado del filtro anterior) y al resolver muestra el conteo
-        // total, con los visibles por filtro como dato en el tooltip.
+        // Per-row Update buttons + update-all visibility.
+        // I base my global button on TOTAL available updates, not the active
+        // filter: I hide it while checking (so I never show the previous
+        // filter state) and on resolve I show the total count with the
+        // filter-visible count in the tooltip.
         self.update_all_btn.set_visible(false);
         let ctx = self.inst_addon_ctx();
         let (tx, rx) = std::sync::mpsc::channel::<Vec<String>>();
@@ -3495,8 +3493,8 @@ impl MinecraftView {
         });
     }
 
-    /// Diálogo "Update mods": lista con casillas, select all/none y
-    /// "Update selected (N)". Al confirmar pasa a vista de progreso.
+    /// I show the "Update mods" dialog: a checkbox list with select all/none
+    /// and "Update selected (N)". Confirming switches me to the progress view.
     fn show_update_dialog(&self, items: Vec<PendingUpdate>) {
         let dlg = adw::Dialog::new();
         dlg.set_title("Update mods");
@@ -3596,10 +3594,9 @@ impl MinecraftView {
         dlg.present(Some(&self.parent));
     }
 
-    /// Ejecuta los updates en segundo plano con vista de progreso:
-    /// barra + "X of N" + mod actual + resultado por mod. Cancelar
-    /// detiene los pendientes sin tocar el mod en curso (el reemplazo
-    /// en el plugin es atómico).
+    /// I run updates in the background with a progress view: bar + "X of N"
+    /// + current mod + per-mod result. Canceling stops pending items without
+    /// touching the in-flight mod (I rely on atomic replace in the plugin).
     fn run_updates(&self, items: Vec<PendingUpdate>) {
         if items.is_empty() {
             return;
@@ -3656,7 +3653,7 @@ impl MinecraftView {
         }
         let (tx, rx) = std::sync::mpsc::channel::<UpdEv>();
         let total = items.len();
-        // Título por archivo para el progreso (rows actuales + seleccionados).
+        // I resolve one title per file for progress (live rows + selected).
         let mut titles: std::collections::HashMap<String, String> =
             self.load_addon_rows().into_iter().map(|r| (r.file, r.title)).collect();
         for it in &items {
@@ -3668,8 +3665,8 @@ impl MinecraftView {
                     break;
                 }
                 let _ = tx.send(UpdEv::Start { idx, file: it.file.clone() });
-                // El mod en curso siempre termina (atómico en el plugin);
-                // cancelar solo evita tomar más pendientes.
+                // I always let the in-flight mod finish (atomic in the plugin);
+                // canceling just stops me from picking up more pending ones.
                 let (ok, msg) = match MinecraftManager::mod_update(&it.file, &at, &mdir) {
                     Ok(_) => (true, String::new()),
                     Err(e) => (false, e),
@@ -7057,8 +7054,8 @@ mod tests {
     fn scan_skips_hidden_staging_dirs() {
         let root = std::env::temp_dir().join(format!("corkytux-mc-scan-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        // Two leaked `.staging-*` installs + one real container, all holding
-        // the same version id: only the real container may contribute it.
+        // I seed two leaked `.staging-*` installs plus one real container,
+        // all holding the same version id: I let only the real one count.
         mktree(&root, &[
             ".staging-1/versions/fabric-loader-0.19.3-26.2",
             ".staging-1/versions/26.2",
@@ -7077,15 +7074,15 @@ mod tests {
 
     #[test]
     fn merge_dedupes_same_id_across_containers() {
-        // Same version id visible from two different containers (stale copy,
-        // re-import): only one card, isolated wins over legacy.
+        // I expose the same version id from two containers (stale copy,
+        // re-import): I render one card, isolated wins over legacy.
         let dirs = vec![
             ("/c/a".to_string(), "fabric-loader-0.19.3-26.2".to_string()),
             ("/c/b".to_string(), "fabric-loader-0.19.3-26.2".to_string()),
         ];
         let merged = collect_instance_ids(&dirs, &["fabric-loader-0.19.3-26.2".to_string()]);
         assert_eq!(merged, vec![("fabric-loader-0.19.3-26.2".to_string(), true)]);
-        // Base vanilla copy next to its loader is a dependency, not an instance.
+        // I treat a base vanilla copy next to its loader as a dependency, not an instance.
         let with_base = vec![
             ("/c/a".to_string(), "26.2".to_string()),
             ("/c/a".to_string(), "fabric-loader-0.19.3-26.2".to_string()),
@@ -7096,14 +7093,14 @@ mod tests {
 
     #[test]
     fn update_counts_total_vs_filtered() {
-        // El botón global depende del total; los visibles van al tooltip.
+        // I base my global button on the total; visible counts go in the tooltip.
         let files = vec!["a.jar".to_string(), "b.jar".to_string(), "c.jar".to_string()];
         let visible = vec!["a.jar".to_string()];
         assert_eq!(update_counts(&files, &visible), (3, 1));
         assert_eq!(update_counts(&files, &files), (3, 3));
         let empty: Vec<String> = Vec::new();
         assert_eq!(update_counts(&empty, &empty), (0, 0));
-        // Visibles que ya no tienen update no cuentan.
+        // I skip visible files that no longer have an update.
         assert_eq!(update_counts(&files, &["z.jar".to_string()]), (3, 0));
     }
 
@@ -7132,7 +7129,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("corkytux-prune-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
-        // a (viejo) < b < c (nuevo); keep.txt nunca se toca.
+        // I order a (oldest) < b < c (newest); I never touch keep.txt.
         for n in ["a-icon.png", "b-icon.png", "c-icon.png"] {
             let mut f = fs::File::create(root.join(n)).unwrap();
             f.write_all(&[7u8; 10]).unwrap();
@@ -7141,14 +7138,14 @@ mod tests {
         set_mtime(&root.join("a-icon.png"), 300);
         set_mtime(&root.join("b-icon.png"), 200);
         set_mtime(&root.join("c-icon.png"), 100);
-        // 30 bytes con límite 25: borra el más viejo (a) y queda en 20.
+        // I cap 30 bytes at a 25 limit: I delete the oldest (a) and land at 20.
         let (removed, freed) = prune_cache_dir(&root, 25, 100);
         assert_eq!((removed, freed), (1, 10));
         assert!(!root.join("a-icon.png").exists());
         assert!(root.join("b-icon.png").exists());
         assert!(root.join("c-icon.png").exists());
         assert!(root.join("keep.txt").exists());
-        // Límite por cantidad: max 1 archivo borra el más viejo (b).
+        // I cap by count: with max 1 file I delete the oldest (b).
         let (removed2, _) = prune_cache_dir(&root, u64::MAX, 1);
         assert_eq!(removed2, 1);
         assert!(!root.join("b-icon.png").exists());

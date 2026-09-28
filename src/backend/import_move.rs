@@ -1,14 +1,14 @@
-//! Migracion segura de `install_path` y `prefix_path` al directorio Games.
+//! Safe migration of `install_path` and `prefix_path` into the Games dir.
 //!
-//! El import permanente nunca borra antes de verificar. La secuencia es:
-//! copiar con `cp -a` a un temporal DENTRO de Games (mismo filesystem, por eso
-//! el rename final es atomico), verificar tamano y ejecutable, publicar con
-//! un rename, y solo entonces retirar el original dejando un symlink en su
-//! ruta vieja para que Heroic y Lutris no se rompan.
+//! My permanent import never deletes before verifying. The sequence is: copy
+//! with `cp -a` to a staging dir INSIDE Games (same filesystem, which is why
+//! the final rename is atomic), verify size and executable, publish with a
+//! rename, and only then retire the original, leaving a symlink at its old
+//! path so Heroic and Lutris keep working.
 //!
-//! `preflight` y `plan_for_mode` estan separados a proposito: el usuario
-//! elige el modo despues de ver los blockers, y solo entonces se decide que
-//! se mueve de verdad. `execute` es el unico punto que toca el disco.
+//! I keep `preflight` and `plan_for_mode` separate on purpose: the user picks
+//! the mode after seeing the blockers, and only then do I decide what really
+//! moves. `execute` is my only point that touches the disk.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::CString;
@@ -17,43 +17,42 @@ use std::os::unix::fs::symlink;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
-/// Margen sobre el total a mover. La copia vive dentro de Games mientras el
-/// original sigue ahi, asi que en el peor caso se necesita el doble: el
-/// margen cubre el temporal mas los metadatos del filesystem.
+/// Headroom over the total to move. The copy lives inside Games while the
+/// original is still there, so worst case needs double: my margin covers the
+/// staging dir plus filesystem metadata.
 pub const SPACE_MARGIN_BYTES: u64 = 512 * 1024 * 1024;
 
-/// Temporal de staging. Tiene que estar en Games: si viviera en /tmp el rename
-/// al destino final seria una copia, no un rename, y perderia la atomicidad.
+/// Staging temp dir. It must sit in Games: under /tmp the move to the final
+/// destination would be a copy, not a rename, and I would lose atomicity.
 pub const STAGE_DIR: &str = ".corkytux-import";
 
-/// Sufijo del original retirado durante la ventana rename -> symlink.
+/// Suffix of the retired original during the rename -> symlink window.
 pub const OLD_SUFFIX: &str = "corkytux-old";
 
-/// Modo elegido por el usuario en el Import Manager.
+/// Mode the user picks in the Import Manager.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImportMode {
-    /// Comportamiento actual: solo registra, no mueve nada.
+    /// Current behavior: I only register, move nothing.
     Test,
-    /// Mueve los juegos que no comparten prefix. Los que comparten se
-    /// quedan en modo Test.
+    /// I move games that share no prefix. Shared ones stay in Test mode.
     Permanent,
-    /// Ademas mueve los juegos con prefix compartido, todos juntos.
+    /// I also move shared-prefix games, all together.
     PermanentWithSharedGroups,
 }
 
-/// Motivo por el que un candidato no entra en `plans`.
+/// Why a candidate stays out of `plans`.
 #[derive(Clone, Debug)]
 pub enum Blocker {
     GameRunning { label: String },
-    /// Global, no lleva etiqueta: si no cabe no se mueve nada.
+    /// Global, carries no label: if it fits nothing, I move nothing.
     NotEnoughSpace { need_bytes: u64, free_bytes: u64 },
     SharedPrefix { label: String, shared_with: Vec<String> },
     SourceMissing { label: String, path: PathBuf },
-    /// Original retirado a `.corkytux-old`, pero la sesion murio antes de
-    /// poner el symlink. El original esta entero en `path`.
+    /// Original retired to `.corkytux-old`, but the session died before I
+    /// placed the symlink. The original is intact at `path`.
     OrphanedOriginal { label: String, path: PathBuf },
-    /// No se pudo comprobar si el prefix esta en uso, asi que no se mueve.
-    /// Bloquea a proposito: se prefiere un import pendiente a perder datos.
+    /// I could not tell whether the prefix is in use, so I move nothing.
+    /// I block on purpose: a pending import beats lost data.
     UsageUndeterminable { label: String, path: PathBuf },
 }
 
@@ -61,24 +60,24 @@ impl Blocker {
     pub fn message(&self) -> String {
         match self {
             Blocker::GameRunning { label } => {
-                format!("{} tiene un wineserver vivo sobre su prefix", label)
+                format!("{} has a live wineserver on its prefix", label)
             }
             Blocker::NotEnoughSpace { need_bytes, free_bytes } => format!(
-                "no cabe en Games: hacen falta {} y hay {}",
+                "does not fit in Games: needs {} but only {} free",
                 human_bytes(*need_bytes),
                 human_bytes(*free_bytes)
             ),
             Blocker::SharedPrefix { label, shared_with } => {
-                format!("{} comparte prefix con {}", label, shared_with.join(", "))
+                format!("{} shares a prefix with {}", label, shared_with.join(", "))
             }
             Blocker::SourceMissing { label, path } => {
-                format!("no existe la carpeta de {} ({})", label, path.display())
+                format!("{} folder is missing ({})", label, path.display())
             }
             Blocker::OrphanedOriginal { label, path } => {
-                format!("{} tiene un original sin terminar de mover en {}", label, path.display())
+                format!("{} has an unfinished original waiting at {}", label, path.display())
             }
             Blocker::UsageUndeterminable { label, path } => format!(
-                "no se pudo comprobar si {} esta en uso ({}); cierra los juegos de Wine e reintenta",
+                "could not tell whether {} is in use ({}); close Wine games and retry",
                 label,
                 path.display()
             ),
@@ -86,21 +85,21 @@ impl Blocker {
     }
 }
 
-/// Un juego candidato a migrar.
+/// A game I may migrate.
 #[derive(Clone, Debug)]
 pub struct MoveCandidate {
     pub label: String,
     pub store_tag: String,
     pub install_path: PathBuf,
-    /// Prefix REAL del origen. `None` en Heroic: el prefix_path que CorkyTux
-    /// registra para los stores es suyo, no del launcher, y no se toca.
+    /// REAL source prefix. `None` for Heroic: the prefix_path I register for
+    /// stores belongs to them, not the launcher, and I leave it alone.
     pub prefix_path: Option<PathBuf>,
-    /// Ejecutable principal ya resuelto, para verificarlo en la copia.
+    /// Main executable, already resolved, so I can verify it in the copy.
     pub executable: PathBuf,
 }
 
-/// Movimiento fisico de un prefix. En un grupo compartido hay UN solo
-/// PrefixMove para todos los miembros: el prefix se mueve una vez.
+/// Physical move of one prefix. In a shared group I keep a SINGLE
+/// PrefixMove for all members: the prefix moves once.
 #[derive(Clone, Debug)]
 pub struct PrefixMove {
     pub src: PathBuf,
@@ -108,20 +107,20 @@ pub struct PrefixMove {
     pub bytes: u64,
 }
 
-/// Un juego con su destino resuelto.
+/// One game with its destination resolved.
 #[derive(Clone, Debug)]
 pub struct MovePlan {
     pub candidate: MoveCandidate,
-    /// Tamano indicativo de este plan. El total autoritativo lo calcula
-    /// `preflight` con los prefijos contados una sola vez.
+    /// Rough size of this plan. `preflight` computes the authoritative
+    /// total with each prefix counted once.
     pub bytes: u64,
     pub dest_install: PathBuf,
-    /// Prefix propio de este juego. `None` si no hay prefix real, o si el
-    /// prefix lo lleva un `GroupPlan` (que lo mueve una vez para todos).
+    /// This game's own prefix. `None` when there is no real prefix, or when
+    /// a `GroupPlan` carries it (it moves once for everyone).
     pub prefix_move: Option<PrefixMove>,
-    /// `Some(relativo)` cuando `install_path` vive DENTRO de `prefix_path`.
-    /// No hay copia propia: los datos viajan con el prefix y lo unico que
-    /// cambia es la ruta configurada.
+    /// `Some(relative)` when `install_path` lives INSIDE `prefix_path`. No
+    /// copy of its own: the data travels with the prefix and I only change
+    /// the configured path.
     pub nested_rel: Option<String>,
 }
 
@@ -130,7 +129,7 @@ impl MovePlan {
         self.nested_rel.is_some()
     }
 
-    /// `install_path` final una vez completado el movimiento.
+    /// Final `install_path` once the move completes.
     pub fn new_install_path(&self) -> PathBuf {
         match &self.nested_rel {
             Some(rel) => match &self.prefix_move {
@@ -141,20 +140,20 @@ impl MovePlan {
         }
     }
 
-    /// `prefix_path` final, o `None` si este juego no tiene prefix real.
+    /// Final `prefix_path`, or `None` when this game has no real prefix.
     pub fn new_prefix_path(&self) -> Option<PathBuf> {
         self.prefix_move.as_ref().map(|pm| pm.dest.clone())
     }
 }
 
-/// Resultado de los checks previos.
+/// Result of my pre-checks.
 #[derive(Clone, Debug)]
 pub struct Preflight {
     pub plans: Vec<MovePlan>,
     pub blockers: Vec<Blocker>,
 }
 
-/// Clase de equivalencia de prefijos compartidos.
+/// Equivalence class of shared prefixes.
 #[derive(Clone, Debug)]
 pub struct SharedGroup {
     pub group_id: String,
@@ -162,7 +161,7 @@ pub struct SharedGroup {
     pub prefix_path: PathBuf,
 }
 
-/// El grupo como unidad: el prefix se mueve una vez, los installs N veces.
+/// The group as one unit: the prefix moves once, the installs N times.
 #[derive(Clone, Debug)]
 pub struct GroupPlan {
     pub group_id: String,
@@ -170,7 +169,7 @@ pub struct GroupPlan {
     pub members: Vec<MovePlan>,
 }
 
-/// Lo que la UI recibe una vez elegido el modo.
+/// What the UI receives once the mode is picked.
 #[derive(Clone, Debug, Default)]
 pub struct ExecPlan {
     pub singles: Vec<MovePlan>,
@@ -178,7 +177,7 @@ pub struct ExecPlan {
     pub test_only: Vec<String>,
 }
 
-/// Resultado por juego. La UI decide que hacer con los exitos.
+/// Per-game result. The UI decides what to do with successes.
 #[derive(Clone, Debug)]
 pub enum MoveOutcome {
     Clean,
@@ -191,8 +190,8 @@ impl MoveOutcome {
         !matches!(self, MoveOutcome::Failed(_))
     }
 
-    /// Sin llamador todavia: accesor simetrico a `Blocker::message`, se deja
-    /// para depurar resultados sin reconstruir el enum.
+    /// No caller yet: a symmetric accessor to `Blocker::message` that I keep
+    /// for debugging results without rebuilding the enum.
     #[allow(dead_code)]
     pub fn message(&self) -> Option<&str> {
         match self {
@@ -202,9 +201,9 @@ impl MoveOutcome {
     }
 }
 
-// ─── helpers de ruta ────────────────────────────────────────────────
+// --- path helpers ---
 
-/// Normaliza para comparar: canonicaliza si existe, si no limpia elemetos.
+/// I normalize for comparison: canonicalize when it exists, else clean up.
 pub fn norm(p: &Path) -> PathBuf {
     std::fs::canonicalize(p).unwrap_or_else(|_| clean_path(p))
 }
@@ -229,15 +228,15 @@ fn clean_path(p: &Path) -> PathBuf {
     }
 }
 
-/// ¿`inner` vive dentro de `outer`? Comparacion por componentes, no por
-/// prefijo de texto: `/juegos/quake` NO esta dentro de `/juegos/quake2`.
+/// Does `inner` live inside `outer`? I compare by components, not text
+/// prefix: `/games/quake` is NOT inside `/games/quake2`.
 pub fn nested_in(inner: &Path, outer: &Path) -> bool {
     let a = norm(inner);
     let b = norm(outer);
     a != b && a.starts_with(&b)
 }
 
-/// Nombre de carpeta seguro a partir de un titulo.
+/// Safe folder name from a title.
 pub fn sanitize(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
@@ -256,7 +255,7 @@ pub fn sanitize(s: &str) -> String {
     }
 }
 
-/// Primer destino libre: `Nombre`, y si existe `Nombre (GOG)`, `Nombre (GOG 2)`.
+/// First free destination: `Name`, then `Name (GOG)`, `Name (GOG 2)`.
 pub fn unique_dest(games_dir: &Path, label: &str, tag: &str) -> PathBuf {
     let base = sanitize(label);
     let first = games_dir.join(&base);
@@ -277,8 +276,8 @@ pub fn unique_dest(games_dir: &Path, label: &str, tag: &str) -> PathBuf {
     games_dir.join(format!("{} ({} overflow)", base, tag))
 }
 
-/// Hermano libre de `base` con sufijo: `base-prefix`, `base-prefix 2`...
-/// El prefix de un juego queda siempre junto a la carpeta del juego.
+/// Free sibling of `base` with a suffix: `base-prefix`, `base-prefix 2`...
+/// I always keep a game prefix next to the game folder.
 fn unique_sibling(base: &Path, suffix: &str) -> PathBuf {
     let parent = base.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
     let stem = base
@@ -298,7 +297,7 @@ fn unique_sibling(base: &Path, suffix: &str) -> PathBuf {
     parent.join(format!("{}-{} overflow", stem, suffix))
 }
 
-/// Hijo libre dentro de un directorio de grupo.
+/// Free child inside a group directory.
 fn unique_child(dir: &Path, label: &str) -> PathBuf {
     let base = sanitize(label);
     let first = dir.join(&base);
@@ -314,9 +313,9 @@ fn unique_child(dir: &Path, label: &str) -> PathBuf {
     dir.join(format!("{} overflow", base))
 }
 
-/// Tamano total de un arbol. Los symlinks cuentan por su propio tamano, nunca
-/// por el del destino: `symlink_metadata` no sigue enlaces. Las carpetas
-/// aportan 0, de modo que la comparacion origen/copia es simetrica.
+/// Total size of a tree. Symlinks count their own size, never the target's:
+/// `symlink_metadata` follows no links. Folders add 0, so my source/copy
+/// comparison stays symmetric.
 pub fn dir_size(path: &Path) -> u64 {
     let mut total: u64 = 0;
     let mut stack = vec![path.to_path_buf()];
@@ -339,10 +338,10 @@ pub fn dir_size(path: &Path) -> u64 {
     total
 }
 
-/// Espacio libre en el filesystem que contiene `path`, via statvfs.
+/// Free space on the filesystem holding `path`, via statvfs.
 pub fn free_bytes(path: &Path) -> std::io::Result<u64> {
     let c = CString::new(path.as_os_str().as_bytes())
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "ruta con NUL"))?;
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path with NUL"))?;
     let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
     let rc = unsafe { libc::statvfs(c.as_ptr(), &mut st) };
     if rc != 0 {
@@ -353,33 +352,31 @@ pub fn free_bytes(path: &Path) -> std::io::Result<u64> {
     Ok(avail.saturating_mul(bsize))
 }
 
-/// Estado de ocupacion de un prefix segun los procesos vivos del sistema.
+/// Prefix occupancy from live system processes.
 ///
-/// `Unknown` existe para que "no se pudo comprobar" nunca se confunda con
-/// "esta libre": mover un prefix con el juego corriendo pierde datos, asi que
-/// ante duda el import se bloquea.
+/// I keep `Unknown` so "could not check" never reads as "free": moving a
+/// prefix while its game runs loses data, so on doubt I block the import.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrefixUsage {
-    /// Hay un wineserver sosteniendo ESTE prefix.
+    /// A wineserver is holding THIS prefix.
     Busy,
-    /// Comprobado con certeza: ningun wineserver apunta a este prefix.
+    /// Checked for sure: no wineserver points at this prefix.
     Free,
-    /// No se pudo determinar. No tratar como libre.
+    /// Undetermined. I never treat it as free.
     Unknown,
 }
 
-/// PIDs cuyo nombre de proceso es `wineserver`, leidos de `/proc`.
+/// PIDs whose process name is `wineserver`, read from `/proc`.
 ///
-/// Se evita `pgrep` a proposito: viene de procps, no de POSIX, y no existe en
-/// el PATH por defecto de NixOS ni en contenedores minimos. Con `pgrep` ausente
-/// la version anterior devolvia "prefix libre" y el import movia directorios en
-/// uso.
+/// I avoid `pgrep` on purpose: it comes from procps, not POSIX, and is missing
+/// from the default NixOS PATH and minimal containers. With `pgrep` absent my
+/// old code returned "prefix free" and the import moved dirs in use.
 ///
-/// `comm` se compara por subcadena, no por igualdad, para no perder variantes
-/// (`wineserver-preloader`). El prefijo `wineserver` no aparece en el nombre de
-/// CorkyTux ni de ningun proceso suyo, asi que no hay autocompresion. Un
-/// proceso que coincida pero no exponga `WINEPREFIX` se cuenta como
-/// inatribuible, que bloquea en vez de liberar.
+/// I match `comm` by substring, not equality, to keep variants
+/// (`wineserver-preloader`). The `wineserver` prefix appears in neither
+/// CorkyTux's name nor its processes, so there is no self-match. A matching
+/// process that exposes no `WINEPREFIX` counts as unattributable, which blocks
+/// instead of freeing.
 fn wineserver_pids() -> Option<Vec<u32>> {
     let entries = std::fs::read_dir("/proc").ok()?;
     let mut pids = Vec::new();
@@ -399,11 +396,11 @@ fn wineserver_pids() -> Option<Vec<u32>> {
     Some(pids)
 }
 
-/// `WINEPREFIX` declarado por el proceso, leido de `/proc/<pid>/environ`.
+/// `WINEPREFIX` declared by the process, read from `/proc/<pid>/environ`.
 ///
-/// Es la atribucion exacta: wineserver no lleva el prefix en su linea de
-/// comandos (lo recibe por entorno), asi que comparar `/proc/<pid>/cmdline`
-/// con el prefix no era fiable.
+/// This is my exact attribution: wineserver carries no prefix on its command
+/// line (it gets it via environment), so comparing `/proc/<pid>/cmdline`
+/// against the prefix was unreliable.
 fn wineprefix_of(pid: u32) -> Option<PathBuf> {
     let raw = std::fs::read(format!("/proc/{}/environ", pid)).ok()?;
     for entry in raw.split(|b| *b == 0) {
@@ -421,13 +418,13 @@ fn wineprefix_of(pid: u32) -> Option<PathBuf> {
     None
 }
 
-/// ¿Hay un wineserver vivo sosteniendo este prefix?
+/// Is a live wineserver holding this prefix?
 ///
-/// Mismo criterio que `proton.rs` (lock + pgrep), pero sin depender de `pgrep`
-/// y con atribucion exacta por `WINEPREFIX`.
+/// Same bar as `proton.rs` (lock + pgrep), but I skip the `pgrep` dependency
+/// and attribute exactly via `WINEPREFIX`.
 pub fn prefix_usage(prefix: &Path) -> PrefixUsage {
     let Some(pids) = wineserver_pids() else {
-        // Sin /proc no hay forma de comprobarlo: nunca se asume libre.
+        // Without /proc there is no way to check: I never assume free.
         return PrefixUsage::Unknown;
     };
     if pids.is_empty() {
@@ -442,9 +439,9 @@ pub fn prefix_usage(prefix: &Path) -> PrefixUsage {
                     return PrefixUsage::Busy;
                 }
             }
-            // Un wineserver vivo al que no se puede leer el entorno (otro
-            // usuario, procfs con hidepid) impide afirmar que este prefix
-            // esta libre: se bloquea con aviso en vez de arriesgar los datos.
+            // A live wineserver whose environment I cannot read (another
+            // user, procfs with hidepid) stops me from claiming this prefix
+            // is free: I block with a warning instead of risking data.
             None => unattributed += 1,
         }
     }
@@ -455,12 +452,12 @@ pub fn prefix_usage(prefix: &Path) -> PrefixUsage {
     }
 }
 
-/// Temporal de staging, un directorio por proceso.
+/// Staging temp root, one dir per process.
 pub fn stage_root(games_dir: &Path) -> PathBuf {
     games_dir.join(STAGE_DIR).join(format!("pid-{}", std::process::id()))
 }
 
-/// Bytes legibles para la UI.
+/// Human-readable bytes for the UI.
 pub fn human_bytes(n: u64) -> String {
     const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
     let mut v = n as f64;
@@ -476,15 +473,15 @@ pub fn human_bytes(n: u64) -> String {
     }
 }
 
-// ─── preflight ──────────────────────────────────────────────────────
+// --- preflight ---
 
-/// Checks previos. Decide que candidatos entran en `plans` y cuales quedan
-/// bloqueados. No toca el disco: solo lee.
+/// Pre-checks. I decide which candidates enter `plans` and which stay
+/// blocked. I touch no disk: reads only.
 pub fn preflight(cands: &[MoveCandidate], games_dir: &Path) -> Preflight {
     let mut plans: Vec<MovePlan> = Vec::new();
     let mut blockers: Vec<Blocker> = Vec::new();
 
-    // Fase A: prefijos reales, agrupados por ruta normalizada.
+    // Step A: real prefixes, grouped by normalized path.
     let mut by_prefix: BTreeMap<PathBuf, Vec<&MoveCandidate>> = BTreeMap::new();
     for c in cands {
         if let Some(p) = &c.prefix_path {
@@ -499,9 +496,9 @@ pub fn preflight(cands: &[MoveCandidate], games_dir: &Path) -> Preflight {
         .map(|(k, _)| k.clone())
         .collect();
 
-    // Fase B: checks por candidato.
-    // Deteccion de crash de una sesion anterior: si hay un .corkytux-old
-    // huerfano, nada mas se calcula para ese juego.
+    // Step B: per-candidate checks.
+    // Crash detection for a previous session: with an orphaned .corkytux-old
+    // I compute nothing else for that game.
     let orphans: BTreeMap<String, PathBuf> = find_orphaned_originals(cands).into_iter().collect();
     for c in cands {
         if let Some(old) = orphans.get(&c.label) {
@@ -527,8 +524,8 @@ pub fn preflight(cands: &[MoveCandidate], games_dir: &Path) -> Preflight {
                         });
                         continue;
                     }
-                    // Fallo cerrado: sin prueba de que el prefix este libre,
-                    // no se mueve.
+                    // Fail-closed: without proof the prefix is free,
+                    // I move nothing.
                     PrefixUsage::Unknown => {
                         blockers.push(Blocker::UsageUndeterminable {
                             label: c.label.clone(),
@@ -547,8 +544,8 @@ pub fn preflight(cands: &[MoveCandidate], games_dir: &Path) -> Preflight {
             _ => false,
         };
 
-        // El prefix lo mueve el grupo si es compartido; si no, este plan es su
-        // dueño y lo mueve el mismo.
+        // The group moves the prefix when shared; otherwise this plan owns
+        // it and moves it itself.
         let prefix_move = match &c.prefix_path {
             Some(p) if p.exists() && !shared_prefix => Some(PrefixMove {
                 src: p.clone(),
@@ -558,8 +555,8 @@ pub fn preflight(cands: &[MoveCandidate], games_dir: &Path) -> Preflight {
             _ => None,
         };
 
-        // D1: install_path dentro de prefix_path. No se bloquea: los datos
-        // viajan con el prefix y lo unico que cambia es la ruta configurada.
+        // D1: install_path inside prefix_path. I do not block: the data
+        // travels with the prefix and I only change the configured path.
         let nested_rel = match (&c.prefix_path, &prefix_move) {
             (Some(p), Some(pm)) if nested_in(&c.install_path, p) => {
                 norm(&c.install_path)
@@ -593,9 +590,8 @@ pub fn preflight(cands: &[MoveCandidate], games_dir: &Path) -> Preflight {
         });
     }
 
-    // Fase C: un blocker SharedPrefix por miembro, con los nombres de los
-    // demas. La UI reconstruye los grupos con `groups_of` sin que `Preflight`
-    // necesite un campo extra.
+    // Step C: one SharedPrefix blocker per member, naming the others. The
+    // UI rebuilds groups with `groups_of` so `Preflight` needs no extra field.
     for pfx in &shared {
         let members: Vec<String> = by_prefix[pfx].iter().map(|c| c.label.clone()).collect();
         for m in &members {
@@ -607,7 +603,7 @@ pub fn preflight(cands: &[MoveCandidate], games_dir: &Path) -> Preflight {
         }
     }
 
-    // Fase D: espacio global, con cada prefix contado UNA vez.
+    // Step D: global space, each prefix counted ONCE.
     let mut seen: BTreeSet<PathBuf> = BTreeSet::new();
     let mut need: u64 = 0;
     for c in cands {
@@ -629,11 +625,11 @@ pub fn preflight(cands: &[MoveCandidate], games_dir: &Path) -> Preflight {
                     need_bytes: need_total,
                     free_bytes: free,
                 });
-                // Global: si no cabe, no se mueve nada.
+                // Global: if it fits nothing, I move nothing.
                 plans.clear();
             }
         }
-        Err(e) => eprintln!("[import] statvfs fallo en {}: {}", games_dir.display(), e),
+        Err(e) => eprintln!("[import] statvfs failed on {}: {}", games_dir.display(), e),
     }
 
     Preflight { plans, blockers }
@@ -644,8 +640,8 @@ fn uf_find(parent: &mut BTreeMap<String, String>, x: &str) -> String {
         parent.insert(x.to_string(), x.to_string());
     }
     let mut cur = x.to_string();
-    // Union por raices no puede crear ciclos, pero el recorrido lleva guardia
-    // para que un dato corrupto no deje el import colgado.
+    // Union-by-roots cannot cycle, but I still guard the walk so corrupt
+    // data never hangs the import.
     let mut guard = parent.len() + 1;
     while guard > 0 {
         guard -= 1;
@@ -666,8 +662,8 @@ fn uf_union(parent: &mut BTreeMap<String, String>, a: &str, b: &str) {
     }
 }
 
-/// Reconstruye los grupos compartidos desde los blockers, sin campos extra
-/// en `Preflight`. Une por clases de equivalencia sobre los nombres.
+/// I rebuild shared groups from the blockers, no extra `Preflight` fields.
+/// I union by equivalence classes over the names.
 pub fn groups_of(cands: &[MoveCandidate], blockers: &[Blocker]) -> Vec<SharedGroup> {
     let mut parent: BTreeMap<String, String> = BTreeMap::new();
     for b in blockers {
@@ -719,10 +715,11 @@ pub fn groups_of(cands: &[MoveCandidate], blockers: &[Blocker]) -> Vec<SharedGro
     out
 }
 
-// ─── plan por modo ──────────────────────────────────────────────────
+// --- plan per mode ---
 
-/// Traduce el modo elegido a un plan ejecutable. En `PermanentWithSharedGroups`
-/// revalida cada grupo: algo pudo ponerse a correr entre el preflight y el ok.
+/// I translate the picked mode into an executable plan. In
+/// `PermanentWithSharedGroups` I revalidate each group: something may have
+/// started between preflight and confirmation.
 pub fn plan_for_mode(
     pf: &Preflight,
     cands: &[MoveCandidate],
@@ -740,7 +737,7 @@ pub fn plan_for_mode(
         .iter()
         .any(|b| matches!(b, Blocker::NotEnoughSpace { .. }));
 
-    // Sin espacio, o en modo Test, no se mueve nada.
+    // Without space, or in Test mode, I move nothing.
     if space_blocked || mode == ImportMode::Test {
         ep.test_only = cands.iter().map(|c| c.label.clone()).collect();
         return ep;
@@ -754,8 +751,8 @@ pub fn plan_for_mode(
         }
     }
 
-    // Los limpios que no son parte de un grupo van como single en los dos
-    // modos permanentes: un grupo nunca bloquea al resto de la seleccion.
+    // Clean non-group entries go as singles in both permanent modes: a
+    // group never blocks the rest of the selection.
     for p in &pf.plans {
         if !in_group.contains(&p.candidate.label) {
             ep.singles.push(p.clone());
@@ -772,8 +769,8 @@ pub fn plan_for_mode(
         return ep;
     }
 
-    // PermanentWithSharedGroups. El presupuesto se consume grupo a grupo: dos
-    // grupos pueden caber por separado y no juntos.
+    // PermanentWithSharedGroups. I spend the budget group by group: two
+    // groups may fit apart but not together.
     let mut budget = match free_bytes(games_dir) {
         Ok(f) => f,
         Err(e) => {
@@ -788,21 +785,21 @@ pub fn plan_for_mode(
             .filter(|c| g.members.contains(&c.label))
             .collect();
 
-        // Revalidacion. Si un miembro falla, el grupo ENTERO se queda en test:
-        // partir un prefix compartido entre dos sitios es justo el bug que
-        // estamos previniendo.
+        // Revalidation. If one member fails, the WHOLE group stays in test:
+        // splitting a shared prefix across two places is exactly the bug I
+        // prevent here.
         let mut bad: Option<String> = None;
         if !g.prefix_path.as_os_str().is_empty() {
             match prefix_usage(&g.prefix_path) {
                 PrefixUsage::Busy => {
                     bad = Some(format!(
-                        "el prefix compartido {} esta en uso",
+                        "shared prefix {} is in use",
                         g.prefix_path.display()
                     ));
                 }
                 PrefixUsage::Unknown => {
                     bad = Some(format!(
-                        "no se pudo comprobar si el prefix compartido {} esta en uso",
+                        "could not tell whether shared prefix {} is in use",
                         g.prefix_path.display()
                     ));
                 }
@@ -812,13 +809,13 @@ pub fn plan_for_mode(
         if bad.is_none() {
             for m in &members {
                 if !m.install_path.exists() {
-                    bad = Some(format!("no existe la carpeta de {}", m.label));
+                    bad = Some(format!("{} folder is missing", m.label));
                     break;
                 }
             }
         }
 
-        // Espacio del grupo: prefix una vez + install de cada miembro.
+        // Group space: prefix once + each member install.
         let mut need_g: u64 = 0;
         if !g.prefix_path.as_os_str().is_empty() && g.prefix_path.exists() {
             need_g = need_g.saturating_add(dir_size(&g.prefix_path));
@@ -833,21 +830,21 @@ pub fn plan_for_mode(
         let need_total = need_g.saturating_add(SPACE_MARGIN_BYTES);
         if need_total > budget {
             bad = Some(format!(
-                "el grupo no cabe: hacen falta {} y quedan {}",
+                "group does not fit: needs {} but only {} left",
                 human_bytes(need_total),
                 human_bytes(budget)
             ));
         }
 
         if let Some(reason) = bad {
-            eprintln!("[import] grupo {} descartado: {}", g.group_id, reason);
+            eprintln!("[import] group {} dropped: {}", g.group_id, reason);
             for m in &members {
                 ep.test_only.push(m.label.clone());
             }
             continue;
         }
 
-        // Layout del grupo: ~/Games/<grupo>/prefix + ~/Games/<grupo>/<juego>
+        // Group layout: ~/Games/<group>/prefix + ~/Games/<group>/<game>
         let group_dir = unique_dest(games_dir, &g.group_id, "shared");
         let prefix_move = if g.prefix_path.as_os_str().is_empty() || !g.prefix_path.exists() {
             None
@@ -902,7 +899,7 @@ pub fn plan_for_mode(
     ep
 }
 
-/// Orphans de una sesion anterior interrumpida entre el rename y el symlink.
+/// Orphans from a previous session cut between the rename and the symlink.
 pub fn find_orphaned_originals(cands: &[MoveCandidate]) -> Vec<(String, PathBuf)> {
     let mut out: Vec<(String, PathBuf)> = Vec::new();
     for c in cands {
@@ -918,11 +915,11 @@ pub fn find_orphaned_originals(cands: &[MoveCandidate]) -> Vec<(String, PathBuf)
     out
 }
 
-// ─── ejecucion ──────────────────────────────────────────────────────
+// --- execution ---
 
-/// Ejecuta el plan. Los grupos primero: son los mas caros y los mas
-/// propensos a abortar. No toca la configuracion: devuelve los resultados y
-/// es el llamador quien actualiza Games.ini con los que salieron bien.
+/// I execute the plan. Groups first: priciest and most likely to abort. I
+/// touch no config: I return results and my caller updates Games.ini with
+/// the ones that came out fine.
 pub fn execute(ep: &ExecPlan, games_dir: &Path) -> Vec<(String, MoveOutcome)> {
     let mut out: Vec<(String, MoveOutcome)> = Vec::new();
     for g in &ep.groups {
@@ -937,20 +934,20 @@ pub fn execute(ep: &ExecPlan, games_dir: &Path) -> Vec<(String, MoveOutcome)> {
 fn execute_single(p: &MovePlan, games_dir: &Path) -> Vec<(String, MoveOutcome)> {
     let label = p.candidate.label.clone();
 
-    // Un plan con prefix propio lo mueve antes que el install: si el install
-    // esta dentro del prefix, los datos viajan con el.
+    // A plan with its own prefix moves it before the install: when the
+    // install sits inside the prefix, the data travels with it.
     if let Some(pm) = &p.prefix_move {
         let stage = stage_root(games_dir)
             .join(sanitize(&label))
             .join("prefix");
         if let Err(e) = move_dir(&pm.src, &pm.dest, &stage, None) {
-            eprintln!("[import] {}: fallo moviendo el prefix: {}", label, e);
+            eprintln!("[import] {}: failed moving the prefix: {}", label, e);
             return vec![(label, MoveOutcome::Failed(e))];
         }
     }
 
     if p.is_nested() {
-        // Los datos ya estan en la copia del prefix: solo cambia la ruta.
+        // The data is already in the prefix copy: I only change the path.
         return vec![(label, MoveOutcome::Clean)];
     }
 
@@ -971,8 +968,8 @@ fn execute_group(g: &GroupPlan, games_dir: &Path) -> Vec<(String, MoveOutcome)> 
 
     if let Some(pm) = &g.prefix_move {
         if let Err(e) = move_dir(&pm.src, &pm.dest, &group_stage.join("prefix"), None) {
-            eprintln!("[import] grupo {}: fallo el prefix: {}", g.group_id, e);
-            let msg = format!("no se pudo mover el prefix compartido: {}", e);
+            eprintln!("[import] group {}: prefix failed: {}", g.group_id, e);
+            let msg = format!("could not move the shared prefix: {}", e);
             for m in &g.members {
                 out.push((m.candidate.label.clone(), MoveOutcome::Failed(msg.clone())));
             }
@@ -1004,9 +1001,9 @@ fn execute_group(g: &GroupPlan, games_dir: &Path) -> Vec<(String, MoveOutcome)> 
     out
 }
 
-/// Ejecutable relativo a install_path. `None` si el ejecutable ES la carpeta
-/// de install (ya verificado por dir_size) o si cae fuera de ella, en cuyo
-/// caso no hay nada que comprobar dentro de la copia.
+/// Executable relative to install_path. `None` when the executable IS the
+/// install folder (already covered by dir_size) or falls outside it, in which
+/// case there is nothing to check inside the copy.
 fn exe_rel(c: &MoveCandidate) -> Option<PathBuf> {
     let ip = norm(&c.install_path);
     let ex = norm(&c.executable);
@@ -1016,7 +1013,7 @@ fn exe_rel(c: &MoveCandidate) -> Option<PathBuf> {
     ex.strip_prefix(&ip).ok().map(|r| r.to_path_buf())
 }
 
-/// Copia, verifica y publica. Todo el trabajo destructivo vive en `finalize`.
+/// I copy, verify and publish. All destructive work lives in `finalize`.
 fn move_dir(
     src: &Path,
     dest: &Path,
@@ -1024,13 +1021,13 @@ fn move_dir(
     verify_exe: Option<&Path>,
 ) -> Result<Option<String>, String> {
     if !src.exists() {
-        return Err(format!("el origen ya no existe: {}", src.display()));
+        return Err(format!("source is gone: {}", src.display()));
     }
     if dest.exists() {
-        return Err(format!("el destino ya existe: {}", dest.display()));
+        return Err(format!("destination already exists: {}", dest.display()));
     }
     if let Some(p) = stage.parent() {
-        std::fs::create_dir_all(p).map_err(|e| format!("no se pudo crear el temporal: {}", e))?;
+        std::fs::create_dir_all(p).map_err(|e| format!("could not create staging dir: {}", e))?;
     }
     if stage.exists() {
         let _ = std::fs::remove_dir_all(stage);
@@ -1044,8 +1041,8 @@ fn move_dir(
     }
 
     let res = verify_and_finalize(src, dest, stage, verify_exe);
-    // El temporal se limpia siempre, se llegue donde se llegue. Tras un
-    // rename exitoso ya no existe, asi que esto es un no-op.
+    // I always clean the staging dir, whatever happens. After a successful
+    // rename it is gone, so this is a no-op.
     if stage.exists() {
         let _ = std::fs::remove_dir_all(stage);
     }
@@ -1054,16 +1051,16 @@ fn move_dir(
 
 fn cp_a(src: &Path, dst: &Path) -> Result<(), String> {
     if dst.exists() {
-        std::fs::remove_dir_all(dst).map_err(|e| format!("no se pudo limpiar el temporal: {}", e))?;
+        std::fs::remove_dir_all(dst).map_err(|e| format!("could not clean staging dir: {}", e))?;
     }
-    // La barra final copia el CONTENIDO, incluidos los ocultos, y deja dst
-    // con la misma forma que src.
+    // The trailing slash copies the CONTENT, hidden files included, and
+    // leaves dst shaped like src.
     let status = Command::new("cp")
         .arg("-a")
         .arg(src.join("."))
         .arg(dst)
         .status()
-        .map_err(|e| format!("no se pudo ejecutar cp: {}", e))?;
+        .map_err(|e| format!("could not run cp: {}", e))?;
     if !status.success() {
         return Err(format!("cp -a devolvio {}", status));
     }
@@ -1076,12 +1073,12 @@ fn verify_and_finalize(
     stage: &Path,
     verify_exe: Option<&Path>,
 ) -> Result<Option<String>, String> {
-    // F2: verificar antes de tocar nada. Si falla, el original sigue intacto.
+    // Step 2: I verify before touching anything. On failure the original is intact.
     let copied = dir_size(stage);
     let source = dir_size(orig);
     if copied != source {
         return Err(format!(
-            "la copia no cuadra: {} copiados frente a {} del original",
+            "copy mismatch: {} copied vs {} in the original",
             human_bytes(copied),
             human_bytes(source)
         ));
@@ -1089,23 +1086,23 @@ fn verify_and_finalize(
     if let Some(exe) = verify_exe {
         if !exe.exists() {
             return Err(format!(
-                "el ejecutable no aparece en la copia: {}",
+                "executable missing from the copy: {}",
                 exe.display()
             ));
         }
     }
 
-    // F3: publicar. stage y dest estan en Games, mismo filesystem: rename
-    // atomico. A partir de aqui hay dos copias vivas.
+    // Step 3: I publish. Stage and dest sit in Games, same filesystem:
+    // atomic rename. From here two live copies exist.
     std::fs::rename(stage, dest)
-        .map_err(|e| format!("no se pudo publicar la copia en {}: {}", dest.display(), e))?;
+        .map_err(|e| format!("could not publish the copy at {}: {}", dest.display(), e))?;
 
-    // F4: retirar el original dejando symlink de compatibilidad.
+    // Step 4: I retire the original, leaving a compat symlink.
     finalize(orig, dest)
 }
 
-/// La ventana de riesgo. Rename del original, symlink, y solo despues el
-/// borrado: el unico paso destructivo es el ultimo.
+/// The risk window. I rename the original, place the symlink, and only then
+/// delete: the single destructive step comes last.
 fn finalize(orig: &Path, dest: &Path) -> Result<Option<String>, String> {
     let name = orig
         .file_name()
@@ -1117,31 +1114,31 @@ fn finalize(orig: &Path, dest: &Path) -> Result<Option<String>, String> {
         .unwrap_or_else(|| PathBuf::from("."));
     let backup = parent.join(format!(".{}.{}", sanitize(&name), OLD_SUFFIX));
 
-    // F4a: retirar el original de una sola syscall.
+    // Step 4a: I retire the original in a single syscall.
     if let Err(e) = std::fs::rename(orig, &backup) {
         return Err(format!(
-            "no se pudo retirar el original; queda una copia valida y huerfana en {}: {}",
+            "could not retire the original; a valid orphaned copy remains at {}: {}",
             dest.display(),
             e
         ));
     }
 
-    // F4b: symlink para que Heroic y Lutris no se rompan.
+    // Step 4b: symlink so Heroic and Lutris keep working.
     if let Err(e) = symlink(dest, orig) {
-        // Rollback automatico: el original esta entero a una syscall.
+        // Automatic rollback: the original is one syscall away, intact.
         if std::fs::rename(&backup, orig).is_ok() {
-            return Err(format!("no se pudo crear el symlink y se revirtio: {}", e));
+            return Err(format!("could not create the symlink, rolled back: {}", e));
         }
         return Err(format!(
-            "CRITICO: no se pudo crear el symlink ni revertir; el original esta en {}",
+            "CRITICAL: could not create the symlink nor roll back; the original is at {}",
             backup.display()
         ));
     }
 
-    // F4c: unico paso destructivo, y el ultimo. El juego ya funciona.
+    // Step 4c: single destructive step, and the last one. The game already works.
     if std::fs::remove_dir_all(&backup).is_err() {
         return Ok(Some(format!(
-            "el juego funciona, pero no se pudo borrar {}",
+            "game works, but I could not delete {}",
             backup.display()
         )));
     }
@@ -1159,11 +1156,11 @@ fn report(
         Ok(None) => {
             eprintln!("[import] {}: {} -> {} (ok)", label, old.display(), new.display());
             if !exe_verified {
-                // Nota de trazabilidad, no un fallo: el ejecutable cae fuera
-                // de install_path, asi que no hay nada que comprobar dentro
-                // de la copia. Queda registrado por si algo se rompe luego.
+                // Traceability note, not a failure: the executable falls
+                // outside install_path, so there is nothing to check inside
+                // the copy. I log it in case something breaks later.
                 eprintln!(
-                    "[import] {}: sin verificacion de ejecutable (no cae dentro de install_path)",
+                    "[import] {}: no executable check (outside install_path)",
                     label
                 );
             }
@@ -1171,7 +1168,7 @@ fn report(
         }
         Ok(Some(w)) => {
             eprintln!(
-                "[import] {}: {} -> {} (ok con aviso: {})",
+                "[import] {}: {} -> {} (ok with warning: {})",
                 label,
                 old.display(),
                 new.display(),
@@ -1179,14 +1176,14 @@ fn report(
             );
             if !exe_verified {
                 eprintln!(
-                    "[import] {}: sin verificacion de ejecutable (no cae dentro de install_path)",
+                    "[import] {}: no executable check (outside install_path)",
                     label
                 );
             }
             vec![(label.to_string(), MoveOutcome::WithWarning(w.clone()))]
         }
         Err(e) => {
-            eprintln!("[import] {}: {} (fallo: {})", label, old.display(), e);
+            eprintln!("[import] {}: {} (failed: {})", label, old.display(), e);
             vec![(label.to_string(), MoveOutcome::Failed(e.clone()))]
         }
     }

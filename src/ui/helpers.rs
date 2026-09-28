@@ -173,8 +173,8 @@ pub fn load_preview(path: &str, max_w: i32, max_h: i32) -> Option<gdk::Texture> 
         .map(|s| gdk::Texture::for_pixbuf(&s))
 }
 
-/// Load a banner image with QML PreserveAspectCrop parity: cover-scale
-/// preserving aspect ratio, then center-crop to exactly target_w x target_h.
+/// Load a banner image with cover-scale + center-crop: I scale preserving
+/// aspect ratio, then center-crop to exactly target_w x target_h.
 pub fn load_card_banner(path: &str, target_w: i32, target_h: i32) -> Option<gdk::Texture> {
     let home = std::env::var("HOME").unwrap_or_default();
     let path = path.replace("~", &home);
@@ -260,12 +260,12 @@ fn load_ico_pixbuf(path: &str) -> Option<gdk_pixbuf::Pixbuf> {
 
 pub fn load_themed_icon(name: &str, is_dark: bool) -> Option<gdk::Texture> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    // `_dark` es el nombre de la tinta **oscura**, no el de la variante "para
-    // tema oscuro". El tema oscuro tiene fondo negro (`theme::bg` = #000000),
-    // así que necesita tinta CLARA; el tema claro, fondo #F4F1F8, necesita la
-    // oscura. Por eso el oscuro carga `<name>.png` (tinta #FFFFFF) y el claro
-    // `<name>_dark.png` (tinta #241F2E). Invertir esto deja iconos invisibles:
-    // tinta oscura sobre negro y tinta blanca sobre blanco.
+    // I name `_dark` for the dark *ink*, not for the "dark theme" variant. The
+    // dark theme has a black background (`theme::bg` = #000000), so I give it
+    // LIGHT ink; the light theme (#F4F1F8 background) gets the dark one. So dark
+    // loads `<name>.png` (#FFFFFF ink) and light loads `<name>_dark.png`
+    // (#241F2E ink). Flipping this leaves invisible icons: dark ink on black
+    // and white ink on white.
     let suffix = if is_dark { ".png" } else { "_dark.png" };
     let path = format!("{}/.local/share/corkytux/assets/{}{}", home, name, suffix);
     // Fall back to the other variant when one is missing, then to a symbolic
@@ -279,26 +279,26 @@ pub fn load_themed_icon(name: &str, is_dark: bool) -> Option<gdk::Texture> {
         .or_else(|| load_texture(&asset_path(name)))
 }
 
-/// Igual que [`load_themed_icon`] pero devuelve la textura **ya escalada** a
+/// Same as [`load_themed_icon`] but I return the texture already scaled to
 /// `size` px.
 ///
-/// Hace falta porque `GtkImage:pixel-size` no hace nada sobre un *paintable*
-/// (solo aplica a imágenes de tipo `ICON_NAME`, según el GIR de GTK), así que el
-/// widget adoptaría la resolución natural del PNG: `steam.png` son 256×256 y se
-/// pide en slots de 24 px. Escalar en carga hace que el paintable nazca al
-/// tamaño pedido **sin cambiar el tipo del widget**, que es lo que permite
-/// arreglar los 23 call sites de `themed_image()` de una vez.
+/// I need this because `GtkImage:pixel-size` does nothing on a *paintable*
+/// (it only applies to `ICON_NAME` images per the GTK GIR), so the widget
+/// would take the PNG's natural size: `steam.png` is 256x256 but I ask for
+/// 24px slots. Scaling at load makes the paintable born at the requested
+/// size without changing the widget type, which is how I fix all 23
+/// `themed_image()` call sites at once.
 ///
-/// `size <= 0` delega en la carga sin escalar. No agranda: si el asset ya es
-/// menor que lo pedido se devuelve tal cual, para no interpolar hacia arriba.
+/// `size <= 0` falls back to unscaled load. I never upscale: if the asset is
+/// already smaller than asked I return it as-is to avoid upsampling.
 pub fn load_themed_icon_sized(name: &str, is_dark: bool, size: i32) -> Option<gdk::Texture> {
     if size <= 0 {
         return load_themed_icon(name, is_dark);
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let base = format!("{}/.local/share/corkytux/assets/{}", home, name);
-    // Mismo criterio que `load_themed_icon`: `is_dark` (fondo negro) pide la
-    // tinta clara de `<name>.png`; el tema claro pide `<name>_dark.png`.
+    // Same rule as `load_themed_icon`: for `is_dark` (black background) I ask
+    // the light ink `<name>.png`; the light theme asks `<name>_dark.png`.
     let (first, other) = if is_dark {
         (format!("{}.png", base), format!("{}_dark.png", base))
     } else {
@@ -331,8 +331,8 @@ fn track_themed_image_inner(img: &gtk::Image, name: &str) {
     });
 }
 
-/// Build a theme-aware image: its paintable follows Dark/Light switches
-/// via refresh_themed_icons() (C++ Theme.icon binding parity).
+/// Build a theme-aware image: I keep its paintable following Dark/Light
+/// switches via refresh_themed_icons() (I mirror the old Theme.icon binding).
 pub fn themed_image(name: &str, is_dark: bool, pixel_size: i32) -> gtk::Image {
     let img = gtk::Image::new();
     img.set_pixel_size(pixel_size);
@@ -342,10 +342,10 @@ pub fn themed_image(name: &str, is_dark: bool, pixel_size: i32) -> gtk::Image {
 }
 
 fn set_themed_paintable(img: &gtk::Image, name: &str, is_dark: bool) {
-    // `pixel_size()` devuelve el valor que se fijo con `set_pixel_size`, que en
-    // un paintable no afecta al render pero si sirve como declaracion de
-    // intention: la textura se pide a ese tamano. Asi el refresco de tema
-    // recarga al tamano correcto sin guardar el tamano en THEMED_IMAGES.
+    // `pixel_size()` returns what I set with `set_pixel_size`; on a paintable
+    // it does not affect rendering but I use it as the size declaration, so
+    // the theme refresh reloads at the right size without storing the size
+    // in THEMED_IMAGES.
     if let Some(tex) = load_themed_icon_sized(name, is_dark, img.pixel_size()) {
         img.set_paintable(Some(&tex));
     } else {
@@ -517,9 +517,8 @@ pub fn icon_button(name: &str, is_dark: bool, tooltip: &str) -> gtk::Button {
     let btn = gtk::Button::new();
     btn.set_tooltip_text(Some(tooltip));
     btn.set_width_request(36);
-    // Fondo con contraste en ambos temas (el default de Libadwaita se pierde
-    // contra el bg claro personalizado): misma clase que el resto de botones
-    // de acción de la app.
+    // I keep contrast in both themes (the Libadwaita default washes out
+    // against my custom light bg): same class as my other action buttons.
     btn.add_css_class("settings-btn");
     let img = themed_image(name, is_dark, 16);
     btn.set_child(Some(&img));
@@ -559,9 +558,9 @@ pub fn apply_theme_css(theme: &ThemeManager) {
         let text_sec = theme.text_sec();
         let text_muted = theme.text_muted();
         let is_dark = theme.is_dark();
-        // {accent_ui}: accent derivado para borde/foco con contraste >=3:1
-        // (WCAG 1.4.11) con los 10 acentos en tema claro; en oscuro se usa el
-        // accent base, que ya cumple >=3.85:1 contra #121212. Ver DESIGN.md.
+        // I derive `{accent_ui}` for border/focus with >=3:1 contrast
+        // (WCAG 1.4.11) across the 10 accents in the light theme; in dark I use
+        // the base accent, which already passes >=3.85:1 against #121212. See DESIGN.md.
         let accent_ui = if is_dark {
             accent.clone()
         } else {

@@ -9,20 +9,19 @@ fn home_dir() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
 }
 
-/// Raíces de datos donde Lutris guarda juegos, carátulas e iconos.
+/// Data roots where Lutris keeps games, covers and icons.
 ///
-/// Un único resolver para el escaneo y para el artwork. Antes cada uno tenía su
-/// propia lista: el artwork honraba `XDG_DATA_HOME` y la ruta Flatpak, y el
-/// escaneo de juegos usaba `~/.local/share/lutris` fijo. Con `XDG_DATA_HOME`
-/// puesto, las carátulas aparecían y se importaban 0 juegos; con Lutris Flatpak,
-/// igual.
+/// I use a single resolver for scanning and artwork. Each used to keep its own
+/// list: artwork honored `XDG_DATA_HOME` and the Flatpak path while game
+/// scanning pinned `~/.local/share/lutris`. With `XDG_DATA_HOME` set, covers
+/// showed up and 0 games imported; same with Flatpak Lutris.
 ///
-/// De cada raíz cuelga `lutris/` (base de datos, juegos, carátulas) e
-/// `icons/hicolor/...` (iconos de apps). Solo se devuelven raíces que existen.
+/// Each root holds `lutris/` (database, games, covers) and `icons/hicolor/...`
+/// (app icons). I only return roots that exist.
 fn lutris_data_roots(home: &Path) -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = Vec::new();
-    // 1) Nativo. `XDG_DATA_HOME` vacio o relativo no es valido segun el spec:
-    // se ignora para no construir rutas bajo el CWD.
+    // 1) Native. An empty or relative `XDG_DATA_HOME` is invalid per spec:
+    // I ignore it so I never build paths under the CWD.
     if let Some(xdg) = std::env::var("XDG_DATA_HOME")
         .ok()
         .filter(|s| !s.trim().is_empty())
@@ -38,7 +37,7 @@ fn lutris_data_roots(home: &Path) -> Vec<PathBuf> {
             roots.push(xdg);
         }
     }
-    // 2) Flatpak: el sandbox reescribe el home del proceso a `~/.var/app/<id>`.
+    // 2) Flatpak: the sandbox rewrites the process home to `~/.var/app/<id>`.
     let flatpak = home.join(".var/app/net.lutris.Lutris/data");
     if flatpak.exists() && !roots.contains(&flatpak) {
         roots.push(flatpak);
@@ -84,7 +83,7 @@ pub struct IntegrationEntry {
     pub proton: String,
 }
 
-/// Lutris runner slug → launcher executor name (C++ runnerMap parity).
+/// Lutris runner slug → launcher executor name (I match the legacy runnerMap).
 pub fn lutris_runner_to_executor(runner: &str) -> String {
     match runner.to_lowercase().as_str() {
         "mupen64plus" => "Mupen64Plus",
@@ -341,9 +340,9 @@ impl IntegrationManager {
             .map_err(|e| e.to_string())
     }
 
-    /// Full artwork resolver, orden estricto por asset:
-    /// banner: Steam header -> Store API -> Lutris local -> Lutris API -> SGDB grid.
-    /// icon: Steam logo -> Lutris local -> SGDB icons. Extract es ultimo y lo hace el caller.
+    /// Full artwork resolver, strict order per asset:
+    /// banner: Steam header -> Store API -> local Lutris -> Lutris API -> SGDB grid.
+    /// icon: Steam logo -> local Lutris -> SGDB icons. Extraction is last and the caller does it.
     /// Returns (icon, banner). Files land in ~/.config/CorkyTux/{icons,banners}/.
     pub fn resolve_artwork(&self, game_name: &str, steam_id: &str) -> (Option<String>, Option<String>) {
         let slug = super::ConfigManager::new()
@@ -429,8 +428,8 @@ impl IntegrationManager {
         }
 
         if (banner.is_none() || icon.is_none()) && !game_name.is_empty() {
-            // Mismo resolver que usa el escaneo de juegos, para que carátula e
-            // importación nunca discrepen sobre dónde vive Lutris.
+            // I reuse the same resolver as game scanning, so covers and
+            // imports never disagree on where Lutris lives.
             for root in lutris_data_roots(&home) {
                 let dir = root.join("lutris");
                 if banner.is_none() {
@@ -446,7 +445,7 @@ impl IntegrationManager {
                     }
                 }
                 if icon.is_none() {
-                    // `icons/` cuelga de la raíz de datos, no de `lutris/`.
+                    // `icons/` hangs off the data root, not `lutris/`.
                     let h = root
                         .join("icons/hicolor/128x128/apps")
                         .join(format!("lutris_{}.png", slug));
@@ -626,9 +625,9 @@ impl IntegrationManager {
         ));
         fs::create_dir_all(&tmp).ok();
         let ico = tmp.join("icon.ico");
-        // Limite en proceso: `timeout(1)` no existe en NixOS ni en
-        // contenedores minimos, y `icoextract` colgado es un riesgo real con
-        // .ico hechos a mano.
+        // In-process budget: `timeout(1)` is missing on NixOS and minimal
+        // containers, and a hung `icoextract` is a real risk with hand-made
+        // .ico files.
         let st = super::plugin_process::output_with_timeout(
             Command::new("icoextract")
                 .arg(&expanded)
@@ -914,8 +913,8 @@ impl IntegrationManager {
             }
             self.collect_lutris_yml_dir(&lutris_dir, &mut results);
         }
-        // Un mismo juego puede estar en mas de una raiz (p.ej. migracion a
-        // Flatpak a medias): el slug manda, la primera raiz gana.
+        // One game can sit under several roots (e.g. a half-done Flatpak
+        // migration): the slug wins, first root takes it.
         let mut seen: Vec<String> = Vec::new();
         results.retain(|e| {
             let key = if e.slug.is_empty() {
@@ -934,8 +933,8 @@ impl IntegrationManager {
         results
     }
 
-    /// Lee los `<config>.yml` de un directorio `games/` de Lutris y los anade a
-    /// `out`. Aislado para que `scan_lutris` pueda recorrer varias raices.
+    /// I read the `<config>.yml` files of a Lutris `games/` dir into `out`.
+    /// Isolated so `scan_lutris` can walk several roots.
     fn collect_lutris_yml_dir(&self, lutris_dir: &Path, out: &mut Vec<IntegrationEntry>) {
         // Flat <config>.yml files (e.g. blasphemous-1787265174.yml), NOT
         // per-slug dirs: reuse the same yml parser as the DB tier.
@@ -1008,9 +1007,9 @@ impl IntegrationManager {
     /// Parse a Lutris game yml (`<lutris>/games/<config>.yml`): returns
     /// (exe_or_main_file, prefix, wine_version).
     ///
-    /// `games_dir` lo pasa el llamador porque puede no ser
-    /// `~/.local/share/lutris/games`: con `XDG_DATA_HOME` movido o con Lutris
-    /// Flatpak, ese path fijo no es donde vive nada.
+    /// The caller passes `games_dir` because it may not be
+    /// `~/.local/share/lutris/games`: with a moved `XDG_DATA_HOME` or Flatpak
+    /// Lutris, that fixed path holds nothing.
     fn lutris_yml_info(
         &self,
         games_dir: &Path,
@@ -1105,8 +1104,8 @@ impl IntegrationManager {
             let playtime: f64 = cols.get(8).and_then(|s| s.trim().parse().ok()).unwrap_or(0.0);
             // Steam-service games carry their AppID (Steam art + launch).
             let appid = if service == "steam" { service_id } else { String::new() };
-            // Real binary/prefix/proton live in the game yml, en el `games/` que
-            // cuelga de la MISMA raiz que esta base de datos.
+            // Real binary/prefix/proton live in the game yml, in the `games/`
+            // dir under the SAME root as this database.
             let games_dir = db
                 .parent()
                 .map(|lutris| lutris.join("games"))
@@ -1217,7 +1216,7 @@ impl IntegrationManager {
             if let Ok(entries) = fs::read_dir(sd) {
                 for entry in entries.flatten() {
                     let p = entry.path();
-                    // C++ parity: only appmanifest_*.acf files
+                    // I match the legacy layout: only appmanifest_*.acf files
                     let fname = p.file_name().unwrap_or_default().to_string_lossy().to_string();
                     if !fname.starts_with("appmanifest_") || !fname.ends_with(".acf") {
                         continue;
@@ -1241,7 +1240,7 @@ impl IntegrationManager {
                         if appid.is_empty() {
                             continue;
                         }
-                        // C++ parity: skip Steam tools (numeric/empty names, name == appid)
+                        // I match the legacy layout: skip Steam tools (numeric/empty names, name == appid)
                         if name.is_empty() || name.parse::<u64>().is_ok() || name == appid {
                             name = if installdir.is_empty() {
                                 format!("Steam {}", appid)
@@ -1254,7 +1253,7 @@ impl IntegrationManager {
                         }
                         if !installdir.is_empty() {
                             let game_path = acf_dir.join(&installdir);
-                            // C++ parity: existing proton prefix for this app
+                            // I match the legacy layout: existing proton prefix for this app
                             let steam_prefix = sd.join("compatdata").join(&appid).join("pfx");
                             let prefix = if steam_prefix.exists() {
                                 steam_prefix.display().to_string()
@@ -1373,7 +1372,7 @@ pub fn steam_install_confirmed(appid: &str) -> bool {
     false
 }
 
-/// Skip known Steam tool / runtime appids (C++ isSteamTool parity).
+/// I skip known Steam tool / runtime appids (legacy isSteamTool list).
 fn is_steam_tool(name: &str, appid: &str) -> bool {
     const TOOL_IDS: &[&str] = &[
         "228980", "250820", "252950", "280390", "311460", "316450", "321360",
@@ -1400,7 +1399,7 @@ fn is_steam_tool(name: &str, appid: &str) -> bool {
     false
 }
 
-/// ACF/VDF value extraction (C++ vdfValue parity). Lines look like:
+/// ACF/VDF value extraction (I match the legacy vdfValue). Lines look like:
 /// `"name"		"Half-Life 2"` — no colon, key and value are both quoted.
 fn extract_acf_value(line: &str) -> String {
     let mut quoted = Vec::new();
@@ -1431,7 +1430,7 @@ mod shellexpand {
     }
 }
 
-/// `"field": "..."` with backslash escapes (C++ grab-lambda parity).
+/// `"field": "..."` with backslash escapes (I match the legacy grab-lambda).
 fn json_field(haystack: &str, field: &str) -> Option<String> {
     let key = format!("\"{}\"", field);
     let pos = haystack.find(&key)?;

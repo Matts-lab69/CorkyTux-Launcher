@@ -63,18 +63,18 @@ pub struct AppState {
     pub plugins: PluginManager,
     pub integration: IntegrationManager,
     pub selected_game: Rc<RefCell<String>>,
-    /// Header entry points for the two Warnings dialogs (prefix path,
-    /// install path). Each button is visible only while its list has at
-    /// least one game; the count label shows how many. Visibility and
-    /// counters are refreshed by refresh_warn_buttons() on startup, after
-    /// path fixes, and after Store library changes.
+    /// Header entry points for my two Warnings dialogs (prefix path,
+    /// install path). I show each button only while its list holds at least
+    /// one game; the count label shows how many. I refresh visibility and
+    /// counters in refresh_warn_buttons() on startup, after path fixes, and
+    /// after Store library changes.
     pub install_warn_btn: Rc<RefCell<Option<gtk::Button>>>,
     pub install_warn_count: Rc<RefCell<Option<gtk::Label>>>,
     pub prefix_warn_btn: Rc<RefCell<Option<gtk::Button>>>,
     pub prefix_warn_count: Rc<RefCell<Option<gtk::Label>>>,
-    /// Refresco de las tarjetas de Stores tras instalar/desinstalar/
-    /// importar/quitar (lo registra StoresView; lo invoca remove_modal,
-    /// que no tiene handle propio). Misma ruta que Refresh manual.
+    /// I refresh the Store cards after install/uninstall/import/remove
+    /// (StoresView registers it; remove_modal invokes it since it owns no
+    /// handle). Same path as manual Refresh.
     pub stores_changed: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
 }
 
@@ -1053,11 +1053,12 @@ fn build_warn_button(icon_name: &str, color_class: &str, tip: &str) -> (gtk::But
     (btn, count)
 }
 
-/// C++ applyScanPlugins parity: after a game is added/imported, scan its
-/// directory with dependency-installer + dll-overrides-automator in the
-/// background. DLL overrides apply straight to the game (visible in Game
-/// Settings, used at launch); missing dependencies ask first (winetricks
-/// into the prefix is slow and mutates it). Emulator games are skipped.
+/// I match the legacy applyScanPlugins behavior: after a game is
+/// added/imported, I scan its directory with dependency-installer +
+/// dll-overrides-automator in the background. I apply DLL overrides straight
+/// to the game (visible in Game Settings, used at launch); missing
+/// dependencies ask first (winetricks into the prefix is slow and mutates
+/// it). I skip emulator games.
 pub(crate) fn run_plugin_scans(
     state: &AppState,
     parent: &adw::ApplicationWindow,
@@ -1662,8 +1663,8 @@ fn main() {
             }
         }
     }
-    // Purga LRU del caché de iconos/covers una vez por arranque (los
-    // thumbnails se regeneran solos; evita crecimiento sin cota).
+    // I prune the icon/cover cache LRU once per start (thumbnails
+    // regenerate on their own; this stops unbounded growth).
     {
         let (n, bytes) = crate::ui::minecraft_view::prune_icon_cache(512 * 1024 * 1024, 1500);
         if n > 0 {

@@ -44,7 +44,7 @@ impl AppImageManager {
     pub fn run_detached(path: &str, args: &[String]) -> Result<(), String> {
         let exe_path = Self::exe();
         if !exe_path.exists() {
-            return Err("AppImage plugin no instalado".into());
+            return Err("AppImage plugin not installed".into());
         }
         let mut cmd = std::process::Command::new(&exe_path);
         cmd.arg("run").arg(path);
@@ -132,8 +132,8 @@ impl RpgMakerManager {
         Self::run_with_options(path, runtime, false, false)
     }
 
-    /// Lanzamiento con consentimientos explícitos (modelo upstream:
-    /// todo acceso extra es opt-in). Ambos default off.
+    /// I launch with explicit consent (upstream model: every extra access
+    /// is opt-in). Both default off.
     pub fn run_with_options(
         path: &str,
         runtime: &str,
@@ -195,13 +195,13 @@ impl StoreManager {
         plugin_process::run_single_json(&Self::exe(), &["setup"])
     }
 
-    /// Solo presencia de binarios, sin red: pre-chequeo liviano del modal.
+    /// I only check binary presence, no network: a lightweight modal pre-check.
     pub fn bins() -> Result<serde_json::Value, String> {
         plugin_process::run_single_json(&Self::exe(), &["bins"])
     }
 
-    /// Un rail editorial del catálogo público de GOG (sale/new/free), con
-    /// caché TTL en el plugin. Sin login, sin sesión.
+    /// One editorial rail of the public GOG catalog (sale/new/free), with
+    /// a TTL cache in the plugin. No login, no session.
     pub fn gog_rail(list: &str, refresh: bool) -> Result<serde_json::Value, String> {
         let mut args = vec!["gog-rail", "--list", list];
         if refresh {
@@ -222,16 +222,16 @@ impl StoreManager {
         plugin_process::run_single_json(&Self::exe(), &refs)
     }
 
-    /// Pide al plugin la URL de autenticación de la tienda, sin código.
+    /// I ask the plugin for the store auth URL, without a code.
     ///
-    /// El plugin responde con un evento `auth_url` que lleva la URL y las
-    /// instrucciones; abrir el navegador es cosa del launcher, no del plugin, y
-    /// desde la 1.0.8 el plugin ya no llama a `webbrowser.open` para que la
-    /// pestaña se abra exactamente una vez.
+    /// The plugin answers with an `auth_url` event carrying the URL and
+    /// instructions; I open the browser from the launcher, not the plugin, and
+    /// since 1.0.8 the plugin no longer calls `webbrowser.open` so the tab
+    /// opens exactly once.
     ///
-    /// Sustituye a `spawn_login_window`, que levantaba un WebKit embebido:
-    /// Arkose Labs/FunCaptcha de Epic lo bloquea, y GOG tiene fricción similar.
-    /// La vía viable es el navegador del sistema.
+    /// This replaces `spawn_login_window`, which embedded WebKit: Epic's Arkose
+    /// Labs/FunCaptcha blocks it, and GOG has similar friction. I use the
+    /// system browser instead.
     pub fn spawn_auth_begin(store: String) -> mpsc::Receiver<PluginEvent> {
         plugin_process::spawn_streaming(
             Self::exe(),
@@ -239,10 +239,10 @@ impl StoreManager {
         )
     }
 
-    /// `login-window` del plugin queda sin uso en el launcher a propósito: es
-    /// el webview PyGObject que Arkose bloquea. El camino vivo es
-    /// [`Self::spawn_auth_begin`] (navegador del sistema) seguido de
-    /// [`Self::spawn_auth`] con el código.
+    /// I leave the plugin `login-window` unused on purpose: it is the
+    /// PyGObject webview Arkose blocks. The live path is
+    /// [`Self::spawn_auth_begin`] (system browser) followed by
+    /// [`Self::spawn_auth`] with the code.
     pub fn spawn_auth(store: String, code: String) -> mpsc::Receiver<PluginEvent> {
         let mut args = vec!["auth".to_string(), "--store".to_string(), store];
         if !code.is_empty() {
@@ -850,8 +850,8 @@ impl MinecraftManager {
 
     pub fn running_pids() -> Vec<(String, i32)> {
         let home = std::env::var("HOME").unwrap_or_default();
-        // `CONFIG_DIR` del plugin (locks en vivo), no su ejecutable: este esta
-        // en `plugins_base_dir()`. Ver el contrato en
+        // I read the plugin `CONFIG_DIR` (live locks), not its executable:
+        // that lives in `plugins_base_dir()`. See the contract in
         // `plugin_process::plugins_base_dir`.
         let locks = std::path::PathBuf::from(home)
             .join(".config/CorkyTux/plugins/minecraft-launcher/locks");

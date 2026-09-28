@@ -9,9 +9,9 @@ use crate::ui::helpers;
 use crate::ui::sidebar::Sidebar;
 use crate::AppState;
 
-/// Rutas install_path de installs.json (Epic+GOG) del plugin
-/// heroic-store. No había lector en el launcher: este es local y mínimo.
-/// Ausente → vacío; presente e ilegible → None (el llamador niega).
+/// install_path values from heroic-store's installs.json (Epic+GOG). The
+/// launcher had no reader for it, so this one is local and minimal.
+/// Missing → empty; present but unreadable → None (the caller denies).
 fn plugin_install_paths_at(cfg: &std::path::Path) -> Option<Vec<String>> {
     let p = cfg.join("plugins/heroic-store/installs.json");
     if !p.exists() {
@@ -52,9 +52,9 @@ fn others_except(state: &AppState, selected: &str, main: &str) -> Option<Vec<Str
     Some(out)
 }
 
-/// Raíces que nunca se borran: /, home, ~/Games, la base compartida
-/// legacy (Heroic) y las bases por tienda. Origen único junto a
-/// `default_games_dir` por tienda (stores_view).
+/// Roots that never get deleted: /, home, ~/Games, the legacy shared base
+/// (Heroic) and the per-store bases. Single source together with the
+/// per-store `default_games_dir` (stores_view).
 pub(crate) fn store_deny_roots(games_root: &str, home: &str) -> Vec<String> {
     let base = games_root.trim_end_matches('/');
     vec!["/".to_string(), home.trim_end_matches('/').to_string(),
@@ -62,20 +62,20 @@ pub(crate) fn store_deny_roots(games_root: &str, home: &str) -> Vec<String> {
          format!("{}/Epic-Games", base), format!("{}/GOG-Games", base)]
 }
 
-/// Canonicaliza si existe; None si no (el llamador decide: inexistente
-/// nunca se aprueba para borrar).
+/// Canonicalizes if it exists; None if not (the caller decides: a missing
+/// path is never approved for deletion).
 fn canon(p: &std::path::Path) -> Option<std::path::PathBuf> {
     std::fs::canonicalize(p).ok()
 }
 
-/// ¿Se puede borrar `main_path` como "la carpeta del juego"?
-/// Niega: vacío/relativo/inexistente, deny-list (tras canonicalizar),
-/// exe fuera de main (relpath con `..` que escapa, absoluto ajeno,
-/// symlink) y cualquier solape con otro install registrado (main
-/// dentro de otro u otro dentro de main). Con exe vacío (manifest,
-/// Epic) vale el descarte por lista + solape.
-/// `others`: main_paths de los demás installs; None (registro ilegible)
-/// niega siempre.
+/// Can `main_path` be deleted as "the game folder"?
+/// Denies: empty/relative/missing, the deny list (after canonicalizing), an exe
+/// outside main (relpath with an escaping `..`, a foreign absolute, a symlink)
+/// and any overlap with another registered install (main inside the other, or
+/// the other inside main). With an empty exe (manifest, Epic) the list +
+/// overlap checks are the whole decision.
+/// `others`: main_paths of the other installs; None (unreadable record) always
+/// denies.
 pub(crate) fn removal_target_safe(
     main_path: &str,
     exe_rel: &str,
@@ -89,10 +89,9 @@ pub(crate) fn removal_target_safe(
     if !std::path::Path::new(m).is_absolute() {
         return false;
     }
-    // Canonicalize de main: si falla en ruta existente, negar. En
-    // inexistente no hay nada que borrar: negar también (el fallback
-    // léxico solo se usa para comparar denies ya resueltos, y tampoco
-    // aprueba).
+    // Canonicalize main: a failure on an existing path denies. A missing path
+    // has nothing to delete, so it denies too (the lexical fallback only
+    // compares already-resolved denies, and doesn't approve either).
     let main_c = match canon(std::path::Path::new(m)) {
         Some(p) => p,
         None => return false,
@@ -186,9 +185,9 @@ mod tests {
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
         let ms = dir.display().to_string();
-        // Sin exe adentro: no se borra aunque sea profundo.
+        // No exe inside: not deleted, however deep the folder.
         assert!(!removal_target_safe(&ms, "J.exe", &d, some));
-        // Exe vacío (manifest): pasa si no está denegado.
+        // Empty exe (manifest): passes if not denied.
         assert!(removal_target_safe(&ms, "", &d, some));
         std::fs::write(dir.join("J.exe"), b"x").unwrap();
         assert!(removal_target_safe(&ms, "J.exe", &d, some));
@@ -285,7 +284,7 @@ mod tests {
 
     #[test]
     fn misma_ruta_ficha_y_plugin_permite() {
-        // Tras excluirse a sí mismo solo quedan otros: exe directo manda.
+        // After excluding itself only others remain: the direct exe decides.
         let base = mktmp("corky_rm_self");
         std::fs::write(base.join("J.exe"), b"x").unwrap();
         let d = vec!["/".to_string()];
@@ -301,12 +300,12 @@ mod tests {
         let base = mktmp("corky_rm_reg");
         let cfg = base.join("cfg");
         std::fs::create_dir_all(cfg.join("plugins/heroic-store")).unwrap();
-        // Ausente → vacío (no niega por sí solo).
+        // Missing → empty (doesn't deny on its own).
         assert_eq!(plugin_install_paths_at(&cfg), Some(vec![]));
-        // Corrupto → None (el llamador niega).
+        // Corrupt → None (the caller denies).
         std::fs::write(cfg.join("plugins/heroic-store/installs.json"), b"{no-json").unwrap();
         assert_eq!(plugin_install_paths_at(&cfg), None);
-        // Válido → rutas.
+        // Valid → paths.
         std::fs::write(cfg.join("plugins/heroic-store/installs.json"),
             br#"{"gog:9": {"path": "/juegos/X", "exe": "X.exe"}}"#).unwrap();
         assert_eq!(plugin_install_paths_at(&cfg), Some(vec!["/juegos/X".to_string()]));
@@ -389,8 +388,8 @@ pub fn show_remove_modal(
     let is_emu = state.config.game_value(&selected, "Executor")
         .map(|v| !v.is_empty())
         .unwrap_or(false);
-    // UseSharedPrefix: el prefix es de OTROS juegos también — nunca se borra
-    // desde este diálogo.
+    // UseSharedPrefix: other games live in that prefix too, so it's never
+    // deleted from this dialog.
     let use_shared_prefix = state.config.game_value(&selected, "UseSharedPrefix")
         .map(|v| v == "true")
         .unwrap_or(false);

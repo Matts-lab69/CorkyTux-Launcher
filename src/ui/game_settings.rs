@@ -783,9 +783,9 @@ fn build_run_tab(
     }
     iso_inner.append(&iso_paths);
     page.append(&iso_frame);
-    // Juegos Steam lanzados por el cliente (steam://): el sandbox no aplica
-    // (proceso ajeno) → la opción se oculta para no prometer de más.
-    // Misma condición que run_game para la ruta Steam.
+    // Steam games launched by the client (steam://): the sandbox can't apply
+    // (foreign process), so I hide the option instead of promising something
+    // that won't happen. Same condition run_game uses for the Steam path.
     {
         let sid = state.config.game_value(game_name, "SteamID").unwrap_or_default();
         let sid = sid.trim().to_string();
@@ -1461,9 +1461,9 @@ fn build_rpg_tab(
     rt_inner.append(&rt_row);
     page.append(&rt_frame);
 
-    // Consentimientos por juego (modelo upstream docs/box-rpg/security.md:
-    // todo acceso extra es opt-in por lanzamiento; aquí persisten como
-    // standing consent visible). Ambos off = sandbox máximo.
+    // Per-game consents (upstream model, docs/box-rpg/security.md: every extra
+    // access is opt-in per launch; here they persist as a visible standing
+    // consent). Both off = maximum sandbox.
     let (pm_frame, pm_inner) = make_frame("Permissions");
     for (key, label, sub) in [
         ("RpgAllowNet", "Allow network",

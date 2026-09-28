@@ -2188,7 +2188,7 @@ pub fn show_settings_modal(
         col.append(&row);
         col.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         let desc_lbl = gtk::Label::new(Some(
-            "Cuando un juego de Epic no tiene descripción en el catálogo, el launcher busca texto público en la tienda de Epic (store-content), Steam y Wikipedia, en ese orden. Sin claves API.",
+            "When an Epic game has no catalog description, the launcher looks for public text in the Epic store (store-content), Steam and Wikipedia, in that order. No API keys.",
         ));
         desc_lbl.set_halign(gtk::Align::Start);
         desc_lbl.set_wrap(true);
@@ -2393,8 +2393,8 @@ pub fn show_settings_modal(
 
     for btn in &tab_buttons[1..] { btn.set_group(Some(&tab_buttons[0])); }
 
-    // Segundo pase: ocultar el indicador de cualquier otra pestaña
-    // (antes o después), no solo las ya construidas.
+    // Second pass: hide the indicator of any other tab (before or after), not
+    // just the ones already built.
     for (i, (_, id)) in tabs.iter().zip(tab_ids.iter()).enumerate() {
         let stack = page_stack.clone();
         let tab_id = id.to_string();
