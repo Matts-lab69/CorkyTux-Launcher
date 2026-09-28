@@ -649,7 +649,10 @@ pub(crate) fn load_mod_icon(url: &str, project_id: &str, img: &gtk::Image, size:
         return;
     }
     // Thumbnails are decoded bounded (tiny RAM) instead of full-res.
-    let max_px = (size * 2).max(64);
+    // Scale-aware: size × display scale, so scale-1 screens don't pay
+    // the old flat 2× (4× the pixels per texture).
+    let scale = img.scale_factor().max(1);
+    let max_px = (size * scale).max(64);
     // Modrinth serves webp; gdk-pixbuf here has no webp loader, so the
     // worker normalizes to PNG (PIL, ffmpeg fallback) before GTK loads it.
     if icon_neg_fresh(project_id) {
@@ -751,8 +754,6 @@ fn load_mod_icon_uncached(url: &str, project_id: &str, img: &gtk::Image, size: i
             }
         }
         let _guard = Release;
-        // Visible fallback (never a blank row): the idle side below turns
-        // this sentinel into a generic symbolic icon.
         match download_icon_file(&url, &pid) {
             Some(png) => {
                 let _ = tx.send(png.display().to_string());

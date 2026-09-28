@@ -41,9 +41,26 @@ needed there, and no release rebuild was done (LTO cost).
   4 min pre-change; same trajectory, no regression).
 - Cache 510 MB / 611 files after first prune.
 
-## Not done (explicit)
+## Round 2 (deep dive, same scene)
 
-- No per-cover downscale at save time (4 MB files remain until LRU
-  evicts them); disk-only cost, RAM already bounded at decode.
-- No release-binary size measurement (no rebuild done).
-- No optional no-network sandbox flag (see `docs/wine-isolation.md`).
+- smaps breakdown (RSS 231 MB): HEAP 65 MB, anon 37 MB, shared libs
+  ~128 MB (LLVM 39, gallium 16 — GPU driver, unavoidable), binary
+  13 MB. Owned memory is ~140 MB; the rest is shared.
+- `TEX_CACHE` (64 decoded textures) used clear-all eviction: up to
+  ~45 MB churn with mass re-decode on next scroll. Fix: true LRU
+  (evict oldest) plus dedup of the order queue.
+- Decode bound was flat `size*2`: covers decoded 4× the pixels needed
+  on scale-1 screens. Fix: `size * scale_factor` in `load_mod_icon`.
+- glibc arenas: 20+ threads grow many arenas that retain freed heap.
+  Fix: `MALLOC_ARENA_MAX=4` at startup (UI is mostly main-thread).
+- Experiment REVERTED: decoding PNGs in worker threads (+75 MB anon
+  Private_Dirty, 232 → 312 MB settled; thread-made GdkTextures also
+  risk Toolkit thread-affinity rules). Main-thread decode stays; the
+  jank it would fix was never measured, the regression was.
+- Result after round 2: RSS 232 MB, HEAP 65 MB, anon 37 MB —
+  identical profile, no regression, markdown 4.7× faster.
+- Deliberately not touched: 17 KB Games.ini re-parse every 2 s poll
+  (~µs, not worth caching/staleness risk), reqwest client-per-call
+  (sporadic calls only), release rebuild for numbers.
+- Still open: per-cover downscale at save time, release-binary size,
+  optional no-network sandbox flag (see `docs/wine-isolation.md`).

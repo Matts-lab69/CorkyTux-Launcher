@@ -1618,6 +1618,11 @@ pub(crate) fn maybe_autoinstall_proton(state: &AppState, parent: &adw::Applicati
 }
 
 fn main() {
+    // Cap glibc malloc arenas: 20+ threads (GPU pools, workers) otherwise
+    // grow many arenas that retain freed heap. 4 is plenty for a mostly
+    // main-thread UI app. Must precede GTK init (glibc reads it lazily
+    // on first malloc, so earliest wins).
+    std::env::set_var("MALLOC_ARENA_MAX", "4");
     // Desktop/app-menu shortcut entry: launch the game headless and exit.
     // The child survives the parent exit, so the game keeps running while
     // the launcher itself never opens a window.

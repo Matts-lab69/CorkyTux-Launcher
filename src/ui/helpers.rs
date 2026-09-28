@@ -80,10 +80,18 @@ pub fn load_thumb(path: &str, max_px: i32) -> Option<gdk::Texture> {
 fn tex_cache_put(key: String, tex: &gdk::Texture) {
     TEX_CACHE.with(|c| {
         let (map, order) = &mut *c.borrow_mut();
-        if map.len() >= TEX_CACHE_MAX {
-            map.clear();
-            order.clear();
+        // True LRU: evict oldest first. The old clear-all dropped up to
+        // 64 decoded textures at once (~45MB churn) and forced mass
+        // re-decode on the next scroll.
+        while map.len() >= TEX_CACHE_MAX {
+            if let Some(old) = order.first().cloned() {
+                order.remove(0);
+                map.remove(&old);
+            } else {
+                break;
+            }
         }
+        order.retain(|k| k != &key);
         order.push(key.clone());
         map.insert(key, tex.clone());
     });
