@@ -1,6 +1,47 @@
 mod backend;
 mod ui;
 
+/// Test-only process-env guard. Rust runs tests in threads of ONE process,
+/// so two tests touching env race: stores_view swaps HOME while isolation
+/// reads it (flake ~1/8). Every test that writes OR reads HOME takes this
+/// lock; the guard restores both vars on drop, even on panic. webdriver_login
+/// is a separate binary (own process), so it needs nothing from here.
+#[cfg(test)]
+pub(crate) mod test_env {
+    use std::sync::{Mutex, MutexGuard};
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    pub(crate) struct EnvGuard {
+        _lock: MutexGuard<'static, ()>,
+        saved_home: Option<String>,
+        saved_helper: Option<String>,
+    }
+
+    /// Locks process env and snapshots HOME + CORKYTUX_LOGIN_HELPER.
+    pub(crate) fn lock() -> EnvGuard {
+        let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        EnvGuard {
+            _lock: lock,
+            saved_home: std::env::var("HOME").ok(),
+            saved_helper: std::env::var("CORKYTUX_LOGIN_HELPER").ok(),
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.saved_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+            match &self.saved_helper {
+                Some(v) => std::env::set_var("CORKYTUX_LOGIN_HELPER", v),
+                None => std::env::remove_var("CORKYTUX_LOGIN_HELPER"),
+            }
+        }
+    }
+}
+
 use std::cell::RefCell;
 use std::rc::Rc;
 

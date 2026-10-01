@@ -3551,8 +3551,10 @@ mod tests {
     fn precheck_detecta_borrado_externo_y_dispara_modal() {
         use std::os::unix::fs::PermissionsExt;
 
+        // Process env is shared by all test threads: hold the lock for the
+        // whole test and let Drop restore HOME + helper, even on panic.
+        let _env = crate::test_env::lock();
         let orig_home = std::env::var("HOME").unwrap_or_default();
-        let orig_helper = std::env::var("CORKYTUX_LOGIN_HELPER").ok();
         let base = std::env::temp_dir().join(format!(
             "corkytux-precheck-{}-{}",
             std::process::id(),
@@ -3632,11 +3634,8 @@ mod tests {
         );
         assert_eq!(despues.filas_modal().len(), 3);
 
-        match orig_helper {
-            Some(v) => std::env::set_var("CORKYTUX_LOGIN_HELPER", v),
-            None => std::env::remove_var("CORKYTUX_LOGIN_HELPER"),
-        }
-        std::env::set_var("HOME", &orig_home);
+        // Drop restores HOME + CORKYTUX_LOGIN_HELPER (also on panic).
+        drop(_env);
         let _ = std::fs::remove_dir_all(&base);
     }
 
