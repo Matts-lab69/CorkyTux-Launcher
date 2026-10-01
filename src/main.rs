@@ -113,8 +113,7 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
         // silent `let _ = ...`, leaving users with a dead button).
         if state_clone.proton.is_game_running()
             && state_clone.proton.session_game_name() == name
-        {
-            return match state_clone.proton.stop_game() {
+        {            return match state_clone.proton.stop_game() {
                 Ok((game, secs)) => {
                     if !game.is_empty() {
                         if secs > 0 {
@@ -127,6 +126,18 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
                 }
                 Err(e) => Err(e),
             };
+        }
+        // A parked session shows Stop too: stop that entry only, bank its
+        // time once, and leave the foreground session untouched.
+        if state_clone.proton.is_parked(&name) {
+            if let Some((game, secs)) = state_clone.proton.stop_parked(&name) {
+                if secs > 0 {
+                    state_clone.game_model.increment_time_spent(&game, secs);
+                }
+                state_clone.game_model.touch_last_played(&game);
+                state_clone.recent_model.refresh(30);
+            }
+            return Ok(());
         }
         state_clone.game_model.touch_last_played(&name);
         state_clone.recent_model.refresh(30);

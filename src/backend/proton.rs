@@ -971,6 +971,13 @@ impl ProtonManager {
         let game_preview = super::ConfigManager::new().game_section(game_name);
         let new_is_wine = Self::section_is_wine(&game_preview);
         if self.is_game_running() {
+            // Same game, already here: relaunching would stack a second
+            // instance (foreground plus parked entry). Deny with its name.
+            if self.imp().session_game.borrow().as_str() == game_name
+                || self.is_parked(game_name)
+            {
+                return Err(format!("{} is already running", game_name));
+            }
             if !launch_allowed(new_is_wine, true, self.current_is_wine()) {
                 return Err("A game is already running".into());
             }
@@ -1879,6 +1886,68 @@ impl ProtonManager {
                 Self::watch_alive(pattern)
             }
         }
+    }
+
+    /// Is `name` parked aside and still alive? Public for the UI: a parked
+    /// game shows Stop instead of Play, and Stop routes to `stop_parked`.
+    pub fn is_parked(&self, name: &str) -> bool {
+        if name.is_empty() {
+            return false;
+        }
+        let mut parked = self.imp().parked.borrow_mut();
+        let mut found = None;
+        for (i, entry) in parked.iter_mut().enumerate() {
+            if entry.name == name {
+                found = Some(i);
+                break;
+            }
+        }
+        match found {
+            Some(i) => self.parked_alive(&mut parked[i]),
+            None => false,
+        }
+    }
+
+    /// Stops one parked session by name without touching the foreground
+    /// session: kills its child (or its pattern/tree, like `stop_game` does
+    /// for the current one), drops the entry and returns (name, seconds) so
+    /// the caller banks its time exactly once. A second call finds nothing
+    /// and returns None.
+    pub fn stop_parked(&self, name: &str) -> Option<(String, u64)> {
+        let mut parked = self.imp().parked.borrow_mut();
+        let idx = parked.iter().position(|p| p.name == name)?;
+        // Liveness first (fail open lives in parked_alive): refusing to stop
+        // a dead entry still drops it, so the list never rots.
+        let alive = {
+            let entry = &mut parked[idx];
+            self.parked_alive(entry)
+        };
+        let mut entry = parked.remove(idx);
+        drop(parked);
+        if alive {
+            match &entry.kind {
+                ParkedKind::AppImage { exe } => Self::stop_appimage_tree(exe),
+                ParkedKind::Rpg { dir } => {
+                    let _ = super::external::RpgMakerManager::stop(dir);
+                }
+                ParkedKind::Emu { pattern } => {
+                    if !pattern.trim().is_empty() {
+                        let _ = Command::new(Self::tool_path("pkill"))
+                            .args(["-9", "-f", pattern])
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status();
+                    }
+                }
+            }
+        }
+        if let Some(mut c) = entry.child.take() {
+            let _ = c.kill();
+        }
+        let secs = std::time::Instant::now()
+            .duration_since(entry.start)
+            .as_secs();
+        Some((entry.name, secs))
     }
 
     /// Promotes the first still-live parked session back into the foreground
@@ -3401,12 +3470,70 @@ mod tests {
         pm.imp().parked.borrow_mut().push(ParkedSession {
             name: "Gone".to_string(),
             kind: ParkedKind::Emu {
-                pattern: "corky-no-such-process-xyz".to_string(),
+                pattern: "corky-dead-emu-xyz-1".to_string(),
             },
             start: std::time::Instant::now(),
             child: None,
         });
         assert!(!pm.promote_parked());
         assert!(!pm.imp().game_running.get());
+    }
+
+    #[test]
+    fn relaunch_current_is_denied_by_name() {
+        // Same game while it runs: denied before any spawn, so this test
+        // launches nothing.
+        let pm = ProtonManager::new();
+        *pm.imp().session_game.borrow_mut() = "Doom".to_string();
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+        let err = pm.run_game("Doom").unwrap_err();
+        assert_eq!(err, "Doom is already running");
+        assert!(pm.imp().parked.borrow().is_empty());
+    }
+
+    #[test]
+    fn relaunch_parked_is_denied_by_name() {
+        // Parked app selected while another game runs: denied, nothing
+        // parked twice, nothing launched.
+        let pm = ProtonManager::new();
+        *pm.imp().session_game.borrow_mut() = "Quake".to_string();
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+        pm.imp().parked.borrow_mut().push(ParkedSession {
+            name: "Doom".to_string(),
+            kind: ParkedKind::AppImage { exe: String::new() },
+            start: std::time::Instant::now(),
+            child: None,
+        });
+        let err = pm.run_game("Doom").unwrap_err();
+        assert_eq!(err, "Doom is already running");
+        assert_eq!(pm.imp().parked.borrow().len(), 1);
+        assert_eq!(pm.imp().session_game.borrow().as_str(), "Quake");
+    }
+
+    #[test]
+    fn stop_parked_keeps_current_and_banks_once() {
+        let pm = ProtonManager::new();
+        *pm.imp().session_game.borrow_mut() = "Quake".to_string();
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+        pm.imp().parked.borrow_mut().push(ParkedSession {
+            name: "Doom".to_string(),
+            kind: ParkedKind::Emu {
+                pattern: "corky-stop-emu-xyz-2".to_string(),
+            },
+            start: std::time::Instant::now(),
+            child: None,
+        });
+        let first = pm.stop_parked("Doom");
+        assert!(first.is_some());
+        assert_eq!(first.unwrap().0, "Doom");
+        // Foreground session untouched.
+        assert_eq!(pm.imp().session_game.borrow().as_str(), "Quake");
+        assert!(pm.imp().game_running.get());
+        assert!(pm.imp().parked.borrow().is_empty());
+        // Second stop finds nothing: time banks exactly once.
+        assert!(pm.stop_parked("Doom").is_none());
     }
 }
