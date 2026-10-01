@@ -113,7 +113,8 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
         // silent `let _ = ...`, leaving users with a dead button).
         if state_clone.proton.is_game_running()
             && state_clone.proton.session_game_name() == name
-        {            return match state_clone.proton.stop_game() {
+        {
+            return match state_clone.proton.stop_game() {
                 Ok((game, secs)) => {
                     if !game.is_empty() {
                         if secs > 0 {

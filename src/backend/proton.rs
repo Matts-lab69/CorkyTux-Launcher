@@ -973,9 +973,7 @@ impl ProtonManager {
         if self.is_game_running() {
             // Same game, already here: relaunching would stack a second
             // instance (foreground plus parked entry). Deny with its name.
-            if self.imp().session_game.borrow().as_str() == game_name
-                || self.is_parked(game_name)
-            {
+            if self.imp().session_game.borrow().as_str() == game_name || self.is_parked(game_name) {
                 return Err(format!("{} is already running", game_name));
             }
             if !launch_allowed(new_is_wine, true, self.current_is_wine()) {
@@ -1794,7 +1792,8 @@ impl ProtonManager {
                 let source = super::ConfigManager::new()
                     .game_value(&name, "Source")
                     .unwrap_or_default();
-                !(source.eq_ignore_ascii_case("appimage") || source.eq_ignore_ascii_case("rpgmaker"))
+                !(source.eq_ignore_ascii_case("appimage")
+                    || source.eq_ignore_ascii_case("rpgmaker"))
             }
         }
     }
@@ -1833,14 +1832,23 @@ impl ProtonManager {
                 .game_value(&name, "Executable")
                 .unwrap_or_default();
             ParkedKind::Emu {
-                pattern: if pattern.trim().is_empty() { exe } else { pattern },
+                pattern: if pattern.trim().is_empty() {
+                    exe
+                } else {
+                    pattern
+                },
             }
         };
         let start = self.imp().session_start.borrow().unwrap_or_else(std::time::Instant::now);
         let child = self.imp().running_child.borrow_mut().take();
         let mut parked = self.imp().parked.borrow_mut();
         parked.retain(|p| p.name != name);
-        parked.push(ParkedSession { name, kind, start, child });
+        parked.push(ParkedSession {
+            name,
+            kind,
+            start,
+            child,
+        });
     }
 
     /// Is this parked entry still alive? Fail open: any check I cannot run
