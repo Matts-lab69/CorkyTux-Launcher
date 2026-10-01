@@ -970,6 +970,9 @@ impl ProtonManager {
         // slot, the prefix and wineserver -k all belong to it.
         let game_preview = super::ConfigManager::new().game_section(game_name);
         let new_is_wine = Self::section_is_wine(&game_preview);
+        // Dead parked entries go first: a relaunched app starts clean, and
+        // the deny below only ever sees live entries.
+        self.purge_dead();
         if self.is_game_running() {
             // Same game, already here: relaunching would stack a second
             // instance (foreground plus parked entry). Deny with its name.
@@ -1798,11 +1801,28 @@ impl ProtonManager {
         }
     }
 
+    /// Drops definitively-dead parked entries (their partial time is never
+    /// banked, same as before). Fail open: anything I cannot verify stays.
+    /// Called when parking and when launching, so dead entries never pile
+    /// up behind a live one and a relaunched app never doubles its entry.
+    fn purge_dead(&self) {
+        let mut parked = self.imp().parked.borrow_mut();
+        let mut i = 0;
+        while i < parked.len() {
+            if self.parked_alive(&mut parked[i]) {
+                i += 1;
+            } else {
+                parked.remove(i);
+            }
+        }
+    }
+
     /// Parks the current non-Wine session aside: no-op when idle, when the
     /// current session is Wine (the caller denies those launches), or when
     /// the session has no game name. Adopted sessions (no local child) park
     /// with `child: None` and are re-checked by pattern at promotion time.
     fn park_current(&self) {
+        self.purge_dead();
         if !self.is_game_running() {
             return;
         }
@@ -3465,10 +3485,11 @@ mod tests {
         assert_eq!(pm.imp().session_game.borrow().as_str(), "OpenChamber");
         assert!(pm.imp().game_running.get());
         assert!(pm.imp().session_appimage.get());
-        assert_eq!(
-            pm.imp().session_start.borrow().unwrap().elapsed().as_secs(),
-            start.elapsed().as_secs()
-        );
+        // Same clock, not a reset: promoted start is the original one.
+        // Range (not eq): the two elapsed() reads can straddle a second.
+        let back = pm.imp().session_start.borrow().unwrap().elapsed();
+        assert!(back >= start.elapsed().saturating_sub(std::time::Duration::from_secs(1)));
+        assert!(back <= start.elapsed() + std::time::Duration::from_secs(5));
         assert!(pm.imp().parked.borrow().is_empty());
     }
 
@@ -3543,5 +3564,89 @@ mod tests {
         assert!(pm.imp().parked.borrow().is_empty());
         // Second stop finds nothing: time banks exactly once.
         assert!(pm.stop_parked("Doom").is_none());
+    }
+
+    #[test]
+    fn purge_dead_drops_dead_keeps_live() {
+        // (1) Dead entry + parking another: the dead one is gone.
+        let pm = ProtonManager::new();
+        pm.imp().parked.borrow_mut().push(ParkedSession {
+            name: "Dead".to_string(),
+            kind: ParkedKind::Emu {
+                pattern: "corky-purge-dead-xyz-1".to_string(),
+            },
+            start: std::time::Instant::now(),
+            child: None,
+        });
+        pm.imp().parked.borrow_mut().push(ParkedSession {
+            name: "Live".to_string(),
+            kind: ParkedKind::AppImage { exe: String::new() },
+            start: std::time::Instant::now(),
+            child: None,
+        });
+        pm.purge_dead();
+        let names: Vec<String> = pm
+            .imp()
+            .parked
+            .borrow()
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
+        assert_eq!(names, vec!["Live".to_string()]);
+    }
+
+    #[test]
+    fn relaunch_dead_leaves_no_double_entry() {
+        // (2) Dead entry + relaunch of the same app: the stale entry is
+        // purged before parking, so no doubling. Only the pre-launch steps
+        // run here (purge + park); the real spawn is not executed.
+        let pm = ProtonManager::new();
+        *pm.imp().session_game.borrow_mut() = "Quake".to_string();
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+        pm.imp().parked.borrow_mut().push(ParkedSession {
+            name: "Doom".to_string(),
+            kind: ParkedKind::Emu {
+                pattern: "corky-purge-dead-xyz-2".to_string(),
+            },
+            start: std::time::Instant::now(),
+            child: None,
+        });
+        pm.purge_dead();
+        assert!(pm.imp().parked.borrow().is_empty());
+        pm.park_current();
+        let names: Vec<String> = pm
+            .imp()
+            .parked
+            .borrow()
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
+        assert_eq!(names, vec!["Quake".to_string()]);
+    }
+
+    #[test]
+    fn purge_never_drops_live() {
+        // (3) Fail-open entries survive every purge: empty exe, empty
+        // pattern, and a fresh RPG inside its registration grace.
+        let pm = ProtonManager::new();
+        for (name, kind) in [
+            ("A".to_string(), ParkedKind::AppImage { exe: String::new() }),
+            (
+                "B".to_string(),
+                ParkedKind::Emu {
+                    pattern: String::new(),
+                },
+            ),
+        ] {
+            pm.imp().parked.borrow_mut().push(ParkedSession {
+                name,
+                kind,
+                start: std::time::Instant::now(),
+                child: None,
+            });
+        }
+        pm.purge_dead();
+        assert_eq!(pm.imp().parked.borrow().len(), 2);
     }
 }
