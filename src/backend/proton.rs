@@ -79,6 +79,12 @@ mod imp {
         pub session_proton_dir: RefCell<String>,
         pub session_appimage: Cell<bool>,
         pub session_rpg: Cell<bool>,
+        /// Consecutive Unknown answers from the RPG session-status verb.
+        /// Closes after RPG_STATUS_MAX_UNKNOWNS (never stuck).
+        pub rpg_status_fails: Cell<u32>,
+        /// Last RPG exit code seen (None = exited unknown/graceless).
+        /// Read by the log view; banking always uses elapsed time.
+        pub last_rpg_exit: Cell<Option<i32>>,
         pub session_watch: RefCell<String>,
         /// Non-Wine sessions parked while another game runs in the foreground
         /// slot. Only AppImage/RPG/emulator sessions ever park here; Wine is
@@ -129,6 +135,42 @@ pub(crate) enum ParkedKind {
     Emu { pattern: String },
 }
 
+/// Consecutive Unknown session-status answers before an RPG session with no
+/// trace past its registration grace is closed. N=3 at the 2 s poller rhythm
+/// means ~6 s of no-evidence after grace: a crashed supervisor (lock gone,
+/// status purged) closes promptly, while a slow box.api hiccup never kills
+/// a live game on a single miss.
+const RPG_STATUS_MAX_UNKNOWNS: u32 = 3;
+
+/// Pure poller verdict for one RPG tick (tested, no subprocess).
+#[derive(Debug, PartialEq, Eq)]
+enum RpgPollAction {
+    Alive,
+    /// Close and bank elapsed time; Some(code) also records the exit code.
+    Close(Option<i32>),
+}
+
+fn rpg_poll_decide(
+    status: &super::external::RpgSessionStatus,
+    young: bool,
+    fails: u32,
+) -> (RpgPollAction, u32) {
+    use crate::backend::external::RpgSessionStatus as S;
+    match status {
+        S::Running => (RpgPollAction::Alive, 0),
+        S::Exited(code) => (RpgPollAction::Close(Some(*code)), 0),
+        S::Unknown if young => (RpgPollAction::Alive, 0),
+        S::Unknown => {
+            let fails = fails + 1;
+            if fails >= RPG_STATUS_MAX_UNKNOWNS {
+                (RpgPollAction::Close(None), 0)
+            } else {
+                (RpgPollAction::Alive, fails)
+            }
+        }
+    }
+}
+/// everything goes. With a live Wine session, nothing goes (the child slot,
 /// Launch gate as a truth table (pure, tested): with nothing running,
 /// everything goes. With a live Wine session, nothing goes (the child slot,
 /// prefix and time accounting all belong to it). With a live non-Wine
@@ -2107,6 +2149,31 @@ impl ProtonManager {
 
     /// C++ onGameFinished parity: call periodically; returns (game, seconds)
     /// once when the running child exits so time can be banked.
+    /// Closes the RPG foreground session: banks elapsed wall time (never the
+    /// exit code), records the code for the log view, clears the RPG state
+    /// and promotes a live parked session if one waits. Unknown/no-trace
+    /// closes bank the stopwatch, exactly like a natural exit with an
+    /// unreadable code.
+    fn close_rpg_session(&self, code: Option<i32>) -> (String, u64) {
+        self.imp().last_rpg_exit.set(code);
+        self.imp().rpg_status_fails.set(0);
+        self.imp().game_running.set(false);
+        self.imp().session_rpg.set(false);
+        let secs = self
+            .imp()
+            .session_start
+            .borrow_mut()
+            .take()
+            .map(|t| t.elapsed().as_secs())
+            .unwrap_or(0);
+        let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
+        *self.imp().session_prefix.borrow_mut() = String::new();
+        *self.imp().session_proton_dir.borrow_mut() = String::new();
+        *self.imp().session_watch.borrow_mut() = String::new();
+        self.promote_parked();
+        (game, secs)
+    }
+
     pub fn check_finished(&self) -> Option<(String, u64)> {
         let code: Option<i32> = {
             let mut slot = self.imp().running_child.borrow_mut();
@@ -2133,28 +2200,39 @@ impl ProtonManager {
                 }
             }
         }
-        // Sesiones RPG supervisadas por box-rpg (sin hijo local): viva
-        // mientras el plugin reporte sesiones; gracia de 8s tras lanzar
-        // (el supervisor tarda en registrar). Igual que AppImage.
+        // RPG sessions supervised by box-rpg (no local child). The verdict
+        // comes from the session-status verb, never from the flag alone:
+        // Running stays, Exited closes with its code banked as elapsed time,
+        // and Unknown past the 8 s registration grace counts toward closing
+        // after RPG_STATUS_MAX_UNKNOWNS consecutive misses. Unknown never
+        // closes by itself.
         if self.imp().session_rpg.get() {
             let game = self.imp().session_game.borrow().clone();
             if !game.is_empty() {
                 let dir = super::ConfigManager::new()
                     .game_value(&game, "Executable")
                     .unwrap_or_default();
-                if !super::external::RpgMakerManager::sessions(&dir).is_empty() {
-                    self.imp().game_running.set(true);
-                    return None;
-                }
                 let young = self
                     .imp()
                     .session_start
                     .borrow()
                     .map(|t| t.elapsed().as_secs() < 8)
                     .unwrap_or(false);
-                if young {
-                    self.imp().game_running.set(true);
-                    return None;
+                let (action, fails) = rpg_poll_decide(
+                    &super::external::RpgMakerManager::session_status(&dir),
+                    young,
+                    self.imp().rpg_status_fails.get(),
+                );
+                self.imp().rpg_status_fails.set(fails);
+                match action {
+                    RpgPollAction::Alive => {
+                        self.imp().game_running.set(true);
+                        return None;
+                    }
+                    RpgPollAction::Close(code) => {
+                        self.imp().rpg_status_fails.set(0);
+                        return Some(self.close_rpg_session(code));
+                    }
                 }
             }
         }
@@ -3623,6 +3701,60 @@ mod tests {
             .map(|p| p.name.clone())
             .collect();
         assert_eq!(names, vec!["Quake".to_string()]);
+    }
+
+    #[test]
+    fn rpg_decide_running_y_exited() {
+        use crate::backend::external::RpgSessionStatus as S;
+        use super::{rpg_poll_decide, RpgPollAction};
+        assert_eq!(rpg_poll_decide(&S::Running, false, 2), (RpgPollAction::Alive, 0));
+        assert_eq!(
+            rpg_poll_decide(&S::Exited(3), false, 2),
+            (RpgPollAction::Close(Some(3)), 0)
+        );
+        assert_eq!(
+            rpg_poll_decide(&S::Exited(0), true, 0),
+            (RpgPollAction::Close(Some(0)), 0)
+        );
+    }
+
+    #[test]
+    fn rpg_decide_gracia_y_tres_fallos() {
+        use crate::backend::external::RpgSessionStatus as S;
+        use super::{rpg_poll_decide, RpgPollAction, RPG_STATUS_MAX_UNKNOWNS};
+        assert_eq!(RPG_STATUS_MAX_UNKNOWNS, 3);
+        // Young: grace, no counting.
+        assert_eq!(rpg_poll_decide(&S::Unknown, true, 0), (RpgPollAction::Alive, 0));
+        // Old: first two misses stay alive and count.
+        assert_eq!(rpg_poll_decide(&S::Unknown, false, 0), (RpgPollAction::Alive, 1));
+        assert_eq!(rpg_poll_decide(&S::Unknown, false, 1), (RpgPollAction::Alive, 2));
+        // Third consecutive miss closes without a code.
+        assert_eq!(rpg_poll_decide(&S::Unknown, false, 2), (RpgPollAction::Close(None), 0));
+    }
+
+    #[test]
+    fn rpg_close_banks_and_promotes_parked() {
+        // Window closed by hand with OpenChamber parked: the RPG session
+        // banks its stopwatch and the parked app takes the slot back.
+        let pm = ProtonManager::new();
+        *pm.imp().session_game.borrow_mut() = "Epifania".to_string();
+        pm.imp().game_running.set(true);
+        pm.imp().session_rpg.set(true);
+        *pm.imp().session_start.borrow_mut() = Some(std::time::Instant::now());
+        pm.imp().parked.borrow_mut().push(ParkedSession {
+            name: "OpenChamber".to_string(),
+            kind: ParkedKind::AppImage { exe: String::new() },
+            start: std::time::Instant::now(),
+            child: None,
+        });
+        let (game, _secs) = pm.close_rpg_session(Some(0));
+        assert_eq!(game, "Epifania");
+        assert!(!pm.imp().session_rpg.get());
+        assert_eq!(pm.imp().session_game.borrow().as_str(), "OpenChamber");
+        assert!(pm.imp().game_running.get());
+        assert!(pm.imp().session_appimage.get());
+        assert!(pm.imp().parked.borrow().is_empty());
+        assert_eq!(pm.imp().last_rpg_exit.get(), Some(0));
     }
 
     #[test]

@@ -66,6 +66,15 @@ impl AppImageManager {
 
 pub struct RpgMakerManager;
 
+/// One supervised-session snapshot for an RPG game. Mirrors the plugin's
+/// `session-status` verb: only these three states exist on the wire.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RpgSessionStatus {
+    Running,
+    Exited(i32),
+    Unknown,
+}
+
 impl RpgMakerManager {
     pub const ID: &'static str = "rpgmaker-runtime";
     pub const ENTRY: &'static str = "rpgmaker-runtime";
@@ -105,19 +114,31 @@ impl RpgMakerManager {
         plugin_process::run_single_json(&Self::exe(), &["run", path])
     }
 
-    pub fn sessions(path: &str) -> Vec<String> {
-        plugin_process::run_single_json(&Self::exe(), &["sessions", path])
-            .ok()
-            .and_then(|d| d.get("sessions").cloned())
-            .and_then(|v| v.as_array().cloned())
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|s| s.as_str().map(str::to_string))
-            .collect()
-    }
-
     pub fn stop(path: &str) -> Result<serde_json::Value, String> {
         plugin_process::run_single_json(&Self::exe(), &["stop", path])
+    }
+
+    /// Supervised-session snapshot without touching the game: Running (with
+    /// live names), Exited (first exit code found), or Unknown (no trace,
+    /// backend trouble, or unparsable answer). Never errors out: Unknown is
+    /// data, and the caller counts consecutive unknowns before closing.
+    pub fn session_status(path: &str) -> RpgSessionStatus {
+        let doc = match plugin_process::run_single_json(&Self::exe(), &["session-status", path]) {
+            Ok(d) => d,
+            Err(_) => return RpgSessionStatus::Unknown,
+        };
+        match doc.get("state").and_then(|v| v.as_str()) {
+            Some("running") => RpgSessionStatus::Running,
+            Some("exited") => {
+                let code = doc
+                    .get("codes")
+                    .and_then(|v| v.as_object())
+                    .and_then(|m| m.values().filter_map(|v| v.as_i64()).next())
+                    .unwrap_or(0) as i32;
+                RpgSessionStatus::Exited(code)
+            }
+            _ => RpgSessionStatus::Unknown,
+        }
     }
 
     pub fn remove_runtime(kind: &str, version: &str) -> Result<serde_json::Value, String> {
