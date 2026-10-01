@@ -134,7 +134,8 @@ fn prefix_path_safe(prefix: &str, shared_bases: &[String], other_prefixes: &[Str
 
 /// Gathers the deny inputs from the live config: every shared base plus the
 /// prefixes of all other registered games. Read-only; decides nothing.
-fn prefix_delete_safe(state: &AppState, selected: &str, prefix: &std::path::Path) -> bool {
+/// Reused by the Settings confirm dialogs (selected="" checks everything).
+pub(crate) fn prefix_delete_safe(state: &AppState, selected: &str, prefix: &std::path::Path) -> bool {
     let mut shared: Vec<String> = Vec::new();
     for name in state.config.shared_prefixes() {
         if let Some(p) = state.config.shared_prefix_path(&name) {
@@ -652,6 +653,7 @@ pub fn show_remove_modal(
     let center_clone = center.clone();
     let details_clone = details.clone();
     let warn_prefix_c = warn_prefix.clone();
+    let warn_files_c = warn_files.clone();
     yes_btn.connect_clicked(move |_| {
         let remove_prefix = chk_prefix.is_active();
         let remove_files = chk_files.is_active();
@@ -668,7 +670,17 @@ pub fn show_remove_modal(
                     warn_prefix_c.set_visible(true);
                     return;
                 }
-                let _ = state_clone.integration.remove_dir_recursive(&prefix.display().to_string());
+                if let Err(e) = state_clone
+                    .integration
+                    .remove_dir_recursive(&prefix.display().to_string())
+                {
+                    warn_prefix_c.set_text(&format!(
+                        "Could not delete prefix: {}. Nothing was unregistered.",
+                        e
+                    ));
+                    warn_prefix_c.set_visible(true);
+                    return;
+                }
             }
         }
         if remove_files {
@@ -679,7 +691,14 @@ pub fn show_remove_modal(
 
                 let others = others_except(&state_clone, &sel, &g.main_path);
                 if removal_target_safe(&g.main_path, &g.executable, &deny, others.as_deref()) {
-                    let _ = state_clone.integration.remove_dir_recursive(&g.main_path);
+                    if let Err(e) = state_clone.integration.remove_dir_recursive(&g.main_path) {
+                        warn_files_c.set_text(&format!(
+                            "Could not delete game files: {}. Nothing was unregistered.",
+                            e
+                        ));
+                        warn_files_c.set_visible(true);
+                        return;
+                    }
                 }
             }
         }

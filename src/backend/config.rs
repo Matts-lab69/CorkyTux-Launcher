@@ -543,14 +543,77 @@ impl ConfigManager {
         path
     }
 
-    pub fn remove_shared_prefix(&self, proton_name: &str) {
-        // I match the legacy behavior: the shared prefix directory goes away too.
-        if let Some(path) = self.shared_prefix_path(proton_name) {
-            std::fs::remove_dir_all(&path).ok();
+    /// Games (name) whose prefix resolves into `base`: equal or inside it,
+    /// canonical comparison so symlinks and `..` cannot hide. A prefix that
+    /// cannot be resolved counts as a user (fail closed, like the remove
+    /// guard): a stale record must be cleared first, never silently ignored.
+    /// Pure; covered by tests.
+    pub(crate) fn shared_prefix_users(
+        base: &std::path::Path,
+        prefixes: &[(String, String)],
+    ) -> Vec<String> {
+        let bc = std::fs::canonicalize(base)
+            .unwrap_or_else(|_| base.to_path_buf());
+        let mut out: Vec<String> = Vec::new();
+        for (name, prefix) in prefixes {
+            let p = prefix.trim_end_matches('/');
+            if p.is_empty() {
+                continue;
+            }
+            match std::fs::canonicalize(p) {
+                Ok(pc) => {
+                    if pc == bc || pc.starts_with(&bc) {
+                        out.push(name.clone());
+                    }
+                }
+                Err(_) => out.push(name.clone()),
+            }
         }
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// Every registered game with its explicit PrefixPath. Read-only.
+    pub(crate) fn all_game_prefixes(&self) -> Vec<(String, String)> {
+        self.game_names()
+            .into_iter()
+            .filter_map(|n| {
+                let p = self.game_value(&n, "PrefixPath").unwrap_or_default();
+                if p.is_empty() {
+                    None
+                } else {
+                    Some((n, p))
+                }
+            })
+            .collect()
+    }
+
+    /// Deletes one directory, reporting the real error instead of swallowing
+    /// it. Missing counts as already gone.
+    pub(crate) fn delete_dir(path: &std::path::Path) -> Result<(), String> {
+        if !path.exists() {
+            return Ok(());
+        }
+        std::fs::remove_dir_all(path)
+            .map_err(|e| format!("Could not delete {}: {}", path.display(), e))
+    }
+
+    pub fn remove_shared_prefix(&self, proton_name: &str) -> Result<(), String> {
+        // I match the legacy behavior: the shared prefix directory goes away too.
+        let path = self
+            .shared_prefix_path(proton_name)
+            .ok_or_else(|| format!("Unknown shared prefix: {}", proton_name))?;
+        // Deny while any registered game points into it; the UI lists them.
+        let users = Self::shared_prefix_users(&path, &self.all_game_prefixes());
+        if !users.is_empty() {
+            return Err(format!("Still used by: {}", users.join(", ")));
+        }
+        Self::delete_dir(&path)?;
         let mut list = self.shared_prefixes();
         list.retain(|p| p != proton_name);
         self.set_launcher_value("sharedPrefixes", &list.join(","));
+        Ok(())
     }
 
     pub fn read_file(&self, path: &str) -> Option<String> {
@@ -588,5 +651,66 @@ mod dirs {
         std::env::var("HOME")
             .ok()
             .map(PathBuf::from)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ConfigManager;
+
+    fn mktmp(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn users_equal_inside_symlink_dotdot_and_missing() {
+        let base = mktmp("corky_cfg_users");
+        let shared = base.join("shared-proton-x");
+        std::fs::create_dir_all(shared.join("pfx")).unwrap();
+        let other = base.join("Other");
+        std::fs::create_dir_all(&other).unwrap();
+        let sh = shared.display().to_string();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&shared, base.join("link")).unwrap();
+        let pairs = vec![
+            ("A".to_string(), sh.clone()),
+            ("B".to_string(), shared.join("pfx").display().to_string()),
+            ("C".to_string(), base.join("link").display().to_string()),
+            ("D".to_string(), format!("{}/pfx/..", sh)),
+            ("E".to_string(), base.join("gone").display().to_string()),
+            ("F".to_string(), other.display().to_string()),
+            ("G".to_string(), String::new()),
+        ];
+        let mut users = ConfigManager::shared_prefix_users(&shared, &pairs);
+        users.sort();
+        assert_eq!(users, vec!["A", "B", "C", "D", "E"]);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn delete_dir_ok_missing_and_denied() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = mktmp("corky_cfg_del");
+        let dir = base.join("gone");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(ConfigManager::delete_dir(&dir).is_ok());
+        assert!(!dir.exists());
+        assert!(ConfigManager::delete_dir(&dir).is_ok());
+        let locked = base.join("locked");
+        std::fs::create_dir_all(locked.join("sub")).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+        assert!(ConfigManager::delete_dir(&locked).is_err());
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn remove_unknown_prefix_errors_without_touching_disk() {
+        let cfg = ConfigManager::new();
+        let err = cfg.remove_shared_prefix("corky-no-such-prefix-xyz").unwrap_err();
+        assert!(err.contains("Unknown shared prefix"), "{}", err);
     }
 }

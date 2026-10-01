@@ -1638,14 +1638,18 @@ pub fn show_settings_modal(
                     let pid = p.id.clone();
                     let slot_cc = slot_c.clone();
                     let reg_cc = reg_slot_c.clone();
+                    let del_c = del.clone();
                     del.connect_clicked(move |_| {
-                        state_cc.plugins.remove_plugin(&pid);
-                        if let Some(r) = slot_cc.borrow().clone() {
-                            r();
-                        }
-                        if let Some(rr) = reg_cc.borrow().clone() {
-                            rr();
-                        }
+                        let slot_cc2 = slot_cc.clone();
+                        let reg_cc2 = reg_cc.clone();
+                        confirm_remove_plugin(&del_c, &state_cc, pid.clone(), move || {
+                            if let Some(r) = slot_cc2.borrow().clone() {
+                                r();
+                            }
+                            if let Some(rr) = reg_cc2.borrow().clone() {
+                                rr();
+                            }
+                        });
                     });
                     row.append(&arrow);
                     row.append(&name_lbl);
@@ -1713,14 +1717,18 @@ pub fn show_settings_modal(
                     let pid2 = p.id.clone();
                     let slot_cc2 = slot_c.clone();
                     let reg_cc2 = reg_slot_c.clone();
+                    let del_c2 = del.clone();
                     del.connect_clicked(move |_| {
-                        state_cc2.plugins.remove_plugin(&pid2);
-                        if let Some(r) = slot_cc2.borrow().clone() {
-                            r();
-                        }
-                        if let Some(rr) = reg_cc2.borrow().clone() {
-                            rr();
-                        }
+                        let slot_cc3 = slot_cc2.clone();
+                        let reg_cc3 = reg_cc2.clone();
+                        confirm_remove_plugin(&del_c2, &state_cc2, pid2.clone(), move || {
+                            if let Some(r) = slot_cc3.borrow().clone() {
+                                r();
+                            }
+                            if let Some(rr) = reg_cc3.borrow().clone() {
+                                rr();
+                            }
+                        });
                     });
                     row.append(&col);
                     row.append(&sw);
@@ -2711,8 +2719,221 @@ fn start_proton_download(
     });
 }
 
-fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {
-    while let Some(child) = list_box.first_child() {
+/// Yes/no confirm dialog for deleting a whole plugin directory. Shows the
+/// plugin id and the exact path, deletes only on "Remove", and surfaces the
+/// real filesystem error instead of pretending success.
+fn confirm_remove_plugin(
+    anchor: &gtk::Button,
+    state: &AppState,
+    plugin_id: String,
+    on_done: impl Fn() + 'static,
+) {
+    let dlg = adw::Dialog::new();
+    dlg.set_title("Remove plugin");
+    dlg.set_content_width(420);
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    outer.add_css_class("modal-bg");
+    outer.set_hexpand(true);
+    outer.set_vexpand(true);
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    col.set_hexpand(true);
+    col.set_margin_top(12);
+    col.set_margin_bottom(12);
+    col.set_margin_start(16);
+    col.set_margin_end(16);
+    outer.append(&col);
+    let (header_row, x_btn) = helpers::modal_header("Remove plugin");
+    {
+        let d0 = dlg.clone();
+        x_btn.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    col.append(&header_row);
+    let path = state.plugins.plugins_dir().join(&plugin_id);
+    let msg = gtk::Label::new(Some(&format!(
+        "Delete plugin \"{}\"?\n{}",
+        plugin_id,
+        path.display()
+    )));
+    msg.set_wrap(true);
+    msg.set_halign(gtk::Align::Start);
+    col.append(&msg);
+    let err = gtk::Label::new(None);
+    err.set_wrap(true);
+    err.set_halign(gtk::Align::Start);
+    err.add_css_class("time-label");
+    err.set_visible(false);
+    col.append(&err);
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    row.set_halign(gtk::Align::Fill);
+    let cancel = gtk::Button::with_label("Cancel");
+    cancel.add_css_class("neon-green");
+    cancel.set_hexpand(true);
+    let remove = gtk::Button::with_label("Remove");
+    remove.add_css_class("neon-red");
+    remove.add_css_class("destructive-action");
+    remove.set_hexpand(true);
+    {
+        let d0 = dlg.clone();
+        cancel.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    {
+        let d0 = dlg.clone();
+        let state_c = state.clone();
+        let pid_c = plugin_id.clone();
+        let on_done_c = on_done;
+        remove.connect_clicked(move |_| match state_c.plugins.remove_plugin(&pid_c) {
+            Ok(()) => {
+                d0.close();
+                on_done_c();
+            }
+            Err(e) => {
+                err.set_text(&e);
+                err.set_visible(true);
+            }
+        });
+    }
+    row.append(&cancel);
+    row.append(&remove);
+    col.append(&row);
+    dlg.set_child(Some(&outer));
+    dlg.present(anchor.root().as_ref());
+}
+
+/// Blocked-delete notice for a shared prefix: lists who uses it and deletes
+/// nothing. Single Close button.
+fn confirm_shared_blocked(anchor: &gtk::Button, name: &str, path: &str, detail: &str) {
+    let dlg = adw::Dialog::new();
+    dlg.set_title("Cannot remove shared prefix");
+    dlg.set_content_width(420);
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    outer.add_css_class("modal-bg");
+    outer.set_hexpand(true);
+    outer.set_vexpand(true);
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    col.set_hexpand(true);
+    col.set_margin_top(12);
+    col.set_margin_bottom(12);
+    col.set_margin_start(16);
+    col.set_margin_end(16);
+    outer.append(&col);
+    let (header_row, x_btn) = helpers::modal_header("Cannot remove shared prefix");
+    {
+        let d0 = dlg.clone();
+        x_btn.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    col.append(&header_row);
+    let msg = gtk::Label::new(Some(&format!(
+        "Shared prefix \"{}\" ({}) cannot be deleted.\n{}",
+        name, path, detail
+    )));
+    msg.set_wrap(true);
+    msg.set_halign(gtk::Align::Start);
+    col.append(&msg);
+    let close = gtk::Button::with_label("Close");
+    close.add_css_class("neon-green");
+    close.set_hexpand(true);
+    {
+        let d0 = dlg.clone();
+        close.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    col.append(&close);
+    dlg.set_child(Some(&outer));
+    dlg.present(anchor.root().as_ref());
+}
+
+/// Confirm dialog for deleting an unused shared prefix. Deletes only on
+/// "Remove" and surfaces the real error (deny or filesystem) in the dialog.
+fn confirm_remove_shared(
+    anchor: &gtk::Button,
+    state: &AppState,
+    name: String,
+    list_box: gtk::Box,
+) {
+    let dlg = adw::Dialog::new();
+    dlg.set_title("Remove shared prefix");
+    dlg.set_content_width(420);
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    outer.add_css_class("modal-bg");
+    outer.set_hexpand(true);
+    outer.set_vexpand(true);
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    col.set_hexpand(true);
+    col.set_margin_top(12);
+    col.set_margin_bottom(12);
+    col.set_margin_start(16);
+    col.set_margin_end(16);
+    outer.append(&col);
+    let (header_row, x_btn) = helpers::modal_header("Remove shared prefix");
+    {
+        let d0 = dlg.clone();
+        x_btn.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    col.append(&header_row);
+    let path = state
+        .config
+        .shared_prefix_path(&name)
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    let msg = gtk::Label::new(Some(&format!(
+        "Delete unused shared prefix \"{}\"?\n{}",
+        name, path
+    )));
+    msg.set_wrap(true);
+    msg.set_halign(gtk::Align::Start);
+    col.append(&msg);
+    let err = gtk::Label::new(None);
+    err.set_wrap(true);
+    err.set_halign(gtk::Align::Start);
+    err.add_css_class("time-label");
+    err.set_visible(false);
+    col.append(&err);
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    row.set_halign(gtk::Align::Fill);
+    let cancel = gtk::Button::with_label("Cancel");
+    cancel.add_css_class("neon-green");
+    cancel.set_hexpand(true);
+    let remove = gtk::Button::with_label("Remove");
+    remove.add_css_class("neon-red");
+    remove.add_css_class("destructive-action");
+    remove.set_hexpand(true);
+    {
+        let d0 = dlg.clone();
+        cancel.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    {
+        let d0 = dlg.clone();
+        let state_c = state.clone();
+        remove.connect_clicked(move |_| match state_c.config.remove_shared_prefix(&name) {
+            Ok(()) => {
+                d0.close();
+                refresh_shared_list(&list_box, &state_c);
+            }
+            Err(e) => {
+                err.set_text(&e);
+                err.set_visible(true);
+            }
+        });
+    }
+    row.append(&cancel);
+    row.append(&remove);
+    col.append(&row);
+    dlg.set_child(Some(&outer));
+    dlg.present(anchor.root().as_ref());
+}
+
+fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {    while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }
     let names = state.config.shared_prefixes();
@@ -2754,9 +2975,26 @@ fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {
         let state_c = state.clone();
         let name_c = name.clone();
         let list_c = list_box.clone();
+        let btn_c = remove_btn.clone();
         remove_btn.connect_clicked(move |_| {
-            state_c.config.remove_shared_prefix(&name_c);
-            refresh_shared_list(&list_c, &state_c);
+            // Deny by path, not by checkbox: reuse the remove guard against
+            // every registered game. The backend re-checks anyway.
+            let base = match state_c.config.shared_prefix_path(&name_c) {
+                Some(p) => p,
+                None => return,
+            };
+            if !crate::ui::remove_modal::prefix_delete_safe(&state_c, "", &base) {
+                let pairs = state_c.config.all_game_prefixes();
+                let users = crate::backend::config::ConfigManager::shared_prefix_users(&base, &pairs);
+                let detail = if users.is_empty() {
+                    "The path is not safe to delete.".to_string()
+                } else {
+                    format!("Still used by: {}", users.join(", "))
+                };
+                confirm_shared_blocked(&btn_c, &name_c, &base.display().to_string(), &detail);
+                return;
+            }
+            confirm_remove_shared(&btn_c, &state_c, name_c.clone(), list_c.clone());
         });
         inner.append(&col);
         inner.append(&remove_btn);
