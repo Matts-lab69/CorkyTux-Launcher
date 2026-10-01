@@ -693,7 +693,7 @@ pub fn show_remove_modal(
                 if removal_target_safe(&g.main_path, &g.executable, &deny, others.as_deref()) {
                     if let Err(e) = state_clone.integration.remove_dir_recursive(&g.main_path) {
                         warn_files_c.set_text(&format!(
-                            "Could not delete game files: {}. Nothing was unregistered.",
+                            "Could not delete game files: {}. The game was not unregistered, but some files may have been partially deleted.",
                             e
                         ));
                         warn_files_c.set_visible(true);

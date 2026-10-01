@@ -1162,7 +1162,14 @@ mod tests {
         let locked = base.join("locked-plugin");
         std::fs::create_dir_all(locked.join("sub")).unwrap();
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
-        assert!(PluginManager::remove_plugin_dir(&locked).is_err());
+        // Root and permission-less filesystems ignore chmod: probe first,
+        // skip only the denied part (loudly), never fail for it.
+        if std::fs::write(locked.join(".probe"), b"x").is_ok() {
+            let _ = std::fs::remove_file(locked.join(".probe"));
+            eprintln!("SKIP denied part: permissions not enforced (root or FS)");
+        } else {
+            assert!(PluginManager::remove_plugin_dir(&locked).is_err());
+        }
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _ = std::fs::remove_dir_all(&base);
     }
