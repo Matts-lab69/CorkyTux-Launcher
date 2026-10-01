@@ -708,10 +708,20 @@ impl DetailsPanel {
         // I recalc the Play/Stop button from live state right away: without
         // this the text went stale until the next 2s poller tick on
         // selection change. Same formula as the poller, same result.
+        // A parked session also shows Stop: it is alive, just not in the
+        // foreground slot.
+        let session = self.proton.session_game_name();
+        let session_eff = if session == name {
+            session
+        } else if self.proton.is_parked(name) {
+            name.to_string()
+        } else {
+            session
+        };
         let playing = playing_state(
             name,
             self.proton.is_game_running(),
-            &self.proton.session_game_name(),
+            &session_eff,
         );
         self.set_playing(playing, self.theme.is_dark());
     }

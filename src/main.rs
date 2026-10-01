@@ -128,6 +128,18 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
                 Err(e) => Err(e),
             };
         }
+        // A parked session shows Stop too: stop that entry only, bank its
+        // time once, and leave the foreground session untouched.
+        if state_clone.proton.is_parked(&name) {
+            if let Some((game, secs)) = state_clone.proton.stop_parked(&name) {
+                if secs > 0 {
+                    state_clone.game_model.increment_time_spent(&game, secs);
+                }
+                state_clone.game_model.touch_last_played(&game);
+                state_clone.recent_model.refresh(30);
+            }
+            return Ok(());
+        }
         state_clone.game_model.touch_last_played(&name);
         state_clone.recent_model.refresh(30);
         if state_clone.game_model.get_game(&name).is_some() {

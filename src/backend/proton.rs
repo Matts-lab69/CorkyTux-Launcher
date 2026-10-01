@@ -80,6 +80,10 @@ mod imp {
         pub session_appimage: Cell<bool>,
         pub session_rpg: Cell<bool>,
         pub session_watch: RefCell<String>,
+        /// Non-Wine sessions parked while another game runs in the foreground
+        /// slot. Only AppImage/RPG/emulator sessions ever park here; Wine is
+        /// never parked (a live Wine session denies every launch instead).
+        pub(crate) parked: RefCell<Vec<ParkedSession>>,
     }
 
     #[glib::object_subclass]
@@ -103,6 +107,43 @@ mod imp {
 
 glib::wrapper! {
     pub struct ProtonManager(ObjectSubclass<imp::ProtonManager>);
+}
+
+/// A non-Wine session parked while another game holds the foreground slot.
+/// The live child (if the launcher spawned one) travels with the entry, so
+/// the single `running_child` slot is free for the new game. `start` is the
+/// original launch time: promotion restores it, so the parked session's clock
+/// never resets and its time banks normally.
+#[derive(Debug)]
+pub(crate) struct ParkedSession {
+    name: String,
+    kind: ParkedKind,
+    start: std::time::Instant,
+    child: Option<std::process::Child>,
+}
+
+#[derive(Debug)]
+pub(crate) enum ParkedKind {
+    AppImage { exe: String },
+    Rpg { dir: String },
+    Emu { pattern: String },
+}
+
+/// Launch gate as a truth table (pure, tested): with nothing running,
+/// everything goes. With a live Wine session, nothing goes (the child slot,
+/// prefix and time accounting all belong to it). With a live non-Wine
+/// session, everything goes — the session parks aside first. In particular
+/// Wine+app is denied: parking Wine would orphan its child and break
+/// Stop/`wineserver -k` for it.
+fn launch_allowed(new_is_wine: bool, cur_running: bool, cur_is_wine: bool) -> bool {
+    if !cur_running {
+        return true;
+    }
+    if cur_is_wine {
+        return false;
+    }
+    let _ = new_is_wine;
+    true
 }
 
 impl ProtonManager {
@@ -923,8 +964,25 @@ impl ProtonManager {
     }
 
     pub fn run_game(&self, game_name: &str) -> Result<(), String> {
+        // Single-Wine lock, not a single-game lock: a live non-Wine session
+        // (AppImage/RPG/emulator, launched or adopted) parks aside instead of
+        // blocking. A live Wine session still denies every launch: the child
+        // slot, the prefix and wineserver -k all belong to it.
+        let game_preview = super::ConfigManager::new().game_section(game_name);
+        let new_is_wine = Self::section_is_wine(&game_preview);
+        // Dead parked entries go first: a relaunched app starts clean, and
+        // the deny below only ever sees live entries.
+        self.purge_dead();
         if self.is_game_running() {
-            return Err("A game is already running".into());
+            // Same game, already here: relaunching would stack a second
+            // instance (foreground plus parked entry). Deny with its name.
+            if self.imp().session_game.borrow().as_str() == game_name || self.is_parked(game_name) {
+                return Err(format!("{} is already running", game_name));
+            }
+            if !launch_allowed(new_is_wine, true, self.current_is_wine()) {
+                return Err("A game is already running".into());
+            }
+            self.park_current();
         }
         let config = super::ConfigManager::new();
         let game = config.game_section(game_name);
@@ -1675,6 +1733,9 @@ impl ProtonManager {
         self.imp().session_appimage.set(false);
         self.imp().session_rpg.set(false);
         *self.imp().session_watch.borrow_mut() = String::new();
+        // Same promotion as the natural-exit path: a parked session comes
+        // back to the foreground slot instead of being forgotten.
+        self.promote_parked();
         Ok((game, secs))
     }
 
@@ -1693,6 +1754,278 @@ impl ProtonManager {
         self.imp().session_appimage.set(false);
         self.imp().session_rpg.set(false);
         *self.imp().session_watch.borrow_mut() = String::new();
+    }
+
+    /// Is this game section a Wine game? Same split `run_game` dispatches on:
+    /// AppImage, RPG and emulator executors are not Wine.
+    fn section_is_wine(game: &std::collections::HashMap<String, String>) -> bool {
+        let executor = game.get("executor").cloned().unwrap_or_default();
+        let source = game.get("source").cloned().unwrap_or_default();
+        if executor == "appimage-launcher" || source.eq_ignore_ascii_case("appimage") {
+            return false;
+        }
+        if executor == "rpgmaker-runtime" || source.eq_ignore_ascii_case("rpgmaker") {
+            return false;
+        }
+        if !executor.is_empty() {
+            return false;
+        }
+        true
+    }
+
+    /// Is the current live session a Wine one? Fail closed: flags first,
+    /// then the session game's own record; a game that vanished from the
+    /// config counts as Wine, so a weird state denies instead of risking a
+    /// second Wine child in the single slot.
+    fn current_is_wine(&self) -> bool {
+        if !self.is_game_running() {
+            return false;
+        }
+        if self.imp().session_rpg.get() || self.imp().session_appimage.get() {
+            return false;
+        }
+        let name = self.imp().session_game.borrow().clone();
+        if name.is_empty() {
+            return true;
+        }
+        match super::ConfigManager::new().game_value(&name, "Executor") {
+            Some(exec) if !exec.is_empty() => false,
+            None => true,
+            Some(_) => {
+                let source = super::ConfigManager::new()
+                    .game_value(&name, "Source")
+                    .unwrap_or_default();
+                !(source.eq_ignore_ascii_case("appimage")
+                    || source.eq_ignore_ascii_case("rpgmaker"))
+            }
+        }
+    }
+
+    /// Drops definitively-dead parked entries (their partial time is never
+    /// banked, same as before). Fail open: anything I cannot verify stays.
+    /// Called when parking and when launching, so dead entries never pile
+    /// up behind a live one and a relaunched app never doubles its entry.
+    fn purge_dead(&self) {
+        let mut parked = self.imp().parked.borrow_mut();
+        let mut i = 0;
+        while i < parked.len() {
+            if self.parked_alive(&mut parked[i]) {
+                i += 1;
+            } else {
+                parked.remove(i);
+            }
+        }
+    }
+
+    /// Parks the current non-Wine session aside: no-op when idle, when the
+    /// current session is Wine (the caller denies those launches), or when
+    /// the session has no game name. Adopted sessions (no local child) park
+    /// with `child: None` and are re-checked by pattern at promotion time.
+    fn park_current(&self) {
+        self.purge_dead();
+        if !self.is_game_running() {
+            return;
+        }
+        let name = self.imp().session_game.borrow().clone();
+        if name.is_empty() {
+            return;
+        }
+        let kind = if self.imp().session_rpg.get() {
+            let dir = super::ConfigManager::new()
+                .game_value(&name, "Executable")
+                .unwrap_or_default();
+            ParkedKind::Rpg { dir }
+        } else if self.imp().session_appimage.get() {
+            let exe = super::ConfigManager::new()
+                .game_value(&name, "Executable")
+                .unwrap_or_default();
+            ParkedKind::AppImage { exe }
+        } else {
+            let executor = super::ConfigManager::new()
+                .game_value(&name, "Executor")
+                .unwrap_or_default();
+            if executor.is_empty() {
+                return;
+            }
+            let pattern = self.imp().session_watch.borrow().clone();
+            let exe = super::ConfigManager::new()
+                .game_value(&name, "Executable")
+                .unwrap_or_default();
+            ParkedKind::Emu {
+                pattern: if pattern.trim().is_empty() {
+                    exe
+                } else {
+                    pattern
+                },
+            }
+        };
+        let start = self.imp().session_start.borrow().unwrap_or_else(std::time::Instant::now);
+        let child = self.imp().running_child.borrow_mut().take();
+        let mut parked = self.imp().parked.borrow_mut();
+        parked.retain(|p| p.name != name);
+        parked.push(ParkedSession {
+            name,
+            kind,
+            start,
+            child,
+        });
+    }
+
+    /// Is this parked entry still alive? Fail open: any check I cannot run
+    /// (dead plugin, missing record) keeps the entry — I never drop a
+    /// session I am unsure about.
+    fn parked_alive(&self, entry: &mut ParkedSession) -> bool {
+        if let Some(child) = entry.child.as_mut() {
+            match child.try_wait() {
+                Ok(None) => return true,
+                Ok(Some(_)) => return false,
+                Err(_) => return true,
+            }
+        }
+        match &entry.kind {
+            ParkedKind::AppImage { exe } => {
+                if exe.trim().is_empty() {
+                    return true;
+                }
+                Self::appimage_tree_alive(exe)
+            }
+            ParkedKind::Rpg { dir } => {
+                // 8 s grace like the foreground RPG path: the supervisor
+                // takes a moment to register a fresh launch.
+                if entry.start.elapsed().as_secs() < 8 {
+                    return true;
+                }
+                match super::plugin_process::run_single_json(
+                    &super::external::RpgMakerManager::exe(),
+                    &["sessions", dir],
+                ) {
+                    Ok(doc) => !doc
+                        .get("sessions")
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.is_empty())
+                        .unwrap_or(true),
+                    Err(_) => true,
+                }
+            }
+            ParkedKind::Emu { pattern } => {
+                if pattern.trim().is_empty() {
+                    return true;
+                }
+                Self::watch_alive(pattern)
+            }
+        }
+    }
+
+    /// Is `name` parked aside and still alive? Public for the UI: a parked
+    /// game shows Stop instead of Play, and Stop routes to `stop_parked`.
+    pub fn is_parked(&self, name: &str) -> bool {
+        if name.is_empty() {
+            return false;
+        }
+        let mut parked = self.imp().parked.borrow_mut();
+        let mut found = None;
+        for (i, entry) in parked.iter_mut().enumerate() {
+            if entry.name == name {
+                found = Some(i);
+                break;
+            }
+        }
+        match found {
+            Some(i) => self.parked_alive(&mut parked[i]),
+            None => false,
+        }
+    }
+
+    /// Stops one parked session by name without touching the foreground
+    /// session: kills its child (or its pattern/tree, like `stop_game` does
+    /// for the current one), drops the entry and returns (name, seconds) so
+    /// the caller banks its time exactly once. A second call finds nothing
+    /// and returns None.
+    pub fn stop_parked(&self, name: &str) -> Option<(String, u64)> {
+        let mut parked = self.imp().parked.borrow_mut();
+        let idx = parked.iter().position(|p| p.name == name)?;
+        // Liveness first (fail open lives in parked_alive): refusing to stop
+        // a dead entry still drops it, so the list never rots.
+        let alive = {
+            let entry = &mut parked[idx];
+            self.parked_alive(entry)
+        };
+        let mut entry = parked.remove(idx);
+        drop(parked);
+        if alive {
+            match &entry.kind {
+                ParkedKind::AppImage { exe } => Self::stop_appimage_tree(exe),
+                ParkedKind::Rpg { dir } => {
+                    let _ = super::external::RpgMakerManager::stop(dir);
+                }
+                ParkedKind::Emu { pattern } => {
+                    if !pattern.trim().is_empty() {
+                        let _ = Command::new(Self::tool_path("pkill"))
+                            .args(["-9", "-f", pattern])
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status();
+                    }
+                }
+            }
+        }
+        if let Some(mut c) = entry.child.take() {
+            let _ = c.kill();
+        }
+        let secs = std::time::Instant::now()
+            .duration_since(entry.start)
+            .as_secs();
+        Some((entry.name, secs))
+    }
+
+    /// Promotes the first still-live parked session back into the foreground
+    /// slot, keeping its original `start` so its clock (and banked time)
+    /// survive the round trip. Dead entries are dropped: their partial time
+    /// is lost (banking them would need the game model, which lives in the
+    /// UI layer). Called when the foreground session closes.
+    fn promote_parked(&self) -> bool {
+        let mut parked = self.imp().parked.borrow_mut();
+        let idx = {
+            let mut found = None;
+            for (i, entry) in parked.iter_mut().enumerate() {
+                if self.parked_alive(entry) {
+                    found = Some(i);
+                    break;
+                }
+            }
+            found
+        };
+        let mut entry = match idx {
+            Some(i) => parked.remove(i),
+            None => {
+                parked.clear();
+                return false;
+            }
+        };
+        drop(parked);
+        let child = entry.child.take();
+        *self.imp().session_game.borrow_mut() = entry.name.clone();
+        *self.imp().session_start.borrow_mut() = Some(entry.start);
+        self.imp().game_running.set(true);
+        match &entry.kind {
+            ParkedKind::AppImage { .. } => {
+                self.imp().session_appimage.set(true);
+                self.imp().session_rpg.set(false);
+                *self.imp().session_watch.borrow_mut() = String::new();
+            }
+            ParkedKind::Rpg { .. } => {
+                self.imp().session_appimage.set(false);
+                self.imp().session_rpg.set(true);
+                *self.imp().session_watch.borrow_mut() = String::new();
+            }
+            ParkedKind::Emu { pattern } => {
+                self.imp().session_appimage.set(false);
+                self.imp().session_rpg.set(false);
+                *self.imp().session_watch.borrow_mut() = pattern.clone();
+            }
+        }
+        *self.imp().running_child.borrow_mut() = child;
+        true
     }
 
     fn watch_alive(pattern: &str) -> bool {
@@ -1872,6 +2205,11 @@ impl ProtonManager {
         }
         *self.imp().session_watch.borrow_mut() = String::new();
         self.imp().session_rpg.set(false);
+        // A parked non-Wine session outlives the foreground one: promote the
+        // first still-live entry back into the slot (clock preserved), so the
+        // Stop button and time banking keep working for it. The closed game's
+        // own (game, secs) return below is unaffected.
+        self.promote_parked();
         if game.is_empty() {
             None
         } else {
@@ -3050,4 +3388,265 @@ fn which(name: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{launch_allowed, ParkedKind, ParkedSession, ProtonManager};
+    use glib::subclass::prelude::*;
+
+    fn wine_section() -> std::collections::HashMap<String, String> {
+        [("executable".to_string(), "/g/G.exe".to_string())]
+            .into_iter()
+            .collect()
+    }
+
+    fn app_section() -> std::collections::HashMap<String, String> {
+        [
+            ("executable".to_string(), "/a/A.AppImage".to_string()),
+            ("executor".to_string(), "appimage-launcher".to_string()),
+        ]
+        .into_iter()
+        .collect()
+    }
+
+    #[test]
+    fn gate_idle_allows_everything() {
+        assert!(launch_allowed(true, false, false));
+        assert!(launch_allowed(false, false, false));
+    }
+
+    #[test]
+    fn gate_wine_live_denies_wine() {
+        assert!(!launch_allowed(true, true, true));
+    }
+
+    #[test]
+    fn gate_adopted_app_allows_wine() {
+        assert!(launch_allowed(true, true, false));
+    }
+
+    #[test]
+    fn gate_adopted_app_allows_rpg() {
+        assert!(launch_allowed(false, true, false));
+    }
+
+    #[test]
+    fn gate_wine_live_denies_app() {
+        // Deliberate: parking Wine would orphan its child and break
+        // Stop/wineserver -k for it. Documented, not a hole.
+        assert!(!launch_allowed(false, true, true));
+    }
+
+    #[test]
+    fn section_split_matches_run_game_dispatch() {
+        assert!(ProtonManager::section_is_wine(&wine_section()));
+        assert!(!ProtonManager::section_is_wine(&app_section()));
+        let mut emu = wine_section();
+        emu.insert("executor".to_string(), "emulator-manager".to_string());
+        assert!(!ProtonManager::section_is_wine(&emu));
+        let mut rpg = wine_section();
+        rpg.insert("executor".to_string(), "rpgmaker-runtime".to_string());
+        assert!(!ProtonManager::section_is_wine(&rpg));
+        let mut src = wine_section();
+        src.insert("source".to_string(), "AppImage".to_string());
+        assert!(!ProtonManager::section_is_wine(&src));
+    }
+
+    #[test]
+    fn wine_current_is_never_parked() {
+        let pm = ProtonManager::new();
+        // A Wine-like foreground session (executor empty, flags off): the
+        // game is unknown to the test config, so fail-closed also applies.
+        *pm.imp().session_game.borrow_mut() = "WineGame".to_string();
+        pm.imp().game_running.set(true);
+        pm.park_current();
+        assert!(pm.imp().parked.borrow().is_empty());
+    }
+
+    #[test]
+    fn parked_app_round_trips_with_its_clock() {
+        let pm = ProtonManager::new();
+        *pm.imp().session_game.borrow_mut() = "OpenChamber".to_string();
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+        let start = std::time::Instant::now();
+        *pm.imp().session_start.borrow_mut() = Some(start);
+        pm.park_current();
+        assert_eq!(pm.imp().parked.borrow().len(), 1);
+        // Foreground slot is then taken by the new game, as run_game does.
+        *pm.imp().session_game.borrow_mut() = "Doom".to_string();
+        *pm.imp().session_start.borrow_mut() = Some(std::time::Instant::now());
+        pm.imp().session_appimage.set(false);
+        // New game ends without a parked sweep noticing: promotion brings
+        // the app back with its ORIGINAL start (empty exe fails open).
+        *pm.imp().session_game.borrow_mut() = String::new();
+        assert!(pm.promote_parked());
+        assert_eq!(pm.imp().session_game.borrow().as_str(), "OpenChamber");
+        assert!(pm.imp().game_running.get());
+        assert!(pm.imp().session_appimage.get());
+        // Same clock, not a reset: promoted start is the original one.
+        // Range (not eq): the two elapsed() reads can straddle a second.
+        let back = pm.imp().session_start.borrow().unwrap().elapsed();
+        assert!(back >= start.elapsed().saturating_sub(std::time::Duration::from_secs(1)));
+        assert!(back <= start.elapsed() + std::time::Duration::from_secs(5));
+        assert!(pm.imp().parked.borrow().is_empty());
+    }
+
+    #[test]
+    fn dead_parked_entry_is_dropped() {
+        let pm = ProtonManager::new();
+        pm.imp().parked.borrow_mut().push(ParkedSession {
+            name: "Gone".to_string(),
+            kind: ParkedKind::Emu {
+                pattern: "corky-dead-emu-xyz-1".to_string(),
+            },
+            start: std::time::Instant::now(),
+            child: None,
+        });
+        assert!(!pm.promote_parked());
+        assert!(!pm.imp().game_running.get());
+    }
+
+    #[test]
+    fn relaunch_current_is_denied_by_name() {
+        // Same game while it runs: denied before any spawn, so this test
+        // launches nothing.
+        let pm = ProtonManager::new();
+        *pm.imp().session_game.borrow_mut() = "Doom".to_string();
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+        let err = pm.run_game("Doom").unwrap_err();
+        assert_eq!(err, "Doom is already running");
+        assert!(pm.imp().parked.borrow().is_empty());
+    }
+
+    #[test]
+    fn relaunch_parked_is_denied_by_name() {
+        // Parked app selected while another game runs: denied, nothing
+        // parked twice, nothing launched.
+        let pm = ProtonManager::new();
+        *pm.imp().session_game.borrow_mut() = "Quake".to_string();
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+        pm.imp().parked.borrow_mut().push(ParkedSession {
+            name: "Doom".to_string(),
+            kind: ParkedKind::AppImage { exe: String::new() },
+            start: std::time::Instant::now(),
+            child: None,
+        });
+        let err = pm.run_game("Doom").unwrap_err();
+        assert_eq!(err, "Doom is already running");
+        assert_eq!(pm.imp().parked.borrow().len(), 1);
+        assert_eq!(pm.imp().session_game.borrow().as_str(), "Quake");
+    }
+
+    #[test]
+    fn stop_parked_keeps_current_and_banks_once() {
+        let pm = ProtonManager::new();
+        *pm.imp().session_game.borrow_mut() = "Quake".to_string();
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+        pm.imp().parked.borrow_mut().push(ParkedSession {
+            name: "Doom".to_string(),
+            kind: ParkedKind::Emu {
+                pattern: "corky-stop-emu-xyz-2".to_string(),
+            },
+            start: std::time::Instant::now(),
+            child: None,
+        });
+        let first = pm.stop_parked("Doom");
+        assert!(first.is_some());
+        assert_eq!(first.unwrap().0, "Doom");
+        // Foreground session untouched.
+        assert_eq!(pm.imp().session_game.borrow().as_str(), "Quake");
+        assert!(pm.imp().game_running.get());
+        assert!(pm.imp().parked.borrow().is_empty());
+        // Second stop finds nothing: time banks exactly once.
+        assert!(pm.stop_parked("Doom").is_none());
+    }
+
+    #[test]
+    fn purge_dead_drops_dead_keeps_live() {
+        // (1) Dead entry + parking another: the dead one is gone.
+        let pm = ProtonManager::new();
+        pm.imp().parked.borrow_mut().push(ParkedSession {
+            name: "Dead".to_string(),
+            kind: ParkedKind::Emu {
+                pattern: "corky-purge-dead-xyz-1".to_string(),
+            },
+            start: std::time::Instant::now(),
+            child: None,
+        });
+        pm.imp().parked.borrow_mut().push(ParkedSession {
+            name: "Live".to_string(),
+            kind: ParkedKind::AppImage { exe: String::new() },
+            start: std::time::Instant::now(),
+            child: None,
+        });
+        pm.purge_dead();
+        let names: Vec<String> = pm
+            .imp()
+            .parked
+            .borrow()
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
+        assert_eq!(names, vec!["Live".to_string()]);
+    }
+
+    #[test]
+    fn relaunch_dead_leaves_no_double_entry() {
+        // (2) Dead entry + relaunch of the same app: the stale entry is
+        // purged before parking, so no doubling. Only the pre-launch steps
+        // run here (purge + park); the real spawn is not executed.
+        let pm = ProtonManager::new();
+        *pm.imp().session_game.borrow_mut() = "Quake".to_string();
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+        pm.imp().parked.borrow_mut().push(ParkedSession {
+            name: "Doom".to_string(),
+            kind: ParkedKind::Emu {
+                pattern: "corky-purge-dead-xyz-2".to_string(),
+            },
+            start: std::time::Instant::now(),
+            child: None,
+        });
+        pm.purge_dead();
+        assert!(pm.imp().parked.borrow().is_empty());
+        pm.park_current();
+        let names: Vec<String> = pm
+            .imp()
+            .parked
+            .borrow()
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
+        assert_eq!(names, vec!["Quake".to_string()]);
+    }
+
+    #[test]
+    fn purge_never_drops_live() {
+        // (3) Fail-open entries survive every purge: empty exe, empty
+        // pattern, and a fresh RPG inside its registration grace.
+        let pm = ProtonManager::new();
+        for (name, kind) in [
+            ("A".to_string(), ParkedKind::AppImage { exe: String::new() }),
+            (
+                "B".to_string(),
+                ParkedKind::Emu {
+                    pattern: String::new(),
+                },
+            ),
+        ] {
+            pm.imp().parked.borrow_mut().push(ParkedSession {
+                name,
+                kind,
+                start: std::time::Instant::now(),
+                child: None,
+            });
+        }
+        pm.purge_dead();
+        assert_eq!(pm.imp().parked.borrow().len(), 2);
+    }
 }
