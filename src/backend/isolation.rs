@@ -356,6 +356,9 @@ mod tests {
 
     #[test]
     fn argv_hides_home_exposes_prefix_and_game() {
+        // HOME is process-global and another test swaps it: read it under
+        // the shared lock so the value cannot change mid-test.
+        let _env = crate::test_env::lock();
         if !bwrap_available() {
             return;
         }
