@@ -67,12 +67,15 @@ impl AppImageManager {
 pub struct RpgMakerManager;
 
 /// One supervised-session snapshot for an RPG game. Mirrors the plugin's
-/// `session-status` verb: only these three states exist on the wire.
+/// `session-status` verb: only these states exist on the wire. Timeout is
+/// its own state (not Unknown): a hung backend must never count as
+/// no-evidence toward closing a session.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RpgSessionStatus {
     Running,
     Exited(i32),
     Unknown,
+    Timeout,
 }
 
 impl RpgMakerManager {
@@ -129,6 +132,7 @@ impl RpgMakerManager {
         };
         match doc.get("state").and_then(|v| v.as_str()) {
             Some("running") => RpgSessionStatus::Running,
+            Some("timeout") => RpgSessionStatus::Timeout,
             Some("exited") => {
                 let code = doc
                     .get("codes")

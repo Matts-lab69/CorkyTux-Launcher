@@ -82,6 +82,10 @@ mod imp {
         /// Consecutive Unknown answers from the RPG session-status verb.
         /// Closes after RPG_STATUS_MAX_UNKNOWNS (never stuck).
         pub rpg_status_fails: Cell<u32>,
+        /// Whether this session was ever seen Running. Unknown only closes
+        /// a seen session (fast, N misses) or an old unseen one (30 s floor,
+        /// slow registrations). Reset on every new session and on close.
+        pub rpg_seen_running: Cell<bool>,
         /// Last RPG exit code seen (None = exited unknown/graceless).
         /// Read by the log view; banking always uses elapsed time.
         pub last_rpg_exit: Cell<Option<i32>>,
@@ -135,12 +139,15 @@ pub(crate) enum ParkedKind {
     Emu { pattern: String },
 }
 
-/// Consecutive Unknown session-status answers before an RPG session with no
-/// trace past its registration grace is closed. N=3 at the 2 s poller rhythm
-/// means ~6 s of no-evidence after grace: a crashed supervisor (lock gone,
-/// status purged) closes promptly, while a slow box.api hiccup never kills
-/// a live game on a single miss.
-const RPG_STATUS_MAX_UNKNOWNS: u32 = 3;
+/// Consecutive Unknown answers that close a SEEN session. N=2 at the 2 s
+/// poller rhythm: a crashed supervisor (lock gone, status purged) closes
+/// ~4 s after its last Running sighting, while one or two box.api hiccups
+/// never kill a live game on a single miss.
+const RPG_STATUS_MAX_UNKNOWNS: u32 = 2;
+
+/// Floor for closing a session that was NEVER seen Running (slow
+/// registrations): no Unknown-only close before 30 s from launch.
+const RPG_STATUS_UNSEEN_FLOOR_SECS: u64 = 30;
 
 /// Pure poller verdict for one RPG tick (tested, no subprocess).
 #[derive(Debug, PartialEq, Eq)]
@@ -154,18 +161,31 @@ fn rpg_poll_decide(
     status: &super::external::RpgSessionStatus,
     young: bool,
     fails: u32,
-) -> (RpgPollAction, u32) {
+    seen: bool,
+    age_secs: u64,
+) -> (RpgPollAction, u32, bool) {
     use crate::backend::external::RpgSessionStatus as S;
     match status {
-        S::Running => (RpgPollAction::Alive, 0),
-        S::Exited(code) => (RpgPollAction::Close(Some(*code)), 0),
-        S::Unknown if young => (RpgPollAction::Alive, 0),
-        S::Unknown => {
+        // Timeout freezes the world: no counting, no closing, no learning.
+        S::Timeout => (RpgPollAction::Alive, fails, seen),
+        S::Running => (RpgPollAction::Alive, 0, true),
+        S::Exited(code) => (RpgPollAction::Close(Some(*code)), 0, seen),
+        S::Unknown if young => (RpgPollAction::Alive, fails, seen),
+        S::Unknown if seen => {
             let fails = fails + 1;
             if fails >= RPG_STATUS_MAX_UNKNOWNS {
-                (RpgPollAction::Close(None), 0)
+                (RpgPollAction::Close(None), 0, seen)
             } else {
-                (RpgPollAction::Alive, fails)
+                (RpgPollAction::Alive, fails, seen)
+            }
+        }
+        // Never seen and old: only the 30 s floor closes, for registrations
+        // slower than grace + misses (slow disks, first-run shader builds).
+        S::Unknown => {
+            if age_secs >= RPG_STATUS_UNSEEN_FLOOR_SECS {
+                (RpgPollAction::Close(None), 0, seen)
+            } else {
+                (RpgPollAction::Alive, fails, seen)
             }
         }
     }
@@ -1795,6 +1815,9 @@ impl ProtonManager {
         self.imp().game_running.set(true);
         self.imp().session_appimage.set(false);
         self.imp().session_rpg.set(false);
+        self.imp().rpg_status_fails.set(0);
+        self.imp().rpg_seen_running.set(false);
+        self.imp().last_rpg_exit.set(None);
         *self.imp().session_watch.borrow_mut() = String::new();
     }
 
@@ -2157,6 +2180,7 @@ impl ProtonManager {
     fn close_rpg_session(&self, code: Option<i32>) -> (String, u64) {
         self.imp().last_rpg_exit.set(code);
         self.imp().rpg_status_fails.set(0);
+        self.imp().rpg_seen_running.set(false);
         self.imp().game_running.set(false);
         self.imp().session_rpg.set(false);
         let secs = self
@@ -2202,28 +2226,27 @@ impl ProtonManager {
         }
         // RPG sessions supervised by box-rpg (no local child). The verdict
         // comes from the session-status verb, never from the flag alone:
-        // Running stays, Exited closes with its code banked as elapsed time,
-        // and Unknown past the 8 s registration grace counts toward closing
-        // after RPG_STATUS_MAX_UNKNOWNS consecutive misses. Unknown never
-        // closes by itself.
+        // Running stays (and marks seen), Exited closes with its code banked
+        // as elapsed time, Timeout freezes the world, and Unknown follows
+        // the seen rule (fast close) or the 30 s floor (never seen).
         if self.imp().session_rpg.get() {
             let game = self.imp().session_game.borrow().clone();
             if !game.is_empty() {
                 let dir = super::ConfigManager::new()
                     .game_value(&game, "Executable")
                     .unwrap_or_default();
-                let young = self
-                    .imp()
-                    .session_start
-                    .borrow()
-                    .map(|t| t.elapsed().as_secs() < 8)
-                    .unwrap_or(false);
-                let (action, fails) = rpg_poll_decide(
+                let start = self.imp().session_start.borrow().clone();
+                let young = start.map(|t| t.elapsed().as_secs() < 8).unwrap_or(false);
+                let age = start.map(|t| t.elapsed().as_secs()).unwrap_or(0);
+                let (action, fails, seen) = rpg_poll_decide(
                     &super::external::RpgMakerManager::session_status(&dir),
                     young,
                     self.imp().rpg_status_fails.get(),
+                    self.imp().rpg_seen_running.get(),
+                    age,
                 );
                 self.imp().rpg_status_fails.set(fails);
+                self.imp().rpg_seen_running.set(seen);
                 match action {
                     RpgPollAction::Alive => {
                         self.imp().game_running.set(true);
@@ -3704,32 +3727,78 @@ mod tests {
     }
 
     #[test]
-    fn rpg_decide_running_y_exited() {
+    fn rpg_decide_running_marca_seen() {
         use crate::backend::external::RpgSessionStatus as S;
         use super::{rpg_poll_decide, RpgPollAction};
-        assert_eq!(rpg_poll_decide(&S::Running, false, 2), (RpgPollAction::Alive, 0));
+        // Running marks seen and resets the counter, whatever came before.
         assert_eq!(
-            rpg_poll_decide(&S::Exited(3), false, 2),
-            (RpgPollAction::Close(Some(3)), 0)
+            rpg_poll_decide(&S::Running, false, 2, false, 100),
+            (RpgPollAction::Alive, 0, true)
         );
         assert_eq!(
-            rpg_poll_decide(&S::Exited(0), true, 0),
-            (RpgPollAction::Close(Some(0)), 0)
+            rpg_poll_decide(&S::Exited(3), false, 2, true, 100),
+            (RpgPollAction::Close(Some(3)), 0, true)
+        );
+        assert_eq!(
+            rpg_poll_decide(&S::Exited(0), true, 0, false, 1),
+            (RpgPollAction::Close(Some(0)), 0, false)
         );
     }
 
     #[test]
-    fn rpg_decide_gracia_y_tres_fallos() {
+    fn rpg_decide_seen_cierra_al_segundo_fallo() {
         use crate::backend::external::RpgSessionStatus as S;
         use super::{rpg_poll_decide, RpgPollAction, RPG_STATUS_MAX_UNKNOWNS};
-        assert_eq!(RPG_STATUS_MAX_UNKNOWNS, 3);
-        // Young: grace, no counting.
-        assert_eq!(rpg_poll_decide(&S::Unknown, true, 0), (RpgPollAction::Alive, 0));
-        // Old: first two misses stay alive and count.
-        assert_eq!(rpg_poll_decide(&S::Unknown, false, 0), (RpgPollAction::Alive, 1));
-        assert_eq!(rpg_poll_decide(&S::Unknown, false, 1), (RpgPollAction::Alive, 2));
-        // Third consecutive miss closes without a code.
-        assert_eq!(rpg_poll_decide(&S::Unknown, false, 2), (RpgPollAction::Close(None), 0));
+        assert_eq!(RPG_STATUS_MAX_UNKNOWNS, 2);
+        // Young: grace, no counting, no learning.
+        assert_eq!(
+            rpg_poll_decide(&S::Unknown, true, 0, false, 2),
+            (RpgPollAction::Alive, 0, false)
+        );
+        // Seen + old: first miss stays alive and counts…
+        assert_eq!(
+            rpg_poll_decide(&S::Unknown, false, 0, true, 100),
+            (RpgPollAction::Alive, 1, true)
+        );
+        // …second consecutive miss closes without a code.
+        assert_eq!(
+            rpg_poll_decide(&S::Unknown, false, 1, true, 100),
+            (RpgPollAction::Close(None), 0, true)
+        );
+    }
+
+    #[test]
+    fn rpg_decide_no_visto_respeta_piso_30s() {
+        use crate::backend::external::RpgSessionStatus as S;
+        use super::{rpg_poll_decide, RpgPollAction, RPG_STATUS_UNSEEN_FLOOR_SECS};
+        assert_eq!(RPG_STATUS_UNSEEN_FLOOR_SECS, 30);
+        // Never seen: alive at 20 s even with misses piled up…
+        assert_eq!(
+            rpg_poll_decide(&S::Unknown, false, 9, false, 20),
+            (RpgPollAction::Alive, 9, false)
+        );
+        // …closed at 31 s.
+        assert_eq!(
+            rpg_poll_decide(&S::Unknown, false, 9, false, 31),
+            (RpgPollAction::Close(None), 0, false)
+        );
+    }
+
+    #[test]
+    fn rpg_decide_timeout_nunca_cierra() {
+        use crate::backend::external::RpgSessionStatus as S;
+        use super::{rpg_poll_decide, RpgPollAction};
+        // A hundred timeouts in a row change nothing.
+        let mut state = (RpgPollAction::Alive, 7, true);
+        for _ in 0..100 {
+            state = rpg_poll_decide(&S::Timeout, false, state.1, state.2, 500);
+            assert_eq!(state, (RpgPollAction::Alive, 7, true));
+        }
+        // Same with never-seen: frozen too.
+        assert_eq!(
+            rpg_poll_decide(&S::Timeout, false, 0, false, 500),
+            (RpgPollAction::Alive, 0, false)
+        );
     }
 
     #[test]
