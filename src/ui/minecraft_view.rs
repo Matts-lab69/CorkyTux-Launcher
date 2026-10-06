@@ -1166,6 +1166,7 @@ pub struct MinecraftView {
     account_pop: gtk::Popover,
     install_prog: Rc<RefCell<HashMap<String, f64>>>,
     sessions: Rc<RefCell<HashMap<String, (String, i64)>>>,
+    probe_cache: Rc<RefCell<ProbeCache>>,
     // detail
     detail_id: Rc<RefCell<String>>,
     detail_icon: gtk::Image,
@@ -1205,6 +1206,108 @@ pub struct MinecraftView {
     parent: adw::ApplicationWindow,
 }
 
+// ============ add-instance loader probe ============
+
+/// Answer of the batched loader probe for one MC version.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct LoaderProbe {
+    /// (loader, supported, loader versions) in requested order.
+    loaders: Vec<(String, bool, Vec<String>)>,
+    /// Loaders whose probe raised inside the plugin (never silent).
+    errors: Vec<String>,
+}
+
+/// Message flowing from the probe thread back to the idle handler.
+enum ProbeMsg {
+    Loaders(Result<LoaderProbe, String>),
+    Java(Option<u64>),
+}
+
+/// Parse the batch `loader-versions --loaders …` response.
+fn parse_loader_probe(doc: &serde_json::Value) -> Result<LoaderProbe, String> {
+    if !doc.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) {
+        return Err(doc.get("error").and_then(|x| x.as_str())
+            .unwrap_or("loader probe failed").to_string());
+    }
+    let arr = doc.get("loaders").and_then(|x| x.as_array())
+        .ok_or_else(|| "missing loaders array".to_string())?;
+    let mut loaders: Vec<(String, bool, Vec<String>)> = Vec::new();
+    for l in arr {
+        let name = l.get("loader").and_then(|x| x.as_str())
+            .ok_or_else(|| "missing loader name".to_string())?.to_string();
+        let supported = l.get("supported").and_then(|x| x.as_bool()).unwrap_or(false);
+        let versions: Vec<String> = l.get("versions").and_then(|x| x.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        loaders.push((name, supported, versions));
+    }
+    let errors: Vec<String> = doc.get("errors").and_then(|x| x.as_object())
+        .map(|o| o.keys().cloned().collect()).unwrap_or_default();
+    Ok(LoaderProbe { loaders, errors })
+}
+
+/// Dropdown rows for a probe answer: Vanilla first, then every supported
+/// loader (capitalized). Unsupported loaders never produce a row.
+fn probe_rows(probe: &LoaderProbe) -> (Vec<String>, Vec<String>, HashMap<String, Vec<String>>) {
+    let mut ids = vec!["vanilla".to_string()];
+    let mut names = vec!["Vanilla".to_string()];
+    let mut vers = HashMap::new();
+    for (l, ok, list) in &probe.loaders {
+        if !*ok || l.is_empty() {
+            continue;
+        }
+        let disp = if l.is_ascii() {
+            let mut s = l.clone();
+            s[..1].make_ascii_uppercase();
+            s
+        } else {
+            l.clone()
+        };
+        names.push(disp);
+        ids.push(l.clone());
+        vers.insert(l.clone(), list.clone());
+    }
+    (ids, names, vers)
+}
+
+/// Probe lifecycle for the add-instance dialog: while Detecting the loader
+/// dropdown stays insensitive (Vanilla can't be picked before the probe
+/// confirms the version actually supports it); Ready clears the status;
+/// Failed shows a visible message instead of failing silently.
+enum ProbeState { Detecting, Ready, Failed(String) }
+
+fn probe_status_text(state: &ProbeState) -> String {
+    match state {
+        ProbeState::Detecting => "Detecting modloader support…".to_string(),
+        ProbeState::Ready => String::new(),
+        ProbeState::Failed(msg) => msg.clone(),
+    }
+}
+
+/// Dropdown sensitivity per probe state: disabled until the probe answers.
+fn probe_ready(state: &ProbeState) -> bool {
+    !matches!(state, ProbeState::Detecting)
+}
+
+/// Session-cache entry for one MC version's probe results (loaders come
+/// from the batched subprocess, java from the manifest subprocess).
+#[derive(Clone, Default)]
+struct ProbeCacheEntry {
+    probe: Option<LoaderProbe>,
+    java: Option<u64>,
+}
+type ProbeCache = HashMap<String, ProbeCacheEntry>;
+
+/// True when `mc` still needs a fresh loader probe (nothing cached yet).
+fn needs_probe(cache: &ProbeCache, mc: &str) -> bool {
+    cache.get(mc).and_then(|e| e.probe.as_ref()).is_none()
+}
+
+/// True when `mc` still needs the java-requirement lookup.
+fn needs_java(cache: &ProbeCache, mc: &str) -> bool {
+    cache.get(mc).and_then(|e| e.java).is_none()
+}
+
 impl Clone for MinecraftView {
     fn clone(&self) -> Self {
         Self {
@@ -1221,6 +1324,7 @@ impl Clone for MinecraftView {
             account_pop: self.account_pop.clone(),
             install_prog: self.install_prog.clone(),
             sessions: self.sessions.clone(),
+            probe_cache: self.probe_cache.clone(),
             detail_id: self.detail_id.clone(),
             detail_icon: self.detail_icon.clone(),
             detail_name: self.detail_name.clone(),
@@ -1299,6 +1403,7 @@ impl MinecraftView {
         let data = Rc::new(RefCell::new(McData::default()));
         let install_prog: Rc<RefCell<HashMap<String, f64>>> = Rc::new(RefCell::new(HashMap::new()));
         let sessions: Rc<RefCell<HashMap<String, (String, i64)>>> = Rc::new(RefCell::new(HashMap::new()));
+        let probe_cache: Rc<RefCell<ProbeCache>> = Rc::new(RefCell::new(HashMap::new()));
         let detail_id: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
         let addons_type: Rc<RefCell<String>> = Rc::new(RefCell::new("mods".to_string()));
 
@@ -1863,6 +1968,7 @@ impl MinecraftView {
             account_pop: account_pop.clone(),
             install_prog,
             sessions,
+            probe_cache,
             detail_id,
             detail_icon: detail_icon.clone(),
             detail_name,
@@ -4026,6 +4132,9 @@ impl MinecraftView {
         let loader_vers: Rc<RefCell<HashMap<String, Vec<String>>>> = Rc::new(RefCell::new(HashMap::new()));
         let loader_store = gtk::StringList::new(&["Vanilla"]);
         let loader_drop = gtk::DropDown::new(Some(loader_store.clone()), gtk::Expression::NONE);
+        // Vanilla is not selectable until the loader probe confirms support
+        // for the chosen MC version (see the auto-detect block below).
+        loader_drop.set_sensitive(false);
         custom_page.append(&loader_drop);
 
         let lv_wrap = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -4141,7 +4250,11 @@ impl MinecraftView {
             });
         }
         update_name();
-        // loader auto-detect: probe support per MC version, fill dropdowns
+        // loader auto-detect: probe support per MC version, fill dropdowns.
+        // One batched plugin call covers every loader in a single python
+        // startup (~one loader's latency); answers are cached per MC version
+        // for the rest of the session, so re-selecting a version spawns no
+        // second subprocess. Vanilla stays disabled until the probe answers.
         {
             let ver_drop_c = ver_drop.clone();
             let avail_c = avail.clone();
@@ -4153,91 +4266,144 @@ impl MinecraftView {
             let lv_wrap_c = lv_wrap.clone();
             let status_c = status.clone();
             let uname = update_name.clone();
+            let cache = self.probe_cache.clone();
+            let req_c = add_java_req.clone();
             let last_loader = self.cfg("McLastLoader");
+            let apply_probe = {
+                let loader_store = loader_store_c.clone();
+                let loader_ids = loader_ids_c.clone();
+                let loader_vers = loader_vers_c.clone();
+                let lv_store = lv_store_c.clone();
+                let lv_wrap = lv_wrap_c.clone();
+                let status = status_c.clone();
+                let loader_drop = loader_drop_c.clone();
+                let uname = uname.clone();
+                let last_loader = last_loader.clone();
+                move |probe: &LoaderProbe, prev_loader: &str| {
+                    let (ids, names, vers) = probe_rows(probe);
+                    // never clobber the user's pick: keep current loader if
+                    // still supported, else last-used, else vanilla
+                    let keep = ids.iter().position(|x| x == prev_loader)
+                        .or_else(|| ids.iter().position(|x| x == &last_loader))
+                        .unwrap_or(0);
+                    let keep_vers: Vec<String> = vers.get(&ids[keep]).cloned().unwrap_or_default();
+                    *loader_ids.borrow_mut() = ids;
+                    *loader_vers.borrow_mut() = vers;
+                    loader_store.splice(0, loader_store.n_items(), &[] as &[&str]);
+                    let refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+                    loader_store.splice(0, 0, &refs);
+                    lv_store.splice(0, lv_store.n_items(), &[] as &[&str]);
+                    lv_store.append("latest");
+                    if keep != 0 {
+                        let refs2: Vec<&str> = keep_vers.iter().map(|s| s.as_str()).collect();
+                        lv_store.splice(1, 0, &refs2);
+                        lv_wrap.set_visible(true);
+                    } else {
+                        lv_wrap.set_visible(false);
+                    }
+                    loader_drop.set_selected(keep as u32);
+                    // per-loader probe failures surface; nothing is silent
+                    let state = if probe.errors.is_empty() {
+                        ProbeState::Ready
+                    } else {
+                        ProbeState::Failed(format!("Probe failed for: {}", probe.errors.join(", ")))
+                    };
+                    status.set_text(&probe_status_text(&state));
+                    loader_drop.set_sensitive(probe_ready(&state));
+                    uname();
+                }
+            };
             let do_probe = Rc::new(RefCell::new(Box::new(move || {}) as Box<dyn Fn()>));
             *do_probe.borrow_mut() = Box::new(move || {
                 let ver = avail_c.get(ver_drop_c.selected() as usize).cloned().unwrap_or_default();
                 if ver.is_empty() {
+                    loader_drop_c.set_sensitive(true);
                     return;
                 }
                 let prev_loader = loader_ids_c.borrow().get(loader_drop_c.selected() as usize).cloned().unwrap_or("vanilla".to_string());
-                let loader_store_b = loader_store_c.clone();
-                let loader_drop_b = loader_drop_c.clone();
-                let loader_ids_b = loader_ids_c.clone();
-                let loader_vers_b = loader_vers_c.clone();
-                let prev_loader_b = prev_loader.clone();
-                let last_loader_b = last_loader.clone();
-                let lv_store_b = lv_store_c.clone();
-                let lv_wrap_b = lv_wrap_c.clone();
-                let status_b = status_c.clone();
-                let req_b = add_java_req.clone();
-                let uname_b = uname.clone();
-                status_b.set_text("Detecting modloader support…");
-                let (tx, rx) = std::sync::mpsc::channel::<(Vec<(String, bool, Vec<String>)>, Option<u64>)>();
-                    let ver_s = ver.clone();
-                    std::thread::spawn(move || {
-                    let mut out = Vec::new();
-                    for l in ["fabric", "forge", "neoforge", "quilt"] {
-                        match MinecraftManager::loader_versions(l, &ver_s) {
-                            Ok(d) => {
-                                let ok = d.get("supported").and_then(|x| x.as_bool()).unwrap_or(false);
-                                let list: Vec<String> = d.get("versions").and_then(|x| x.as_array()).cloned().unwrap_or_default()
-                                    .into_iter().filter_map(|x| x.as_str().map(str::to_string)).collect();
-                                out.push((l.to_string(), ok, list));
-                            }
-                            Err(_) => out.push((l.to_string(), false, Vec::new())),
+                // session cache: a version probed before spawns no subprocess;
+                // the java note is reapplied too, so switching back to a
+                // cached version never shows a stale requirement
+                if !needs_probe(&cache.borrow(), &ver) {
+                    if let Some(probe) = cache.borrow().get(&ver).and_then(|e| e.probe.clone()) {
+                        apply_probe(&probe, &prev_loader);
+                    }
+                    if !needs_java(&cache.borrow(), &ver) {
+                        if let Some(j) = cache.borrow().get(&ver).and_then(|e| e.java) {
+                            req_c.set_text(&format!("Needs Java {} (auto-selected on launch).", j));
                         }
                     }
-                    let java = MinecraftManager::manifest_java(&ver_s).ok()
+                    return;
+                }
+                // Vanilla stays disabled until the probe confirms support
+                loader_drop_c.set_sensitive(probe_ready(&ProbeState::Detecting));
+                status_c.set_text(&probe_status_text(&ProbeState::Detecting));
+                let (tx, rx) = std::sync::mpsc::channel::<ProbeMsg>();
+                let ver_s = ver.clone();
+                let ver_t = ver_s.clone();
+                std::thread::spawn(move || {
+                    let res = match MinecraftManager::loader_versions_batch(&ver_t, &["fabric", "forge", "neoforge", "quilt"]) {
+                        Ok(doc) => parse_loader_probe(&doc),
+                        Err(e) => Err(e),
+                    };
+                    let _ = tx.send(ProbeMsg::Loaders(res));
+                    let java = MinecraftManager::manifest_java(&ver_t).ok()
                         .and_then(|d| d.get("required_java").and_then(|x| x.as_u64()));
-                    let _ = tx.send((out, java));
+                    let _ = tx.send(ProbeMsg::Java(java));
                 });
-                glib::idle_add_local(move || match rx.try_recv() {
-                    Ok((probe, java)) => {
-                        let loader_ids_c = loader_ids_b.clone();
-                        let loader_vers_c = loader_vers_b.clone();
-                        let mut ids = vec!["vanilla".to_string()];
-                        let mut names: Vec<String> = vec!["Vanilla".to_string()];
-                        let mut vers = HashMap::new();
-                        for (l, ok, list) in &probe {
-                            if *ok {
-                                let mut disp = l.clone();
-                                disp[..1].make_ascii_uppercase();
-                                names.push(disp);
-                                ids.push(l.clone());
-                                vers.insert(l.clone(), list.clone());
+                let cache_b = cache.clone();
+                let apply_b = apply_probe.clone();
+                let status_b = status_c.clone();
+                let loader_drop_b = loader_drop_c.clone();
+                let req_b = add_java_req.clone();
+                let ver_drop_b = ver_drop_c.clone();
+                let avail_b = avail_c.clone();
+                let prev_b = prev_loader.clone();
+                let mut got_loaders = false;
+                let mut got_java = false;
+                glib::idle_add_local(move || {
+                    // stale answers for a version that is no longer selected
+                    // must not clobber the probe of the current one
+                    let still = avail_b.get(ver_drop_b.selected() as usize) == Some(&ver_s);
+                    match rx.try_recv() {
+                        Ok(ProbeMsg::Loaders(res)) => {
+                            got_loaders = true;
+                            if still {
+                                match res {
+                                    Ok(probe) => {
+                                        cache_b.borrow_mut().entry(ver_s.clone()).or_default().probe = Some(probe.clone());
+                                        apply_b(&probe, &prev_b);
+                                    }
+                                    Err(e) => {
+                                        let state = ProbeState::Failed(format!("Modloader probe failed: {}", e));
+                                        status_b.set_text(&probe_status_text(&state));
+                                        loader_drop_b.set_sensitive(probe_ready(&state));
+                                    }
+                                }
                             }
+                            if got_java { glib::ControlFlow::Break } else { glib::ControlFlow::Continue }
                         }
-                        // never clobber the user's pick: keep current loader if
-                        // still supported, else last-used, else vanilla
-                        let keep = ids.iter().position(|x| x == &prev_loader_b)
-                            .or_else(|| ids.iter().position(|x| x == &last_loader_b))
-                            .unwrap_or(0);
-                        let keep_vers: Vec<String> = vers.get(&ids[keep]).cloned().unwrap_or_default();
-                        *loader_ids_c.borrow_mut() = ids;
-                        *loader_vers_c.borrow_mut() = vers;
-                        loader_store_b.splice(0, loader_store_b.n_items(), &[] as &[&str]);
-                        let refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
-                        loader_store_b.splice(0, 0, &refs);
-                        lv_store_b.splice(0, lv_store_b.n_items(), &[] as &[&str]);
-                        lv_store_b.append("latest");
-                        if keep != 0 {
-                            let refs2: Vec<&str> = keep_vers.iter().map(|s| s.as_str()).collect();
-                            lv_store_b.splice(1, 0, &refs2);
-                            lv_wrap_b.set_visible(true);
-                        } else {
-                            lv_wrap_b.set_visible(false);
+                        Ok(ProbeMsg::Java(java)) => {
+                            got_java = true;
+                            if still {
+                                if let Some(j) = java {
+                                    cache_b.borrow_mut().entry(ver_s.clone()).or_default().java = Some(j);
+                                    req_b.set_text(&format!("Needs Java {} (auto-selected on launch).", j));
+                                }
+                            }
+                            if got_loaders { glib::ControlFlow::Break } else { glib::ControlFlow::Continue }
                         }
-                        loader_drop_b.set_selected(keep as u32);
-                        status_b.set_text("");
-                        if let Some(j) = java {
-                            req_b.set_text(&format!("Needs Java {} (auto-selected on launch).", j));
+                        Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                        Err(_) => {
+                            // the probe thread died before answering
+                            if !got_loaders {
+                                let state = ProbeState::Failed("Modloader probe crashed".to_string());
+                                status_b.set_text(&probe_status_text(&state));
+                                loader_drop_b.set_sensitive(probe_ready(&state));
+                            }
+                            glib::ControlFlow::Break
                         }
-                        uname_b();
-                        glib::ControlFlow::Break
                     }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-                    Err(_) => glib::ControlFlow::Break,
                 });
             });
             let dr = do_probe.clone();
@@ -7486,5 +7652,95 @@ mod tests {
             ("1.21.1".to_string(), true),
         ]);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parse_loader_probe_reads_batch_response() {
+        // Response del verbo por lote: un entry por loader pedido, orden
+        // preservado, unsupported con versiones vacias, errors separados.
+        let doc = serde_json::json!({
+            "type": "done", "ok": true, "mc_version": "26.3",
+            "loaders": [
+                {"loader": "fabric", "supported": true, "versions": ["0.19.5"],
+                 "latest": "0.19.5", "mc_version": "26.3"},
+                {"loader": "neoforge", "supported": true, "versions": [],
+                 "latest": "26.3.0.51-beta", "mc_version": "26.3", "mc_version_matched": "1.26.3"},
+                {"loader": "quilt", "supported": false, "versions": []}
+            ],
+            "errors": {"forge": "Could not list forge versions: boom"}
+        });
+        let p = parse_loader_probe(&doc).expect("batch response parses");
+        assert_eq!(p.loaders.len(), 3, "requested order preserved");
+        assert_eq!(p.loaders[0], ("fabric".to_string(), true, vec!["0.19.5".to_string()]));
+        assert_eq!(p.loaders[1], ("neoforge".to_string(), true, vec![]));
+        assert_eq!(p.loaders[2], ("quilt".to_string(), false, vec![]));
+        assert_eq!(p.errors, vec!["forge".to_string()], "failed loader surfaces in errors");
+    }
+
+    #[test]
+    fn parse_loader_probe_rejects_error_payload() {
+        let err = serde_json::json!({"type": "error", "ok": false, "error": "mll missing"});
+        let got = parse_loader_probe(&err).expect_err("error payload is an Err");
+        assert!(got.contains("mll"), "reason is visible: {got}");
+        let bare = serde_json::json!({"ok": true});
+        assert!(parse_loader_probe(&bare).is_err(), "loaders array is required");
+    }
+
+    #[test]
+    fn probe_rows_vanilla_first_supported_only() {
+        let p = LoaderProbe {
+            loaders: vec![
+                ("fabric".into(), true, vec!["0.19.5".into()]),
+                ("neoforge".into(), false, vec![]),
+                ("quilt".into(), true, vec!["0.30.1".into()]),
+            ],
+            errors: vec![],
+        };
+        let (ids, names, vers) = probe_rows(&p);
+        assert_eq!(ids, vec!["vanilla", "fabric", "quilt"], "vanilla first, unsupported excluded");
+        assert_eq!(names, vec!["Vanilla", "Fabric", "Quilt"]);
+        assert_eq!(vers.get("fabric"), Some(&vec!["0.19.5".to_string()]));
+        assert!(!vers.contains_key("neoforge"), "unsupported never gets a row");
+    }
+
+    #[test]
+    fn probe_state_gates_dropdown_and_status() {
+        // "Vanilla deshabilitado" mientras la sonda corre/promete:
+        // solo Detecting deja el dropdown insensible y muestra la nota.
+        assert!(!probe_ready(&ProbeState::Detecting), "loading state disables the dropdown");
+        assert_eq!(probe_status_text(&ProbeState::Detecting), "Detecting modloader support…");
+        assert!(probe_ready(&ProbeState::Ready));
+        assert_eq!(probe_status_text(&ProbeState::Ready), "");
+        // un fallo es visible y vuelve a Vanilla (fila unica), nunca silencioso
+        let failed = ProbeState::Failed("Modloader probe failed: boom".to_string());
+        assert!(probe_ready(&failed), "after a failed probe the dropdown re-enables on Vanilla");
+        assert!(probe_status_text(&failed).contains("boom"));
+    }
+
+    #[test]
+    fn probe_cache_avoids_second_subprocess() {
+        // Contrato de do_probe: version cacheada no relanza ni el probe de
+        // loaders ni el lookup de java; otra version sigue sondando.
+        let mut cache: ProbeCache = HashMap::new();
+        let mut probe_spawns = 0usize;
+        let mut java_spawns = 0usize;
+        for _ in 0..2 {
+            if needs_probe(&cache, "26.3") {
+                probe_spawns += 1;
+                cache.entry("26.3".into()).or_default().probe = Some(LoaderProbe {
+                    loaders: vec![("fabric".into(), true, vec!["0.19.5".into()])],
+                    errors: vec![],
+                });
+            }
+            if needs_java(&cache, "26.3") {
+                java_spawns += 1;
+                cache.entry("26.3".into()).or_default().java = Some(21);
+            }
+        }
+        assert_eq!(probe_spawns, 1, "second selection of 26.3 spawns no probe subprocess");
+        assert_eq!(java_spawns, 1, "second selection of 26.3 spawns no java subprocess");
+        assert!(needs_probe(&cache, "1.21.1"), "other versions still probe");
+        assert_eq!(cache.get("26.3").and_then(|e| e.java), Some(21), "java cached");
+        assert!(cache.get("26.3").and_then(|e| e.probe.as_ref()).is_some(), "probe cached");
     }
 }

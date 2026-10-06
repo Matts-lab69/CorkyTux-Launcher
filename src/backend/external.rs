@@ -522,6 +522,17 @@ impl MinecraftManager {
         )
     }
 
+    /// Probe several loaders in a single plugin round-trip: one python
+    /// startup, the per-loader HTTP fetches run in parallel inside the
+    /// plugin, so the whole answer lands in ~one loader's latency instead
+    /// of the sum of all of them.
+    pub fn loader_versions_batch(mc_version: &str, loaders: &[&str]) -> Result<serde_json::Value, String> {
+        plugin_process::run_single_json(
+            &Self::exe(),
+            &["loader-versions", "--mc-version", mc_version, "--loaders", &loaders.join(",")],
+        )
+    }
+
     pub fn spawn_install_isolated(
         version: String,
         loader: String,
