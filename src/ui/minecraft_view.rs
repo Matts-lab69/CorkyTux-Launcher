@@ -1308,6 +1308,32 @@ fn needs_java(cache: &ProbeCache, mc: &str) -> bool {
     cache.get(mc).and_then(|e| e.java).is_none()
 }
 
+/// Dropdown label for a loader version: beta builds get a visible " (beta)"
+/// marker so the user knows the loader/install targets a pre-release build.
+fn lv_mark(id: &str) -> String {
+    if id.ends_with("-beta") {
+        format!("{} (beta)", id)
+    } else {
+        id.to_string()
+    }
+}
+
+/// Inverse of `lv_mark`: recover the real loader version id from the
+/// dropdown label. Unmarked ids pass through unchanged.
+fn lv_unmark(label: &str) -> String {
+    label.strip_suffix(" (beta)").unwrap_or(label).to_string()
+}
+
+/// Store a probe answer in the session cache. Probes that carried
+/// per-loader errors are transient: they are NOT cached, so the next
+/// selection re-probes (and can recover) instead of freezing a stale
+/// failure for the whole session.
+fn cache_probe(cache: &Rc<RefCell<ProbeCache>>, mc: &str, probe: &LoaderProbe) {
+    if probe.errors.is_empty() {
+        cache.borrow_mut().entry(mc.to_string()).or_default().probe = Some(probe.clone());
+    }
+}
+
 impl Clone for MinecraftView {
     fn clone(&self) -> Self {
         Self {
@@ -4243,7 +4269,8 @@ impl MinecraftView {
                 lv_store_c.append("latest");
                 if loader != "vanilla" {
                     if let Some(list) = vers.borrow().get(&loader) {
-                        let refs: Vec<&str> = list.iter().map(|s| s.as_str()).collect();
+                        let marked: Vec<String> = list.iter().map(|s| lv_mark(s)).collect();
+                        let refs: Vec<&str> = marked.iter().map(|s| s.as_str()).collect();
                         lv_store_c.splice(1, 0, &refs);
                     }
                 }
@@ -4295,7 +4322,8 @@ impl MinecraftView {
                     lv_store.splice(0, lv_store.n_items(), &[] as &[&str]);
                     lv_store.append("latest");
                     if keep != 0 {
-                        let refs2: Vec<&str> = keep_vers.iter().map(|s| s.as_str()).collect();
+                        let marked: Vec<String> = keep_vers.iter().map(|s| lv_mark(s)).collect();
+                        let refs2: Vec<&str> = marked.iter().map(|s| s.as_str()).collect();
                         lv_store.splice(1, 0, &refs2);
                         lv_wrap.set_visible(true);
                     } else {
@@ -4371,7 +4399,10 @@ impl MinecraftView {
                             if still {
                                 match res {
                                     Ok(probe) => {
-                                        cache_b.borrow_mut().entry(ver_s.clone()).or_default().probe = Some(probe.clone());
+                                        // solo respuestas limpias entran a la
+                                        // cache de sesion: probes con errores
+                                        // por-loader re-sondean la proxima vez
+                                        cache_probe(&cache_b, &ver_s, &probe);
                                         apply_b(&probe, &prev_b);
                                     }
                                     Err(e) => {
@@ -4663,7 +4694,9 @@ impl MinecraftView {
                 v.set_cfg("McLastLoader", &loader);
                 let lv_idx = lv_drop.selected();
                 let lv_text = lv_drop.selected_item().and_then(|o| o.downcast::<gtk::StringObject>().ok()).map(|o| o.string().to_string()).unwrap_or_default();
-                let lv_pick = if lv_idx == 0 || lv_text == "latest" { String::new() } else { lv_text };
+                // the dropdown labels beta builds ("id (beta)"); the install
+                // needs the real id, so unmark before handing it to the plugin
+                let lv_pick = if lv_idx == 0 || lv_text == "latest" { String::new() } else { lv_unmark(&lv_text) };
                 let name = name_entry.text().to_string().trim().to_string();
                 bar.set_visible(true);
                 bar.pulse();
@@ -7742,5 +7775,37 @@ mod tests {
         assert!(needs_probe(&cache, "1.21.1"), "other versions still probe");
         assert_eq!(cache.get("26.3").and_then(|e| e.java), Some(21), "java cached");
         assert!(cache.get("26.3").and_then(|e| e.probe.as_ref()).is_some(), "probe cached");
+    }
+
+    #[test]
+    fn probe_with_errors_is_not_cached() {
+        // Contrato de cache del handler idle (cache_probe): un probe con
+        // errores por-loader es transitorio, no se cachea; la proxima
+        // seleccion re-sondea. Solo una respuesta limpia entra a la cache.
+        let cache: Rc<RefCell<ProbeCache>> = Rc::new(RefCell::new(HashMap::new()));
+        cache_probe(&cache, "26.3", &LoaderProbe {
+            loaders: vec![("fabric".into(), true, vec!["0.19.5".into()])],
+            errors: vec!["neoforge: unversioned".to_string()],
+        });
+        assert!(needs_probe(&cache.borrow(), "26.3"),
+                "error probe must re-probe next time");
+        // respuesta limpia -> se cachea y no re-sondea
+        cache_probe(&cache, "26.3", &LoaderProbe {
+            loaders: vec![("fabric".into(), true, vec!["0.19.5".into()])],
+            errors: vec![],
+        });
+        assert!(!needs_probe(&cache.borrow(), "26.3"), "clean probe is cached");
+    }
+
+    #[test]
+    fn lv_mark_labels_beta_and_unmark_recovers_id() {
+        // la UI marca el build beta en el dropdown; el id real (sin marcar)
+        // es el que viaja al install
+        assert_eq!(lv_mark("26.3.0.51-beta"), "26.3.0.51-beta (beta)");
+        assert_eq!(lv_mark("0.19.5"), "0.19.5", "builds estables sin marca");
+        assert_eq!(lv_mark("latest"), "latest");
+        assert_eq!(lv_unmark("26.3.0.51-beta (beta)"), "26.3.0.51-beta");
+        assert_eq!(lv_unmark("0.19.5"), "0.19.5", "sin marca pasa igual");
+        assert_eq!(lv_unmark("latest"), "latest");
     }
 }
