@@ -157,7 +157,34 @@ fn parse_inst_id(id: &str) -> (String, String, String) {
             }
         }
     }
+    // scheme C (mll neoforge/forge installs): "<loader>-<lver>"
+    // (e.g. neoforge-21.1.218 — get_mrpack_launch_version returns this).
+    // The MC version is NOT encoded in the id: an empty mc means
+    // "resolve from the version JSON's inheritsFrom" (parse_inst_id_in).
+    for loader in ["neoforge", "forge"] {
+        if let Some(rest) = id.strip_prefix(&format!("{}-", loader)) {
+            let numeric_ver = !rest.is_empty()
+                && rest.starts_with(|c: char| c.is_ascii_digit())
+                && rest.chars().all(|c| c.is_ascii_digit() || c == '.')
+                && !rest.split('.').any(|p| p.is_empty());
+            if numeric_ver {
+                return (String::new(), loader.to_string(), rest.to_string());
+            }
+        }
+    }
     (id.to_string(), "vanilla".to_string(), String::new())
+}
+
+/// Like `parse_inst_id`, but resolves the MC version of scheme-C ids from
+/// `versions/<id>/<id>.json`'s inheritsFrom — the id itself only carries
+/// "<loader>-<lver>". Unresolvable MC versions come back empty.
+fn parse_inst_id_in(vers_dir: &std::path::Path, id: &str) -> (String, String, String) {
+    let (mc, loader, lver) = parse_inst_id(id);
+    if mc.is_empty() && loader != "vanilla" {
+        let resolved = version_inherits(vers_dir, id).unwrap_or_default();
+        return (resolved, loader, lver);
+    }
+    (mc, loader, lver)
 }
 
 fn required_java_major(ver: &str) -> u32 {
@@ -1087,18 +1114,14 @@ fn base_version_user(vers_dir: &std::path::Path, id: &str) -> Option<String> {
     None
 }
 
-/// Drop base vanilla copies living inside a loader install's dir
-/// (e.g. versions/26.2 next to fabric-loader-…): they are dependencies,
-/// not instances. Same-dir grouping only, so real standalone copies stay.
-fn drop_base_copies(ids: &[String]) -> Vec<String> {
-    let loader_mcs: Vec<String> = ids.iter().filter_map(|id| {
-        let (mc, loader, _) = parse_inst_id(id);
-        if loader != "vanilla" { Some(mc) } else { None }
-    }).collect();
-    ids.iter().filter(|id| {
-        let (mc, loader, _) = parse_inst_id(id);
-        !(loader == "vanilla" && loader_mcs.iter().any(|m| m == &mc))
-    }).cloned().collect()
+/// Drop base copies living inside a loader install's dir (e.g. versions/26.3
+/// next to fabric-loader-…, or 1.21.1 next to neoforge-21.1.218): they are
+/// dependencies declared via the loader version's inheritsFrom, not
+/// instances. The version JSON is the source of truth — no id parsing, so
+/// loaders with unparseable id schemes (mll's "neoforge-<lver>") count too.
+fn drop_base_copies(vers_dir: &std::path::Path, ids: &[String]) -> Vec<String> {
+    let bases = base_version_ids(vers_dir);
+    ids.iter().filter(|id| !bases.contains(id.as_str())).cloned().collect()
 }
 
 /// Merge isolated containers + legacy global installs into (id, isolated).
@@ -1111,14 +1134,16 @@ fn collect_instance_ids(dirs: &[(String, String)], legacy: &[String]) -> Vec<(St
     for (dir, id) in dirs {
         by_dir.entry(dir.clone()).or_default().push(id.clone());
     }
-    for ids in by_dir.values() {
-        for id in drop_base_copies(ids) {
+    for (dir, ids) in &by_dir {
+        let vers_dir = std::path::Path::new(dir).join("versions");
+        for id in drop_base_copies(&vers_dir, ids) {
             if !out.iter().any(|(x, _)| x == &id) {
                 out.push((id, true));
             }
         }
     }
-    for id in drop_base_copies(legacy) {
+    let legacy_vers = legacy_dir().join("versions");
+    for id in drop_base_copies(&legacy_vers, legacy) {
         if !out.iter().any(|(x, _)| x == &id) {
             out.push((id, false));
         }
@@ -2147,7 +2172,14 @@ impl MinecraftView {
     }
 
     fn make_inst(&self, id: &str, isolated: bool) -> Inst {
-        let (mc_ver, loader, loader_ver) = parse_inst_id(id);
+        // Scheme-C ids ("neoforge-21.1.218") carry the MC version in their
+        // version JSON instead of the id: resolve it from the container.
+        let vers_dir = if isolated {
+            inst_container(id, true).join("versions")
+        } else {
+            legacy_dir().join("versions")
+        };
+        let (mc_ver, loader, loader_ver) = parse_inst_id_in(&vers_dir, id);
         let secs: u64 = self.inst_cfg(id, "Time").parse().unwrap_or(0);
         Inst {
             id: id.to_string(),
@@ -7168,13 +7200,20 @@ mod tests {
         ];
         let merged = collect_instance_ids(&dirs, &["fabric-loader-0.19.3-26.2".to_string()]);
         assert_eq!(merged, vec![("fabric-loader-0.19.3-26.2".to_string(), true)]);
-        // I treat a base vanilla copy next to its loader as a dependency, not an instance.
+        // I treat a base vanilla copy next to its loader as a dependency, not
+        // an instance. Base detection reads the version JSON now, so the
+        // fixture is a real temp tree mirroring the on-disk layout.
+        let root = tmproot("merge-base");
+        let container = root.join("a");
+        mkversion(&root, "a", "26.2", None);
+        mkversion(&root, "a", "fabric-loader-0.19.3-26.2", Some("26.2"));
         let with_base = vec![
-            ("/c/a".to_string(), "26.2".to_string()),
-            ("/c/a".to_string(), "fabric-loader-0.19.3-26.2".to_string()),
+            (container.display().to_string(), "26.2".to_string()),
+            (container.display().to_string(), "fabric-loader-0.19.3-26.2".to_string()),
         ];
         let merged = collect_instance_ids(&with_base, &[]);
         assert_eq!(merged, vec![("fabric-loader-0.19.3-26.2".to_string(), true)]);
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -7357,6 +7396,95 @@ mod tests {
         assert_eq!(base_version_user(&vers, "1.21.1").as_deref(), Some("neoforge-21.1.218"));
         assert_eq!(base_version_user(&vers, "neoforge-21.1.218"), None,
             "the loader version is deletable");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parse_inst_id_neoforge_and_forge_scheme() {
+        // mll writes neoforge installs as "<loader>-<lver>" (see
+        // get_mrpack_launch_version); the MC version lives in the JSON.
+        let root = tmproot("parse-neo");
+        let vers = mkversion(&root, "c", "neoforge-21.1.218", Some("1.21.1"));
+        assert_eq!(parse_inst_id("neoforge-21.1.218"),
+            (String::new(), "neoforge".to_string(), "21.1.218".to_string()));
+        assert_eq!(parse_inst_id_in(&vers, "neoforge-21.1.218"),
+            ("1.21.1".to_string(), "neoforge".to_string(), "21.1.218".to_string()));
+        assert_eq!(parse_inst_id("forge-47.1.0"),
+            (String::new(), "forge".to_string(), "47.1.0".to_string()));
+        // existing schemes keep working untouched
+        assert_eq!(parse_inst_id("fabric-loader-0.19.5-26.3"),
+            ("26.3".to_string(), "fabric".to_string(), "0.19.5".to_string()));
+        assert_eq!(parse_inst_id("1.21.1-neoforge-21.1.218"),
+            ("1.21.1".to_string(), "neoforge".to_string(), "21.1.218".to_string()));
+        assert_eq!(parse_inst_id("26.3"),
+            ("26.3".to_string(), "vanilla".to_string(), String::new()));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parse_inst_id_no_false_positives() {
+        // Non-numeric tails and bare loader names must stay vanilla: the
+        // scheme-C prefix only matches an actual numeric loader version.
+        assert_eq!(parse_inst_id("neoforge-latest").1, "vanilla");
+        assert_eq!(parse_inst_id("neoforge").1, "vanilla");
+        assert_eq!(parse_inst_id("forge-pack-1.0").1, "vanilla");
+        assert_eq!(parse_inst_id("1.21.1").1, "vanilla");
+        assert_eq!(parse_inst_id("26.3").1, "vanilla");
+    }
+
+    #[test]
+    fn neoforge_container_yields_single_parsed_card() {
+        // [1.21.1 + neoforge-21.1.218]: ONE card parsed as NeoForge 21.1.218
+        // on MC 1.21.1 — before the fix it was 2 cards, both labeled Vanilla.
+        let root = tmproot("neo-card");
+        let container = root.join("neoforge-21.1.218");
+        let vers = mkversion(&root, "neoforge-21.1.218", "1.21.1", None);
+        mkversion(&root, "neoforge-21.1.218", "neoforge-21.1.218", Some("1.21.1"));
+        let dirs = vec![
+            (container.display().to_string(), "1.21.1".to_string()),
+            (container.display().to_string(), "neoforge-21.1.218".to_string()),
+        ];
+        let merged = collect_instance_ids(&dirs, &[]);
+        assert_eq!(merged, vec![("neoforge-21.1.218".to_string(), true)],
+            "the 1.21.1 base copy must not surface as its own card");
+        let (mc, loader, lver) = parse_inst_id_in(&vers, "neoforge-21.1.218");
+        assert_eq!((mc.as_str(), loader.as_str(), lver.as_str()),
+            ("1.21.1", "neoforge", "21.1.218"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn keo_container_keeps_single_card() {
+        // regression: [26.3 + fabric-loader-0.19.5-26.3] → still 1 card.
+        let root = tmproot("keo-card");
+        let container = root.join("fabric-loader-0.19.5-26.3");
+        mkversion(&root, "fabric-loader-0.19.5-26.3", "26.3", None);
+        mkversion(&root, "fabric-loader-0.19.5-26.3", "fabric-loader-0.19.5-26.3", Some("26.3"));
+        let dirs = vec![
+            (container.display().to_string(), "26.3".to_string()),
+            (container.display().to_string(), "fabric-loader-0.19.5-26.3".to_string()),
+        ];
+        let merged = collect_instance_ids(&dirs, &[]);
+        assert_eq!(merged, vec![("fabric-loader-0.19.5-26.3".to_string(), true)]);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn standalone_vanilla_copies_stay_visible() {
+        // Two vanilla installs nobody inherits from: both cards must stay.
+        let root = tmproot("vanilla-pair");
+        let container = root.join("v");
+        mkversion(&root, "v", "1.20.1", None);
+        mkversion(&root, "v", "1.21.1", None);
+        let dirs = vec![
+            (container.display().to_string(), "1.20.1".to_string()),
+            (container.display().to_string(), "1.21.1".to_string()),
+        ];
+        let merged = collect_instance_ids(&dirs, &[]);
+        assert_eq!(merged, vec![
+            ("1.20.1".to_string(), true),
+            ("1.21.1".to_string(), true),
+        ]);
         let _ = fs::remove_dir_all(&root);
     }
 }
