@@ -310,16 +310,24 @@ impl PluginManager {
         }
     }
 
-    pub fn remove_plugin(&self, plugin_id: &str) {
-        let dir = self.plugins_dir().join(plugin_id);
-        if dir.exists() {
-            fs::remove_dir_all(&dir).ok();
+    /// Deletes one plugin directory, reporting the real error. Missing
+    /// counts as already gone. Pure filesystem; covered by tests.
+    pub(crate) fn remove_plugin_dir(dir: &std::path::Path) -> Result<(), String> {
+        if !dir.exists() {
+            return Ok(());
         }
+        fs::remove_dir_all(dir).map_err(|e| format!("Could not delete {}: {}", dir.display(), e))
+    }
+
+    pub fn remove_plugin(&self, plugin_id: &str) -> Result<(), String> {
+        let dir = self.plugins_dir().join(plugin_id);
+        Self::remove_plugin_dir(&dir)?;
         super::ConfigManager::new().remove_launcher_value_in(
             "Plugins",
             &format!("{}.enabled", plugin_id),
         );
         self.refresh();
+        Ok(())
     }
 
     // --- Remote registry (GitHub Releases, C++ parity) ---
@@ -1134,4 +1142,35 @@ fn which(name: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PluginManager;
+
+    #[test]
+    fn remove_plugin_dir_ok_missing_and_denied() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::env::temp_dir().join("corky_plug_del");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let dir = base.join("some-plugin");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        assert!(PluginManager::remove_plugin_dir(&dir).is_ok());
+        assert!(!dir.exists());
+        assert!(PluginManager::remove_plugin_dir(&dir).is_ok());
+        let locked = base.join("locked-plugin");
+        std::fs::create_dir_all(locked.join("sub")).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+        // Root and permission-less filesystems ignore chmod: probe first,
+        // skip only the denied part (loudly), never fail for it.
+        if std::fs::write(locked.join(".probe"), b"x").is_ok() {
+            let _ = std::fs::remove_file(locked.join(".probe"));
+            eprintln!("SKIP denied part: permissions not enforced (root or FS)");
+        } else {
+            assert!(PluginManager::remove_plugin_dir(&locked).is_err());
+        }
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }
