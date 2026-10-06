@@ -1012,6 +1012,81 @@ fn scan_instance_dirs_in(root: &std::path::Path) -> Vec<(String, String)> {
     out
 }
 
+/// `inheritsFrom` declared by versions/<id>/<id>.json, if the JSON exists
+/// and declares one. This is the ground truth for "is this a base copy?".
+fn version_inherits(vers_dir: &std::path::Path, id: &str) -> Option<String> {
+    let txt = std::fs::read_to_string(vers_dir.join(id).join(format!("{}.json", id))).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&txt).ok()?;
+    v.get("inheritsFrom")?.as_str().map(str::to_string)
+}
+
+/// Ids inside `vers_dir` that another sibling version declares as its base
+/// (via inheritsFrom). Only ids that exist as dirs in the same dir count.
+fn base_version_ids(vers_dir: &std::path::Path) -> std::collections::HashSet<String> {
+    let mut ids = Vec::new();
+    if let Ok(it) = std::fs::read_dir(vers_dir) {
+        for e in it.flatten() {
+            if e.path().is_dir() {
+                ids.push(e.file_name().to_string_lossy().into_owned());
+            }
+        }
+    }
+    let mut bases = std::collections::HashSet::new();
+    for id in &ids {
+        if let Some(inh) = version_inherits(vers_dir, id) {
+            if &inh != id {
+                bases.insert(inh);
+            }
+        }
+    }
+    bases
+}
+
+/// True while at least one non-base version dir remains: a real instance
+/// (not a dependency) still lives in this container. `bases` is the base-id
+/// set captured before the backend delete — the deleted instance's own
+/// inheritsFrom must keep counting, its JSON is gone afterwards.
+fn has_visible_versions(vers_dir: &std::path::Path, bases: &std::collections::HashSet<String>) -> bool {
+    match std::fs::read_dir(vers_dir) {
+        Ok(it) => it.flatten().any(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            e.path().is_dir() && !bases.contains(&name)
+        }),
+        Err(_) => false,
+    }
+}
+
+/// Sweep rule for `do_delete`: only an isolated container, only after a
+/// clean backend delete, and only when no visible version remains — a
+/// sibling instance must survive together with the base it inherits from.
+fn should_sweep_container(
+    isolated: bool,
+    delete_clean: bool,
+    vers_dir: &std::path::Path,
+    pre_bases: &std::collections::HashSet<String>,
+) -> bool {
+    isolated && delete_clean && !has_visible_versions(vers_dir, pre_bases)
+}
+
+/// When `id` is a base copy that another remaining version inherits from,
+/// returns that version's id: deleting the base would break the sibling.
+fn base_version_user(vers_dir: &std::path::Path, id: &str) -> Option<String> {
+    let it = std::fs::read_dir(vers_dir).ok()?;
+    for e in it.flatten() {
+        if !e.path().is_dir() {
+            continue;
+        }
+        let name = e.file_name().to_string_lossy().into_owned();
+        if name == id {
+            continue;
+        }
+        if version_inherits(vers_dir, &name).as_deref() == Some(id) {
+            return Some(name);
+        }
+    }
+    None
+}
+
 /// Drop base vanilla copies living inside a loader install's dir
 /// (e.g. versions/26.2 next to fabric-loader-…): they are dependencies,
 /// not instances. Same-dir grouping only, so real standalone copies stay.
@@ -2516,13 +2591,23 @@ impl MinecraftView {
         } else {
             legacy_dir().display().to_string()
         };
+        let vers_dir = std::path::Path::new(&mc_dir).join("versions");
+        // Never rip a base copy out from under the loader version that
+        // inherits from it: refuse with an explicit error instead of
+        // silently breaking the sibling instance.
+        if let Some(user) = base_version_user(&vers_dir, &inst.id) {
+            errs.push(format!("{} is the base copy required by {}", inst.id, user));
+        }
+        // Base-id set captured before the backend delete: the deleted
+        // instance's own inheritsFrom must keep marking its base afterwards,
+        // otherwise the leftover base would look like a visible instance.
+        let pre_bases = base_version_ids(&vers_dir);
         // Backend-validated delete (guards path traversal, reports failures).
         // An isolated container without versions/<id> is an orphan of a
         // partial/failed install: the backend has nothing to remove there,
-        // so skip it and sweep the container directly instead of failing
-        // with "instance not found" while files remain on disk.
-        let backend_ver = std::path::Path::new(&mc_dir).join("versions").join(&inst.id);
-        if !inst.isolated || backend_ver.is_dir() {
+        // so skip it and let the sweep rule below decide for the container.
+        let backend_ver = vers_dir.join(&inst.id);
+        if errs.is_empty() && (!inst.isolated || backend_ver.is_dir()) {
             match crate::backend::external::MinecraftManager::instance_delete(&inst.id, &mc_dir) {
                 Ok(doc) => {
                     let ok = doc.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
@@ -2535,10 +2620,10 @@ impl MinecraftView {
                 Err(e) => errs.push(e),
             }
         }
-        // The backend only removes versions/<id>. Isolated instances keep their
-        // per-instance game dir (mods, saves, config) which the plugin does not
-        // manage — sweep the leftover container after a clean backend delete.
-        if inst.isolated && errs.is_empty() && dir.exists() {
+        // The backend only removes versions/<id>. Sweep the container only
+        // when nothing visible is left in it: a sibling instance (and the
+        // base copy it inherits from) must survive with its mods/saves.
+        if dir.exists() && should_sweep_container(inst.isolated, errs.is_empty(), &vers_dir, &pre_bases) {
             if let Err(e) = std::fs::remove_dir_all(&dir) {
                 errs.push(format!("{}: {}", dir.display(), e));
             }
@@ -2550,8 +2635,9 @@ impl MinecraftView {
                 errs.push(format!("{}: {}", legacy_ver.display(), e));
             }
         }
-        // verify: rescan dirs — id must be gone
-        let still_there = (inst.isolated && dir.exists()) || legacy_ver.exists();
+        // verify: versions/<id> must be gone — the container may stay behind
+        // on purpose when it still hosts a sibling instance.
+        let still_there = vers_dir.join(&inst.id).exists() || legacy_ver.exists();
         for k in ["Fav", "Time", "Last", "Name", "Ram", "Java", "Account"] {
             self.state.config.remove_launcher_value_in("User Settings", &format!("Mc{}_{}", k, safe_id(id)));
         }
@@ -7150,6 +7236,127 @@ mod tests {
         assert_eq!(removed2, 1);
         assert!(!root.join("b-icon.png").exists());
         assert!(root.join("c-icon.png").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Builds `root/<container>/versions/<id>/<id>.json` and returns the
+    /// container's versions dir. Temp trees only, never real instances.
+    fn mkversion(root: &std::path::Path, container: &str, id: &str, inherits: Option<&str>) -> std::path::PathBuf {
+        let vers = root.join(container).join("versions");
+        fs::create_dir_all(vers.join(id)).unwrap();
+        let json = match inherits {
+            Some(base) => format!(r#"{{"id":"{}","inheritsFrom":"{}"}}"#, id, base),
+            None => format!(r#"{{"id":"{}"}}"#, id),
+        };
+        fs::write(vers.join(id).join(format!("{}.json", id)), json).unwrap();
+        vers
+    }
+
+    fn tmproot(tag: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("corkytux-mc-del-{}-{}", tag, std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn delete_sweeps_container_when_only_base_remains() {
+        // [1.21.1 + neoforge], I delete neoforge: after the backend removes
+        // versions/<id> only the base copy is left → sweep the whole
+        // container, no orphan base behind.
+        let root = tmproot("sweep-neo");
+        let vers = mkversion(&root, "neoforge-21.1.218", "1.21.1", None);
+        mkversion(&root, "neoforge-21.1.218", "neoforge-21.1.218", Some("1.21.1"));
+        let pre = base_version_ids(&vers);
+        assert!(!should_sweep_container(true, true, &vers, &pre),
+            "container still hosts the instance before the backend delete");
+        fs::remove_dir_all(vers.join("neoforge-21.1.218")).unwrap(); // backend step
+        assert!(should_sweep_container(true, true, &vers, &pre),
+            "only the base copy remains: the container must go completely");
+        fs::remove_dir_all(root.join("neoforge-21.1.218")).unwrap(); // sweep step
+        assert!(!root.join("neoforge-21.1.218").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn delete_keeps_container_with_sibling_instance() {
+        // [1.21.1 + neoforge + fabric sibling], I delete neoforge: the
+        // fabric version still inherits 1.21.1 → keep container and data.
+        let root = tmproot("keep-sibling");
+        let vers = mkversion(&root, "c", "1.21.1", None);
+        mkversion(&root, "c", "neoforge-21.1.218", Some("1.21.1"));
+        mkversion(&root, "c", "fabric-loader-0.19.5-1.21.1", Some("1.21.1"));
+        fs::create_dir_all(vers.parent().unwrap().join("mods")).unwrap();
+        fs::write(vers.parent().unwrap().join("mods").join("keep.jar"), b"jar").unwrap();
+        let pre = base_version_ids(&vers);
+        fs::remove_dir_all(vers.join("neoforge-21.1.218")).unwrap(); // backend step
+        assert!(has_visible_versions(&vers, &pre), "the fabric sibling is a visible instance");
+        assert!(!should_sweep_container(true, true, &vers, &pre),
+            "a sibling instance remains: the container must survive");
+        assert!(vers.parent().unwrap().join("mods").join("keep.jar").exists(),
+            "sibling data must stay untouched");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn delete_sweeps_keo_container() {
+        // Keo [26.3 + fabric-loader], I delete the fabric id: only the base
+        // is left → the container goes completely.
+        let root = tmproot("sweep-keo");
+        let vers = mkversion(&root, "fabric-loader-0.19.5-26.3", "26.3", None);
+        mkversion(&root, "fabric-loader-0.19.5-26.3", "fabric-loader-0.19.5-26.3", Some("26.3"));
+        let pre = base_version_ids(&vers);
+        fs::remove_dir_all(vers.join("fabric-loader-0.19.5-26.3")).unwrap(); // backend step
+        assert!(should_sweep_container(true, true, &vers, &pre));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn delete_sweeps_single_version_container() {
+        // A lone instance (no base, no sibling): sweep when nothing remains.
+        let root = tmproot("sweep-lone");
+        let vers = mkversion(&root, "solo", "1.20.1", None);
+        let pre = base_version_ids(&vers);
+        assert!(!should_sweep_container(true, true, &vers, &pre), "the instance itself is visible");
+        fs::remove_dir_all(vers.join("1.20.1")).unwrap(); // backend step
+        assert!(should_sweep_container(true, true, &vers, &pre), "empty container → sweep");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn no_sweep_on_partial_failure() {
+        // Backend delete failed (delete_clean=false): never sweep, even when
+        // no visible version remains — data stays for a retry.
+        let root = tmproot("partial");
+        let vers = mkversion(&root, "c", "1.21.1", None);
+        mkversion(&root, "c", "neoforge-21.1.218", Some("1.21.1"));
+        let pre = base_version_ids(&vers);
+        fs::remove_dir_all(vers.join("neoforge-21.1.218")).unwrap();
+        assert!(!should_sweep_container(true, false, &vers, &pre),
+            "partial failure must keep the container");
+        assert!(root.join("c").exists());
+        let empty = tmproot("partial-empty");
+        let evers = empty.join("c").join("versions");
+        fs::create_dir_all(&evers).unwrap();
+        let no_bases = std::collections::HashSet::new();
+        assert!(!should_sweep_container(true, false, &evers, &no_bases),
+            "partial failure must not sweep even an empty container");
+        // legacy (non-isolated) containers are never swept here.
+        assert!(!should_sweep_container(false, true, &evers, &no_bases));
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&empty);
+    }
+
+    #[test]
+    fn refuses_deleting_base_copy() {
+        // The base copy of a live loader version can never be the delete
+        // target: do_delete reports which sibling needs it.
+        let root = tmproot("base-guard");
+        let vers = mkversion(&root, "c", "1.21.1", None);
+        mkversion(&root, "c", "neoforge-21.1.218", Some("1.21.1"));
+        assert_eq!(base_version_user(&vers, "1.21.1").as_deref(), Some("neoforge-21.1.218"));
+        assert_eq!(base_version_user(&vers, "neoforge-21.1.218"), None,
+            "the loader version is deletable");
         let _ = fs::remove_dir_all(&root);
     }
 }
