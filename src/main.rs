@@ -1224,6 +1224,7 @@ pub(crate) fn run_plugin_scans(
                     let dir_d = dir_c.clone();
                     let prefix_d = prefix_c.clone();
                     let proton_d = proton_c.clone();
+                    let game_t = game_c.clone();
                     yes_btn.connect_clicked(move |_| {
                         d0.close();
                         let (tx2, rx2) = std::sync::mpsc::channel::<Result<String, String>>();
@@ -1231,12 +1232,13 @@ pub(crate) fn run_plugin_scans(
                         let prefix_t = prefix_d.clone();
                         let proton_t = proton_d.clone();
                         let names_t = names.clone();
+                        let game_t2 = game_t.clone();
                         std::thread::spawn(move || {
                             // The real prefix may not exist yet on a fresh
                             // import (Proton creates it on first launch);
                             // the installer refuses missing prefixes.
                             std::fs::create_dir_all(&prefix_t).ok();
-                            let r = PluginManager::dep_install_in(&dir_t, &prefix_t, &proton_t, &names_t);
+                            let r = PluginManager::dep_install_in(&dir_t, &prefix_t, &proton_t, &names_t, &game_t2);
                             let _ = tx2.send(r);
                         });
                         let parent_ci = parent_cc.clone();
@@ -1338,9 +1340,10 @@ pub(crate) fn confirm_install_deps(
             let prefix_t = prefix.clone();
             let proton_t = proton.clone();
             let ids_t = dep_ids.clone();
+            let game_t = game_c.clone();
             std::thread::spawn(move || {
                 std::fs::create_dir_all(&prefix_t).ok();
-                let r = PluginManager::dep_install_in(&dir_t, &prefix_t, &proton_t, &ids_t);
+                let r = PluginManager::dep_install_in(&dir_t, &prefix_t, &proton_t, &ids_t, &game_t);
                 let _ = tx2.send(r);
             });
             let parent_ci = parent_c.clone();
@@ -1492,7 +1495,7 @@ pub(crate) fn run_plugin_scans_batch(
                             let mut done = Vec::new();
                             for (n, prefix, proton, ids) in needy_t {
                                 std::fs::create_dir_all(&prefix).ok();
-                                match PluginManager::dep_install_in(&dir_t, &prefix, &proton, &ids) {
+                                match PluginManager::dep_install_in(&dir_t, &prefix, &proton, &ids, &n) {
                                     Ok(m) => done.push(format!("{}: {}", n, m)),
                                     Err(e) => done.push(format!("{} failed: {}", n, e)),
                                 }

@@ -575,10 +575,8 @@ impl PluginManager {
             let msg = if !err.is_empty() { err } else { out };
             return Err(if msg.is_empty() {
                 format!("Plugin returned an error (code {:?})", output.code)
-            } else if msg.len() > 300 {
-                msg[..300].to_string()
             } else {
-                msg
+                Self::tail_msg(&msg, 300)
             });
         }
         // Installers stream {"type": "progress", ...} lines before the final
@@ -666,13 +664,46 @@ impl PluginManager {
         ScanBundle { overrides, missing }
     }
 
+    /// Keep the tail of a long message: real errors come last.
+    /// Prepend "..." when trimmed. Byte-based, char-boundary safe.
+    fn tail_msg(msg: &str, keep: usize) -> String {
+        if msg.len() <= keep {
+            return msg.to_string();
+        }
+        let mut start = msg.len() - keep;
+        while !msg.is_char_boundary(start) {
+            start += 1;
+        }
+        format!("...{}", &msg[start..])
+    }
+
+    /// Append installer output to the game's debug log. Silent when the
+    /// game name is empty or the log cannot be opened.
+    fn log_dep_output(game: &str, text: &str) {
+        if game.trim().is_empty() || text.is_empty() {
+            return;
+        }
+        let path = super::proton::ProtonManager::log_path(game);
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            use std::io::Write;
+            let _ = writeln!(f, "\n[CorkyTux] {}", text);
+        }
+    }
+
     /// `dependency-installer install --prefix P [--proton PATH] dep...`
     /// (winetricks into the prefix; slow for .NET, capped here for safety).
+    /// Dialog errors keep the stderr tail (real errors come last) plus the
+    /// exit code; the full output goes to the game's debug log.
     pub fn dep_install_in(
         dir: &Path,
         prefix: &str,
         proton: &str,
         dep_ids: &[String],
+        game: &str,
     ) -> Result<String, String> {
         let exe = Self::dep_exe_in(dir);
         if !exe.exists() {
@@ -726,21 +757,23 @@ impl PluginManager {
                         .get("error")
                         .and_then(|x| x.as_str())
                         .unwrap_or("install failed");
-                    Some(format!("{} ({}): {}", id, desc, reason))
+                    let code = r
+                        .get("code")
+                        .and_then(|x| x.as_i64())
+                        .map(|c| format!(" [exit {}]", c))
+                        .unwrap_or_default();
+                    Some(format!("{} ({}){}: {}", id, desc, code, reason))
                 })
                 .collect();
-            let mut msg = if !details.is_empty() {
+            let msg = if !details.is_empty() {
                 details.join("\n")
             } else if !failed.is_empty() {
                 format!("Failed: {}", failed.join(", "))
             } else {
                 "install failed".into()
             };
-            if msg.len() > 400 {
-                msg.truncate(400);
-                msg.push_str("…");
-            }
-            return Err(msg);
+            Self::log_dep_output(game, &format!("dep install failed\n{}", msg));
+            return Err(Self::tail_msg(&msg, 2000));
         }
 
         Ok(v.get("message").and_then(|x| x.as_str()).unwrap_or("Installed").to_string())
@@ -1172,5 +1205,19 @@ mod tests {
         }
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn tail_msg_keeps_tail_and_marks_trim() {
+        assert_eq!(PluginManager::tail_msg("short", 2000), "short");
+        let long = format!("head-{:-<100}tail", "");
+        let out = PluginManager::tail_msg(&long, 10);
+        assert!(out.starts_with("..."), "{}", out);
+        assert!(out.ends_with("tail"), "{}", out);
+        // Multibyte boundary: never splits a char.
+        let uni = format!("{}end", "é".repeat(50));
+        let cut = PluginManager::tail_msg(&uni, 10);
+        assert!(cut.ends_with("end"), "{}", cut);
+        assert!(cut.starts_with("..."), "{}", cut);
     }
 }
