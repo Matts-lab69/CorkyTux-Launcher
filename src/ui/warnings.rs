@@ -405,14 +405,23 @@ pub fn is_folder_exe(main_path: &str, exe: &str) -> bool {
 }
 
 /// Validate a Change-exe choice: existing file inside MainPath.
-/// Canonicalize both sides; reject `..` segments and symlinks escaping
-/// MainPath. Accept any file name: native builds carry no extension.
-/// Call again at save time; picker output alone stays untrusted.
+/// Canonicalize both sides; reject `..` segments, symlinks escaping
+/// MainPath, and blocked helper names. Accept any file name otherwise:
+/// native builds carry no extension. Call again at save time; picker
+/// output alone stays untrusted.
 pub fn validate_exe_choice(main_path: &str, chosen: &str) -> bool {
     if main_path.trim().is_empty() || chosen.trim().is_empty() {
         return false;
     }
     if chosen.split(['/', '\\']).any(|seg| seg == "..") {
+        return false;
+    }
+    if chosen
+        .rsplit(['/', '\\'])
+        .next()
+        .map(|n| is_blocked_exe_name(&n.to_lowercase()))
+        .unwrap_or(true)
+    {
         return false;
     }
     let Ok(main_canon) = std::fs::canonicalize(expand_tilde(main_path.trim())) else {
@@ -430,10 +439,40 @@ const EXEC_EXTS: &[&str] = &[
     "exe", "bat", "cmd", "msi", "sh", "appimage", "x86_64", "run",
 ];
 
+/// Lowercase filename fragments of helpers, runtimes and crash reporters:
+/// never the game itself. Matched with `contains`, so `unins` also covers
+/// `unins000.exe` and `unitycrashhandler` covers the 32/64-bit variants.
+/// Kept specific on purpose: plain `crash` would also block games such as
+/// Crash Bandicoot.
+const EXE_BLOCKLIST: &[&str] = &[
+    "crashhandler", "crashpad", "crashreport", "crashsender", "crashreporter",
+    "unitycrashhandler", "unins", "uninstall", "vcredist", "vc_redist",
+    "redist", "dxsetup", "dxwebsetup", "directx", "dotnet", "dotnetfx",
+    "prereq", "oalinst", "webhelper", "notification_helper", "createdump",
+    "bssndrpt",
+];
+
+/// Lowercase folder names never descended into: vendor redistributables
+/// and installer payloads live here, not game executables.
+const BLOCKED_DIRS: &[&str] = &[
+    "_commonredist",
+    "redist",
+    "directx",
+    "dotnet",
+    "crashpad",
+    "__installer",
+];
+
+/// Report a blocked helper/runtime/crash-reporter file name (lowercase).
+fn is_blocked_exe_name(lower_name: &str) -> bool {
+    EXE_BLOCKLIST.iter().any(|frag| lower_name.contains(frag))
+}
+
 /// Regular files inside MainPath for the Change-exe picker: depth 3,
-/// hidden files and folders skipped. List entries with an execution bit
-/// or a known executable extension. Sort results. Save-time validation
-/// stays mandatory.
+/// hidden files and folders skipped, blocked helper names and blocked
+/// folders skipped. List entries with an execution bit or a known
+/// executable extension. Sort results. Save-time validation stays
+/// mandatory.
 pub fn list_exe_candidates(main_path: &str) -> Vec<String> {
     let mut out = Vec::new();
     if main_path.trim().is_empty() {
@@ -463,6 +502,9 @@ fn collect_candidates(dir: &std::path::Path, out: &mut Vec<String>, depth: u8) {
             if name.starts_with('.') {
                 continue;
             }
+            if is_blocked_exe_name(&name) {
+                continue;
+            }
             let ext = std::path::Path::new(&name)
                 .extension()
                 .map(|e| e.to_string_lossy().to_string())
@@ -483,7 +525,8 @@ fn collect_candidates(dir: &std::path::Path, out: &mut Vec<String>, depth: u8) {
             out.push(p.display().to_string().replace('\\', "/"));
         } else if p.is_dir() && depth > 0 {
             if let Some(n) = p.file_name().and_then(|n| n.to_str()) {
-                if n.starts_with('.') {
+                let lower = n.to_lowercase();
+                if lower.starts_with('.') || BLOCKED_DIRS.contains(&lower.as_str()) {
                     continue;
                 }
             }
@@ -814,6 +857,87 @@ mod tests {
         assert!(!names.contains(&"too_deep.exe".to_string()));
         assert!(!names.contains(&"in.exe".to_string()));
         assert!(list_exe_candidates("").is_empty());
+        let _ = std::fs::remove_dir_all(&main);
+    }
+
+    #[test]
+    fn candidates_skip_blocklisted_helpers_and_dirs() {
+        let main = mktmp("corky_exe_blocklist");
+        for blocked in [
+            "UnityCrashHandler64.exe",
+            "UnityCrashHandler32.exe",
+            "crashpad_handler.exe",
+            "CrashReportClient.exe",
+            "unins000.exe",
+            "vc_redist.x64.exe",
+            "dxwebsetup.exe",
+            "UE4PrereqSetup_x64.exe",
+        ] {
+            write_file(&main.join(blocked));
+        }
+        write_file(&main.join("GameSetup.exe"));
+        write_file(&main.join("GameLauncher.exe"));
+        write_file(&main.join("CrashBandicoot.exe"));
+        write_file(&main.join("CrashTeamRacing.exe"));
+        write_file(&main.join("redist/vc_redist.x64.exe"));
+        write_file(&main.join("redist/game.exe"));
+        write_file(&main.join("_commonredist/DirectX/dxsetup.exe"));
+        let got = list_exe_candidates(&main.display().to_string());
+        let names: Vec<String> = got
+            .iter()
+            .map(|p| {
+                std::path::Path::new(p)
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        assert!(names.contains(&"GameSetup.exe".to_string()));
+        assert!(names.contains(&"GameLauncher.exe".to_string()));
+        assert!(names.contains(&"CrashBandicoot.exe".to_string()));
+        assert!(names.contains(&"CrashTeamRacing.exe".to_string()));
+        for absent in [
+            "UnityCrashHandler64.exe",
+            "UnityCrashHandler32.exe",
+            "crashpad_handler.exe",
+            "CrashReportClient.exe",
+            "unins000.exe",
+            "vc_redist.x64.exe",
+            "dxwebsetup.exe",
+            "UE4PrereqSetup_x64.exe",
+            "game.exe",
+            "dxsetup.exe",
+        ] {
+            assert!(!names.contains(&absent.to_string()), "{}", absent);
+        }
+        let _ = std::fs::remove_dir_all(&main);
+    }
+
+    #[test]
+    fn choice_blocklisted_file_fails() {
+        let main = mktmp("corky_exe_blocked_save");
+        let crash = main.join("UnityCrashHandler64.exe");
+        write_file(&crash);
+        assert!(crash.is_file());
+        assert!(!validate_exe_choice(
+            &main.display().to_string(),
+            &crash.display().to_string()
+        ));
+        let _ = std::fs::remove_dir_all(&main);
+    }
+
+    #[test]
+    fn choice_crash_titled_games_pass() {
+        let main = mktmp("corky_exe_crash_games");
+        for name in ["CrashBandicoot.exe", "CrashTeamRacing.exe"] {
+            let exe = main.join(name);
+            write_file(&exe);
+            assert!(validate_exe_choice(
+                &main.display().to_string(),
+                &exe.display().to_string()
+            ));
+        }
         let _ = std::fs::remove_dir_all(&main);
     }
 }
