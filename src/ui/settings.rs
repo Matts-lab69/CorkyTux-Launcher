@@ -709,7 +709,7 @@ pub fn show_settings_modal(
     visuals_page.append(&accent_grid);
     page_stack.add_titled(&visuals_page, Some("visuals"), "Visuals");
 
-    // Paths page (C++ parity: installs/downloads/prefixes/protons/2/3 + shared)
+    // Paths page (C++ parity: protons/2/3 + shared)
     let paths_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
     paths_page.set_margin_top(12);
     paths_page.set_margin_start(40);
@@ -718,6 +718,10 @@ pub fn show_settings_modal(
     paths_title.set_halign(gtk::Align::Center);
     paths_title.add_css_class("settings-title");
     paths_page.append(&paths_title);
+
+    // Drop shared prefixes whose dir is gone (and orphan their games)
+    // every time Paths opens. Silent: already deleted needs no dialog.
+    prune_missing_shared_prefixes(state);
 
     // Created early so path rows can trigger a proton rescan + UI rebuild
     // when a proton path changes (otherwise new paths stay undetected).
@@ -792,9 +796,6 @@ pub fn show_settings_modal(
         col
     };
 
-    paths_page.append(&make_editable_row("Installs path", "installsPath", "installs", state));
-    paths_page.append(&make_editable_row("Downloads path", "downloadsPath", "downloads", state));
-    paths_page.append(&make_editable_row("Prefixes path", "prefixesPath", "prefixes", state));
     paths_page.append(&make_editable_row("Proton Path 1", "protonsPath", "protons", state));
     paths_page.append(&make_editable_row("Proton Path 2 (optional)", "protonsPath2", "", state));
     paths_page.append(&make_editable_row("Proton Path 3 (optional)", "protonsPath3", "", state));
@@ -2804,9 +2805,84 @@ fn confirm_remove_plugin(
     dlg.present(anchor.root().as_ref());
 }
 
+/// Clear the shared-prefix link of every game really pointing into it.
+/// Only games whose stored PrefixPath sits inside `base` are touched.
+/// Cleared games fall back to an individual prefix on next launch
+/// (ensure_individual_prefix). The prefix dir itself stays on disk.
+fn unlink_shared_prefix(state: &AppState, name: &str) {
+    let base = match state.config.shared_prefix_path(name) {
+        Some(p) => p,
+        None => return,
+    };
+    let b = base.display().to_string();
+    let b = b.trim_end_matches('/').to_string();
+    let with_slash = format!("{}/", b);
+    let pairs = state.config.all_game_prefixes();
+    let users = crate::backend::config::ConfigManager::shared_prefix_users(&base, &pairs);
+    for g in users {
+        let stored = pairs.iter().find(|(n, _)| n == &g).map(|(_, p)| p.clone());
+        let px = match stored {
+            Some(p) => p,
+            None => continue,
+        };
+        let t = px.trim_end_matches('/');
+        if t != b && !t.starts_with(&with_slash) {
+            continue;
+        }
+        state.config.set_game_value(&g, "UseSharedPrefix", "false");
+        state.config.set_game_value(&g, "PrefixPath", "");
+        if state.config.game_value(&g, "SharedPrefix").as_deref() == Some(name) {
+            state.config.set_game_value(&g, "SharedPrefix", "");
+        }
+    }
+}
+
+/// Drop registered shared prefixes whose dir is gone, persisting the
+/// pruned list. Games orphaned this way lose PrefixPath so they fall
+/// back to an individual prefix. Silent by design.
+fn prune_missing_shared_prefixes(state: &AppState) {
+    let names = state.config.shared_prefixes();
+    let mut kept = Vec::new();
+    let mut changed = false;
+    for name in &names {
+        match state.config.shared_prefix_path(name) {
+            Some(p) if p.is_dir() => kept.push(name.clone()),
+            Some(p) => {
+                changed = true;
+                let b = p.display().to_string();
+                let b = b.trim_end_matches('/').to_string();
+                let with_slash = format!("{}/", b);
+                for (g, px) in state.config.all_game_prefixes() {
+                    let t = px.trim_end_matches('/');
+                    if t == b || t.starts_with(&with_slash) {
+                        state.config.set_game_value(&g, "PrefixPath", "");
+                    }
+                }
+            }
+            None => {
+                changed = true;
+            }
+        }
+    }
+    if changed {
+        state
+            .config
+            .set_launcher_value("sharedPrefixes", &kept.join(","));
+    }
+}
+
 /// Blocked-delete notice for a shared prefix: lists who uses it and deletes
-/// nothing. Single Close button.
-fn confirm_shared_blocked(anchor: &gtk::Button, name: &str, path: &str, detail: &str) {
+/// nothing. Close only dismisses; Unlink clears the prefix link of every
+/// game really pointing into it (individual prefixes rebuild on launch),
+/// then refreshes the list so Remove no longer blocks.
+fn confirm_shared_blocked(
+    anchor: &gtk::Button,
+    state: &AppState,
+    list_box: &gtk::Box,
+    name: &str,
+    path: &str,
+    detail: &str,
+) {
     let dlg = adw::Dialog::new();
     dlg.set_title("Cannot remove shared prefix");
     dlg.set_content_width(420);
@@ -2836,8 +2912,9 @@ fn confirm_shared_blocked(anchor: &gtk::Button, name: &str, path: &str, detail: 
     msg.set_wrap(true);
     msg.set_halign(gtk::Align::Start);
     col.append(&msg);
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     let close = gtk::Button::with_label("Close");
-    close.add_css_class("neon-green");
+    close.add_css_class("neon-red");
     close.set_hexpand(true);
     {
         let d0 = dlg.clone();
@@ -2845,7 +2922,94 @@ fn confirm_shared_blocked(anchor: &gtk::Button, name: &str, path: &str, detail: 
             d0.close();
         });
     }
-    col.append(&close);
+    row.append(&close);
+    let unlink = gtk::Button::with_label("Unlink all games");
+    unlink.add_css_class("settings-btn");
+    unlink.set_hexpand(true);
+    {
+        let d0 = dlg.clone();
+        let state_c = state.clone();
+        let list_c = list_box.clone();
+        let name_c = name.to_string();
+        let path_c = path.to_string();
+        let anchor_c = anchor.clone();
+        unlink.connect_clicked(move |_| {
+            d0.close();
+            confirm_unlink_shared(&anchor_c, &state_c, &list_c, &name_c, &path_c);
+        });
+    }
+    row.append(&unlink);
+    col.append(&row);
+    dlg.set_child(Some(&outer));
+    dlg.present(anchor.root().as_ref());
+}
+
+/// Confirm unlinking every game from a shared prefix. Saves inside the
+/// shared prefix (drive_c/users/...) are NOT moved: games start fresh.
+/// The prefix dir itself stays on disk; only the links go away.
+fn confirm_unlink_shared(
+    anchor: &gtk::Button,
+    state: &AppState,
+    list_box: &gtk::Box,
+    name: &str,
+    path: &str,
+) {
+    let dlg = adw::Dialog::new();
+    dlg.set_title("Unlink all games");
+    dlg.set_content_width(420);
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    outer.add_css_class("modal-bg");
+    outer.set_hexpand(true);
+    outer.set_vexpand(true);
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    col.set_hexpand(true);
+    col.set_margin_top(12);
+    col.set_margin_bottom(12);
+    col.set_margin_start(16);
+    col.set_margin_end(16);
+    outer.append(&col);
+    let (header_row, x_btn) = helpers::modal_header("Unlink all games");
+    {
+        let d0 = dlg.clone();
+        x_btn.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    col.append(&header_row);
+    let msg = gtk::Label::new(Some(&format!(
+        "Remove the prefix link from every game using \"{}\"?\nSaves inside {}/drive_c/users/... stay in the shared prefix and are NOT moved. Games start with a fresh individual prefix.",
+        name, path
+    )));
+    msg.set_wrap(true);
+    msg.set_halign(gtk::Align::Start);
+    col.append(&msg);
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    let cancel = gtk::Button::with_label("Cancel");
+    cancel.add_css_class("neon-red");
+    cancel.set_hexpand(true);
+    {
+        let d0 = dlg.clone();
+        cancel.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    row.append(&cancel);
+    let go = gtk::Button::with_label("Unlink");
+    go.add_css_class("neon-green");
+    go.set_hexpand(true);
+    {
+        let d0 = dlg.clone();
+        let state_c = state.clone();
+        let list_c = list_box.clone();
+        let name_c = name.to_string();
+        go.connect_clicked(move |_| {
+            unlink_shared_prefix(&state_c, &name_c);
+            refresh_shared_list(&list_c, &state_c);
+            d0.close();
+        });
+    }
+    row.append(&go);
+    col.append(&row);
     dlg.set_child(Some(&outer));
     dlg.present(anchor.root().as_ref());
 }
@@ -2992,7 +3156,7 @@ fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {    while let Som
                 } else {
                     format!("Still used by: {}", users.join(", "))
                 };
-                confirm_shared_blocked(&btn_c, &name_c, &base.display().to_string(), &detail);
+                confirm_shared_blocked(&btn_c, &state_c, &list_c, &name_c, &base.display().to_string(), &detail);
                 return;
             }
             confirm_remove_shared(&btn_c, &state_c, name_c.clone(), list_c.clone());
