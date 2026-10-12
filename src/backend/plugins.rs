@@ -143,6 +143,7 @@ glib::wrapper! {
 pub struct ScanBundle {
     pub overrides: String,
     pub missing: Vec<(String, String)>,
+    pub optional: Vec<(String, String)>,
 }
 
 impl PluginManager {
@@ -612,7 +613,7 @@ impl PluginManager {
         game_dir: &str,
         prefix: &str,
         proton: &str,
-    ) -> Result<(Vec<(String, String)>, String), String> {
+    ) -> Result<(Vec<(String, String)>, Vec<(String, String)>, String), String> {
         let exe = Self::dep_exe_in(dir);
         if !exe.exists() {
             return Err("Dependency Installer plugin not installed".into());
@@ -631,8 +632,10 @@ impl PluginManager {
             return Err(e.to_string());
         }
         let mut missing = Vec::new();
+        let mut optional = Vec::new();
         for d in v.get("deps").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
-            if d.get("status").and_then(|x| x.as_str()).unwrap_or("") == "installed" {
+            let status = d.get("status").and_then(|x| x.as_str()).unwrap_or("");
+            if status == "installed" {
                 continue;
             }
             let id = d.get("id").and_then(|x| x.as_str()).unwrap_or_default();
@@ -640,10 +643,15 @@ impl PluginManager {
                 continue;
             }
             let desc = d.get("desc").and_then(|x| x.as_str()).unwrap_or(id);
-            missing.push((id.to_string(), desc.to_string()));
+            // Low-confidence media hits are shown, never auto-installed.
+            if status == "optional" {
+                optional.push((id.to_string(), desc.to_string()));
+            } else {
+                missing.push((id.to_string(), desc.to_string()));
+            }
         }
         let msg = v.get("message").and_then(|x| x.as_str()).unwrap_or("").to_string();
-        Ok((missing, msg))
+        Ok((missing, optional, msg))
     }
 
     pub fn scan_bundle_in(
@@ -652,16 +660,18 @@ impl PluginManager {
         prefix: &str,
         proton: &str,
     ) -> ScanBundle {
-        let (overrides, missing) = std::thread::scope(|s| {
+        let (overrides, missing, optional) = std::thread::scope(|s| {
             let a = s.spawn(|| Self::dll_scan_in(dir, game_dir).unwrap_or_default());
             let b = s.spawn(|| {
                 Self::dep_scan_in(dir, game_dir, prefix, proton)
-                    .map(|(m, _)| m)
+                    .map(|(m, o, _)| (m, o))
                     .unwrap_or_default()
             });
-            (a.join().unwrap_or_default(), b.join().unwrap_or_default())
+            let j = a.join().unwrap_or_default();
+            let (m, o) = b.join().unwrap_or_default();
+            (j, m, o)
         });
-        ScanBundle { overrides, missing }
+        ScanBundle { overrides, missing, optional }
     }
 
     /// Keep the tail of a long message: real errors come last.

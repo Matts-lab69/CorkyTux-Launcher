@@ -1146,16 +1146,16 @@ pub(crate) fn run_plugin_scans(
     let prefix_c = prefix_s.clone();
     let proton_c = proton_s.clone();
     let dir_c = plugins_dir.clone();
-    let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<(String, String)>)>();
+    let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<(String, String)>, Vec<(String, String)>)>();
     std::thread::spawn(move || {
         let s = PluginManager::scan_bundle_in(&plugins_dir, &dir_s, &prefix_s, &proton_s);
-        let _ = tx.send((s.overrides, s.missing));
+        let _ = tx.send((s.overrides, s.missing, s.optional));
     });
     let state_c = state.clone();
     let parent_c = parent.clone();
     let game_c = game_name.to_string();
     glib::idle_add_local(move || match rx.try_recv() {
-        Ok((overrides, missing)) => {
+        Ok((overrides, missing, optional)) => {
             // Apply DLL overrides unless the user already set custom ones.
             if !overrides.trim().is_empty() {
                 let cur = state_c.config.game_value(&game_c, "Overrides").unwrap_or_default();
@@ -1163,7 +1163,28 @@ pub(crate) fn run_plugin_scans(
                     state_c.game_model.set_overrides(&game_c, overrides.trim());
                 }
             }
-            if missing.is_empty() {
+            if missing.is_empty() && optional.is_empty() {
+                glib::ControlFlow::Break
+            } else if missing.is_empty() {
+                // Optional-only: inform, install nothing.
+                let descs: Vec<String> = optional
+                    .iter()
+                    .map(|(id, d)| {
+                        if d == id {
+                            id.clone()
+                        } else {
+                            format!("{} ({})", id, d)
+                        }
+                    })
+                    .collect();
+                helpers::present_msg(
+                    &parent_c,
+                    "No required dependencies",
+                    &format!(
+                        "Optional (low confidence, not installed): {}",
+                        descs.join(", ")
+                    ),
+                );
                 glib::ControlFlow::Break
             } else {
                 let names: Vec<String> = missing.iter().map(|(id, _)| id.clone()).collect();
@@ -1199,11 +1220,28 @@ pub(crate) fn run_plugin_scans(
                     x_btn.connect_clicked(move |_| { d0.close(); });
                 }
                 inner.append(&header_row);
-                let msg = gtk::Label::new(Some(&format!(
+                let mut body = format!(
                     "{} needs these Windows dependencies. Install them into the game prefix now?\n\n{}",
                     game_c,
                     descs.join(", ")
-                )));
+                );
+                if !optional.is_empty() {
+                    let odescs: Vec<String> = optional
+                        .iter()
+                        .map(|(id, d)| {
+                            if d == id {
+                                id.clone()
+                            } else {
+                                format!("{} ({})", id, d)
+                            }
+                        })
+                        .collect();
+                    body.push_str(&format!(
+                        "\n\nOptional (low confidence, not installed): {}",
+                        odescs.join(", ")
+                    ));
+                }
+                let msg = gtk::Label::new(Some(&body));
                 msg.set_halign(gtk::Align::Start);
                 msg.set_wrap(true);
                 inner.append(&msg);
@@ -1402,15 +1440,15 @@ pub(crate) fn run_plugin_scans_batch(
     }
     let plugins_dir = state.plugins.plugins_dir();
     let dir_c = plugins_dir.clone();
-    // (name, overrides, missing, prefix, proton)
+    // (name, overrides, missing, optional, prefix, proton)
     let (tx, rx) = std::sync::mpsc::channel::<
-        Vec<(String, String, Vec<(String, String)>, String, String)>,
+        Vec<(String, String, Vec<(String, String)>, Vec<(String, String)>, String, String)>,
     >();
     std::thread::spawn(move || {
         let mut out = Vec::new();
         for (name, dir, prefix, proton) in jobs {
             let s = PluginManager::scan_bundle_in(&plugins_dir, &dir, &prefix, &proton);
-            out.push((name, s.overrides, s.missing, prefix, proton));
+            out.push((name, s.overrides, s.missing, s.optional, prefix, proton));
         }
         let _ = tx.send(out);
     });
@@ -1419,12 +1457,20 @@ pub(crate) fn run_plugin_scans_batch(
     glib::idle_add_local(move || match rx.try_recv() {
         Ok(results) => {
             let mut needy: Vec<(String, String, String, Vec<String>)> = Vec::new();
-            for (name, overrides, missing, prefix, proton) in &results {
+            let mut optionals: Vec<String> = Vec::new();
+            for (name, overrides, missing, optional, prefix, proton) in &results {
                 if !overrides.trim().is_empty() {
                     let cur = state_c.config.game_value(name, "Overrides").unwrap_or_default();
                     if cur.trim().is_empty() {
                         state_c.game_model.set_overrides(name, overrides.trim());
                     }
+                }
+                for (id, d) in optional.iter() {
+                    optionals.push(if d == id {
+                        format!("{} ({})", name, id)
+                    } else {
+                        format!("{} ({} — {})", name, id, d)
+                    });
                 }
                 if !missing.is_empty() {
                     needy.push((
@@ -1436,6 +1482,16 @@ pub(crate) fn run_plugin_scans_batch(
                 }
             }
             if needy.is_empty() {
+                if !optionals.is_empty() {
+                    helpers::present_msg(
+                        &parent_c,
+                        "No required dependencies",
+                        &format!(
+                            "Optional (low confidence, not installed): {}",
+                            optionals.join(", ")
+                        ),
+                    );
+                }
                 glib::ControlFlow::Break
             } else {
                 let lines: Vec<String> = needy
@@ -1464,10 +1520,17 @@ pub(crate) fn run_plugin_scans_batch(
                     x_btn.connect_clicked(move |_| { d0.close(); });
                 }
                 inner.append(&header_row);
-                let msg = gtk::Label::new(Some(&format!(
+                let mut body = format!(
                     "These imported games need Windows dependencies. Install them into their prefixes now?\n\n{}",
                     lines.join("\n")
-                )));
+                );
+                if !optionals.is_empty() {
+                    body.push_str(&format!(
+                        "\n\nOptional (low confidence, not installed): {}",
+                        optionals.join(", ")
+                    ));
+                }
+                let msg = gtk::Label::new(Some(&body));
                 msg.set_halign(gtk::Align::Start);
                 msg.set_wrap(true);
                 inner.append(&msg);

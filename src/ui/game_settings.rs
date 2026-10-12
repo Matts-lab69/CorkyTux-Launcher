@@ -439,11 +439,11 @@ fn build_run_tab(
                     .map(|(_, p)| p.display().to_string())
                     .unwrap_or_default();
                 let plugins_dir = state_c.plugins.plugins_dir();
-                let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<(String, String)>)>();
+                let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<(String, String)>, Vec<(String, String)>)>();
                 let dir_t = dir.trim().to_string();
                 std::thread::spawn(move || {
                     let s = crate::backend::plugins::PluginManager::scan_bundle_in(&plugins_dir, &dir_t, &prefix, &proton);
-                    let _ = tx.send((s.overrides, s.missing));
+                    let _ = tx.send((s.overrides, s.missing, s.optional));
                 });
                 let state_cc = state_c.clone();
                 let parent_cc = parent_c.clone();
@@ -452,7 +452,7 @@ fn build_run_tab(
                 let btn_c = b.clone();
                 let entry_cc = entry_c.clone();
                 glib::idle_add_local(move || match rx.try_recv() {
-                    Ok((overrides, missing)) => {
+                    Ok((overrides, missing, optional)) => {
                         btn_c.set_sensitive(true);
                         if !overrides.trim().is_empty() {
                             state_cc.game_model.set_overrides(&game_cc, overrides.trim());
@@ -460,7 +460,7 @@ fn build_run_tab(
                                 e.set_text(overrides.trim());
                             }
                             status_cc.set_text("Scan done: DLL overrides applied below.");
-                        } else if missing.is_empty() {
+                        } else if missing.is_empty() && optional.is_empty() {
                             status_cc.set_text("Scan done: nothing needed.");
                         }
                         if !missing.is_empty() {
@@ -468,8 +468,20 @@ fn build_run_tab(
                             let descs: Vec<String> = missing.iter().map(|(id, d)| {
                                 if d == id { id.clone() } else { format!("{} ({})", id, d) }
                             }).collect();
-                            status_cc.set_text(&format!("Missing: {}.", descs.join(", ")));
+                            let mut status = format!("Missing: {}.", descs.join(", "));
+                            if !optional.is_empty() {
+                                let odescs: Vec<String> = optional.iter().map(|(id, d)| {
+                                    if d == id { id.clone() } else { format!("{} ({})", id, d) }
+                                }).collect();
+                                status.push_str(&format!(" Optional (not installed): {}.", odescs.join(", ")));
+                            }
+                            status_cc.set_text(&status);
                             crate::confirm_install_deps(&state_cc, &parent_cc, &game_cc, names);
+                        } else if !optional.is_empty() {
+                            let odescs: Vec<String> = optional.iter().map(|(id, d)| {
+                                if d == id { id.clone() } else { format!("{} ({})", id, d) }
+                            }).collect();
+                            status_cc.set_text(&format!("Scan done: nothing required. Optional (not installed): {}.", odescs.join(", ")));
                         }
                         glib::ControlFlow::Break
                     }
