@@ -18,9 +18,9 @@ if [[ "${EUID}" -eq 0 ]]; then
 fi
 
 removed=0
-rm_path() { # $1=path $2=label [$3=dir?]: only reports when something existed
+rm_path() { # $1=path $2=label [$3=dir?]
   if [[ "${3:-}" == "dir" && -d "$1" ]]; then rm -rf "$1"; echo "  Removed $2"; removed=$((removed+1));
-  elif [[ "${3:-}" != "dir" && -e "$1" || -L "$1" ]]; then rm -f "$1"; echo "  Removed $2"; removed=$((removed+1));
+  elif [[ "${3:-}" != "dir" && ( -e "$1" || -L "$1" ) ]]; then rm -f "$1"; echo "  Removed $2"; removed=$((removed+1));
   else echo "  (not present) $2"; fi
 }
 [[ -d "$INSTALL_DIR" ]] && { rm -rf "$INSTALL_DIR"; echo "  Removed ${INSTALL_DIR}"; removed=$((removed+1)); }

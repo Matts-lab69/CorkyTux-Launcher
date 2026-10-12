@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # ─── CorkyTux Installer (Rust + GTK4/libadwaita) ────────────────────
-# Installs prebuilt binary to user dir. NO sudo.
-# Supports: Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE
+# Install prebuilt binary to user dir. Run without sudo.
+# Cover Gentoo, Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# Version from the tarball dir (corkytux-X.Y.Z); "dev" for repo runs.
-APP_VERSION="$(basename "$SCRIPT_DIR" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+# Read version from tarball dir name (corkytux-X.Y.Z). Use dev for repo runs.
+APP_VERSION="$(basename "$SCRIPT_DIR" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' 2>/dev/null | head -1 || true)"
 APP_VERSION="${APP_VERSION:-dev}"
 INSTALL_DIR="${HOME}/.local/share/corkytux"
 BIN_DIR="${HOME}/.local/bin"
@@ -43,18 +43,22 @@ if [[ "${1:-}" == "--uninstall" || "${1:-}" == "-u" ]]; then
   exec "${SCRIPT_DIR}/uninstall.sh"
 fi
 
-# ─── Games folder ────────────────────────────────────────────────
-# Destino del import permanente de Heroic/Lutris. Heroic suele crearla
-# antes que CorkyTux: si ya existe se respeta tal cual, sin tocar su
-# contenido. No es un error ni un aviso, es el caso esperado.
-if [[ -d "${HOME}/Games" ]]; then
-  info "Games folder: ${HOME}/Games (already there, left untouched)"
-else
-  mkdir -p "${HOME}/Games"
-  log "Games folder: ${HOME}/Games (created)"
+# Install UI assets into INSTALL_DIR/assets. Fail when source is missing.
+# Validate before any mutation.
+ASSETS=""
+for candidate in "${SCRIPT_DIR}/assets" "${SCRIPT_DIR}/release/assets" "${SCRIPT_DIR}/../assets"; do
+  if [[ -d "$candidate" ]]; then
+    ASSETS="$candidate"
+    break
+  fi
+done
+if [[ -z "$ASSETS" ]]; then
+  err "Assets not found: none of assets/, release/assets/, ../assets/ exist"
+  exit 1
 fi
 
 # ─── Binary ──────────────────────────────────────────────────────
+# Locate prebuilt ELF binary next to this script.
 APP=""
 for candidate in "${SCRIPT_DIR}/corkytux" "${SCRIPT_DIR}/release/corkytux"; do
   if [[ -f "$candidate" ]] && file "$candidate" | grep -q 'ELF'; then
@@ -68,6 +72,31 @@ if [[ -z "$APP" ]]; then
   exit 1
 fi
 log "Binary found: $(basename "$APP") ($(du -h "$APP" | cut -f1))"
+
+# ─── Games folder ────────────────────────────────────────────────
+# Keep permanent Heroic/Lutris imports here. Leave existing dir untouched.
+if [[ -d "${HOME}/Games" ]]; then
+  info "Games folder: ${HOME}/Games (already there, left untouched)"
+else
+  mkdir -p "${HOME}/Games"
+  log "Games folder: ${HOME}/Games (created)"
+fi
+
+# Keep 3 most recent backups of installed binary.
+# Copy current binary aside before atomic replace. Prune old copies.
+backup_bin() {
+  local target="${INSTALL_DIR}/corkytux"
+  [[ -f "$target" ]] || return 0
+  local ts
+  ts="$(date +%Y%m%d-%H%M%S)"
+  cp -p "$target" "${target}.bak-${ts}"
+  local -a old
+  readarray -t old < <(find "${INSTALL_DIR}" -name 'corkytux.bak-*' -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | cut -d' ' -f2-)
+  local keep=3
+  for ((i=keep; i<${#old[@]}; i++)); do
+    rm -f "${old[i]}" 2>/dev/null || true
+  done
+}
 
 # ─── Distro ──────────────────────────────────────────────────────
 if [[ -f /etc/os-release ]]; then
@@ -116,7 +145,7 @@ command -v umu-run &>/dev/null && log "umu-run found" || warn "umu-launcher not 
 if [[ ${#missing_opt[@]} -gt 0 ]]; then
   warn "Missing optional tools: ${missing_opt[*]}"
 fi
-# Python extra modules for minecraft-launcher plugin
+# Check Python extra modules for minecraft-launcher plugin.
 if command -v python3 &>/dev/null; then
   pymissing=()
   python3 -c "import requests" 2>/dev/null || pymissing+=("requests")
@@ -125,17 +154,17 @@ if command -v python3 &>/dev/null; then
   else
     log "python3 requests OK"
   fi
-  # Pillow for webp mod icons (warn only: runtime falls back to a generic icon)
+  # Check Pillow for webp mod icons. Warn only; fall back to generic icon.
   python3 -c "import PIL" 2>/dev/null || warn "Pillow (PIL) not found (webp mod icons need python3+PIL or ffmpeg, else generic icon)"
 fi
 command -v ffmpeg &>/dev/null && log "ffmpeg found" || warn "ffmpeg not found (webp mod icons need python3+PIL or ffmpeg, else generic icon)"
-# System icon theme is only a secondary fallback (bundled CorkyTux icons ship with the app)
+# Accept system icon theme only as fallback. Prefer bundled icons.
 if [[ -d /usr/share/icons/Adwaita || -d /usr/share/icons/hicolor || -d "${HOME}/.local/share/icons/Adwaita" ]]; then
   log "System icon theme OK (fallback)"
 else
   warn "No system icon theme found (bundled icons will be used)"
 fi
-# Bundled symbolic icons are SVG: they need librsvg (PNG UI art does not).
+# Require librsvg for bundled SVG icons. Ignore check for PNG art.
 svg_ok=false
 if ldconfig -p 2>/dev/null | grep -q "librsvg-2.so"; then
   svg_ok=true
@@ -178,14 +207,16 @@ fi
 echo ""
 info "Installing CorkyTux v${APP_VERSION}..."
 mkdir -p "$INSTALL_DIR" "$BIN_DIR" "$ICON_DIR" "$DESKTOP_DIR"
-install -m 0755 "$APP" "${INSTALL_DIR}/corkytux"
+backup_bin
+install -m 0755 "$APP" "${INSTALL_DIR}/corkytux.new"
+mv -f "${INSTALL_DIR}/corkytux.new" "${INSTALL_DIR}/corkytux"
+chmod 755 "${INSTALL_DIR}/corkytux"
 log "Binary: ${INSTALL_DIR}/corkytux"
 ln -sf "${INSTALL_DIR}/corkytux" "${BIN_DIR}/corkytux"
 log "Symlink: ${BIN_DIR}/corkytux"
 
-# Helper del login de Epic/GOG. Va al lado de corkytux porque el launcher lo
-# busca ahi (el override CORKYTUX_LOGIN_HELPER es solo para pruebas). No lleva
-# symlink: no se ejecuta a mano, y asi no aparece en el PATH del usuario.
+# Stage Epic/GOG login helper next to binary. Do not link into PATH.
+# Honor CORKYTUX_LOGIN_HELPER override for tests.
 HELPER=""
 for candidate in "${SCRIPT_DIR}/webdriver_login" "${SCRIPT_DIR}/release/webdriver_login"; do
   if [[ -f "$candidate" ]] && file "$candidate" | grep -q 'ELF'; then
@@ -201,23 +232,12 @@ else
   warn "See ${DOCS_URL} to build it from source."
 fi
 
-# UI assets (the launcher loads themed icons from INSTALL_DIR/assets)
-ASSETS=""
-for candidate in "${SCRIPT_DIR}/assets" "${SCRIPT_DIR}/release/assets"; do
-  if [[ -d "$candidate" ]]; then
-    ASSETS="$candidate"
-    break
-  fi
-done
-if [[ -n "$ASSETS" ]]; then
-  mkdir -p "${INSTALL_DIR}/assets"
-  cp -r "${ASSETS}/." "${INSTALL_DIR}/assets/"
-  find "${INSTALL_DIR}/assets" -type f -exec chmod 0644 {} + 2>/dev/null || true
-  find "${INSTALL_DIR}/assets" -type d -exec chmod 0755 {} + 2>/dev/null || true
-  log "Assets: ${INSTALL_DIR}/assets ($(ls "$ASSETS" | wc -l) files)"
-else
-  warn "assets/ not found, UI icons will be missing"
-fi
+# Copy pre-validated UI assets into INSTALL_DIR/assets.
+mkdir -p "${INSTALL_DIR}/assets"
+cp -r "${ASSETS}/." "${INSTALL_DIR}/assets/"
+find "${INSTALL_DIR}/assets" -type f -exec chmod 0644 {} + 2>/dev/null || true
+find "${INSTALL_DIR}/assets" -type d -exec chmod 0755 {} + 2>/dev/null || true
+log "Assets: ${INSTALL_DIR}/assets ($(ls "$ASSETS" | wc -l) files)"
 
 if [[ -f "${SCRIPT_DIR}/corkytux.png" ]]; then
   install -m 0644 "${SCRIPT_DIR}/corkytux.png" "${ICON_DIR}/corkytux.png"
@@ -229,11 +249,20 @@ else
   warn "corkytux.png not found, skipping icon"
 fi
 
+# Back up current desktop entry before overwrite. Keep 3 most recent copies.
+if [[ -f "${DESKTOP_DIR}/corkytux.desktop" ]]; then
+  cp -p "${DESKTOP_DIR}/corkytux.desktop" "${DESKTOP_DIR}/corkytux.desktop.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+  readarray -t _desk_old < <(find "${DESKTOP_DIR}" -maxdepth 1 -name 'corkytux.desktop.bak-*' -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | cut -d' ' -f2-)
+  for ((i=3; i<${#_desk_old[@]}; i++)); do
+    rm -f "${_desk_old[i]}" 2>/dev/null || true
+  done
+  unset _desk_old
+fi
 cat > "${DESKTOP_DIR}/corkytux.desktop" <<DESKTOP
 [Desktop Entry]
 Version=1.0
 Name=CorkyTux
-Comment=Linux game launcher (Rust + GTK4) — Proton/Wine, Minecraft, Epic/GOG
+Comment=Linux game launcher
 Exec=${INSTALL_DIR}/corkytux
 Icon=${ICON_DIR}/corkytux.png
 Terminal=false
@@ -257,9 +286,9 @@ if ! echo "$PATH" | tr ':' '\n' | grep -qxF "$BIN_DIR"; then
 fi
 
 echo ""
-echo -e "${BOLD}Plugins install separately from the launcher${NC}"
-echo "  Settings > Plugins, or repo: https://github.com/Matts-lab69/CorkyTux-Plugins"
-echo ""
+echo "  Plugin install scripts live in the plugins repo."
+echo "  See https://github.com/Matts-lab69/CorkyTux-Plugins for plugin install scripts."
+echo "  A running instance will use the new binary only after restart."
 echo -e "${BOLD}╔══════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║           Installation complete!             ║${NC}"
 echo -e "${BOLD}║  Run: corkytux (or app menu > CorkyTux)      ║${NC}"
