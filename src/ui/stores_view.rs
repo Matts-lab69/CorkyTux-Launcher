@@ -1844,6 +1844,24 @@ impl StorePageHandle {
         self.render_gog_cards(&v, !all.is_empty());
     }
 
+    /// Display scale for cover decode bounds, readable before the
+    /// widget is realized. Sharp texture without layout growth: the
+    /// ScrolledWindow viewport keeps its fixed size either way.
+    /// Highest scale across monitors; 1 when unknown.
+    fn ui_scale(pic: &gtk::Picture) -> i32 {
+        let monitors = pic.display().monitors();
+        let mut scale = 1;
+        for i in 0..monitors.n_items() {
+            if let Some(m) = monitors
+                .item(i)
+                .and_then(|o| o.downcast::<gtk::gdk::Monitor>().ok())
+            {
+                scale = scale.max(m.scale_factor().max(1));
+            }
+        }
+        scale
+    }
+
     /// I build my GOG card "category · systems" line: I hide each half
     /// when empty (both fields are optional in the GOG response).
     fn render_gog_cards(&self, games: &[StoreGame], hay_mas: bool) {
@@ -1863,26 +1881,53 @@ impl StorePageHandle {
         self.lib_status.set_text(&format!("{} game(s)", games.len()));
         for g in games {
             let (tile_w, _img_px, cover_h) = self.card_sizes();
+            // Fixed tile: badge row + 2-line name + meta + margins.
+            let tile_h = cover_h + 120;
             let tile = gtk::FlowBoxChild::new();
-            tile.set_width_request(tile_w);
+            tile.set_halign(gtk::Align::Start);
+            tile.set_valign(gtk::Align::Start);
+            tile.set_hexpand(false);
+            tile.set_vexpand(false);
             let inner = gtk::Box::new(gtk::Orientation::Vertical, 0);
             inner.add_css_class("lib-card");
             inner.add_css_class("gog-tile");
+            inner.set_size_request(tile_w, tile_h);
+            inner.set_halign(gtk::Align::Start);
+            inner.set_valign(gtk::Align::Start);
+            inner.set_hexpand(false);
+            inner.set_vexpand(false);
             if !g.cover.is_empty() {
                 let coverbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
                 coverbox.add_css_class("lib-cover");
-                coverbox.set_size_request(-1, cover_h);
-                coverbox.set_valign(gtk::Align::Center);
+                coverbox.set_size_request(tile_w, cover_h);
+                coverbox.set_halign(gtk::Align::Start);
+                coverbox.set_valign(gtk::Align::Start);
+                coverbox.set_hexpand(false);
+                coverbox.set_vexpand(false);
+                coverbox.set_overflow(gtk::Overflow::Hidden);
                 let pic = gtk::Picture::new();
-                pic.set_size_request(tile_w, cover_h);
                 pic.set_content_fit(gtk::ContentFit::Cover);
                 pic.set_can_shrink(true);
                 pic.set_halign(gtk::Align::Fill);
                 pic.set_valign(gtk::Align::Fill);
-                pic.set_hexpand(true);
-                pic.set_vexpand(true);
-                crate::ui::minecraft_view::load_cover_async(&g.cover, &format!("store-gog-{}", g.app_id), &pic, tile_w * 2);
-                coverbox.append(&pic);
+                // Fixed viewport: child minimum never reaches the tile,
+                // so the hires texture cannot stretch it. Cover crops.
+                let scrolled = gtk::ScrolledWindow::new();
+                scrolled.set_hscrollbar_policy(gtk::PolicyType::External);
+                scrolled.set_vscrollbar_policy(gtk::PolicyType::External);
+                scrolled.set_min_content_width(tile_w);
+                scrolled.set_min_content_height(cover_h);
+                scrolled.set_max_content_width(tile_w);
+                scrolled.set_max_content_height(cover_h);
+                scrolled.set_propagate_natural_width(false);
+                scrolled.set_propagate_natural_height(false);
+                // No wheel target: cover scrolls with the page, and card
+                // clicks keep reaching the FlowBox child-activated handler.
+                scrolled.set_can_target(false);
+                scrolled.set_child(Some(&pic));
+                let bound = tile_w * 2 * Self::ui_scale(&pic);
+                crate::ui::minecraft_view::load_cover_async(&g.cover, &format!("store-gog-{}", g.app_id), &pic, bound);
+                coverbox.append(&scrolled);
                 inner.append(&coverbox);
             }
             let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -2395,26 +2440,53 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
         *self.epic_games.borrow_mut() = games.to_vec();
         for g in games {
             let (tile_w, _img_px, cover_h) = self.card_sizes();
+            // Fixed tile: badge row + 2-line name + button row + margins.
+            let tile_h = cover_h + 138;
             let tile = gtk::FlowBoxChild::new();
-            tile.set_width_request(tile_w);
+            tile.set_halign(gtk::Align::Start);
+            tile.set_valign(gtk::Align::Start);
+            tile.set_hexpand(false);
+            tile.set_vexpand(false);
             let inner = gtk::Box::new(gtk::Orientation::Vertical, 0);
             inner.add_css_class("lib-card");
             inner.add_css_class("mc-tile");
+            inner.set_size_request(tile_w, tile_h);
+            inner.set_halign(gtk::Align::Start);
+            inner.set_valign(gtk::Align::Start);
+            inner.set_hexpand(false);
+            inner.set_vexpand(false);
             if !g.cover.is_empty() {
                 let coverbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
                 coverbox.add_css_class("lib-cover");
-                coverbox.set_size_request(-1, cover_h);
-                coverbox.set_valign(gtk::Align::Center);
+                coverbox.set_size_request(tile_w, cover_h);
+                coverbox.set_halign(gtk::Align::Start);
+                coverbox.set_valign(gtk::Align::Start);
+                coverbox.set_hexpand(false);
+                coverbox.set_vexpand(false);
+                coverbox.set_overflow(gtk::Overflow::Hidden);
                 let pic = gtk::Picture::new();
-                pic.set_size_request(tile_w, cover_h);
                 pic.set_content_fit(gtk::ContentFit::Cover);
                 pic.set_can_shrink(true);
                 pic.set_halign(gtk::Align::Fill);
                 pic.set_valign(gtk::Align::Fill);
-                pic.set_hexpand(true);
-                pic.set_vexpand(true);
-                crate::ui::minecraft_view::load_cover_async(&g.cover, &format!("store-{}-{}", self.store, g.app_id), &pic, tile_w * 2);
-                coverbox.append(&pic);
+                // Fixed viewport: child minimum never reaches the tile,
+                // so the hires texture cannot stretch it. Cover crops.
+                let scrolled = gtk::ScrolledWindow::new();
+                scrolled.set_hscrollbar_policy(gtk::PolicyType::External);
+                scrolled.set_vscrollbar_policy(gtk::PolicyType::External);
+                scrolled.set_min_content_width(tile_w);
+                scrolled.set_min_content_height(cover_h);
+                scrolled.set_max_content_width(tile_w);
+                scrolled.set_max_content_height(cover_h);
+                scrolled.set_propagate_natural_width(false);
+                scrolled.set_propagate_natural_height(false);
+                // No wheel target: cover scrolls with the page, and card
+                // clicks keep reaching the FlowBox child-activated handler.
+                scrolled.set_can_target(false);
+                scrolled.set_child(Some(&pic));
+                let bound = tile_w * 2 * Self::ui_scale(&pic);
+                crate::ui::minecraft_view::load_cover_async(&g.cover, &format!("store-{}-{}", self.store, g.app_id), &pic, bound);
+                coverbox.append(&scrolled);
                 inner.append(&coverbox);
             }
             let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -3716,3 +3788,9 @@ mod tests {
             &serde_json::json!({})).is_none());
     }
 }
+
+// Layout probe lives here (needs stores_view privates).
+// #[ignore]: needs a live display; never runs in CI or default suites.
+#[cfg(test)]
+#[path = "stores_view_probe.rs"]
+mod temp_card_measure_tests;
