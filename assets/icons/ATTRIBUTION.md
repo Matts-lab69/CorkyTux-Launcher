@@ -92,6 +92,13 @@ path, symbolic recoloring preserved), system icon theme second.
   light theme). `_dark` names the ink, not the theme. I did not alter any other
   asset.
 
+- `changeexe.png` / `changeexe_dark.png`: **assets drawn in this
+  repository** (2026-10-12), not third-party copies. Two circular arrows
+  (rotation glyph) for the Change-exe action, drawn at 4x supersample and
+  reduced to 20x20 RGBA PNG with preserved alpha. `changeexe.png` carries
+  light ink `#FFFFFF` (dark theme); `changeexe_dark.png` carries dark ink
+  `#241F2E` (light theme), following the bundle convention above.
+
 # Bundled emulator icons (Papirus)
 
 The files in `emulators/` are unmodified copies of the 48 px application

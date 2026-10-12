@@ -231,7 +231,7 @@ impl DetailsPanel {
             ("Debug", "debug", 0),
             ("Remove", "remove", 0),
             ("Wine", "wine", 1),
-            ("Run .exe", "run", 1),
+            ("Change exe", "changeexe", 1),
             ("Folders", "folder", 0),
             ("SteamDB", "corkytux-steamdb", 1),
             ("ProtonDB", "corkytux-protondb", 1),
@@ -605,6 +605,24 @@ impl DetailsPanel {
                     _ => true,
                 }
             });
+        }
+        // Change-exe stays visible but disabled when Play would ignore the
+        // stored exe: Steam-client launches and folder executables.
+        let steam_id = cfg.game_value(game_name, "SteamID").unwrap_or_default();
+        let exe = cfg.game_value(game_name, "Executable").unwrap_or_default();
+        let change_tip: Option<&str> =
+            if crate::ui::warnings::is_steam_launch(&steam_id) {
+                Some("Not available for Steam games")
+            } else if crate::ui::warnings::is_folder_exe(&main_path, &exe) {
+                Some("Not available: executable is a folder")
+            } else {
+                None
+            };
+        for (label, btn, _) in self.action_buttons.borrow().iter() {
+            if label == "Change exe" {
+                btn.set_sensitive(change_tip.is_none());
+                btn.set_tooltip_text(change_tip);
+            }
         }
         Self::layout_actions(&self.actions_grid, &self.action_buttons);
     }

@@ -220,6 +220,21 @@ impl ConfigManager {
         })
     }
 
+    /// Test-only constructor pointing at an explicit config dir. Bypasses
+    /// the thread-local shared instance; never touches real user paths.
+    /// `constructed()` already ran against the real HOME (read-only load
+    /// plus `create_dir_all`, which is a no-op when dirs exist); re-point
+    /// here and reload so all later reads and writes stay in `dir`.
+    #[cfg(test)]
+    pub fn for_test_dir(dir: &std::path::Path) -> Self {
+        let obj: ConfigManager = glib::Object::new();
+        *obj.imp().config_dir.borrow_mut() = dir.to_path_buf();
+        *obj.imp().data_dir.borrow_mut() = dir.to_path_buf();
+        obj.load_games_ini();
+        obj.load_launcher_ini();
+        obj
+    }
+
     fn setup_directories(&self) {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
         let config_dir = home.join(".config").join("CorkyTux");
@@ -719,5 +734,25 @@ mod tests {
         let cfg = ConfigManager::new();
         let err = cfg.remove_shared_prefix("corky-no-such-prefix-xyz").unwrap_err();
         assert!(err.contains("Unknown shared prefix"), "{}", err);
+    }
+
+    #[test]
+    fn exe_choice_persists_absolute_in_games_ini() {
+        let base = mktmp("corky_cfg_exe_persist");
+        let cfg = ConfigManager::for_test_dir(&base);
+        cfg.set_game_value("Game", "MainPath", "/games/g");
+        cfg.set_game_value("Game", "Executable", "/games/g/run");
+        assert_eq!(
+            cfg.game_value("Game", "Executable").as_deref(),
+            Some("/games/g/run")
+        );
+        let raw = std::fs::read_to_string(base.join("Games.ini")).unwrap();
+        assert!(raw.contains("Executable=/games/g/run"), "{}", raw);
+        let reloaded = ConfigManager::for_test_dir(&base);
+        assert_eq!(
+            reloaded.game_value("Game", "Executable").as_deref(),
+            Some("/games/g/run")
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

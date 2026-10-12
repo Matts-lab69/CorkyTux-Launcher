@@ -692,6 +692,7 @@ pub fn show_settings_modal(
             state_clone.theme.set_accent_id(accent_clone.id);
             helpers::apply_theme_css(&state_clone.theme);
             helpers::init_accent_provider(&state_clone.theme);
+            helpers::refresh_themed_icons(state_clone.theme.is_dark());
             crate::ui::mcx_theme::install(&state_clone.theme);
             outer_acc.remove_css_class("modal-bg");
             outer_acc.add_css_class("modal-bg");

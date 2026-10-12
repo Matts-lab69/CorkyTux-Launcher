@@ -376,6 +376,122 @@ fn unique_candidate(main_path: &str, stored_exe: &str) -> Option<String> {
     }
 }
 
+/// Resolve a stored Executable against MainPath: absolute values stay as
+/// given, relative values join MainPath. Mirrors `classify_install_path`.
+fn resolve_exe(main_path: &str, exe: &str) -> std::path::PathBuf {
+    let expanded_exe = expand_tilde(exe.trim());
+    let ep = std::path::Path::new(&expanded_exe);
+    if ep.is_absolute() {
+        ep.to_path_buf()
+    } else {
+        std::path::Path::new(&expand_tilde(main_path.trim())).join(ep)
+    }
+}
+
+/// Report Play routing through the Steam client: a numeric SteamID means
+/// `run_game` ignores Executable entirely.
+pub fn is_steam_launch(steam_id: &str) -> bool {
+    let sid = steam_id.trim();
+    !sid.is_empty() && sid.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Report a stored Executable resolving to a folder, not a file
+/// (Steam imports and RPG Maker entries store folders).
+pub fn is_folder_exe(main_path: &str, exe: &str) -> bool {
+    if exe.trim().is_empty() {
+        return false;
+    }
+    resolve_exe(main_path, exe).is_dir()
+}
+
+/// Validate a Change-exe choice: existing file inside MainPath.
+/// Canonicalize both sides; reject `..` segments and symlinks escaping
+/// MainPath. Accept any file name: native builds carry no extension.
+/// Call again at save time; picker output alone stays untrusted.
+pub fn validate_exe_choice(main_path: &str, chosen: &str) -> bool {
+    if main_path.trim().is_empty() || chosen.trim().is_empty() {
+        return false;
+    }
+    if chosen.split(['/', '\\']).any(|seg| seg == "..") {
+        return false;
+    }
+    let Ok(main_canon) = std::fs::canonicalize(expand_tilde(main_path.trim())) else {
+        return false;
+    };
+    let Ok(chosen_canon) = std::fs::canonicalize(expand_tilde(chosen.trim())) else {
+        return false;
+    };
+    chosen_canon.is_file() && chosen_canon.starts_with(&main_canon)
+}
+
+/// Executable extensions for the Change-exe picker (lowercase match).
+/// Extensionless entries still list when carrying an execution bit.
+const EXEC_EXTS: &[&str] = &[
+    "exe", "bat", "cmd", "msi", "sh", "appimage", "x86_64", "run",
+];
+
+/// Regular files inside MainPath for the Change-exe picker: depth 3,
+/// hidden files and folders skipped. List entries with an execution bit
+/// or a known executable extension. Sort results. Save-time validation
+/// stays mandatory.
+pub fn list_exe_candidates(main_path: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    if main_path.trim().is_empty() {
+        return out;
+    }
+    collect_candidates(
+        std::path::Path::new(&expand_tilde(main_path.trim())),
+        &mut out,
+        3,
+    );
+    out.sort();
+    out
+}
+
+fn collect_candidates(dir: &std::path::Path, out: &mut Vec<String>, depth: u8) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_file() {
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+            if name.starts_with('.') {
+                continue;
+            }
+            let ext = std::path::Path::new(&name)
+                .extension()
+                .map(|e| e.to_string_lossy().to_string())
+                .unwrap_or_default();
+            #[cfg(unix)]
+            let has_exec_bit = {
+                use std::os::unix::fs::PermissionsExt;
+                entry
+                    .metadata()
+                    .map(|m| m.permissions().mode() & 0o111 != 0)
+                    .unwrap_or(false)
+            };
+            #[cfg(not(unix))]
+            let has_exec_bit = false;
+            if !has_exec_bit && !EXEC_EXTS.contains(&ext.as_str()) {
+                continue;
+            }
+            out.push(p.display().to_string().replace('\\', "/"));
+        } else if p.is_dir() && depth > 0 {
+            if let Some(n) = p.file_name().and_then(|n| n.to_str()) {
+                if n.starts_with('.') {
+                    continue;
+                }
+            }
+            collect_candidates(&p, out, depth - 1);
+        }
+    }
+}
+
 /// Run the install-path check off the GTK main loop. With `apply_repairs`
 /// the worker also proposes candidates and the main loop writes them via
 /// the same Locate-style `set_game_value` path, re-validating right before
@@ -498,4 +614,206 @@ where
         Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
         Err(_) => glib::ControlFlow::Break,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mktmp(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn write_file(path: &std::path::Path) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, b"x").unwrap();
+    }
+
+    fn mk_game(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let main = mktmp(name);
+        let exe = main.join("game.exe");
+        write_file(&exe);
+        (main, exe)
+    }
+
+    #[test]
+    fn choice_inside_main_path_passes() {
+        let (main, exe) = mk_game("corky_exe_inside");
+        assert!(validate_exe_choice(
+            &main.display().to_string(),
+            &exe.display().to_string()
+        ));
+        let _ = std::fs::remove_dir_all(&main);
+    }
+
+    #[test]
+    fn choice_with_dotdot_fails() {
+        let (main, exe) = mk_game("corky_exe_dotdot");
+        let sub = main.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let via_dotdot = format!("{}/../game.exe", sub.display());
+        assert!(exe.is_file());
+        assert!(!validate_exe_choice(&main.display().to_string(), &via_dotdot));
+        let _ = std::fs::remove_dir_all(&main);
+    }
+
+    #[test]
+    fn choice_absolute_outside_fails() {
+        let (main, _exe) = mk_game("corky_exe_outside");
+        let other = mktmp("corky_exe_other");
+        let outside = other.join("evil.exe");
+        write_file(&outside);
+        assert!(!validate_exe_choice(
+            &main.display().to_string(),
+            &outside.display().to_string()
+        ));
+        let _ = std::fs::remove_dir_all(&main);
+        let _ = std::fs::remove_dir_all(&other);
+    }
+
+    #[test]
+    fn choice_symlink_outside_fails() {
+        let (main, _exe) = mk_game("corky_exe_symlink");
+        let other = mktmp("corky_exe_symlink_out");
+        let target = other.join("real.exe");
+        write_file(&target);
+        let link = main.join("link.exe");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(!validate_exe_choice(
+            &main.display().to_string(),
+            &link.display().to_string()
+        ));
+        let _ = std::fs::remove_dir_all(&main);
+        let _ = std::fs::remove_dir_all(&other);
+    }
+
+    #[test]
+    fn choice_symlink_inside_passes() {
+        let (main, exe) = mk_game("corky_exe_symlink_in");
+        let link = main.join("alias.exe");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&exe, &link).unwrap();
+        assert!(validate_exe_choice(
+            &main.display().to_string(),
+            &link.display().to_string()
+        ));
+        let _ = std::fs::remove_dir_all(&main);
+    }
+
+    #[test]
+    fn choice_missing_and_empty_fail() {
+        let (main, _exe) = mk_game("corky_exe_missing");
+        let gone = main.join("gone.exe").display().to_string();
+        let main_s = main.display().to_string();
+        assert!(!validate_exe_choice(&main_s, &gone));
+        assert!(!validate_exe_choice("", &gone));
+        assert!(!validate_exe_choice(&main_s, ""));
+        assert!(!validate_exe_choice(&main_s, "   "));
+        assert!(!validate_exe_choice("/nonexistent-dir-xyz", &gone));
+        let _ = std::fs::remove_dir_all(&main);
+    }
+
+    #[test]
+    fn choice_directory_fails() {
+        let (main, _exe) = mk_game("corky_exe_dir");
+        let sub = main.join("folder");
+        std::fs::create_dir_all(&sub).unwrap();
+        assert!(!validate_exe_choice(
+            &main.display().to_string(),
+            &sub.display().to_string()
+        ));
+        assert!(is_folder_exe(
+            &main.display().to_string(),
+            &sub.display().to_string()
+        ));
+        let _ = std::fs::remove_dir_all(&main);
+    }
+
+    #[test]
+    fn steam_launch_detection() {
+        assert!(is_steam_launch("12345"));
+        assert!(is_steam_launch("  480  "));
+        assert!(!is_steam_launch(""));
+        assert!(!is_steam_launch("abc"));
+        assert!(!is_steam_launch("12a45"));
+    }
+
+    #[test]
+    fn folder_exe_detection() {
+        let (main, exe) = mk_game("corky_exe_folder");
+        let main_s = main.display().to_string();
+        assert!(!is_folder_exe(&main_s, &exe.display().to_string()));
+        assert!(!is_folder_exe(&main_s, ""));
+        let _ = std::fs::remove_dir_all(&main);
+    }
+
+    #[test]
+    fn repair_skips_valid_exe() {
+        let (main, exe) = mk_game("corky_exe_repair");
+        let main_s = main.display().to_string();
+        let exe_s = exe.display().to_string();
+        let input = InstallPathInput {
+            name: "Game".to_string(),
+            main_path: main_s.clone(),
+            exe: exe_s.clone(),
+            steam_id: String::new(),
+        };
+        assert_eq!(
+            classify_install_path(&main_s, &exe_s, ""),
+            Some(InstallPathState::Valid)
+        );
+        assert!(repair_candidates(std::slice::from_ref(&input)).is_empty());
+        assert!(invalid_install_paths(std::slice::from_ref(&input)).is_empty());
+        let _ = std::fs::remove_dir_all(&main);
+    }
+
+    #[test]
+    fn candidates_list_exec_bit_and_known_extensions() {
+        use std::os::unix::fs::PermissionsExt;
+        let main = mktmp("corky_exe_list");
+        write_file(&main.join("top.exe"));
+        let native = main.join("native_build");
+        write_file(&native);
+        std::fs::set_permissions(&native, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let plain = main.join("plain_file");
+        write_file(&plain);
+        write_file(&main.join("notes.txt"));
+        write_file(&main.join("lib.dll"));
+        write_file(&main.join("data.pak"));
+        write_file(&main.join(".hidden.exe"));
+        write_file(&main.join("a/b/c/deep.exe"));
+        write_file(&main.join("a/b/c/d/too_deep.exe"));
+        std::fs::create_dir_all(main.join(".hdir")).unwrap();
+        write_file(&main.join(".hdir/in.exe"));
+        let mut got = list_exe_candidates(&main.display().to_string());
+        got.sort();
+        let names: Vec<String> = got
+            .iter()
+            .map(|p| {
+                std::path::Path::new(p)
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        assert!(names.contains(&"top.exe".to_string()));
+        assert!(names.contains(&"native_build".to_string()));
+        assert!(names.contains(&"deep.exe".to_string()));
+        assert!(!names.contains(&"plain_file".to_string()));
+        assert!(!names.contains(&"notes.txt".to_string()));
+        assert!(!names.contains(&"lib.dll".to_string()));
+        assert!(!names.contains(&"data.pak".to_string()));
+        assert!(!names.contains(&".hidden.exe".to_string()));
+        assert!(!names.contains(&"too_deep.exe".to_string()));
+        assert!(!names.contains(&"in.exe".to_string()));
+        assert!(list_exe_candidates("").is_empty());
+        let _ = std::fs::remove_dir_all(&main);
+    }
 }

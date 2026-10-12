@@ -741,12 +741,12 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     {
         let state_c = state.clone();
         let win = window.clone();
-        if let Some(btn) = details.get_action_button("Run .exe") {
+        if let Some(btn) = details.get_action_button("Change exe") {
             btn.connect_clicked(move |_| {
                 let name = state_c.selected_game.borrow().clone();
                 if name.is_empty() { return; }
                 let dialog = adw::Dialog::new();
-                dialog.set_title("Run .exe from game directory");
+                dialog.set_title("Change exe");
                 dialog.set_content_width(420);
                 dialog.set_content_height(360);
                 let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -761,32 +761,34 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                 inner.set_margin_start(16);
                 inner.set_margin_end(16);
                 content.append(&inner);
-                let (exe_header, exe_x) = ui::helpers::modal_header("Run .exe from game directory");
+                let (exe_header, exe_x) = ui::helpers::modal_header("Change exe");
                 {
                     let dlg = dialog.clone();
                     exe_x.connect_clicked(move |_| { dlg.close(); });
                 }
                 inner.append(&exe_header);
-                let sub = gtk::Label::new(Some("Select an executable from the game directory"));
+                let sub = gtk::Label::new(Some("Select the executable Play will use"));
                 sub.set_halign(gtk::Align::Start);
                 sub.set_opacity(0.6);
                 sub.add_css_class("time-label");
                 sub.set_wrap(true);
                 inner.append(&sub);
-                // C++ parity: hover rows with bold filenames, click runs at once
-                let has_dir = state_c.config.game_value(&name, "MainPath")
-                    .map(|p| !p.trim().is_empty())
-                    .unwrap_or(false);
-                let exes = if has_dir {
-                    state_c.proton.find_exe_in_game_dir(&name)
-                } else {
+                let err_lbl = gtk::Label::new(None);
+                err_lbl.set_halign(gtk::Align::Start);
+                err_lbl.set_wrap(true);
+                err_lbl.add_css_class("warn-game");
+                inner.append(&err_lbl);
+                let main_path = state_c.config.game_value(&name, "MainPath").unwrap_or_default();
+                let exes = if main_path.trim().is_empty() {
                     Vec::new()
+                } else {
+                    crate::ui::warnings::list_exe_candidates(&main_path)
                 };
                 if exes.is_empty() {
-                    let empty = gtk::Label::new(Some(if has_dir {
-                        "No executables found in game directory"
-                    } else {
+                    let empty = gtk::Label::new(Some(if main_path.trim().is_empty() {
                         "No game directory"
+                    } else {
+                        "No executables found in game directory"
                     }));
                     empty.set_halign(gtk::Align::Center);
                     empty.set_opacity(0.6);
@@ -810,18 +812,23 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                     row_btn.set_child(Some(&row_lbl));
                     let state_cc = state_c.clone();
                     let game_c = name.clone();
+                    let main_c = main_path.clone();
                     let exe_c = exe.clone();
                     let dlg_c = dialog.clone();
+                    let err_c = err_lbl.clone();
                     row_btn.connect_clicked(move |b| {
                         if !b.is_sensitive() {
                             return;
                         }
-                        b.set_sensitive(false);
-                        dlg_c.close();
-                        match state_cc.proton.run_custom_exe(&game_c, &exe_c) {
-                            Ok(_) => {}
-                            Err(e) => eprintln!("Run .exe failed: {}", e),
+                        // Validate again at save time; never execute.
+                        if !crate::ui::warnings::validate_exe_choice(&main_c, &exe_c) {
+                            eprintln!("Change exe rejected: outside game directory");
+                            err_c.set_text("Cannot use this file: outside the game directory");
+                            return;
                         }
+                        let stored = exe_c.replace('\\', "/");
+                        state_cc.config.set_game_value(&game_c, "Executable", &stored);
+                        dlg_c.close();
                     });
                     inner.append(&row_btn);
                 }
