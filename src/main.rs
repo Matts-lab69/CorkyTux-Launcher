@@ -265,6 +265,7 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     let state = AppState::new();
     helpers::apply_theme_css(&state.theme);
     helpers::init_accent_provider(&state.theme);
+    crate::ui::mcx_theme::install(&state.theme);
     // Bundled symbolic icons first (assets/icons/hicolor), system icon
     // theme second: the launcher no longer depends on Adwaita/hicolor
     // being installed for its own icons. Symbolic recoloring preserved.

@@ -613,6 +613,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
             .actions-frame {{ border: 1px solid {accent}; border-radius: 8px; background-color: transparent; padding: 8px; }}\
              .neon-red {{ background-color: #FF0040; color: {on_accent}; font-weight: bold; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; border: none; }}\
              .neon-green {{ background-color: #00E639; color: {on_accent}; font-weight: bold; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; border: none; }}\
+             .sale-discount {{ color: {accent}; font-weight: 800; }}\
              switch {{ background-color: {well}; border: 1px solid {border}; border-radius: 16px; }}\
              switch > slider {{ background-color: {text_muted}; }}\
              switch:checked {{ background-color: {accent}; border-color: {accent}; }}\

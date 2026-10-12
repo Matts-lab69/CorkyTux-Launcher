@@ -1862,7 +1862,7 @@ impl StorePageHandle {
         }
         self.lib_status.set_text(&format!("{} game(s)", games.len()));
         for g in games {
-            let (tile_w, img_px, cover_h) = self.card_sizes();
+            let (tile_w, _img_px, cover_h) = self.card_sizes();
             let tile = gtk::FlowBoxChild::new();
             tile.set_width_request(tile_w);
             let inner = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -1873,14 +1873,16 @@ impl StorePageHandle {
                 coverbox.add_css_class("lib-cover");
                 coverbox.set_size_request(-1, cover_h);
                 coverbox.set_valign(gtk::Align::Center);
-                let img = gtk::Image::new();
-                img.set_pixel_size(img_px);
-                img.set_halign(gtk::Align::Center);
-                img.set_valign(gtk::Align::Center);
-                img.set_hexpand(true);
-                img.set_vexpand(true);
-                crate::ui::minecraft_view::load_mod_icon(&g.cover, &format!("store-gog-{}", g.app_id), &img, img_px);
-                coverbox.append(&img);
+                let pic = gtk::Picture::new();
+                pic.set_size_request(tile_w, cover_h);
+                pic.set_content_fit(gtk::ContentFit::Cover);
+                pic.set_can_shrink(true);
+                pic.set_halign(gtk::Align::Fill);
+                pic.set_valign(gtk::Align::Fill);
+                pic.set_hexpand(true);
+                pic.set_vexpand(true);
+                crate::ui::minecraft_view::load_cover_async(&g.cover, &format!("store-gog-{}", g.app_id), &pic, tile_w * 2);
+                coverbox.append(&pic);
                 inner.append(&coverbox);
             }
             let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -2084,10 +2086,9 @@ impl StorePageHandle {
         let npages = total.div_ceil(GOG_RAIL_PAGE).max(1);
         let cur = sec.page.get().min(npages - 1);
         sec.page.set(cur);
-        let accent = self.state.theme.accent_color();
         let ini = cur * GOG_RAIL_PAGE;
         for it in items.iter().skip(ini).take(GOG_RAIL_PAGE) {
-            sec.row.append(&self.rail_card(it, &sec.list, &accent));
+            sec.row.append(&self.rail_card(it, &sec.list));
         }
         sec.scroll.hadjustment().set_value(0.0);
         // I hide my pager on a single page. I use native buttons (keyboard
@@ -2121,7 +2122,7 @@ impl StorePageHandle {
     /// background): mouse click and Tab/Enter open the external store.
     /// Discover uses variant B (horizontal cover + overlapping card); I keep
     /// the shared portrait base for the rest.
-    fn rail_card(&self, item: &RailItem, variant: &str, accent: &str) -> gtk::Button {
+    fn rail_card(&self, item: &RailItem, variant: &str) -> gtk::Button {
         if variant == "new" {
             return self.discover_card(item);
         }
@@ -2165,10 +2166,10 @@ impl StorePageHandle {
                 pie.set_valign(gtk::Align::Center);
                 let num = gtk::Label::new(None);
                 num.set_markup(&format!(
-                    "<span size=\"20000\" weight=\"bold\" foreground=\"{}\">{}</span>",
-                    accent,
+                    "<span size=\"20000\" weight=\"bold\">{}</span>",
                     glib::markup_escape_text(&item.discount)
                 ));
+                num.add_css_class("sale-discount");
                 pie.append(&num);
                 let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
                 col.set_valign(gtk::Align::Center);
@@ -2393,7 +2394,7 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
         self.lib_status.set_text(&format!("{} game(s)", games.len()));
         *self.epic_games.borrow_mut() = games.to_vec();
         for g in games {
-            let (tile_w, img_px, cover_h) = self.card_sizes();
+            let (tile_w, _img_px, cover_h) = self.card_sizes();
             let tile = gtk::FlowBoxChild::new();
             tile.set_width_request(tile_w);
             let inner = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -2404,14 +2405,16 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
                 coverbox.add_css_class("lib-cover");
                 coverbox.set_size_request(-1, cover_h);
                 coverbox.set_valign(gtk::Align::Center);
-                let img = gtk::Image::new();
-                img.set_pixel_size(img_px);
-                img.set_halign(gtk::Align::Center);
-                img.set_valign(gtk::Align::Center);
-                img.set_hexpand(true);
-                img.set_vexpand(true);
-                crate::ui::minecraft_view::load_mod_icon(&g.cover, &format!("store-{}-{}", self.store, g.app_id), &img, img_px);
-                coverbox.append(&img);
+                let pic = gtk::Picture::new();
+                pic.set_size_request(tile_w, cover_h);
+                pic.set_content_fit(gtk::ContentFit::Cover);
+                pic.set_can_shrink(true);
+                pic.set_halign(gtk::Align::Fill);
+                pic.set_valign(gtk::Align::Fill);
+                pic.set_hexpand(true);
+                pic.set_vexpand(true);
+                crate::ui::minecraft_view::load_cover_async(&g.cover, &format!("store-{}-{}", self.store, g.app_id), &pic, tile_w * 2);
+                coverbox.append(&pic);
                 inner.append(&coverbox);
             }
             let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -2622,22 +2625,22 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
                 scr.set_vexpand(true);
                 scr.set_child(Some(&tv));
                 tcol.append(&scr);
-                // Source attribution: a single "Fuente: X" link. Steam/Wikipedia
+                // Source attribution: a single "Source: X" link. Steam/Wikipedia
                 // get a clickable label (hand cursor, hover underline,
                 // opens the source page); Epic stays plain text.
                 let desc_src = info.get("description_source").and_then(|x| x.as_str()).unwrap_or("");
                 if has_desc && !desc_src.is_empty() && desc_src != "fallback" {
                     let label = match desc_src {
-                        "steam" => "Fuente: Steam",
-                        "wikipedia" => "Fuente: Wikipedia",
-                        "gog" => "Fuente: GOG",
-                        _ => "Fuente: Epic Store",
+                        "steam" => "Source: Steam",
+                        "wikipedia" => "Source: Wikipedia",
+                        "gog" => "Source: GOG",
+                        _ => "Source: Epic Store",
                     };
                     let url = info.get("source_url").and_then(|x| x.as_str())
                         .filter(|u| !u.is_empty())
                         .map(str::to_string);
                     let tip = match desc_src {
-                        "wikipedia" => Some("Texto de Wikipedia — CC BY-SA"),
+                        "wikipedia" => Some("Wikipedia text — CC BY-SA"),
                         _ => None,
                     };
                     tcol.append(&helpers::source_link(&self.state, label, url, tip));
