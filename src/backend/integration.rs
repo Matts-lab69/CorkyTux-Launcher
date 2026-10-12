@@ -1609,3 +1609,27 @@ fn format_size_bytes(bytes: u64) -> String {
     if bytes < 1024 * 1024 * 1024 { return format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0)); }
     format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::IntegrationManager;
+
+    #[test]
+    fn remove_dir_recursive_tempdir() {
+        // IntegrationManager::new() lee la config (HOME) en constructed(), así
+        // que tomo el lock de env como el resto de tests que tocan HOME.
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("corky_int_rm");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("sub/deep")).unwrap();
+        std::fs::write(base.join("sub/deep/f.txt"), b"x").unwrap();
+
+        let m = IntegrationManager::new();
+        m.remove_dir_recursive(&base.display().to_string()).unwrap();
+        assert!(!base.exists(), "el árbol temporal debe borrarse por completo");
+
+        // Idempotente sobre una ruta inexistente (no error).
+        m.remove_dir_recursive(&base.display().to_string()).unwrap();
+        assert!(!base.exists());
+    }
+}

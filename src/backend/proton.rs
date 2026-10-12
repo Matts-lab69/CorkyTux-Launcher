@@ -525,7 +525,7 @@ impl ProtonManager {
     /// it's a symlink into `.local/share/Steam`, so nobody's behavior changes.
     /// I don't filter by existence, so each caller can pick between "first
     /// candidate" and "walk them all".
-    fn steam_roots(home: &std::path::Path) -> Vec<std::path::PathBuf> {
+    pub(crate) fn steam_roots(home: &std::path::Path) -> Vec<std::path::PathBuf> {
         vec![
             home.join(".steam/steam"),
             home.join(".local/share/Steam"),

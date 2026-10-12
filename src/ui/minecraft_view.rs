@@ -7808,4 +7808,35 @@ mod tests {
         assert_eq!(lv_unmark("0.19.5"), "0.19.5", "sin marca pasa igual");
         assert_eq!(lv_unmark("latest"), "latest");
     }
+
+    #[test]
+    fn legacy_ver_se_borra_en_home_temporal() {
+        // do_delete no es invocable sin una MinecraftView GTK; cubro a nivel de
+        // ruta + primitiva fs su rama legacy (legacy_dir()/versions/<id>): se
+        // borra la copia legacy y el contenedor `instances` queda intacto.
+        let _g = crate::test_env::lock();
+        let root = tmproot("legacy-del");
+        std::env::set_var("HOME", &root); // test_env restaura HOME al soltar
+        let leg = legacy_dir();
+        assert_eq!(leg,
+            root.join(".config/CorkyTux/plugins/minecraft-launcher/instances"),
+            "legacy_dir() debe colgar del HOME temporal");
+        let id = "corky-legacy-inst";
+        assert_eq!(inst_container(id, false), leg,
+            "un id no aislado vive en el contenedor legacy");
+
+        let vdir = leg.join("versions").join(id);
+        fs::create_dir_all(&vdir).unwrap();
+        fs::write(vdir.join("f.jar"), b"x").unwrap();
+
+        // Rama legacy de do_delete: `if legacy_ver.exists() { remove_dir_all }`.
+        let legacy_ver = legacy_dir().join("versions").join(id);
+        if legacy_ver.exists() {
+            fs::remove_dir_all(&legacy_ver).unwrap();
+        }
+        assert!(!legacy_ver.exists(), "la copia legacy debe desaparecer");
+        assert!(leg.exists(), "el contenedor legacy NO se borra, sólo la versión");
+
+        let _ = fs::remove_dir_all(&root);
+    }
 }

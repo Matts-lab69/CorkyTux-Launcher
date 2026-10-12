@@ -57,9 +57,30 @@ fn others_except(state: &AppState, selected: &str, main: &str) -> Option<Vec<Str
 /// per-store `default_games_dir` (stores_view).
 pub(crate) fn store_deny_roots(games_root: &str, home: &str) -> Vec<String> {
     let base = games_root.trim_end_matches('/');
-    vec!["/".to_string(), home.trim_end_matches('/').to_string(),
-         base.to_string(), format!("{}/Heroic", base),
-         format!("{}/Epic-Games", base), format!("{}/GOG-Games", base)]
+    let h = home.trim_end_matches('/');
+    let mut v = vec!["/".to_string(), h.to_string(), base.to_string(),
+         format!("{}/Heroic", base),
+         format!("{}/Epic-Games", base), format!("{}/GOG-Games", base)];
+    // Ancestro de HOME (/home respecto de /home/usuario).
+    if let Some(parent) = std::path::Path::new(h).parent() {
+        let p = parent.to_string_lossy().trim_end_matches('/').to_string();
+        if !p.is_empty() && p != h {
+            v.push(p);
+        }
+    }
+    // Dirs de usuario estándar (XDG), aunque todavía no existan.
+    for d in ["Documents", "Downloads", "Desktop", "Music", "Pictures", "Videos"] {
+        v.push(format!("{}/{}", h, d));
+    }
+    // Raíces de biblioteca Steam reales: sólo el directorio `common`, sin
+    // tocar sus subdirectorios, y sólo si existen.
+    for root in crate::backend::proton::ProtonManager::steam_roots(std::path::Path::new(h)) {
+        let common = root.join("steamapps/common");
+        if common.exists() {
+            v.push(common.display().to_string());
+        }
+    }
+    v
 }
 
 /// Canonicalizes if it exists; None if not (the caller decides: a missing
@@ -151,11 +172,12 @@ pub(crate) fn prefix_delete_safe(state: &AppState, selected: &str, prefix: &std:
 }
 
 /// Can `main_path` be deleted as "the game folder"?
-/// Denies: empty/relative/missing, the deny list (after canonicalizing), an exe
-/// outside main (relpath with an escaping `..`, a foreign absolute, a symlink)
-/// and any overlap with another registered install (main inside the other, or
-/// the other inside main). With an empty exe (manifest, Epic) the list +
-/// overlap checks are the whole decision.
+/// Denies: empty/relative/missing, a symlink as `main_path`, a path shallower
+/// than 3 components (/, /home, /tmp), the deny list and its ancestors (after
+/// canonicalizing), an exe outside main (relpath with an escaping `..`, a
+/// foreign absolute, a symlink) and any overlap with another registered
+/// install (main inside the other, or the other inside main). With an empty
+/// exe (manifest, Epic) the list + overlap checks are the whole decision.
 /// `others`: main_paths of the other installs; None (unreadable record) always
 /// denies.
 pub(crate) fn removal_target_safe(
@@ -171,6 +193,13 @@ pub(crate) fn removal_target_safe(
     if !std::path::Path::new(m).is_absolute() {
         return false;
     }
+    // Un symlink como main_path nunca se borra: remove_dir_all tocaría el
+    // enlace (no el contenido) y su destino podría escapar de la raíz de juegos.
+    if let Ok(md) = std::fs::symlink_metadata(std::path::Path::new(m)) {
+        if md.file_type().is_symlink() {
+            return false;
+        }
+    }
     // Canonicalize main: a failure on an existing path denies. A missing path
     // has nothing to delete, so it denies too (the lexical fallback only
     // compares already-resolved denies, and doesn't approve either).
@@ -178,13 +207,21 @@ pub(crate) fn removal_target_safe(
         Some(p) => p,
         None => return false,
     };
+    // Rutas demasiado someras (/, /home, /tmp): nunca son la carpeta de un
+    // juego. <3 componentes = RootDir + a lo sumo un nombre.
+    if main_c.components().count() < 3 {
+        return false;
+    }
     for d in deny_roots {
         let dd = d.trim_end_matches('/');
         if dd.is_empty() {
             continue;
         }
         let dp = std::path::Path::new(dd);
-        if canon(dp).as_deref().unwrap_or(dp) == main_c {
+        let resolved = canon(dp).unwrap_or_else(|| dp.to_path_buf());
+        // Igualdad, o main es ANCESTRO de la raíz protegida (/home ⊃ HOME,
+        // ~ ⊃ ~/Documents): borrarlo se llevaría la raíz entera.
+        if resolved == main_c || resolved.starts_with(&main_c) {
             return false;
         }
     }
@@ -227,9 +264,31 @@ pub(crate) fn removal_target_safe(
     }
 }
 
+/// Motivo mostrado/registrado cuando el guard de carpeta niega el borrado en
+/// la confirmación (revalidación al pulsar "Remove").
+const FILES_NOT_VERIFIED_MSG: &str =
+    "Folder no longer verified. Uncheck 'Remove game files' and try again.";
+
+/// Decisión pura (sin GTK) del borrado de archivos al confirmar: `Ok` si la
+/// carpeta puede borrarse; `Err(motivo)` si `removal_target_safe` la niega.
+/// Encapsula el redirect del handler para poder testearlo sin una ventana.
+fn confirm_files_removal(
+    main_path: &str,
+    exe_rel: &str,
+    deny_roots: &[String],
+    others: Option<&[String]>,
+) -> Result<(), &'static str> {
+    if removal_target_safe(main_path, exe_rel, deny_roots, others) {
+        Ok(())
+    } else {
+        Err(FILES_NOT_VERIFIED_MSG)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{prefix_path_safe, removal_target_safe, use_shared_prefix_on};
+    use super::{confirm_files_removal, prefix_path_safe, removal_target_safe,
+                store_deny_roots, use_shared_prefix_on, FILES_NOT_VERIFIED_MSG};
 
     fn deny() -> Vec<String> {
         vec!["/".to_string(), "/h".to_string(), "/h/Games".to_string(),
@@ -528,6 +587,247 @@ mod tests {
         assert!(!prefix_path_safe("", &shared_s, &empty));
         let _ = std::fs::remove_dir_all(&base);
     }
+
+    // ---------- Hardening probes: guards de rutas de borrado ----------
+
+    #[test]
+    fn removal_target_home_real_se_niega() {
+        // HOME sí está en la deny-list (store_deny_roots) → verde.
+        let _g = crate::test_env::lock();
+        let home = std::env::var("HOME").unwrap_or_default();
+        if home.is_empty() {
+            return;
+        }
+        let deny = store_deny_roots(&format!("{}/Games", home), &home);
+        let empty: Vec<String> = vec![];
+        let some = Some(empty.as_slice());
+        assert!(!removal_target_safe(&home, "", &deny, some), "HOME debe negarse");
+        assert!(!removal_target_safe(&format!("{}/", home), "", &deny, some),
+            "HOME con barra final también");
+    }
+
+    #[test]
+    fn removal_target_ancestro_de_home_se_niega() {
+        // Modela /home respecto de /home/usuario: store_deny_roots agrega el
+        // ancestro de HOME y el guard niega cuando main es ancestro de una raíz
+        // protegida (resolved.starts_with(main)).
+        let root = mktmp("corky_guard_ancestor");
+        let home = root.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let deny = store_deny_roots(&home.join("Games").display().to_string(),
+                                    &home.display().to_string());
+        let empty: Vec<String> = vec![];
+        let some = Some(empty.as_slice());
+        assert!(!removal_target_safe(&root.display().to_string(), "", &deny, some),
+            "un ancestro de HOME ({}) no debe ser borrable", root.display());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn removal_target_xdg_user_dirs_se_niegan() {
+        // Árbol sintético para no tocar el HOME real; replica ~/Documents etc.
+        // store_deny_roots agrega los dirs XDG relativos a HOME.
+        let root = mktmp("corky_guard_home");
+        let home = root.join("home");
+        for d in ["Documents", "Downloads", "Desktop"] {
+            std::fs::create_dir_all(home.join(d)).unwrap();
+        }
+        let games = home.join("Games");
+        std::fs::create_dir_all(games.join("GameA")).unwrap();
+        let deny = store_deny_roots(&games.display().to_string(), &home.display().to_string());
+        let empty: Vec<String> = vec![];
+        let some = Some(empty.as_slice());
+        for d in ["Documents", "Downloads", "Desktop"] {
+            assert!(!removal_target_safe(&home.join(d).display().to_string(), "", &deny, some),
+                "{} no debe ser borrable", d);
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn removal_target_raiz_biblioteca_con_un_juego_se_niega_pero_el_juego_no() {
+        // La raíz de la biblioteca (~/Games) está en la deny-list aun con un
+        // solo juego dentro; el juego con exe directo sí se aprueba.
+        let root = mktmp("corky_guard_lib");
+        let home = root.join("home");
+        let games = home.join("Games");
+        let gamea = games.join("GameA");
+        std::fs::create_dir_all(&gamea).unwrap();
+        std::fs::write(gamea.join("A.exe"), b"x").unwrap();
+        let deny = store_deny_roots(&games.display().to_string(), &home.display().to_string());
+        let empty: Vec<String> = vec![];
+        assert!(!removal_target_safe(&games.display().to_string(), "", &deny,
+                                     Some(empty.as_slice())),
+            "la raíz de la biblioteca no se borra");
+        assert!(removal_target_safe(&gamea.display().to_string(), "A.exe", &deny,
+                                    Some(empty.as_slice())),
+            "el juego con exe dentro sí se aprueba");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn prefix_raiz_y_tilde_se_niegan() {
+        let empty: Vec<String> = vec![];
+        assert!(!prefix_path_safe("/", &empty, &empty), "\"/\" no es prefijo borrable");
+        assert!(!prefix_path_safe("~", &empty, &empty), "\"~\" es relativo: no se aprueba");
+    }
+
+    #[test]
+    fn prefix_home_real_se_niega() {
+        let _g = crate::test_env::lock();
+        let home = std::env::var("HOME").unwrap_or_default();
+        if home.is_empty() {
+            return;
+        }
+        let empty: Vec<String> = vec![];
+        assert!(!prefix_path_safe(&home, &empty, &empty), "HOME no es prefijo borrable");
+        assert!(!prefix_path_safe(&format!("{}/", home), &empty, &empty));
+    }
+
+    /// A canonical, existing 2-component dir (RootDir + one name), not a
+    /// symlink: /tmp on the usual Linux layout. None when unavailable.
+    fn two_component_dir() -> Option<std::path::PathBuf> {
+        let mut p = std::fs::canonicalize(std::env::temp_dir()).ok()?;
+        while p.components().count() > 2 {
+            p = p.parent()?.to_path_buf();
+        }
+        if p.components().count() == 2
+            && p.is_dir()
+            && !std::fs::symlink_metadata(&p).map(|m| m.file_type().is_symlink()).unwrap_or(true)
+        {
+            Some(p)
+        } else {
+            None
+        }
+    }
+
+    #[test]
+    fn symlink_a_destino_fuera_prefix_sigue_permitido() {
+        // prefix_path_safe NO cambió: canonicaliza y compara contra
+        // shared/otros, pero no exige raíz permitida; un symlink a un dir
+        // ajeno sigue aprobándose (gap documentado del guard de prefijos).
+        let base = mktmp("corky_guard_link_out");
+        let target = base.join("outside");
+        std::fs::create_dir_all(&target).unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&target, base.join("link")).unwrap();
+            let link = base.join("link").display().to_string();
+            let empty: Vec<String> = vec![];
+            assert!(prefix_path_safe(&link, &empty, &empty),
+                "documentado: prefix_path_safe APRUEBA symlink a destino fuera de deny/otros");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn removal_target_symlink_como_main_se_niega() {
+        // Guard nuevo: un symlink como main_path (sin canonicalizar) se niega.
+        let base = mktmp("corky_guard_main_link");
+        let real = base.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&real, base.join("link")).unwrap();
+            let link = base.join("link").display().to_string();
+            let d = vec!["/".to_string()];
+            let empty: Vec<String> = vec![];
+            assert!(!removal_target_safe(&link, "", &d, Some(empty.as_slice())),
+                "un symlink como main_path nunca se borra");
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn removal_target_dos_componentes_se_niega() {
+        // Rutas someras (/, /home, /tmp) nunca son carpeta de juego: <3
+        // componentes = RootDir + a lo sumo un nombre.
+        let d = vec!["/".to_string()];
+        let empty: Vec<String> = vec![];
+        let some = Some(empty.as_slice());
+        assert!(!removal_target_safe("/", "", &d, some));
+        if let Some(two) = two_component_dir() {
+            assert!(!removal_target_safe(&two.display().to_string(), "", &d, some),
+                "una ruta de 2 componentes ({}) no debe ser borrable", two.display());
+        }
+    }
+
+    #[test]
+    fn removal_target_exe_absoluto_fuera_de_main_niega() {
+        // exe_rel absoluto: debe quedar dentro de main (no basta con que exista).
+        let base = mktmp("corky_guard_exe_abs");
+        let main = base.join("J");
+        std::fs::create_dir_all(&main).unwrap();
+        std::fs::write(base.join("evil.exe"), b"x").unwrap();
+        let d = vec!["/".to_string()];
+        let empty: Vec<String> = vec![];
+        let some = Some(empty.as_slice());
+        let evil = base.join("evil.exe").display().to_string();
+        assert!(!removal_target_safe(&main.display().to_string(), &evil, &d, some),
+            "un exe absoluto fuera de main no se aprueba");
+        // El mismo exe dentro de main sí.
+        std::fs::write(main.join("ok.exe"), b"x").unwrap();
+        let ok = main.join("ok.exe").display().to_string();
+        assert!(removal_target_safe(&main.display().to_string(), &ok, &d, some));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn removal_target_juego_de_tres_componentes_permitido() {
+        // Modela un juego legítimo tipo /mnt/juegos/X: no se niega por profundidad.
+        let top = mktmp("corky_mnt");
+        let game = top.join("X");
+        std::fs::create_dir_all(&game).unwrap();
+        let d = vec!["/".to_string()];
+        let empty: Vec<String> = vec![];
+        let some = Some(empty.as_slice());
+        assert!(removal_target_safe(&game.display().to_string(), "", &d, some),
+            "un juego con >=3 nombres debe permitirse");
+        // Frontera exacta: 3 componentes (RootDir + 2 nombres), p.ej. /tmp/foo.
+        let three = std::env::temp_dir().join("corky_mnt_x");
+        let _ = std::fs::remove_dir_all(&three);
+        std::fs::create_dir_all(&three).unwrap();
+        assert!(removal_target_safe(&three.display().to_string(), "", &d, some),
+            "3 componentes (RootDir+2) debe permitirse");
+        let _ = std::fs::remove_dir_all(&three);
+        let _ = std::fs::remove_dir_all(&top);
+    }
+
+    #[test]
+    fn removal_target_juego_dentro_de_games_sigue_permitido() {
+        // ~/Games/FNAF (carpeta compartida): la raíz ~/Games se niega, un juego
+        // adentro no.
+        let root = mktmp("corky_guard_fnaf");
+        let home = root.join("home");
+        let games = home.join("Games");
+        let fnaf = games.join("FNAF");
+        std::fs::create_dir_all(&fnaf).unwrap();
+        let deny = store_deny_roots(&games.display().to_string(), &home.display().to_string());
+        let empty: Vec<String> = vec![];
+        let some = Some(empty.as_slice());
+        assert!(!removal_target_safe(&games.display().to_string(), "", &deny, some),
+            "la raíz de la biblioteca no se borra");
+        assert!(removal_target_safe(&fnaf.display().to_string(), "", &deny, some),
+            "un juego dentro de ~/Games sí se aprueba");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn confirm_files_removal_niega_con_motivo() {
+        // La decisión del else (redirect del handler) es pura y testeable.
+        let d = vec!["/".to_string()];
+        let empty: Vec<String> = vec![];
+        let some = Some(empty.as_slice());
+        // Ruta insegura → Err con el motivo exacto que ve/registra el usuario.
+        let err = confirm_files_removal("/", "", &d, some).unwrap_err();
+        assert_eq!(err, FILES_NOT_VERIFIED_MSG);
+        assert!(err.contains("Uncheck 'Remove game files'"));
+        // Ruta válida → Ok.
+        let base = mktmp("corky_confirm_ok");
+        std::fs::create_dir_all(base.join("sub")).unwrap();
+        assert!(confirm_files_removal(&base.display().to_string(), "", &d, some).is_ok());
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }
 
 pub fn show_remove_modal(
@@ -690,12 +990,21 @@ pub fn show_remove_modal(
                 let deny = store_deny_roots(&games_root, &home);
 
                 let others = others_except(&state_clone, &sel, &g.main_path);
-                if removal_target_safe(&g.main_path, &g.executable, &deny, others.as_deref()) {
-                    if let Err(e) = state_clone.integration.remove_dir_recursive(&g.main_path) {
-                        warn_files_c.set_text(&format!(
-                            "Could not delete game files: {}. The game was not unregistered, but some files may have been partially deleted.",
-                            e
-                        ));
+                match confirm_files_removal(&g.main_path, &g.executable, &deny, others.as_deref()) {
+                    Ok(()) => {
+                        if let Err(e) = state_clone.integration.remove_dir_recursive(&g.main_path) {
+                            warn_files_c.set_text(&format!(
+                                "Could not delete game files: {}. The game was not unregistered, but some files may have been partially deleted.",
+                                e
+                            ));
+                            warn_files_c.set_visible(true);
+                            return;
+                        }
+                    }
+                    Err(reason) => {
+                        eprintln!("[remove] files not verified, keeping them (reason: {}): {}",
+                                  reason, g.main_path);
+                        warn_files_c.set_text(reason);
                         warn_files_c.set_visible(true);
                         return;
                     }
