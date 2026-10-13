@@ -155,7 +155,7 @@ fn prefix_path_safe(prefix: &str, shared_bases: &[String], other_prefixes: &[Str
 
 /// Canonical containment: `path` inside `dir` (or equal). Anything
 /// unresolvable denies (fail closed). Pure; covered by tests.
-fn path_within(dir: &std::path::Path, path: &std::path::Path) -> bool {
+pub(crate) fn path_within(dir: &std::path::Path, path: &std::path::Path) -> bool {
     match (canon(dir), canon(path)) {
         (Some(root), Some(pc)) => pc == root || pc.starts_with(&root),
         _ => false,

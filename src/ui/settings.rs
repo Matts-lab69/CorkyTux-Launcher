@@ -2866,10 +2866,328 @@ fn prune_missing_shared_prefixes(config: &ConfigManager) {
     }
 }
 
-/// Blocked-delete notice for a shared prefix: lists who uses it and deletes
-/// nothing. Close only dismisses; Unlink clears the prefix link of every
-/// game really pointing into it (individual prefixes rebuild on launch),
-/// then refreshes the list so Remove no longer blocks.
+/// Link state of one library game against a shared prefix.
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum LinkRow {
+    /// Selectable.
+    Free { isolated: bool },
+    /// Already uses this prefix: checked, insensitive.
+    LinkedHere,
+    /// Uses another shared prefix: shown with its name, selectable
+    /// (relinks).
+    OtherShared(String),
+    /// Proton differs from the shared prefix: not selectable.
+    WrongProton(String),
+}
+
+/// Pure link-state classifier for the Add-games dialog. `games` carries
+/// (name, source, executor, steam_id, proton, prefix, use_shared,
+/// isolated). Steam, emulator/AppImage and prefix-less entries never
+/// appear. Linked-here rows render checked and insensitive.
+fn link_rows(
+    games: &[(String, String, String, String, String, String, bool, bool)],
+    shared_name: &str,
+    shared_path: &str,
+) -> Vec<(String, LinkRow)> {
+    let mut out = Vec::new();
+    for (name, source, executor, steam_id, proton, prefix, use_shared, isolated) in games {
+        if source.eq_ignore_ascii_case("steam") || !steam_id.trim().is_empty() {
+            continue;
+        }
+        if !executor.trim().is_empty()
+            || source.eq_ignore_ascii_case("appimage")
+            || source.eq_ignore_ascii_case("rpgmaker")
+        {
+            continue;
+        }
+        if *use_shared
+            && (crate::backend::config::ConfigManager::is_shared_prefix_user(
+                std::path::Path::new(shared_path),
+                prefix,
+            ) || crate::backend::config::ConfigManager::stored_under(
+                std::path::Path::new(shared_path),
+                prefix,
+            ))
+        {
+            out.push((name.clone(), LinkRow::LinkedHere));
+            continue;
+        }
+        // Another shared prefix? Label it; relink stays allowed.
+        let mut other_shared = None;
+        if *use_shared && !prefix.trim().is_empty() {
+            other_shared = Some(prefix.trim().to_string());
+        }
+        if proton.trim() != shared_name {
+            out.push((
+                name.clone(),
+                LinkRow::WrongProton(proton.trim().to_string()),
+            ));
+            continue;
+        }
+        match other_shared {
+            Some(o) => out.push((name.clone(), LinkRow::OtherShared(o))),
+            None => out.push((
+                name.clone(),
+                LinkRow::Free { isolated: *isolated },
+            )),
+        }
+    }
+    out
+}
+
+/// Copy drive_c/users (Documents, AppData, saves) without overwriting
+/// existing files. Returns files copied.
+fn copy_saves(old_prefix: &std::path::Path, new_prefix: &std::path::Path) -> Result<usize, String> {
+    fn copy_dir(src: &std::path::Path, dst: &std::path::Path, n: &mut usize) -> Result<(), String> {
+        std::fs::create_dir_all(dst)
+            .map_err(|e| format!("Could not create {}: {}", dst.display(), e))?;
+        let rd = std::fs::read_dir(src)
+            .map_err(|e| format!("Could not read {}: {}", src.display(), e))?;
+        for entry in rd.flatten() {
+            let from = entry.path();
+            let to = dst.join(entry.file_name());
+            if from.is_dir() && !from.is_symlink() {
+                copy_dir(&from, &to, n)?;
+            } else if from.is_file() && !to.exists() {
+                std::fs::copy(&from, &to)
+                    .map_err(|e| format!("Could not copy {}: {}", from.display(), e))?;
+                *n += 1;
+            }
+        }
+        Ok(())
+    }
+    let src = old_prefix.join("drive_c/users");
+    if !src.is_dir() {
+        return Ok(0);
+    }
+    let mut n = 0;
+    copy_dir(&src, &new_prefix.join("drive_c/users"), &mut n)?;
+    Ok(n)
+}
+
+/// Persist one game link: shared flag, prefix path, no stale override.
+fn link_game_to_shared(
+    config: &ConfigManager,
+    game: &str,
+    shared_name: &str,
+    shared_path: &str,
+) {
+    config.set_game_value(game, "UseSharedPrefix", "true");
+    config.set_game_value(game, "PrefixPath", shared_path);
+    config.set_game_value(game, "SharedPrefix", "");
+    let _ = shared_name;
+    config.reload_games_ini();
+}
+
+/// Add-games dialog for one shared prefix: searchable checklist with
+/// per-row state (linked / other-shared / wrong-proton). Never touches
+/// Steam, emulator or prefix-less games.
+fn show_link_games_dialog(
+    anchor: &gtk::Button,
+    state: &AppState,
+    list_box: &gtk::Box,
+    shared_name: &str,
+) {
+    let Some(shared_path) = state.config.shared_prefix_path(shared_name) else {
+        return;
+    };
+    let shared_path = shared_path.display().to_string();
+    let mut attrs = Vec::new();
+    for name in state.game_model.ordered_names() {
+        let source = state.config.game_value(&name, "Source").unwrap_or_default();
+        let executor = state.config.game_value(&name, "Executor").unwrap_or_default();
+        let steam_id = state.config.game_value(&name, "SteamID").unwrap_or_default();
+        let proton = state.config.game_value(&name, "Proton").unwrap_or_default();
+        let prefix = state.config.game_value(&name, "PrefixPath").unwrap_or_default();
+        let use_shared = state.config.game_value(&name, "UseSharedPrefix").unwrap_or_default();
+        let isolated = state.config.game_value(&name, "Isolated").unwrap_or_default();
+        attrs.push((
+            name,
+            source,
+            executor,
+            steam_id,
+            proton,
+            prefix,
+            use_shared.trim().eq_ignore_ascii_case("true") || use_shared.trim() == "1",
+            isolated.trim().eq_ignore_ascii_case("true"),
+        ));
+    }
+    let rows = link_rows(&attrs, shared_name, &shared_path);
+    if rows.is_empty() {
+        helpers::present_msg(
+            anchor,
+            "Add games",
+            "No eligible games: Steam, emulator and prefix-less entries are excluded.",
+        );
+        return;
+    }
+    let dlg = adw::Dialog::new();
+    dlg.set_title(&format!("Add games to {}", shared_name));
+    dlg.set_content_width(440);
+    dlg.set_content_height(420);
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    outer.add_css_class("modal-bg");
+    outer.set_hexpand(true);
+    outer.set_vexpand(true);
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    col.set_hexpand(true);
+    col.set_vexpand(true);
+    col.set_margin_top(12);
+    col.set_margin_bottom(12);
+    col.set_margin_start(16);
+    col.set_margin_end(16);
+    outer.append(&col);
+    let (header_row, x_btn) = helpers::modal_header(&format!("Add games to {}", shared_name));
+    {
+        let d0 = dlg.clone();
+        x_btn.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    col.append(&header_row);
+    let search = gtk::SearchEntry::new();
+    search.set_hexpand(true);
+    search.set_placeholder_text(Some("Search games…"));
+    col.append(&search);
+    let iso_warn = gtk::Label::new(Some(
+        "Isolation uses a private HOME per game, so games sharing a prefix will not see each other's saves under isolation.",
+    ));
+    iso_warn.set_wrap(true);
+    iso_warn.set_halign(gtk::Align::Start);
+    iso_warn.add_css_class("time-label");
+    iso_warn.set_visible(false);
+    col.append(&iso_warn);
+    let scroll = gtk::ScrolledWindow::new();
+    scroll.set_vexpand(true);
+    scroll.set_hexpand(true);
+    let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    list.set_hexpand(true);
+    scroll.set_child(Some(&list));
+    col.append(&scroll);
+    let checks: Rc<RefCell<Vec<(String, gtk::CheckButton, bool)>>> =
+        Rc::new(RefCell::new(Vec::new()));
+    for (name, row) in &rows {
+        let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let check = gtk::CheckButton::new();
+        let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        vbox.set_hexpand(true);
+        let lbl = gtk::Label::new(Some(name));
+        lbl.set_halign(gtk::Align::Start);
+        vbox.append(&lbl);
+        let selectable = match row {
+            LinkRow::Free { .. } | LinkRow::OtherShared(_) => true,
+            LinkRow::LinkedHere | LinkRow::WrongProton(_) => false,
+        };
+        let sub = match row {
+            LinkRow::LinkedHere => Some("Already uses this prefix".to_string()),
+            LinkRow::OtherShared(o) => Some(format!("Uses shared prefix {}", o)),
+            LinkRow::WrongProton(p) => {
+                Some(format!("Requires a different Proton{}", if p.is_empty() { String::new() } else { format!(" ({})", p) }))
+            }
+            LinkRow::Free { .. } => None,
+        };
+        if let Some(t) = sub {
+            let s = gtk::Label::new(Some(&t));
+            s.set_halign(gtk::Align::Start);
+            s.set_opacity(0.6);
+            s.add_css_class("time-label");
+            vbox.append(&s);
+        }
+        check.set_sensitive(selectable);
+        if *row == LinkRow::LinkedHere {
+            check.set_active(true);
+        }
+        hbox.append(&check);
+        hbox.append(&vbox);
+        list.append(&hbox);
+        let iso = matches!(row, LinkRow::Free { isolated: true });
+        checks.borrow_mut().push((name.clone(), check, iso));
+    }
+    {
+        let checks_c = checks.clone();
+        let warn_c = iso_warn.clone();
+        let refresh_iso = Rc::new(move || {
+            let any = checks_c.borrow().iter().any(|(_, c, iso)| *iso && c.is_active());
+            warn_c.set_visible(any);
+        });
+        let r2 = refresh_iso.clone();
+        for (_, c, _) in checks.borrow().iter() {
+            let r3 = r2.clone();
+            c.connect_toggled(move |_| r3());
+        }
+        refresh_iso();
+    }
+    {
+        let list_c = list.clone();
+        let search_c = search.clone();
+        search.connect_search_changed(move |e| {
+            let q = e.text().to_string().to_lowercase();
+            let mut c = list_c.first_child();
+            while let Some(row) = c {
+                let next = row.next_sibling();
+                let mut found = q.is_empty();
+                let mut k = row.first_child();
+                while let Some(w) = k {
+                    if let Some(b) = w.downcast_ref::<gtk::Box>() {
+                        let mut l = b.first_child();
+                        while let Some(lbl) = l {
+                            if let Some(t) = lbl.downcast_ref::<gtk::Label>() {
+                                if t.text().to_string().to_lowercase().contains(&q) {
+                                    found = true;
+                                }
+                            }
+                            l = lbl.next_sibling();
+                        }
+                    }
+                    k = w.next_sibling();
+                }
+                row.set_visible(found);
+                c = next;
+            }
+            let _ = search_c;
+        });
+    }
+    let btnrow = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    let cancel = gtk::Button::with_label("Cancel");
+    cancel.add_css_class("settings-btn");
+    cancel.set_hexpand(true);
+    {
+        let d0 = dlg.clone();
+        cancel.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    btnrow.append(&cancel);
+    let add = gtk::Button::with_label("Add");
+    add.add_css_class("neon-green");
+    add.set_hexpand(true);
+    {
+        let d0 = dlg.clone();
+        let state_c = state.clone();
+        let list_c = list_box.clone();
+        let name_c = shared_name.to_string();
+        let path_c = shared_path.clone();
+        let checks_c = checks.clone();
+        add.connect_clicked(move |_| {
+            let picked: Vec<String> = checks_c
+                .borrow()
+                .iter()
+                .filter(|(_, c, _)| c.is_active() && c.is_sensitive())
+                .map(|(n, _, _)| n.clone())
+                .collect();
+            d0.close();
+            if picked.is_empty() {
+                return;
+            }
+            link_picked_games(&state_c, &list_c, &name_c, &path_c, &picked, 0, Vec::new());
+        });
+    }
+    btnrow.append(&add);
+    col.append(&btnrow);
+    dlg.set_child(Some(&outer));
+    dlg.present(anchor.root().as_ref());
+}
+
 /// Launcher version from Cargo.toml, plus the short git hash when the
 /// build provides it via CORKYTUX_GIT_HASH. Single source of truth for
 /// the About page.
@@ -2880,6 +3198,291 @@ pub(crate) fn app_version() -> String {
     }
 }
 
+/// Link picked games one by one. Games with a previous prefix inside
+/// CorkyTux prefixes get a Keep/Copy/Delete choice first (Keep default).
+/// Failures skip that game and are reported at the end.
+#[allow(clippy::too_many_arguments)]
+fn link_picked_games(
+    state: &AppState,
+    list_box: &gtk::Box,
+    shared_name: &str,
+    shared_path: &str,
+    picked: &[String],
+    idx: usize,
+    failed: Vec<String>,
+) {
+    if idx >= picked.len() {
+        state.config.reload_games_ini();
+        refresh_shared_list(list_box, state);
+        if !failed.is_empty() {
+            helpers::present_msg(
+                list_box,
+                "Some games were not linked",
+                &format!("Failed: {}", failed.join(", ")),
+            );
+        }
+        return;
+    }
+    let game = picked[idx].clone();
+    let old = state.config.game_value(&game, "PrefixPath").unwrap_or_default();
+    let needs_choice = !old.trim().is_empty()
+        && crate::ui::remove_modal::path_within(
+            &state.config.prefixes_dir(),
+            std::path::Path::new(old.trim()),
+        );
+    if !needs_choice {
+        link_game_to_shared(&state.config, &game, shared_name, shared_path);
+        link_picked_games(state, list_box, shared_name, shared_path, picked, idx + 1, failed);
+        return;
+    }
+    show_prefix_choice_dialog(
+        state,
+        list_box,
+        shared_name,
+        shared_path,
+        &game,
+        &old,
+        picked,
+        idx,
+        failed,
+    );
+}
+/// Per-game choice for a previous individual prefix: Keep (default),
+/// Copy saves, or Delete with explicit confirmation. Destructive steps
+/// re-validate the guards; failures skip the game with a report.
+#[allow(clippy::too_many_arguments)]
+fn show_prefix_choice_dialog(
+    state: &AppState,
+    list_box: &gtk::Box,
+    shared_name: &str,
+    shared_path: &str,
+    game: &str,
+    old_prefix: &str,
+    picked: &[String],
+    idx: usize,
+    failed: Vec<String>,
+) {
+    let dlg = adw::Dialog::new();
+    dlg.set_title(&format!("Link {}?", game));
+    dlg.set_content_width(440);
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    outer.add_css_class("modal-bg");
+    outer.set_hexpand(true);
+    outer.set_vexpand(true);
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    col.set_hexpand(true);
+    col.set_vexpand(true);
+    col.set_margin_top(12);
+    col.set_margin_bottom(12);
+    col.set_margin_start(16);
+    col.set_margin_end(16);
+    outer.append(&col);
+    let (header_row, x_btn) = helpers::modal_header(&format!("Link {}?", game));
+    {
+        let d0 = dlg.clone();
+        x_btn.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    col.append(&header_row);
+    let msg = gtk::Label::new(Some(&format!(
+        "\"{}\" has a previous prefix:\n{}\nLinking moves it to the shared prefix. What should happen to the previous one?",
+        game, old_prefix
+    )));
+    msg.set_wrap(true);
+    msg.set_halign(gtk::Align::Start);
+    col.append(&msg);
+    let opts = gtk::StringList::new(&["Keep", "Copy saves", "Delete"]);
+    let drop = gtk::DropDown::new(
+        Some(opts.clone().upcast::<gtk::gio::ListModel>()),
+        None::<gtk::Expression>,
+    );
+    drop.set_selected(0);
+    drop.set_hexpand(true);
+    col.append(&drop);
+    let btnrow = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    let cancel = gtk::Button::with_label("Cancel");
+    cancel.add_css_class("settings-btn");
+    cancel.set_hexpand(true);
+    {
+        let d0 = dlg.clone();
+        cancel.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    btnrow.append(&cancel);
+    let go = gtk::Button::with_label("Link");
+    go.add_css_class("neon-green");
+    go.set_hexpand(true);
+    {
+        let d0 = dlg.clone();
+        let state_c = state.clone();
+        let list_c = list_box.clone();
+        let name_c = shared_name.to_string();
+        let path_c = shared_path.to_string();
+        let game_c = game.to_string();
+        let old_c = old_prefix.to_string();
+        let picked_c: Vec<String> = picked.to_vec();
+        let failed_c = failed;
+        go.connect_clicked(move |_| {
+            d0.close();
+            let mut failed = failed_c.clone();
+            let next = |failed: Vec<String>| {
+                link_picked_games(&state_c, &list_c, &name_c, &path_c, &picked_c, idx + 1, failed);
+            };
+            let choice = drop.selected();
+            if choice == 1 {
+                // Copy saves: drive_c/users without overwriting.
+                let oldp = std::path::PathBuf::from(&old_c);
+                let newp = std::path::PathBuf::from(&path_c);
+                if !crate::ui::remove_modal::path_within(
+                    &state_c.config.prefixes_dir(),
+                    &oldp,
+                ) {
+                    failed.push(format!("{} (previous prefix outside CorkyTux data, left intact)", game_c));
+                    next(failed);
+                    return;
+                }
+                match copy_saves(&oldp, &newp) {
+                    Ok(_) => {
+                        link_game_to_shared(&state_c.config, &game_c, &name_c, &path_c);
+                        next(failed);
+                    }
+                    Err(e) => {
+                        failed.push(format!("{} ({})", game_c, e));
+                        next(failed);
+                    }
+                }
+                return;
+            }
+            if choice == 2 {
+                confirm_delete_old_prefix(
+                    &list_c,
+                    &state_c,
+                    &name_c,
+                    &path_c,
+                    &game_c,
+                    &old_c,
+                    &picked_c,
+                    idx,
+                    failed,
+                );
+                return;
+            }
+            link_game_to_shared(&state_c.config, &game_c, &name_c, &path_c);
+            next(failed);
+        });
+    }
+    btnrow.append(&go);
+    col.append(&btnrow);
+    dlg.set_child(Some(&outer));
+    dlg.present(list_box.root().as_ref());
+}
+
+/// Explicit Delete confirmation for a previous individual prefix.
+/// Saves are lost; the guards re-validate right before deleting.
+#[allow(clippy::too_many_arguments)]
+fn confirm_delete_old_prefix(
+    list_box: &gtk::Box,
+    state: &AppState,
+    shared_name: &str,
+    shared_path: &str,
+    game: &str,
+    old_prefix: &str,
+    picked: &[String],
+    idx: usize,
+    failed: Vec<String>,
+) {
+    let dlg = adw::Dialog::new();
+    dlg.set_title("Delete previous prefix?");
+    dlg.set_content_width(420);
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    outer.add_css_class("modal-bg");
+    outer.set_hexpand(true);
+    outer.set_vexpand(true);
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    col.set_hexpand(true);
+    col.set_vexpand(true);
+    col.set_margin_top(12);
+    col.set_margin_bottom(12);
+    col.set_margin_start(16);
+    col.set_margin_end(16);
+    outer.append(&col);
+    let (header_row, x_btn) = helpers::modal_header("Delete previous prefix?");
+    {
+        let d0 = dlg.clone();
+        x_btn.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    col.append(&header_row);
+    let msg = gtk::Label::new(Some(&format!(
+        "Delete the previous prefix of \"{}\"?\n{}\nSaves inside it will be lost. This cannot be undone.",
+        game, old_prefix
+    )));
+    msg.set_wrap(true);
+    msg.set_halign(gtk::Align::Start);
+    col.append(&msg);
+    let btnrow = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    let cancel = gtk::Button::with_label("Cancel");
+    cancel.add_css_class("settings-btn");
+    cancel.set_hexpand(true);
+    {
+        let d0 = dlg.clone();
+        cancel.connect_clicked(move |_| {
+            d0.close();
+        });
+    }
+    btnrow.append(&cancel);
+    let go = gtk::Button::with_label("Delete");
+    go.add_css_class("neon-red");
+    go.set_hexpand(true);
+    {
+        let d0 = dlg.clone();
+        let state_c = state.clone();
+        let list_c = list_box.clone();
+        let name_c = shared_name.to_string();
+        let path_c = shared_path.to_string();
+        let game_c = game.to_string();
+        let old_c = old_prefix.to_string();
+        let picked_c: Vec<String> = picked.to_vec();
+        let failed_c = failed;
+        go.connect_clicked(move |_| {
+            d0.close();
+            let mut failed = failed_c.clone();
+            let next = |failed: Vec<String>| {
+                link_picked_games(&state_c, &list_c, &name_c, &path_c, &picked_c, idx + 1, failed);
+            };
+            let oldp = std::path::PathBuf::from(&old_c);
+            if !crate::ui::remove_modal::path_within(
+                &state_c.config.prefixes_dir(),
+                &oldp,
+            ) || !crate::ui::remove_modal::prefix_delete_safe(&state_c, &game_c, &oldp)
+            {
+                failed.push(format!("{} (previous prefix not safe to delete, left intact)", game_c));
+                next(failed);
+                return;
+            }
+            match crate::backend::config::ConfigManager::delete_dir(&oldp) {
+                Ok(()) => {
+                    link_game_to_shared(&state_c.config, &game_c, &name_c, &path_c);
+                    next(failed);
+                }
+                Err(e) => {
+                    failed.push(format!("{} ({})", game_c, e));
+                    next(failed);
+                }
+            }
+        });
+    }
+    btnrow.append(&go);
+    col.append(&btnrow);
+    dlg.set_child(Some(&outer));
+    dlg.present(list_box.root().as_ref());
+}
+
+/// game really pointing into it (individual prefixes rebuild on launch),
+/// then refreshes the list so Remove no longer blocks.
 fn confirm_shared_blocked(
     anchor: &gtk::Button,
     state: &AppState,
@@ -3153,6 +3756,17 @@ fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {    while let Som
         remove_btn.add_css_class("destructive-action");
         remove_btn.add_css_class("danger-btn");
         remove_btn.set_valign(gtk::Align::Center);
+        let add_btn = gtk::Button::with_label("+");
+        add_btn.set_tooltip_text(Some("Add games"));
+        add_btn.add_css_class("settings-btn");
+        add_btn.set_valign(gtk::Align::Center);
+        let state_c = state.clone();
+        let name_c = name.clone();
+        let list_c = list_box.clone();
+        let btn_c = add_btn.clone();
+        add_btn.connect_clicked(move |_| {
+            show_link_games_dialog(&btn_c, &state_c, &list_c, &name_c);
+        });
         let state_c = state.clone();
         let name_c = name.clone();
         let list_c = list_box.clone();
@@ -3178,6 +3792,7 @@ fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {    while let Som
             confirm_remove_shared(&btn_c, &state_c, name_c.clone(), list_c.clone());
         });
         inner.append(&col);
+        inner.append(&add_btn);
         inner.append(&remove_btn);
         card.set_child(Some(&inner));
         list_box.append(&card);
@@ -3240,6 +3855,148 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    fn g(
+        name: &str,
+        source: &str,
+        executor: &str,
+        steam_id: &str,
+        proton: &str,
+        prefix: &str,
+        use_shared: bool,
+        isolated: bool,
+    ) -> (String, String, String, String, String, String, bool, bool) {
+        (
+            name.to_string(),
+            source.to_string(),
+            executor.to_string(),
+            steam_id.to_string(),
+            proton.to_string(),
+            prefix.to_string(),
+            use_shared,
+            isolated,
+        )
+    }
+
+    #[test]
+    fn link_rows_filter_steam_emu_and_prefixless() {
+        let rows = link_rows(
+            &[
+                g("SteamGame", "Steam", "", "123", "proton-x", "", false, false),
+                g("SteamId", "Manual", "", "456", "proton-x", "", false, false),
+                g("Emu", "Manual", "some-emu", "", "proton-x", "", false, false),
+                g("App", "AppImage", "appimage-launcher", "", "", "", false, false),
+                g("Rpg", "RPGMaker", "rpgmaker-runtime", "", "", "", false, false),
+                g("Wine", "Manual", "", "", "proton-x", "/pfx/wine", false, true),
+            ],
+            "proton-x",
+            "/pfx/shared-proton-x",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0],
+            (
+                "Wine".to_string(),
+                LinkRow::Free { isolated: true }
+            )
+        );
+    }
+
+    #[test]
+    fn link_rows_mark_linked_other_and_wrong_proton() {
+        let rows = link_rows(
+            &[
+                g("Mine", "Manual", "", "", "proton-x", "/pfx/shared-proton-x/pfx", true, false),
+                g("Other", "Manual", "", "", "proton-x", "/pfx/other", true, false),
+                g("New", "Manual", "", "", "proton-y", "", false, false),
+            ],
+            "proton-x",
+            "/pfx/shared-proton-x",
+        );
+        let kinds: Vec<String> = rows
+            .iter()
+            .map(|(n, r)| {
+                format!(
+                    "{}:{}",
+                    n,
+                    match r {
+                        LinkRow::Free { .. } => "free",
+                        LinkRow::LinkedHere => "here",
+                        LinkRow::OtherShared(_) => "other",
+                        LinkRow::WrongProton(_) => "proton",
+                    }
+                )
+            })
+            .collect();
+        // "/pfx/..." exists nowhere: the predicate misses, but the
+        // stored-value fallback still matches the shared base.
+        assert!(kinds.contains(&"Mine:here".to_string()), "{:?}", kinds);
+        assert!(kinds.iter().any(|k| k == "Other:other"), "{:?}", kinds);
+        assert!(kinds.iter().any(|k| k == "New:proton"), "{:?}", kinds);
+    }
+
+    #[test]
+    fn link_game_persists_shared_flag_and_path() {
+        let base = mktmp("corky_settings_link");
+        let cfg = ConfigManager::for_test_dir(&base);
+        let shared = cfg.add_shared_prefix("proton-x");
+        cfg.set_game_value("G", "PrefixPath", "/old/pfx");
+        cfg.set_game_value("G", "UseSharedPrefix", "false");
+        link_game_to_shared(&cfg, "G", "proton-x", &shared.display().to_string());
+        assert_eq!(
+            cfg.game_value("G", "UseSharedPrefix").as_deref(),
+            Some("true")
+        );
+        assert_eq!(
+            cfg.game_value("G", "PrefixPath").as_deref(),
+            Some(shared.display().to_string().as_str())
+        );
+        assert_eq!(cfg.game_value("G", "SharedPrefix").as_deref(), Some(""));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn copy_saves_skips_existing_and_missing_users() {
+        let base = mktmp("corky_settings_copy");
+        let old = base.join("old");
+        let new = base.join("new");
+        std::fs::create_dir_all(old.join("drive_c/users/steamuser/Documents")).unwrap();
+        std::fs::write(old.join("drive_c/users/steamuser/save.dat"), b"v1").unwrap();
+        std::fs::write(old.join("drive_c/users/steamuser/keep.dat"), b"old").unwrap();
+        std::fs::create_dir_all(new.join("drive_c/users/steamuser")).unwrap();
+        std::fs::write(new.join("drive_c/users/steamuser/keep.dat"), b"new").unwrap();
+        let n = copy_saves(&old, &new).unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(
+            std::fs::read(new.join("drive_c/users/steamuser/save.dat")).unwrap(),
+            b"v1"
+        );
+        assert_eq!(
+            std::fs::read(new.join("drive_c/users/steamuser/keep.dat")).unwrap(),
+            b"new"
+        );
+        // No users dir at all: nothing to do, no error.
+        let empty = base.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert_eq!(copy_saves(&empty, &new).unwrap(), 0);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn guard_denies_paths_outside_prefixes_dir() {
+        let base = mktmp("corky_settings_guard");
+        let cfg = ConfigManager::for_test_dir(&base);
+        let roots = cfg.prefixes_dir();
+        let inside = roots.join("shared-proton-x");
+        std::fs::create_dir_all(&inside).unwrap();
+        assert!(crate::ui::remove_modal::path_within(&roots, &inside));
+        assert!(!crate::ui::remove_modal::path_within(
+            &roots,
+            &std::path::PathBuf::from("/home/u/.local/share/Steam/steamapps/compatdata/0")
+        ));
+        assert!(!crate::ui::remove_modal::path_within(&roots, &base.join("gone")));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn app_version_matches_cargo_package() {
         let v = app_version();
@@ -3250,6 +4007,4 @@ mod tests {
             v
         );
     }
-
 }
-
