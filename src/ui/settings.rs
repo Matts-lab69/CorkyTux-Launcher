@@ -2980,7 +2980,7 @@ fn confirm_unlink_shared(
     col.append(&msg);
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     let cancel = gtk::Button::with_label("Cancel");
-    cancel.add_css_class("neon-red");
+    cancel.add_css_class("settings-btn");
     cancel.set_hexpand(true);
     {
         let d0 = dlg.clone();
@@ -2990,17 +2990,28 @@ fn confirm_unlink_shared(
     }
     row.append(&cancel);
     let go = gtk::Button::with_label("Unlink");
-    go.add_css_class("neon-green");
+    go.add_css_class("neon-red");
     go.set_hexpand(true);
     {
         let d0 = dlg.clone();
         let state_c = state.clone();
         let list_c = list_box.clone();
         let name_c = name.to_string();
+        let anchor_c = anchor.clone();
         go.connect_clicked(move |_| {
             unlink_shared_prefix(&state_c.config, &name_c);
             refresh_shared_list(&list_c, &state_c);
             d0.close();
+            // Fresh check: when nothing uses it anymore, offer the
+            // normal Remove flow at once instead of another round trip.
+            if let Some(base) = state_c.config.shared_prefix_path(&name_c) {
+                let pairs = state_c.config.all_game_prefixes();
+                if ConfigManager::shared_prefix_users(&base, &pairs).is_empty()
+                    && crate::ui::remove_modal::prefix_delete_safe(&state_c, "", &base)
+                {
+                    confirm_remove_shared(&anchor_c, &state_c, name_c.clone(), list_c.clone());
+                }
+            }
         });
     }
     row.append(&go);
