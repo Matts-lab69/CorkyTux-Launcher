@@ -2311,7 +2311,7 @@ pub fn show_settings_modal(
     let about_name = gtk::Label::new(Some("CorkyTux"));
     about_name.add_css_class("details-title");
     about_page.append(&about_name);
-    let about_ver = gtk::Label::new(Some("v3.0.13"));
+    let about_ver = gtk::Label::new(Some(&app_version()));
     about_ver.add_css_class("time-label");
     
     about_page.append(&about_ver);
@@ -2870,6 +2870,16 @@ fn prune_missing_shared_prefixes(config: &ConfigManager) {
 /// nothing. Close only dismisses; Unlink clears the prefix link of every
 /// game really pointing into it (individual prefixes rebuild on launch),
 /// then refreshes the list so Remove no longer blocks.
+/// Launcher version from Cargo.toml, plus the short git hash when the
+/// build provides it via CORKYTUX_GIT_HASH. Single source of truth for
+/// the About page.
+pub(crate) fn app_version() -> String {
+    match option_env!("CORKYTUX_GIT_HASH") {
+        Some(h) if !h.is_empty() => format!("v{} ({})", env!("CARGO_PKG_VERSION"), h),
+        _ => format!("v{}", env!("CARGO_PKG_VERSION")),
+    }
+}
+
 fn confirm_shared_blocked(
     anchor: &gtk::Button,
     state: &AppState,
@@ -3229,4 +3239,17 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&base);
     }
+
+    #[test]
+    fn app_version_matches_cargo_package() {
+        let v = app_version();
+        assert!(v.starts_with('v'));
+        assert!(
+            v.contains(env!("CARGO_PKG_VERSION")),
+            "About label must carry Cargo version: {}",
+            v
+        );
+    }
+
 }
+
