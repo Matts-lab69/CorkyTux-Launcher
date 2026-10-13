@@ -153,6 +153,15 @@ fn prefix_path_safe(prefix: &str, shared_bases: &[String], other_prefixes: &[Str
     true
 }
 
+/// Canonical containment: `path` inside `dir` (or equal). Anything
+/// unresolvable denies (fail closed). Pure; covered by tests.
+fn path_within(dir: &std::path::Path, path: &std::path::Path) -> bool {
+    match (canon(dir), canon(path)) {
+        (Some(root), Some(pc)) => pc == root || pc.starts_with(&root),
+        _ => false,
+    }
+}
+
 /// Gathers the deny inputs from the live config: every shared base plus the
 /// prefixes of all other registered games. Read-only; decides nothing.
 /// Reused by the Settings confirm dialogs (selected="" checks everything).
@@ -160,7 +169,18 @@ pub(crate) fn prefix_delete_safe(state: &AppState, selected: &str, prefix: &std:
     let mut shared: Vec<String> = Vec::new();
     for name in state.config.shared_prefixes() {
         if let Some(p) = state.config.shared_prefix_path(&name) {
-            shared.push(p.display().to_string());
+            // Skip the target itself: a registered prefix must not block
+            // its own deletion (callers check users separately first).
+            let same = match (canon(prefix), canon(&p)) {
+                (Some(t), Some(b)) => t == b,
+                _ => {
+                    p.display().to_string().trim_end_matches('/')
+                        == prefix.display().to_string().trim_end_matches('/')
+                }
+            };
+            if !same {
+                shared.push(p.display().to_string());
+            }
         }
     }
     let others: Vec<String> = state.game_model.ordered_names().iter()
@@ -168,6 +188,10 @@ pub(crate) fn prefix_delete_safe(state: &AppState, selected: &str, prefix: &std:
         .filter_map(|n| state.config.game_value(n, "PrefixPath"))
         .filter(|v| !v.is_empty())
         .collect();
+    // Containment: shared-prefix deletion never leaves prefixes_dir().
+    if !path_within(&state.config.prefixes_dir(), prefix) {
+        return false;
+    }
     prefix_path_safe(&prefix.display().to_string(), &shared, &others)
 }
 
@@ -287,7 +311,7 @@ fn confirm_files_removal(
 
 #[cfg(test)]
 mod tests {
-    use super::{confirm_files_removal, prefix_path_safe, removal_target_safe,
+    use super::{confirm_files_removal, path_within, prefix_path_safe, removal_target_safe,
                 store_deny_roots, use_shared_prefix_on, FILES_NOT_VERIFIED_MSG};
 
     fn deny() -> Vec<String> {
@@ -573,6 +597,58 @@ mod tests {
         let others = vec![other.display().to_string()];
         assert!(!prefix_path_safe(&other.display().to_string(), &shared_s, &others));
         assert!(prefix_path_safe(&mine.display().to_string(), &shared_s, &others));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn own_base_without_users_passes_gate() {
+        // New gate contract: the caller excludes the target itself from
+        // the bases list, so an unused registered prefix passes while
+        // any other registered base still denies.
+        let base = mktmp("corky_pfx_selfgate");
+        let own = base.join("shared-proton-x");
+        let other = base.join("shared-proton-y");
+        std::fs::create_dir_all(&own).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let empty: Vec<String> = vec![];
+        assert!(prefix_path_safe(
+            &own.display().to_string(),
+            &empty,
+            &empty
+        ));
+        // Overlap with another registered base still denies.
+        let inner = other.join("pfx");
+        std::fs::create_dir_all(&inner).unwrap();
+        assert!(!prefix_path_safe(
+            &inner.display().to_string(),
+            &vec![other.display().to_string()],
+            &empty
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn path_within_contains_and_equal() {
+        let base = mktmp("corky_pfx_within");
+        let inner = base.join("prefixes").join("shared-x");
+        std::fs::create_dir_all(&inner).unwrap();
+        assert!(path_within(&base, &inner));
+        assert!(path_within(&base, &base));
+        assert!(path_within(
+            &base,
+            &std::path::PathBuf::from(format!("{}/", inner.display()))
+        ));
+        assert!(!path_within(&base, &base.join("..").join("other")));
+        assert!(!path_within(&base, &std::path::PathBuf::from("/nonexistent-xyz")));
+        assert!(!path_within(
+            &std::path::PathBuf::from("/nonexistent-xyz"),
+            &inner
+        ));
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&inner, base.join("link")).unwrap();
+            assert!(path_within(&base, &base.join("link")));
+        }
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -895,8 +971,15 @@ pub fn show_remove_modal(
     warn_prefix.set_visible(false);
     inner.append(&warn_prefix);
     {
+        // Never arm deletion without an explicit stored path: the fallback
+        // would point at a default dir the game never used.
+        let explicit = state
+            .config
+            .game_value(&selected, "PrefixPath")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false);
         let prefix_now = state.proton.prefix_path(&selected);
-        if chk_prefix.is_visible() && !prefix_delete_safe(state, &selected, &prefix_now) {
+        if !explicit || (chk_prefix.is_visible() && !prefix_delete_safe(state, &selected, &prefix_now)) {
             chk_prefix.set_active(false);
             chk_prefix.set_sensitive(false);
             warn_prefix.set_text("Shared prefix: files will be kept. Remove unregisters the game only.");

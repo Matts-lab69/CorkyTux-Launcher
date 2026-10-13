@@ -558,35 +558,58 @@ impl ConfigManager {
         path
     }
 
-    /// Games (name) whose prefix resolves into `base`: equal or inside it,
-    /// canonical comparison so symlinks and `..` cannot hide. A prefix that
-    /// cannot be resolved counts as a user (fail closed, like the remove
-    /// guard): a stale record must be cleared first, never silently ignored.
-    /// Pure; covered by tests.
+    /// Whether a stored prefix path resolves into `base`: equal or inside
+    /// it, canonical comparison with padding and trailing slashes ignored
+    /// so symlinks and `..` cannot hide. A path that cannot be resolved
+    /// matches nothing: a missing dir uses no base (fresh individual
+    /// paths do not exist until first launch). Empty never matches.
+    /// Single predicate for shared-prefix membership.
+    pub fn is_shared_prefix_user(base: &std::path::Path, prefix: &str) -> bool {
+        let p = prefix.trim().trim_end_matches('/');
+        if p.is_empty() {
+            return false;
+        }
+        let bc =
+            std::fs::canonicalize(base).unwrap_or_else(|_| base.to_path_buf());
+        match std::fs::canonicalize(p) {
+            Ok(pc) => pc == bc || pc.starts_with(&bc),
+            Err(_) => false,
+        }
+    }
+
+    /// Stored-value fallback for missing bases: plain string containment
+    /// for paths canonicalize cannot resolve. Used alongside the
+    /// predicate when the base itself may be gone.
+    pub(crate) fn stored_under(base: &std::path::Path, prefix: &str) -> bool {
+        let b = base.display().to_string();
+        let b = b.trim_end_matches('/');
+        if b.is_empty() {
+            return false;
+        }
+        let t = prefix.trim().trim_end_matches('/');
+        t == b || t.starts_with(&format!("{}/", b))
+    }
+
+    /// Games (name) whose prefix resolves into `base`. Pure; covered by tests.
     pub(crate) fn shared_prefix_users(
         base: &std::path::Path,
         prefixes: &[(String, String)],
     ) -> Vec<String> {
-        let bc = std::fs::canonicalize(base)
-            .unwrap_or_else(|_| base.to_path_buf());
         let mut out: Vec<String> = Vec::new();
         for (name, prefix) in prefixes {
-            let p = prefix.trim_end_matches('/');
-            if p.is_empty() {
-                continue;
-            }
-            match std::fs::canonicalize(p) {
-                Ok(pc) => {
-                    if pc == bc || pc.starts_with(&bc) {
-                        out.push(name.clone());
-                    }
-                }
-                Err(_) => out.push(name.clone()),
+            if Self::is_shared_prefix_user(base, prefix) {
+                out.push(name.clone());
             }
         }
         out.sort();
         out.dedup();
         out
+    }
+
+    /// Re-read Games.ini from disk, dropping in-memory state. Writes save
+    /// immediately, so a reload only picks up external edits.
+    pub fn reload_games_ini(&self) {
+        self.load_games_ini();
     }
 
     /// Every registered game with its explicit PrefixPath. Read-only.
@@ -681,7 +704,81 @@ mod tests {
     }
 
     #[test]
-    fn users_equal_inside_symlink_dotdot_and_missing() {
+    fn shared_predicate_inside_equal_and_trailing_slash() {
+        let base = mktmp("corky_cfg_pred");
+        let shared = base.join("shared-proton-x");
+        let inner = shared.join("pfx");
+        std::fs::create_dir_all(&inner).unwrap();
+        assert!(ConfigManager::is_shared_prefix_user(&shared, &inner.display().to_string()));
+        assert!(ConfigManager::is_shared_prefix_user(&shared, &shared.display().to_string()));
+        assert!(ConfigManager::is_shared_prefix_user(
+            &shared,
+            &format!("{}/", inner.display())
+        ));
+        assert!(!ConfigManager::is_shared_prefix_user(&shared, ""));
+        assert!(!ConfigManager::is_shared_prefix_user(&shared, "   "));
+        let elsewhere = base.join("Other");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        assert!(!ConfigManager::is_shared_prefix_user(&shared, &elsewhere.display().to_string()));
+        // Missing paths resolve to nothing: stale records stay out of
+        // every base (prune/settings clear them by stored value instead).
+        assert!(!ConfigManager::is_shared_prefix_user(
+            &shared,
+            &base.join("gone").display().to_string()
+        ));
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&shared, base.join("link")).unwrap();
+            assert!(ConfigManager::is_shared_prefix_user(&shared, &base.join("link").display().to_string()));
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn shared_users_round_trip_after_unlink() {
+        // Explicit link is found; empty and individual entries are not;
+        // clearing the explicit link empties the member list.
+        let base = mktmp("corky_cfg_unlink");
+        let shared = base.join("shared-proton-x");
+        std::fs::create_dir_all(shared.join("pfx")).unwrap();
+        let indiv = base.join("Doom");
+        std::fs::create_dir_all(&indiv).unwrap();
+        let pairs = vec![
+            ("Linked".to_string(), shared.join("pfx").display().to_string()),
+            ("Empty".to_string(), String::new()),
+            ("Solo".to_string(), indiv.display().to_string()),
+        ];
+        assert_eq!(
+            ConfigManager::shared_prefix_users(&shared, &pairs),
+            vec!["Linked".to_string()]
+        );
+        let cleared: Vec<(String, String)> = pairs
+            .into_iter()
+            .map(|(n, p)| {
+                if ConfigManager::is_shared_prefix_user(&shared, &p) {
+                    (n, String::new())
+                } else {
+                    (n, p)
+                }
+            })
+            .collect();
+        assert_eq!(
+            ConfigManager::shared_prefix_users(&shared, &cleared),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            cleared.iter().find(|(n, _)| n == "Solo").map(|(_, p)| p.clone()),
+            Some(indiv.display().to_string())
+        );
+        assert_eq!(
+            cleared.iter().find(|(n, _)| n == "Empty").map(|(_, p)| p.clone()),
+            Some(String::new())
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn users_equal_inside_symlink_dotdot_missing_excluded() {
         let base = mktmp("corky_cfg_users");
         let shared = base.join("shared-proton-x");
         std::fs::create_dir_all(shared.join("pfx")).unwrap();
@@ -701,7 +798,7 @@ mod tests {
         ];
         let mut users = ConfigManager::shared_prefix_users(&shared, &pairs);
         users.sort();
-        assert_eq!(users, vec!["A", "B", "C", "D", "E"]);
+        assert_eq!(users, vec!["A", "B", "C", "D"]);
         let _ = std::fs::remove_dir_all(&base);
     }
 
