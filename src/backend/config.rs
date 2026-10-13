@@ -532,6 +532,94 @@ impl ConfigManager {
         }
     }
 
+    /// Folder-safe game name: keep letters, digits, dot, `_`, `-` and
+    /// spaces; anything else becomes `_`. Falls back to "game".
+    fn game_dir_name(game: &str) -> String {
+        let base = game.rsplit('/').next().unwrap_or(game);
+        let clean: String = base
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' || c == ' ' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect::<String>()
+            .trim()
+            .to_string();
+        if clean.is_empty() {
+            "game".to_string()
+        } else {
+            clean
+        }
+    }
+
+    /// Individual prefix path for a game: prefixes_dir/<sanitized-name>,
+    /// suffixed (-2, -3, ...) while the dir exists or another game claims
+    /// that path. Pure computation, creates nothing on disk. This is the
+    /// same path ensure_individual_prefix assigns and creates.
+    pub fn individual_prefix_path(&self, game: &str) -> std::path::PathBuf {
+        let dir = self.prefixes_dir();
+        let base = Self::game_dir_name(game);
+        let taken: Vec<String> = self
+            .all_game_prefixes()
+            .into_iter()
+            .map(|(_, p)| p.trim_end_matches('/').to_string())
+            .collect();
+        let mut candidate = dir.join(&base);
+        let mut i = 2;
+        while candidate.is_dir()
+            || taken.iter().any(|p| p == &candidate.display().to_string())
+        {
+            candidate = dir.join(format!("{}-{}", base, i));
+            i += 1;
+        }
+        candidate
+    }
+
+    /// Fill empty PrefixPath of non-shared, non-emulator games with their
+    /// individual path (persisted). Skips shared-prefix games (UseSharedPrefix
+    /// set) and entries that never use a prefix (emulator/AppImage/RPGMaker
+    /// executors or sources). Creates no directories; the launcher creates
+    /// them on first run. Idempotent: a second pass changes nothing.
+    /// Returns how many games were filled.
+    pub fn migrate_empty_prefixes(&self) -> usize {
+        let mut filled = 0;
+        for name in self.game_names() {
+            if self
+                .game_value(&name, "UseSharedPrefix")
+                .map(|v| v.trim().eq_ignore_ascii_case("true") || v.trim() == "1")
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            if !self
+                .game_value(&name, "PrefixPath")
+                .unwrap_or_default()
+                .trim()
+                .is_empty()
+            {
+                continue;
+            }
+            let executor = self.game_value(&name, "Executor").unwrap_or_default();
+            let source = self.game_value(&name, "Source").unwrap_or_default();
+            if executor == "appimage-launcher" || source.eq_ignore_ascii_case("appimage") {
+                continue;
+            }
+            if executor == "rpgmaker-runtime" || source.eq_ignore_ascii_case("rpgmaker") {
+                continue;
+            }
+            if !executor.trim().is_empty() {
+                continue;
+            }
+            let path = self.individual_prefix_path(&name);
+            self.set_game_value(&name, "PrefixPath", &path.display().to_string());
+            filled += 1;
+        }
+        filled
+    }
+
     /// I match the legacy sharedPrefixPath layout: prefixesDir/shared-<slug>,
     /// None when the proton has no shared prefix registered.
     pub fn shared_prefix_path(&self, proton_name: &str) -> Option<PathBuf> {
@@ -850,6 +938,67 @@ mod tests {
             reloaded.game_value("Game", "Executable").as_deref(),
             Some("/games/g/run")
         );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn individual_prefix_sanitizes_suffixes_and_creates_nothing() {
+        let base = mktmp("corky_cfg_indiv");
+        let cfg = ConfigManager::for_test_dir(&base);
+        let plain = cfg.individual_prefix_path("Doom");
+        assert_eq!(plain, cfg.prefixes_dir().join("Doom"));
+        assert!(!plain.exists());
+        // Unsafe chars become underscores; the leading folder part is
+        // dropped (no nested paths, no traversal). Collisions suffix up.
+        let weird = cfg.individual_prefix_path("B:C*D?");
+        assert_eq!(
+            weird.file_name().and_then(|n| n.to_str()),
+            Some("B_C_D_")
+        );
+        assert!(!weird.exists());
+        let evil = cfg.individual_prefix_path("../../evil");
+        assert_eq!(evil.file_name().and_then(|n| n.to_str()), Some("evil"));
+        std::fs::create_dir_all(&plain).unwrap();
+        assert_eq!(
+            cfg.individual_prefix_path("Doom"),
+            cfg.prefixes_dir().join("Doom-2")
+        );
+        cfg.set_game_value("Other", "PrefixPath", &plain.display().to_string());
+        assert_eq!(
+            cfg.individual_prefix_path("Doom"),
+            cfg.prefixes_dir().join("Doom-2")
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn migrate_fills_empties_skips_shared_emu_and_is_idempotent() {
+        let base = mktmp("corky_cfg_migrate");
+        let cfg = ConfigManager::for_test_dir(&base);
+        cfg.set_game_value("Proton", "PrefixPath", "");
+        cfg.set_game_value("Proton", "UseSharedPrefix", "false");
+        cfg.set_game_value("Shared", "PrefixPath", "/gone/shared/pfx");
+        cfg.set_game_value("Shared", "UseSharedPrefix", "true");
+        cfg.set_game_value("Emu", "PrefixPath", "");
+        cfg.set_game_value("Emu", "Executor", "some-emu");
+        cfg.set_game_value("App", "PrefixPath", "");
+        cfg.set_game_value("App", "Source", "AppImage");
+        cfg.set_game_value("Full", "PrefixPath", "/games/full/pfx");
+        assert_eq!(cfg.migrate_empty_prefixes(), 1);
+        let want = cfg.prefixes_dir().join("Proton").display().to_string();
+        assert_eq!(cfg.game_value("Proton", "PrefixPath").as_deref(), Some(want.as_str()));
+        assert_eq!(
+            cfg.game_value("Shared", "PrefixPath").as_deref(),
+            Some("/gone/shared/pfx")
+        );
+        assert_eq!(cfg.game_value("Emu", "PrefixPath").as_deref(), Some(""));
+        assert_eq!(cfg.game_value("App", "PrefixPath").as_deref(), Some(""));
+        assert_eq!(
+            cfg.game_value("Full", "PrefixPath").as_deref(),
+            Some("/games/full/pfx")
+        );
+        assert!(!cfg.prefixes_dir().join("Proton").exists());
+        assert_eq!(cfg.migrate_empty_prefixes(), 0);
         let _ = std::fs::remove_dir_all(&base);
     }
 }

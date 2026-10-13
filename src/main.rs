@@ -1755,6 +1755,15 @@ fn main() {
     // The child survives the parent exit, so the game keeps running while
     // the launcher itself never opens a window.
     let args: Vec<String> = std::env::args().collect();
+    // One-time fill for games left without any prefix: assign their
+    // individual path (persisted, no dirs created). Idempotent.
+    // Runs before everything, including headless --play launches.
+    {
+        let n = ConfigManager::new().migrate_empty_prefixes();
+        if n > 0 {
+            eprintln!("[CorkyTux] assigned individual prefixes to {} game(s)", n);
+        }
+    }
     if let Some(pos) = args.iter().position(|a| a == "--play") {
         let name = args.get(pos + 1).map(|s| s.as_str()).unwrap_or("");
         if !name.is_empty() {

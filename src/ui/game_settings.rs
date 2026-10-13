@@ -641,8 +641,11 @@ fn build_run_tab(
             }
         }
         if active && is_shared_path(state, &cur) {
-            let def = state.config.base_path_for("prefixes")
-                .join(game_name).display().to_string();
+            let def = state
+                .config
+                .individual_prefix_path(game_name)
+                .display()
+                .to_string();
             *original_rc.borrow_mut() = def;
         }
         *shared_active.borrow_mut() = active;
@@ -711,8 +714,11 @@ fn build_run_tab(
                 // If the remembered path is itself shared (or empty),
                 // rebuild the default individual path.
                 if is_shared_path(&state_c, &orig) {
-                    orig = state_c.config.base_path_for("prefixes")
-                        .join(&game_c).display().to_string();
+                    orig = state_c
+                        .config
+                        .individual_prefix_path(&game_c)
+                        .display()
+                        .to_string();
                     *orig_c.borrow_mut() = orig.clone();
                 }
                 prefix_e.set_text(&orig);
@@ -742,8 +748,11 @@ fn build_run_tab(
             }
             let mut orig = orig_c.borrow().clone();
             if is_shared_path(&state_c, &orig) {
-                orig = state_c.config.base_path_for("prefixes")
-                    .join(&game_c).display().to_string();
+                orig = state_c
+                    .config
+                    .individual_prefix_path(&game_c)
+                    .display()
+                    .to_string();
                 *orig_c.borrow_mut() = orig.clone();
             }
             if text != orig {

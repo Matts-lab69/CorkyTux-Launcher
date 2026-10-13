@@ -4,6 +4,7 @@ use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use crate::backend::config::ConfigManager;
 use crate::backend::game_model::GameSource;
 use crate::backend::import_move::{self, ExecPlan, ImportMode, MoveCandidate, MoveOutcome, Preflight};
 use crate::backend::theme::{ThemeManager, ThemeMode, all_accents};
@@ -721,7 +722,7 @@ pub fn show_settings_modal(
 
     // Drop shared prefixes whose dir is gone (and orphan their games)
     // every time Paths opens. Silent: already deleted needs no dialog.
-    prune_missing_shared_prefixes(state);
+    prune_missing_shared_prefixes(&state.config);
 
     // Created early so path rows can trigger a proton rescan + UI rebuild
     // when a proton path changes (otherwise new paths stay undetected).
@@ -2809,53 +2810,49 @@ fn confirm_remove_plugin(
 /// Only games whose stored PrefixPath sits inside `base` are touched.
 /// Cleared games fall back to an individual prefix on next launch
 /// (ensure_individual_prefix). The prefix dir itself stays on disk.
-fn unlink_shared_prefix(state: &AppState, name: &str) {
-    let base = match state.config.shared_prefix_path(name) {
+fn unlink_shared_prefix(config: &ConfigManager, name: &str) {
+    let base = match config.shared_prefix_path(name) {
         Some(p) => p,
         None => return,
     };
-    let b = base.display().to_string();
-    let b = b.trim_end_matches('/').to_string();
-    let with_slash = format!("{}/", b);
-    let pairs = state.config.all_game_prefixes();
-    let users = crate::backend::config::ConfigManager::shared_prefix_users(&base, &pairs);
-    for g in users {
-        let stored = pairs.iter().find(|(n, _)| n == &g).map(|(_, p)| p.clone());
-        let px = match stored {
-            Some(p) => p,
-            None => continue,
-        };
-        let t = px.trim_end_matches('/');
-        if t != b && !t.starts_with(&with_slash) {
+    let pairs = config.all_game_prefixes();
+    for (g, px) in &pairs {
+        if !ConfigManager::is_shared_prefix_user(&base, px)
+            && !ConfigManager::stored_under(&base, px)
+        {
             continue;
         }
-        state.config.set_game_value(&g, "UseSharedPrefix", "false");
-        state.config.set_game_value(&g, "PrefixPath", "");
-        if state.config.game_value(&g, "SharedPrefix").as_deref() == Some(name) {
-            state.config.set_game_value(&g, "SharedPrefix", "");
+        // Reassign the individual path right away (no empty gap):
+        // same path ensure_individual_prefix creates on next launch.
+        let indiv = config.individual_prefix_path(g);
+        config.set_game_value(g, "UseSharedPrefix", "false");
+        config.set_game_value(g, "PrefixPath", &indiv.display().to_string());
+        if config.game_value(g, "SharedPrefix").as_deref() == Some(name) {
+            config.set_game_value(g, "SharedPrefix", "");
         }
     }
+    config.reload_games_ini();
 }
 
 /// Drop registered shared prefixes whose dir is gone, persisting the
 /// pruned list. Games orphaned this way lose PrefixPath so they fall
 /// back to an individual prefix. Silent by design.
-fn prune_missing_shared_prefixes(state: &AppState) {
-    let names = state.config.shared_prefixes();
+fn prune_missing_shared_prefixes(config: &ConfigManager) {
+    let names = config.shared_prefixes();
     let mut kept = Vec::new();
     let mut changed = false;
     for name in &names {
-        match state.config.shared_prefix_path(name) {
+        match config.shared_prefix_path(name) {
             Some(p) if p.is_dir() => kept.push(name.clone()),
             Some(p) => {
                 changed = true;
-                let b = p.display().to_string();
-                let b = b.trim_end_matches('/').to_string();
-                let with_slash = format!("{}/", b);
-                for (g, px) in state.config.all_game_prefixes() {
-                    let t = px.trim_end_matches('/');
-                    if t == b || t.starts_with(&with_slash) {
-                        state.config.set_game_value(&g, "PrefixPath", "");
+                for (g, px) in config.all_game_prefixes() {
+                    if ConfigManager::is_shared_prefix_user(&p, &px)
+                        || ConfigManager::stored_under(&p, &px)
+                    {
+                        let indiv = config.individual_prefix_path(&g);
+                        config.set_game_value(&g, "UseSharedPrefix", "false");
+                        config.set_game_value(&g, "PrefixPath", &indiv.display().to_string());
                     }
                 }
             }
@@ -2865,9 +2862,7 @@ fn prune_missing_shared_prefixes(state: &AppState) {
         }
     }
     if changed {
-        state
-            .config
-            .set_launcher_value("sharedPrefixes", &kept.join(","));
+        config.set_launcher_value("sharedPrefixes", &kept.join(","));
     }
 }
 
@@ -2977,7 +2972,7 @@ fn confirm_unlink_shared(
     }
     col.append(&header_row);
     let msg = gtk::Label::new(Some(&format!(
-        "Remove the prefix link from every game using \"{}\"?\nSaves inside {}/drive_c/users/... stay in the shared prefix and are NOT moved. Games start with a fresh individual prefix.",
+        "Remove the prefix link from every game using \"{}\"?\nSaves inside {}/drive_c/users/... stay in the shared prefix and are NOT moved. Each game gets its own individual prefix instead.",
         name, path
     )));
     msg.set_wrap(true);
@@ -3003,7 +2998,7 @@ fn confirm_unlink_shared(
         let list_c = list_box.clone();
         let name_c = name.to_string();
         go.connect_clicked(move |_| {
-            unlink_shared_prefix(&state_c, &name_c);
+            unlink_shared_prefix(&state_c.config, &name_c);
             refresh_shared_list(&list_c, &state_c);
             d0.close();
         });
@@ -3165,5 +3160,62 @@ fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {    while let Som
         inner.append(&remove_btn);
         card.set_child(Some(&inner));
         list_box.append(&card);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mktmp(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn unlink_assigns_individual_paths_and_empties_users() {
+        // Unlink reassigns each member its own individual prefix (no
+        // empty gap), so the shared base ends with zero users.
+        let base = mktmp("corky_settings_unlink");
+        let cfg = ConfigManager::for_test_dir(&base);
+        let shared = cfg.add_shared_prefix("proton-x");
+        std::fs::create_dir_all(shared.join("pfx")).unwrap();
+        let indiv = base.join("Doom");
+        std::fs::create_dir_all(&indiv).unwrap();
+        cfg.set_game_value("Linked", "PrefixPath", &shared.join("pfx").display().to_string());
+        cfg.set_game_value("Linked", "UseSharedPrefix", "true");
+        cfg.set_game_value("Linked", "SharedPrefix", "proton-x");
+        cfg.set_game_value("Empty", "PrefixPath", "");
+        cfg.set_game_value("Empty", "UseSharedPrefix", "true");
+        cfg.set_game_value("Solo", "PrefixPath", &indiv.display().to_string());
+        cfg.set_game_value("Solo", "UseSharedPrefix", "false");
+        let pairs = cfg.all_game_prefixes();
+        assert_eq!(
+            ConfigManager::shared_prefix_users(&shared, &pairs),
+            vec!["Linked".to_string()]
+        );
+        let expect_linked = cfg.individual_prefix_path("Linked").display().to_string();
+        unlink_shared_prefix(&cfg, "proton-x");
+        assert_eq!(
+            cfg.game_value("Linked", "UseSharedPrefix").as_deref(),
+            Some("false")
+        );
+        assert_eq!(
+            cfg.game_value("Linked", "PrefixPath").as_deref(),
+            Some(expect_linked.as_str())
+        );
+        assert_eq!(cfg.game_value("Linked", "SharedPrefix").as_deref(), Some(""));
+        assert_eq!(cfg.game_value("Empty", "PrefixPath").as_deref(), Some(""));
+        assert_eq!(
+            cfg.game_value("Solo", "PrefixPath").as_deref(),
+            Some(indiv.display().to_string().as_str())
+        );
+        assert_eq!(
+            ConfigManager::shared_prefix_users(&shared, &cfg.all_game_prefixes()),
+            Vec::<String>::new()
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

@@ -606,10 +606,13 @@ pub fn show_add_game_modal(
             let is_appimage = executor == "appimage-launcher";
             let is_rpg = executor == "rpgmaker-runtime";
             let mut prefix = prefix_e.text().to_string().trim().to_string();
-            // C++ parity: default individual prefix is prefixesDir/gameName
+            // Default individual prefix, sanitized and collision-free.
             if !is_emu && !is_appimage && !is_rpg && prefix.is_empty() {
-                prefix = state_c.config.base_path_for("prefixes")
-                    .join(&name).display().to_string();
+                prefix = state_c
+                    .config
+                    .individual_prefix_path(&name)
+                    .display()
+                    .to_string();
             }
             let proton_idx = proton_d.selected();
             let mut proton_name = if (proton_idx as usize) < protons_c.len() {

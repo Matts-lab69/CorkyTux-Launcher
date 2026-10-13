@@ -604,22 +604,16 @@ impl ProtonManager {
         "1920x1080".to_string()
     }
 
+    /// Explicit PrefixPath, else the game's individual path (computed,
+    /// never created here). Never a Steam fallback path.
     pub fn prefix_path(&self, game_name: &str) -> PathBuf {
         let config = super::ConfigManager::new();
         if let Some(prefix) = config.game_value(game_name, "PrefixPath") {
-            if !prefix.is_empty() {
-                return PathBuf::from(prefix);
+            if !prefix.trim().is_empty() {
+                return PathBuf::from(prefix.trim());
             }
         }
-        home_dir()
-            .unwrap_or_default()
-            .join(".local")
-            .join("share")
-            .join("Steam")
-            .join("steamapps")
-            .join("compatdata")
-            .join("0")
-            .join("pfx")
+        config.individual_prefix_path(game_name)
     }
 
     /// Only accept real Proton/compatibility-tool dirs: must contain a
@@ -3205,8 +3199,9 @@ impl ProtonManager {
     }
 
     /// If the game has no prefix configured (empty PrefixPath), assign and
-    /// create its individual default (prefixesDir/gameName). Emulator games
-    /// never reach here (they return before any prefix handling).
+    /// create its individual default (see individual_prefix_path).
+    /// Emulator games never reach here (they return before any prefix
+    /// handling).
     pub fn ensure_individual_prefix(&self, game_name: &str) -> PathBuf {
         let config = super::ConfigManager::new();
         let cur = config
@@ -3217,7 +3212,7 @@ impl ProtonManager {
             fs::create_dir_all(&p).ok();
             return p;
         }
-        let p = config.prefixes_dir().join(game_name);
+        let p = config.individual_prefix_path(game_name);
         fs::create_dir_all(&p).ok();
         config.set_game_value(game_name, "PrefixPath", &p.display().to_string());
         p

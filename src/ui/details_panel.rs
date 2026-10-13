@@ -579,15 +579,21 @@ impl DetailsPanel {
         } else if !executor.is_empty() {
             format!("Emulator: {}", executor)
         } else {
-            // Same resolution as launch: explicit field or default compatdata
+            // Always the real path: explicit field, else the individual
+            // path the launcher assigns on first run.
             let prefix = cfg
                 .game_value(game_name, "PrefixPath")
-                .filter(|v| !v.is_empty())
+                .filter(|v| !v.trim().is_empty())
+                .map(|v| v.trim().to_string())
                 .unwrap_or_else(|| {
-                    let home = std::env::var("HOME").unwrap_or_default();
-                    format!("{}/.local/share/Steam/steamapps/compatdata/0/pfx", home)
+                    cfg.individual_prefix_path(game_name).display().to_string()
                 });
-            format!("Prefix: {}", prefix)
+            let suffix = if std::path::Path::new(&prefix).is_dir() {
+                String::new()
+            } else {
+                String::from(" (created on first launch)")
+            };
+            format!("Prefix: {}{}", prefix, suffix)
         };
         self.prefix_label.set_text(&prefix_text);
 
