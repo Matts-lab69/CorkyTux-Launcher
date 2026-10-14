@@ -607,6 +607,9 @@ pub fn show_add_game_modal(
             let is_rpg = executor == "rpgmaker-runtime";
             let mut prefix = prefix_e.text().to_string().trim().to_string();
             // Default individual prefix, sanitized and collision-free.
+            // Manual adds are never Steam (Source Manual, empty SteamID),
+            // so is_steam_game is false here by construction; Steam
+            // imports keep their compat prefix via the import path.
             if !is_emu && !is_appimage && !is_rpg && prefix.is_empty() {
                 prefix = state_c
                     .config

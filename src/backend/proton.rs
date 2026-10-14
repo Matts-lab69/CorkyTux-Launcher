@@ -1029,6 +1029,19 @@ impl ProtonManager {
         ]
     }
 
+    /// Steam rungame id when the game must launch through the client:
+    /// any non-empty numeric SteamID. Pure; shared by the run and debug
+    /// paths so both agree on what counts as a Steam game.
+    fn steam_rungame_id(game: &std::collections::HashMap<String, String>) -> Option<String> {
+        let sid = game.get("steamid").cloned().unwrap_or_default();
+        let sid = sid.trim().to_string();
+        if !sid.is_empty() && sid.chars().all(|c| c.is_ascii_digit()) {
+            Some(sid)
+        } else {
+            None
+        }
+    }
+
     pub fn run_game(&self, game_name: &str) -> Result<(), String> {
         // Single-Wine lock, not a single-game lock: a live non-Wine session
         // (AppImage/RPG/emulator, launched or adopted) parks aside instead of
@@ -1061,9 +1074,7 @@ impl ProtonManager {
         // executable path is stored. This ensures the Steam "Starting
         // game" dialog appears and Steamworks features (overlay,
         // friends, achievements) work correctly.
-        let steam_id = game.get("steamid").cloned().unwrap_or_default();
-        let sid = steam_id.trim();
-        if !sid.is_empty() && sid.chars().all(|c| c.is_ascii_digit()) {
+        if let Some(sid) = Self::steam_rungame_id(&game) {
             // Auto-start Steam client so the protocol handler is ready.
             if Command::new("which").arg("steam").stdout(Stdio::null()).stderr(Stdio::null()).status()
                 .map(|s| s.success()).unwrap_or(false)
@@ -2683,6 +2694,12 @@ impl ProtonManager {
     pub fn run_game_debug(&self, game_name: &str) -> Result<(), String> {
         let config = super::ConfigManager::new();
         let game = config.game_section(game_name);
+        // Steam-owned games launch through the client (steam://): a direct
+        // Proton debug launch would bypass Steam and touch a prefix that
+        // is not ours, so refuse before Proton or prefixes are involved.
+        if Self::steam_rungame_id(&game).is_some() {
+            return Err("Steam launches this game; debug launch is not available".into());
+        }
         let executable = game.get("executable")
             .cloned()
             .unwrap_or_default();
@@ -3213,7 +3230,17 @@ impl ProtonManager {
     /// Emulator games never reach here (they return before any prefix
     /// handling).
     pub fn ensure_individual_prefix(&self, game_name: &str) -> PathBuf {
-        let config = super::ConfigManager::new();
+        self.ensure_individual_prefix_in(&super::ConfigManager::new(), game_name)
+    }
+
+    /// Testable core: Steam games return their deduced compat dir (or
+    /// nothing) without creating or persisting anything; only regular
+    /// games get the individual default created and stored.
+    pub(crate) fn ensure_individual_prefix_in(
+        &self,
+        config: &super::ConfigManager,
+        game_name: &str,
+    ) -> PathBuf {
         let cur = config
             .game_value(game_name, "PrefixPath")
             .unwrap_or_default();
@@ -3221,6 +3248,20 @@ impl ProtonManager {
             let p = PathBuf::from(cur.trim());
             fs::create_dir_all(&p).ok();
             return p;
+        }
+        // Steam games never get a launcher-managed prefix: Steam owns
+        // its compat dir. Deduce it, never create or persist anything.
+        if crate::backend::game_model::is_steam_game(
+            &config.game_value(game_name, "Source").unwrap_or_default(),
+            &config.game_value(game_name, "SteamID").unwrap_or_default(),
+        ) {
+            if let Some(p) = crate::backend::game_model::steam_compat_path(
+                &config.game_value(game_name, "MainPath").unwrap_or_default(),
+                &config.game_value(game_name, "SteamID").unwrap_or_default(),
+            ) {
+                return p;
+            }
+            return PathBuf::new();
         }
         let p = config.individual_prefix_path(game_name);
         fs::create_dir_all(&p).ok();
@@ -3867,5 +3908,90 @@ mod tests {
         }
         pm.purge_dead();
         assert_eq!(pm.imp().parked.borrow().len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod steam_prefix_tests {
+    use crate::backend::config::ConfigManager;
+
+    fn test_cfg(tag: &str) -> (std::path::PathBuf, ConfigManager) {
+        let base = std::env::temp_dir().join(format!("corky_proton_{}", tag));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let cfg = ConfigManager::for_test_dir(&base);
+        (base, cfg)
+    }
+
+    #[test]
+    fn steam_rungame_id_detects_numeric_ids() {
+        let g = |sid: &str| {
+            [("steamid".to_string(), sid.to_string())]
+                .into_iter()
+                .collect::<std::collections::HashMap<String, String>>()
+        };
+        assert_eq!(
+            super::ProtonManager::steam_rungame_id(&g("945360")),
+            Some("945360".to_string())
+        );
+        assert_eq!(
+            super::ProtonManager::steam_rungame_id(&g("  480 ")),
+            Some("480".to_string())
+        );
+        assert_eq!(super::ProtonManager::steam_rungame_id(&g("")), None);
+        assert_eq!(super::ProtonManager::steam_rungame_id(&g("abc")), None);
+        assert_eq!(
+            super::ProtonManager::steam_rungame_id(&std::collections::HashMap::new()),
+            None
+        );
+    }
+
+    #[test]
+    fn ensure_leaves_steam_games_alone() {
+        gtk::init().unwrap();
+        let pm = super::ProtonManager::new();
+        // Deduced compat dir: returned, never written, never created.
+        let (base, cfg) = test_cfg("steam_hit");
+        let lib = base.join("lib");
+        let compat = lib.join("steamapps/compatdata/945360");
+        std::fs::create_dir_all(&compat).unwrap();
+        let main = lib.join("steamapps/common/Among Us");
+        std::fs::create_dir_all(&main).unwrap();
+        cfg.set_game_value("S", "SteamID", "945360");
+        cfg.set_game_value("S", "MainPath", &main.display().to_string());
+        cfg.set_game_value("S", "PrefixPath", "");
+        assert_eq!(pm.ensure_individual_prefix_in(&cfg, "S"), compat);
+        assert_eq!(cfg.game_value("S", "PrefixPath").as_deref(), Some(""));
+        // No compat dir: deduced path returned, nothing created or stored.
+        let (base2, cfg2) = test_cfg("steam_miss");
+        cfg2.set_game_value("M", "SteamID", "789");
+        cfg2.set_game_value("M", "MainPath", "/nowhere/steamapps/common/Missing");
+        cfg2.set_game_value("M", "PrefixPath", "");
+        assert_eq!(
+            pm.ensure_individual_prefix_in(&cfg2, "M"),
+            std::path::PathBuf::from("/nowhere/steamapps/compatdata/789")
+        );
+        assert_eq!(cfg2.game_value("M", "PrefixPath").as_deref(), Some(""));
+        assert!(!cfg2.prefixes_dir().join("M").exists());
+        // No steamapps layout at all: empty path, nothing created.
+        cfg2.set_game_value("N", "Source", "Steam");
+        cfg2.set_game_value("N", "MainPath", "/games/plain");
+        cfg2.set_game_value("N", "PrefixPath", "");
+        assert_eq!(
+            pm.ensure_individual_prefix_in(&cfg2, "N"),
+            std::path::PathBuf::new()
+        );
+        assert_eq!(cfg2.game_value("N", "PrefixPath").as_deref(), Some(""));
+        assert!(!cfg2.prefixes_dir().join("N").exists());
+        // Regular games keep the old behavior: created and persisted.
+        cfg2.set_game_value("P", "PrefixPath", "");
+        let got = pm.ensure_individual_prefix_in(&cfg2, "P");
+        assert!(got.is_dir());
+        assert_eq!(
+            cfg2.game_value("P", "PrefixPath").as_deref(),
+            Some(got.display().to_string().as_str())
+        );
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(&base2);
     }
 }

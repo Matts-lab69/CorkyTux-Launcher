@@ -587,6 +587,12 @@ impl ConfigManager {
     pub fn migrate_empty_prefixes(&self) -> usize {
         let mut filled = 0;
         for name in self.game_names() {
+            if crate::backend::game_model::is_steam_game(
+                &self.game_value(&name, "Source").unwrap_or_default(),
+                &self.game_value(&name, "SteamID").unwrap_or_default(),
+            ) {
+                continue;
+            }
             if self
                 .game_value(&name, "UseSharedPrefix")
                 .map(|v| v.trim().eq_ignore_ascii_case("true") || v.trim() == "1")
@@ -999,6 +1005,21 @@ mod tests {
         );
         assert!(!cfg.prefixes_dir().join("Proton").exists());
         assert_eq!(cfg.migrate_empty_prefixes(), 0);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn migrate_and_unlink_skip_steam_games() {
+        let base = mktmp("corky_cfg_steam_skip");
+        let cfg = ConfigManager::for_test_dir(&base);
+        cfg.set_game_value("SteamGame", "PrefixPath", "");
+        cfg.set_game_value("SteamGame", "UseSharedPrefix", "false");
+        cfg.set_game_value("SteamGame", "SteamID", "945360");
+        cfg.set_game_value("SteamSrc", "PrefixPath", "");
+        cfg.set_game_value("SteamSrc", "Source", "Steam");
+        assert_eq!(cfg.migrate_empty_prefixes(), 0);
+        assert_eq!(cfg.game_value("SteamGame", "PrefixPath").as_deref(), Some(""));
+        assert_eq!(cfg.game_value("SteamSrc", "PrefixPath").as_deref(), Some(""));
         let _ = std::fs::remove_dir_all(&base);
     }
 }

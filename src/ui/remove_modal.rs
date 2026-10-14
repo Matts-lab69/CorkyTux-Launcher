@@ -971,19 +971,31 @@ pub fn show_remove_modal(
     warn_prefix.set_visible(false);
     inner.append(&warn_prefix);
     {
-        // Never arm deletion without an explicit stored path: the fallback
-        // would point at a default dir the game never used.
-        let explicit = state
-            .config
-            .game_value(&selected, "PrefixPath")
-            .map(|v| !v.trim().is_empty())
-            .unwrap_or(false);
-        let prefix_now = state.proton.prefix_path(&selected);
-        if !explicit || (chk_prefix.is_visible() && !prefix_delete_safe(state, &selected, &prefix_now)) {
-            chk_prefix.set_active(false);
-            chk_prefix.set_sensitive(false);
-            warn_prefix.set_text("Shared prefix: files will be kept. Remove unregisters the game only.");
+        // Steam games: Steam owns their prefix, so there is no checkbox
+        // at all and PrefixPath is never read. Otherwise never arm
+        // deletion without an explicit stored path: the fallback would
+        // point at a default dir the game never used.
+        let steam_game = crate::backend::game_model::is_steam_game(
+            &state.config.game_value(&selected, "Source").unwrap_or_default(),
+            &state.config.game_value(&selected, "SteamID").unwrap_or_default(),
+        );
+        if steam_game {
+            chk_prefix.set_visible(false);
+            warn_prefix.set_text("Steam manages this game's prefix. Remove unregisters the game only.");
             warn_prefix.set_visible(true);
+        } else {
+            let explicit = state
+                .config
+                .game_value(&selected, "PrefixPath")
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            let prefix_now = state.proton.prefix_path(&selected);
+            if !explicit || (chk_prefix.is_visible() && !prefix_delete_safe(state, &selected, &prefix_now)) {
+                chk_prefix.set_active(false);
+                chk_prefix.set_sensitive(false);
+                warn_prefix.set_text("Shared prefix: files will be kept. Remove unregisters the game only.");
+                warn_prefix.set_visible(true);
+            }
         }
     }
 
@@ -1038,7 +1050,8 @@ pub fn show_remove_modal(
     let warn_prefix_c = warn_prefix.clone();
     let warn_files_c = warn_files.clone();
     yes_btn.connect_clicked(move |_| {
-        let remove_prefix = chk_prefix.is_active();
+        // Hidden checkbox (Steam games) can never trigger deletion.
+        let remove_prefix = chk_prefix.is_visible() && chk_prefix.is_active();
         let remove_files = chk_files.is_active();
 
         if remove_prefix {

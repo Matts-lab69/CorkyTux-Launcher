@@ -519,6 +519,10 @@ fn build_run_tab(
 
     // Shared prefix: switch + read-only resolved path + chooser (no text field)
     let original_prefix = state.config.game_value(game_name, "PrefixPath").unwrap_or_default();
+    let steam_game = crate::backend::game_model::is_steam_game(
+        &state.config.game_value(game_name, "Source").unwrap_or_default(),
+        &state.config.game_value(game_name, "SteamID").unwrap_or_default(),
+    );
     let shared_active: std::rc::Rc<std::cell::RefCell<bool>> =
         std::rc::Rc::new(std::cell::RefCell::new(false));
     let original_rc: std::rc::Rc<std::cell::RefCell<String>> =
@@ -542,6 +546,20 @@ fn build_run_tab(
     prefix_entry.set_hexpand(true);
     pp_inner.append(&prefix_entry);
     save_entry(state, game_name, "PrefixPath", &prefix_entry);
+    // Steam owns its prefix and launch: hide launcher prefix controls,
+    // they must not read or write anything for these games.
+    if steam_game {
+        shared_box.set_visible(false);
+        prefix_lbl.set_visible(false);
+        prefix_entry.set_visible(false);
+        let note = gtk::Label::new(Some(
+            "Steam manages this game's prefix and launch; prefix and isolation settings do not apply.",
+        ));
+        note.set_halign(gtk::Align::Start);
+        note.set_wrap(true);
+        note.add_css_class("info-value");
+        pp_inner.append(&note);
+    }
     // Wine virtual desktop: borderless window instead of exclusive
     // fullscreen (mode switches crash some compositors, e.g. Muffin).
     {
@@ -712,8 +730,12 @@ fn build_run_tab(
             } else {
                 let mut orig = orig_c.borrow().clone();
                 // If the remembered path is itself shared (or empty),
-                // rebuild the default individual path.
-                if is_shared_path(&state_c, &orig) {
+                // rebuild the default individual path. Steam games keep
+                // whatever they have: Steam owns their prefix.
+                if is_shared_path(&state_c, &orig) && !crate::backend::game_model::is_steam_game(
+                    &state_c.config.game_value(&game_c, "Source").unwrap_or_default(),
+                    &state_c.config.game_value(&game_c, "SteamID").unwrap_or_default(),
+                ) {
                     orig = state_c
                         .config
                         .individual_prefix_path(&game_c)
@@ -747,7 +769,11 @@ fn build_run_tab(
                 return;
             }
             let mut orig = orig_c.borrow().clone();
-            if is_shared_path(&state_c, &orig) {
+            let steam_game = crate::backend::game_model::is_steam_game(
+                &state_c.config.game_value(&game_c, "Source").unwrap_or_default(),
+                &state_c.config.game_value(&game_c, "SteamID").unwrap_or_default(),
+            );
+            if is_shared_path(&state_c, &orig) && !steam_game {
                 orig = state_c
                     .config
                     .individual_prefix_path(&game_c)
@@ -840,7 +866,7 @@ fn build_run_tab(
     {
         let sid = state.config.game_value(game_name, "SteamID").unwrap_or_default();
         let sid = sid.trim().to_string();
-        if !sid.is_empty() && sid.chars().all(|c| c.is_ascii_digit()) {
+        if (!sid.is_empty() && sid.chars().all(|c| c.is_ascii_digit())) || steam_game {
             iso_frame.set_visible(false);
         }
     }

@@ -619,6 +619,13 @@ pub struct PrefixInput {
 pub fn collect_prefix_inputs(config: &ConfigManager, names: &[String]) -> Vec<PrefixInput> {
     let mut out = Vec::new();
     for name in names {
+        // Steam prefixes belong to Steam: never warned, never repaired.
+        if crate::backend::game_model::is_steam_game(
+            &config.game_value(name, "Source").unwrap_or_default(),
+            &config.game_value(name, "SteamID").unwrap_or_default(),
+        ) {
+            continue;
+        }
         let prefix = config.game_value(name, "PrefixPath").unwrap_or_default();
         if prefix.trim().is_empty() {
             continue;

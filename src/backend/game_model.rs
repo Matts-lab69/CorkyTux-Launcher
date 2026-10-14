@@ -55,6 +55,35 @@ impl GameSource {
     }
 }
 
+/// Whether a game is Steam-managed: explicit Steam source or any
+/// SteamID set (Steam launches it via steam:// and owns its prefix).
+/// Single predicate; launchers must never assign, migrate or delete
+/// prefixes for these games.
+pub fn is_steam_game(source: &str, steam_id: &str) -> bool {
+    source.eq_ignore_ascii_case("steam") || !steam_id.trim().is_empty()
+}
+
+/// Steam compat prefix deduced from the install path:
+/// <library>/steamapps/compatdata/<SteamID>, where <library> is found
+/// by walking up from a `steamapps` component. None when the layout
+/// does not match or no SteamID is set. Never creates anything; callers
+/// decide what a missing dir means.
+pub fn steam_compat_path(main_path: &str, steam_id: &str) -> Option<std::path::PathBuf> {
+    let sid = steam_id.trim();
+    if sid.is_empty() {
+        return None;
+    }
+    let mut current: Option<&std::path::Path> =
+        Some(std::path::Path::new(main_path.trim()));
+    while let Some(p) = current {
+        if p.file_name().and_then(|n| n.to_str()) == Some("steamapps") {
+            return Some(p.join("compatdata").join(sid));
+        }
+        current = p.parent();
+    }
+    None
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct GameEntry {
     pub name: String,
@@ -466,5 +495,47 @@ impl RecentModel {
 
     pub fn count(&self) -> usize {
         self.imp().entries.borrow().len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_steam_game, steam_compat_path};
+
+    #[test]
+    fn steam_game_covers_source_and_id() {
+        assert!(is_steam_game("Steam", ""));
+        assert!(is_steam_game("steam", ""));
+        assert!(is_steam_game("Imported", "945360"));
+        assert!(is_steam_game("Manual", "  480  "));
+        assert!(!is_steam_game("Imported", ""));
+        assert!(!is_steam_game("Manual", ""));
+        assert!(!is_steam_game("GOG", ""));
+    }
+
+    #[test]
+    fn steam_compat_deduced_from_install_path() {
+        let base = std::env::temp_dir().join("corky_steam_compat");
+        let _ = std::fs::remove_dir_all(&base);
+        let lib = base.join("library");
+        let compat = lib.join("steamapps/compatdata/945360");
+        std::fs::create_dir_all(&compat).unwrap();
+        let main = lib.join("steamapps/common/Among Us");
+        std::fs::create_dir_all(&main).unwrap();
+        assert_eq!(
+            steam_compat_path(&main.display().to_string(), "945360"),
+            Some(compat.clone())
+        );
+        // Missing dir still deduces (caller decides what missing means).
+        assert_eq!(
+            steam_compat_path(&main.display().to_string(), "999"),
+            Some(lib.join("steamapps/compatdata/999"))
+        );
+        assert_eq!(steam_compat_path(&main.display().to_string(), ""), None);
+        assert_eq!(
+            steam_compat_path("/games/plain", "945360"),
+            None
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

@@ -578,6 +578,13 @@ impl DetailsPanel {
             }
         } else if !executor.is_empty() {
             format!("Emulator: {}", executor)
+        } else if crate::backend::game_model::is_steam_game(
+            &cfg.game_value(game_name, "Source").unwrap_or_default(),
+            &cfg.game_value(game_name, "SteamID").unwrap_or_default(),
+        ) {
+            // Steam launches via steam:// and owns its prefix: CorkyTux
+            // never reads or writes PrefixPath for these games.
+            String::from("Prefix: managed by Steam")
         } else {
             // Always the real path: explicit field, else the individual
             // path the launcher assigns on first run.

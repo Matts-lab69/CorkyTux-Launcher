@@ -2817,6 +2817,12 @@ fn unlink_shared_prefix(config: &ConfigManager, name: &str) {
     };
     let pairs = config.all_game_prefixes();
     for (g, px) in &pairs {
+        if crate::backend::game_model::is_steam_game(
+            &config.game_value(g, "Source").unwrap_or_default(),
+            &config.game_value(g, "SteamID").unwrap_or_default(),
+        ) {
+            continue;
+        }
         if !ConfigManager::is_shared_prefix_user(&base, px)
             && !ConfigManager::stored_under(&base, px)
         {
@@ -2847,6 +2853,12 @@ fn prune_missing_shared_prefixes(config: &ConfigManager) {
             Some(p) => {
                 changed = true;
                 for (g, px) in config.all_game_prefixes() {
+                    if crate::backend::game_model::is_steam_game(
+                        &config.game_value(&g, "Source").unwrap_or_default(),
+                        &config.game_value(&g, "SteamID").unwrap_or_default(),
+                    ) {
+                        continue;
+                    }
                     if ConfigManager::is_shared_prefix_user(&p, &px)
                         || ConfigManager::stored_under(&p, &px)
                     {
@@ -2891,7 +2903,7 @@ fn link_rows(
 ) -> Vec<(String, LinkRow)> {
     let mut out = Vec::new();
     for (name, source, executor, steam_id, proton, prefix, use_shared, isolated) in games {
-        if source.eq_ignore_ascii_case("steam") || !steam_id.trim().is_empty() {
+        if crate::backend::game_model::is_steam_game(source, steam_id) {
             continue;
         }
         if !executor.trim().is_empty()
@@ -2966,12 +2978,19 @@ fn copy_saves(old_prefix: &std::path::Path, new_prefix: &std::path::Path) -> Res
 }
 
 /// Persist one game link: shared flag, prefix path, no stale override.
+/// No-op for Steam games: Steam owns their prefix.
 fn link_game_to_shared(
     config: &ConfigManager,
     game: &str,
     shared_name: &str,
     shared_path: &str,
 ) {
+    if crate::backend::game_model::is_steam_game(
+        &config.game_value(game, "Source").unwrap_or_default(),
+        &config.game_value(game, "SteamID").unwrap_or_default(),
+    ) {
+        return;
+    }
     config.set_game_value(game, "UseSharedPrefix", "true");
     config.set_game_value(game, "PrefixPath", shared_path);
     config.set_game_value(game, "SharedPrefix", "");
@@ -4006,5 +4025,34 @@ mod tests {
             "About label must carry Cargo version: {}",
             v
         );
+    }
+
+    #[test]
+    fn unlink_and_prune_skip_steam_games() {
+        let base = mktmp("corky_settings_steam_skip");
+        let cfg = ConfigManager::for_test_dir(&base);
+        let shared = cfg.add_shared_prefix("proton-x");
+        std::fs::create_dir_all(shared.join("pfx")).unwrap();
+        let want = shared.join("pfx").display().to_string();
+        cfg.set_game_value("SteamGame", "PrefixPath", &want);
+        cfg.set_game_value("SteamGame", "UseSharedPrefix", "true");
+        cfg.set_game_value("SteamGame", "SteamID", "945360");
+        unlink_shared_prefix(&cfg, "proton-x");
+        assert_eq!(
+            cfg.game_value("SteamGame", "PrefixPath").as_deref(),
+            Some(want.as_str())
+        );
+        assert_eq!(
+            cfg.game_value("SteamGame", "UseSharedPrefix").as_deref(),
+            Some("true")
+        );
+        // Prune with a gone base must not reassign Steam orphans either.
+        std::fs::remove_dir_all(&shared).unwrap();
+        prune_missing_shared_prefixes(&cfg);
+        assert_eq!(
+            cfg.game_value("SteamGame", "PrefixPath").as_deref(),
+            Some(want.as_str())
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

@@ -1021,6 +1021,13 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
         let games = state.game_model.ordered_names();
         let mut missing: Vec<(String, String)> = Vec::new();
         for name in &games {
+            // Steam prefixes belong to Steam: never warned about.
+            if crate::backend::game_model::is_steam_game(
+                &state.config.game_value(name, "Source").unwrap_or_default(),
+                &state.config.game_value(name, "SteamID").unwrap_or_default(),
+            ) {
+                continue;
+            }
             if let Some(prefix) = state.config.game_value(name, "PrefixPath") {
                 if !prefix.is_empty() {
                     let expanded = tilde(&prefix);
