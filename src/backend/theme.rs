@@ -162,6 +162,17 @@ impl ThemeManager {
         self.imp().theme.borrow().clone()
     }
 
+    /// Test-only constructor: explicit mode, no config I/O. `new()`
+    /// reads the user's Launcher.ini through `constructed`, which makes
+    /// theme tests depend on HOME; this one stays hermetic and never
+    /// writes the user config (unlike `set_theme`).
+    #[cfg(test)]
+    pub(crate) fn for_test(mode: ThemeMode) -> Self {
+        let m: Self = glib::Object::new();
+        *m.imp().theme.borrow_mut() = mode;
+        m
+    }
+
     pub fn is_dark(&self) -> bool {
         self.theme() == ThemeMode::Dark
     }

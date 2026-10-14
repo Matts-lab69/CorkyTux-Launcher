@@ -2761,6 +2761,7 @@ fn confirm_remove_plugin(
     )));
     msg.set_wrap(true);
     msg.set_halign(gtk::Align::Start);
+    msg.add_css_class("info-value");
     col.append(&msg);
     let err = gtk::Label::new(None);
     err.set_wrap(true);
@@ -3092,6 +3093,7 @@ fn show_link_games_dialog(
         vbox.set_hexpand(true);
         let lbl = gtk::Label::new(Some(name));
         lbl.set_halign(gtk::Align::Start);
+        lbl.add_css_class("info-value");
         vbox.append(&lbl);
         let selectable = match row {
             LinkRow::Free { .. } | LinkRow::OtherShared(_) => true,
@@ -3310,6 +3312,7 @@ fn show_prefix_choice_dialog(
     )));
     msg.set_wrap(true);
     msg.set_halign(gtk::Align::Start);
+    msg.add_css_class("info-value");
     col.append(&msg);
     let opts = gtk::StringList::new(&["Keep", "Copy saves", "Delete"]);
     let drop = gtk::DropDown::new(
@@ -3441,6 +3444,7 @@ fn confirm_delete_old_prefix(
     )));
     msg.set_wrap(true);
     msg.set_halign(gtk::Align::Start);
+    msg.add_css_class("info-value");
     col.append(&msg);
     let btnrow = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     let cancel = gtk::Button::with_label("Cancel");
@@ -3538,6 +3542,7 @@ fn confirm_shared_blocked(
     )));
     msg.set_wrap(true);
     msg.set_halign(gtk::Align::Start);
+    msg.add_css_class("info-value");
     col.append(&msg);
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     let close = gtk::Button::with_label("Close");
@@ -3609,6 +3614,7 @@ fn confirm_unlink_shared(
     )));
     msg.set_wrap(true);
     msg.set_halign(gtk::Align::Start);
+    msg.add_css_class("info-value");
     col.append(&msg);
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     let cancel = gtk::Button::with_label("Cancel");
@@ -3693,6 +3699,7 @@ fn confirm_remove_shared(
     )));
     msg.set_wrap(true);
     msg.set_halign(gtk::Align::Start);
+    msg.add_css_class("info-value");
     col.append(&msg);
     let err = gtk::Label::new(None);
     err.set_wrap(true);

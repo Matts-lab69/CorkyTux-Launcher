@@ -525,28 +525,9 @@ pub fn icon_button(name: &str, is_dark: bool, tooltip: &str) -> gtk::Button {
     btn
 }
 
-pub fn apply_theme_css(theme: &ThemeManager) {
-    let display = match gdk::Display::default() {
-        Some(d) => d,
-        None => return,
-    };
-
-    // Force Adwaita color scheme so adw::Dialog gets dark surface
-    let sm = adw::StyleManager::for_display(&display);
-    if theme.is_dark() {
-        sm.set_color_scheme(adw::ColorScheme::PreferDark);
-    } else {
-        sm.set_color_scheme(adw::ColorScheme::PreferLight);
-    }
-
-
-    MAIN_CSS_PROVIDER.with(|cell| {
-        let mut borrow = cell.borrow_mut();
-        if let Some(provider) = borrow.take() {
-            gtk::style_context_remove_provider_for_display(&display, &provider);
-        }
-
-        let provider = gtk::CssProvider::new();
+/// Stylesheet text, pure function of the theme. Split out so tests
+/// can assert dialog contrast without a display.
+pub(crate) fn main_css_text(theme: &ThemeManager) -> String {
         let accent = theme.accent_color();
         let bg = theme.bg();
         let panel = theme.panel();
@@ -577,8 +558,11 @@ pub fn apply_theme_css(theme: &ThemeManager) {
         let dialog_bg = if is_dark { "#1E1E1E" } else { panel };
         let warn_dot = if is_dark { "#FFA726" } else { "#FB8C00" };
         let on_accent = if is_dark { "#FFFFFF" } else { text_main };
+        // Neon fills are fixed brand greens/reds in both themes: dark ink
+        // stays legible on them in light and in dark (white fails dark).
+        let neon_ink = "#241F2E";
 
-        let css = format!(
+        format!(
             "window.background {{ background-color: {bg}; color: {text_main}; }}\
              dialog.background {{ background-color: {dialog_bg}; color: {text_main}; border-radius: 12px; border: 1px solid {border}; }}\
              .top-bar {{ background-color: {bg}; min-height: 52px; padding: 0 16px; }}\
@@ -611,8 +595,8 @@ pub fn apply_theme_css(theme: &ThemeManager) {
             .action-btn {{ background-color: {action_bg}; color: {text_main}; border: 1px solid transparent; border-radius: 18px; min-height: 36px; font-size: 11px; font-weight: bold; }}\
             .action-btn:hover {{ background-color: {hover}; }}\
             .actions-frame {{ border: 1px solid {accent}; border-radius: 8px; background-color: transparent; padding: 8px; }}\
-             .neon-red {{ background-color: #FF0040; color: {on_accent}; font-weight: bold; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; border: none; }}\
-             .neon-green {{ background-color: #00E639; color: {on_accent}; font-weight: bold; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; border: none; }}\
+             .neon-red {{ background-color: #FF0040; color: {neon_ink}; font-weight: bold; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; border: none; }}\
+             .neon-green {{ background-color: #00E639; color: {neon_ink}; font-weight: bold; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; border: none; }}\
              .sale-discount {{ color: {accent}; font-weight: 800; }}\
              switch {{ background-color: {well}; border: 1px solid {border}; border-radius: 16px; }}\
              switch > slider {{ background-color: {text_muted}; }}\
@@ -683,6 +667,7 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .mc-account-label {{ font-weight: bold; font-size: 13px; color: {text_main}; }}
              .mc-row {{ background-color: {panel}; border: 1px solid {border}; border-radius: 10px; padding: 8px 10px; }}
              .mc-row:hover {{ border-color: {accent}; }}
+             .loader-tag {{ color: {text_main}; background-color: {well}; border: 1px solid {border}; border-radius: 8px; padding: 2px 8px; font-size: 12px; }}
              .icon-ghost {{ background: transparent; border: none; padding: 0; min-height: 0; min-width: 0; color: {accent}; }}
              .icon-ghost:hover {{ opacity: 0.7; }}\
              .dark-btn {{ background-color: #000000; color: #FFFFFF; border: 1.5px solid #FFFFFF; border-radius: 20px; min-height: 36px; font-size: 14px; padding: 0 16px; font-weight: bold; }}\
@@ -762,8 +747,32 @@ pub fn apply_theme_css(theme: &ThemeManager) {
              .import-warn {{ color: {text_main}; font-size: 12px; font-weight: 600; }}\
              tooltip.background {{ background-color: {tab_bar_bg}; border-radius: 8px; border: 1px solid {border}; padding: 12px; }}\
              tooltip label {{ color: {text_main}; font-size: 13px; }}"
-        );
+        )
+}
 
+pub fn apply_theme_css(theme: &ThemeManager) {
+    let display = match gdk::Display::default() {
+        Some(d) => d,
+        None => return,
+    };
+
+    // Force Adwaita color scheme so adw::Dialog gets dark surface
+    let sm = adw::StyleManager::for_display(&display);
+    if theme.is_dark() {
+        sm.set_color_scheme(adw::ColorScheme::PreferDark);
+    } else {
+        sm.set_color_scheme(adw::ColorScheme::PreferLight);
+    }
+
+
+    MAIN_CSS_PROVIDER.with(|cell| {
+        let mut borrow = cell.borrow_mut();
+        if let Some(provider) = borrow.take() {
+            gtk::style_context_remove_provider_for_display(&display, &provider);
+        }
+
+        let provider = gtk::CssProvider::new();
+        let css = main_css_text(theme);
         provider.load_from_string(&css);
         gtk::style_context_add_provider_for_display(
             &display,
@@ -804,4 +813,101 @@ pub fn source_link(state: &crate::AppState, label: &str, url: Option<String>, to
     });
     l.add_controller(click);
     l
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::theme::ThemeManager;
+
+    fn hex_luminance(hex: &str) -> f64 {
+        let c = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0) as f64 / 255.0;
+        let f = |v: f64| {
+            if v <= 0.03928 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * f(c(1)) + 0.7152 * f(c(3)) + 0.0722 * f(c(5))
+    }
+
+    fn contrast(a: &str, b: &str) -> f64 {
+        let (x, y) = (hex_luminance(a), hex_luminance(b));
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
+    }
+
+    fn rule_color(css: &str, selector: &str, prop: &str) -> String {
+        let start = css
+            .find(selector)
+            .unwrap_or_else(|| panic!("rule missing: {}", selector));
+        let tail = &css[start..];
+        let end = tail.find('}').unwrap_or(tail.len());
+        let body = &tail[..end];
+        // Avoid matching background-color/caret-color when asking color.
+        let key = format!("{}:", prop);
+        let mut pos = 0;
+        let val = loop {
+            let rel = body[pos..]
+                .find(&key)
+                .unwrap_or_else(|| panic!("{} missing in {}", prop, selector));
+            let abs = pos + rel;
+            let ok = abs == 0
+                || body.as_bytes()[abs - 1] == b';'
+                || body.as_bytes()[abs - 1] == b'{'
+                || body.as_bytes()[abs - 1] == b' ';
+            if ok {
+                break body[abs + key.len()..].trim_start()[..7].to_string();
+            }
+            pos = abs + 1;
+        };
+        val
+    }
+
+    /// Dialog text stays legible in light and dark: body/title/hint
+    /// colors against the dialog background, button text on neon fills,
+    /// chips on their well. Both modes are checked explicitly so the
+    /// test never depends on the user's theme or HOME.
+    #[test]
+    fn dialog_text_contrast_in_active_theme() {
+        use crate::backend::theme::ThemeMode;
+        for mode in [ThemeMode::Light, ThemeMode::Dark] {
+            let theme = ThemeManager::for_test(mode.clone());
+            let css = main_css_text(&theme);
+            let bg = rule_color(&css, ".modal-bg {", "background-color");
+            for selector in [
+                ".info-value {",
+                ".details-title {",
+                ".time-label {",
+                ".modal-title {",
+            ] {
+                let fg = rule_color(&css, selector, "color");
+                let ratio = contrast(&fg, &bg);
+                assert!(
+                    ratio >= 4.5,
+                    "{:?} {} {} on {} = {:.2}:1",
+                    mode.as_str(), selector, fg, bg, ratio
+                );
+            }
+            for selector in [".neon-green {", ".neon-red {"] {
+                let fg = rule_color(&css, selector, "color");
+                let fill = rule_color(&css, selector, "background-color");
+                let ratio = contrast(&fg, &fill);
+                assert!(
+                    ratio >= 3.0,
+                    "{:?} {} {} on {} = {:.2}:1",
+                    mode.as_str(), selector, fg, fill, ratio
+                );
+            }
+            // Version/loader chips (Project dialog): chip ink on chip well.
+            let chip_fg = rule_color(&css, ".loader-tag {", "color");
+            let chip_bg = rule_color(&css, ".loader-tag {", "background-color");
+            let chip_ratio = contrast(&chip_fg, &chip_bg);
+            assert!(
+                chip_ratio >= 4.5,
+                "{:?} .loader-tag {} on {} = {:.2}:1",
+                mode.as_str(), chip_fg, chip_bg, chip_ratio
+            );
+        }
+    }
 }
