@@ -444,6 +444,7 @@ pub fn show_add_game_modal(
     icon_box.append(&icon_browse);
     let icon_lbl = gtk::Label::new(Some("Game Icon"));
     icon_lbl.set_halign(gtk::Align::Start);
+    icon_lbl.add_css_class("info-value");
     page3.append(&icon_lbl);
     page3.append(&icon_box);
     {
@@ -467,6 +468,7 @@ pub fn show_add_game_modal(
     banner_box.append(&banner_browse);
     let banner_lbl = gtk::Label::new(Some("Game Banner"));
     banner_lbl.set_halign(gtk::Align::Start);
+    banner_lbl.add_css_class("info-value");
     page3.append(&banner_lbl);
     page3.append(&banner_box);
     {

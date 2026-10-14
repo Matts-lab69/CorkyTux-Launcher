@@ -946,6 +946,7 @@ pub fn show_remove_modal(
     let msg = gtk::Label::new(Some(&format!("Remove \"{}\" from launcher?", selected)));
     msg.set_wrap(true);
     msg.set_halign(gtk::Align::Start);
+    msg.add_css_class("info-value");
     inner.append(&msg);
 
     // Check if game is an emulator game (has executor, no proton)

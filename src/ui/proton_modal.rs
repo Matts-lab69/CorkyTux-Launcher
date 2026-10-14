@@ -47,6 +47,7 @@ impl ProtonModal {
         let source_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let source_lbl = gtk::Label::new(Some("Source:"));
         source_lbl.set_halign(gtk::Align::Start);
+        source_lbl.add_css_class("info-value");
         let source_dropdown = gtk::DropDown::new(None::<gtk::StringList>, None::<gtk::Expression>);
         let source_list = gtk::StringList::new(&["GE (GloriousEggroll)", "CachyOS"]);
         let source_model: gio::ListModel = source_list.clone().upcast();
@@ -60,6 +61,7 @@ impl ProtonModal {
         let status_label = gtk::Label::new(Some("Press Refresh to load releases"));
         status_label.set_halign(gtk::Align::Center);
         status_label.set_wrap(true);
+        status_label.add_css_class("info-value");
         inner.append(&status_label);
 
         let progress_bar = gtk::ProgressBar::new();

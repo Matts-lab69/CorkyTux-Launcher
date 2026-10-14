@@ -330,6 +330,7 @@ pub fn present(
     let intro = gtk::Label::new(Some("Stores needs these tools to work. They are downloaded once."));
     intro.set_halign(gtk::Align::Start);
     intro.set_wrap(true);
+    intro.add_css_class("info-value");
     inner.append(&intro);
 
     let lista = gtk::ListBox::new();
