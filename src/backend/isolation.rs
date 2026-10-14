@@ -92,25 +92,107 @@ pub fn decide(game_isolated: Option<&str>, global_default: bool) -> (bool, &'sta
     }
 }
 
-/// Extra game paths (`;`-separated, `~` expanded); I keep existing dirs
-/// only, deduplicated.
-pub fn extra_paths(raw: &str) -> Vec<PathBuf> {
+/// Extra game paths (`;`-separated, `~` expanded). Kept only when an
+/// existing dir passes validation; see `validate_isolate_path`.
+pub fn extra_paths(game_name: &str, raw: &str) -> Result<Vec<PathBuf>, String> {
     let mut out = Vec::new();
     for part in raw.split(';') {
         let p = part.trim();
-        let pb = if p.starts_with("~/") || p == "~" {
-            match std::env::var("HOME") {
-                Ok(home) => PathBuf::from(p.replacen("~", &home, 1)),
-                Err(_) => continue,
+        if p.is_empty() {
+            continue;
+        }
+        match validate_isolate_path(game_name, p)? {
+            Some(pb) => {
+                if !out.contains(&pb) {
+                    out.push(pb);
+                }
             }
-        } else {
-            PathBuf::from(p)
-        };
-        if !pb.as_os_str().is_empty() && pb.is_dir() && !out.contains(&pb) {
-            out.push(pb);
+            None => {}
         }
     }
-    out
+    Ok(out)
+}
+
+/// Validate one sandbox extra path for a game. `Ok(None)` skips silently
+/// (empty or missing, as before); `Ok(Some)` is the canonical path to
+/// bind; `Err` explains a denial. Never allows the HOME root itself,
+/// its ancestors, sensitive subdirs, Steam data, another game's
+/// sandbox, or entries that escape their own location.
+pub fn validate_isolate_path(game_name: &str, raw: &str) -> Result<Option<PathBuf>, String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    if home.trim().is_empty() {
+        return Err("HOME is not set".to_string());
+    }
+    let expanded = if raw == "~" || raw.starts_with("~/") {
+        raw.replacen('~', &home, 1)
+    } else {
+        raw.to_string()
+    };
+    let home_canon = std::fs::canonicalize(&home).unwrap_or_else(|_| PathBuf::from(&home));
+    // Lexical normalization (no filesystem): collapse `.` and `..`.
+    let mut parts: Vec<std::ffi::OsString> = Vec::new();
+    for comp in std::path::Path::new(&expanded).components() {
+        use std::path::Component;
+        match comp {
+            // Never pop a root or prefix: "/.." stays "/".
+            Component::ParentDir => {
+                let last_is_normal = parts.last().map(|l| {
+                    let mut c = std::path::Path::new(l).components();
+                    matches!(c.next(), Some(Component::Normal(_))) && c.next().is_none()
+                });
+                if last_is_normal == Some(true) {
+                    parts.pop();
+                }
+            }
+            Component::CurDir => {}
+            c => parts.push(c.as_os_str().to_os_string()),
+        }
+    }
+    let lexical: PathBuf = parts.iter().collect();
+    let canon = match std::fs::canonicalize(&lexical) {
+        Ok(p) => p,
+        Err(_) => return Ok(None),
+    };
+    let within = |root: &Path| canon == root || canon.starts_with(root);
+    // HOME itself and anything above it.
+    if canon == home_canon || canon == Path::new("/") || canon == Path::new("/home") {
+        return Err("points at your HOME directory or above it".to_string());
+    }
+    // Sensitive subdirs under HOME.
+    for sensitive in [".ssh", ".gnupg", ".config", ".mozilla"] {
+        let root = home_canon.join(sensitive);
+        if within(&root) {
+            return Err(format!("points inside ~/{} (not allowed)", sensitive));
+        }
+    }
+    // Steam data.
+    for steam in [
+        home_canon.join(".local/share/Steam"),
+        home_canon.join(".steam"),
+    ] {
+        if within(&steam) {
+            return Err("points at Steam data (not allowed)".to_string());
+        }
+    }
+    // Another game's sandbox home.
+    let sandbox_root = home_canon.join(".local/share/CorkyTux/sandbox-home");
+    let own_home = sandbox_home(game_name);
+    let own_canon =
+        std::fs::canonicalize(&own_home).unwrap_or_else(|_| own_home.clone());
+    if within(&sandbox_root) && !(canon == own_canon || canon.starts_with(&own_canon)) {
+        return Err("points at another game's sandbox (not allowed)".to_string());
+    }
+    // Escape check: resolved location must stay where the entry points.
+    // Compare against the lexical path with the HOME prefix resolved, so
+    // a symlinked $HOME itself does not count as an escape.
+    let lex_norm = lexical
+        .strip_prefix(Path::new(&home))
+        .map(|rest| home_canon.join(rest))
+        .unwrap_or_else(|_| lexical.clone());
+    if canon != lex_norm && !canon.starts_with(&lex_norm) {
+        return Err("escapes its location through a symlink or ..".to_string());
+    }
+    Ok(Some(canon))
 }
 
 /// What my sandbox exposes. I filter missing paths when building argv
@@ -340,10 +422,103 @@ mod tests {
 
     #[test]
     fn extra_paths_only_existing_dirs() {
-        let v = extra_paths("/tmp;/no-existe-xyz;/tmp");
-        assert_eq!(v, vec![PathBuf::from("/tmp")]);
-        assert!(extra_paths("").is_empty());
-        assert!(extra_paths("/tmp/missing-deep/nested").is_empty());
+        let _env = crate::test_env::lock();
+        assert_eq!(
+            extra_paths("game", "/tmp;/no-such-dir-xyz;/tmp").unwrap(),
+            vec![PathBuf::from("/tmp")]
+        );
+        assert!(extra_paths("game", "").unwrap().is_empty());
+        assert!(extra_paths("game", "/tmp/missing-deep/nested").unwrap().is_empty());
+    }
+
+    #[test]
+    fn isolate_cmd_fails_without_bwrap() {
+        use std::ffi::OsString;
+        struct PathGuard(Option<OsString>);
+        impl Drop for PathGuard {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(p) => std::env::set_var("PATH", p),
+                    None => std::env::remove_var("PATH"),
+                }
+            }
+        }
+        let _env = crate::test_env::lock();
+        let _path_guard = PathGuard(std::env::var_os("PATH"));
+        std::env::set_var("PATH", "/nonexistent-dir-xyz");
+        let pm = crate::backend::proton::ProtonManager::new();
+        let mut game = std::collections::HashMap::new();
+        game.insert("isolated".to_string(), "true".to_string());
+        let err = pm
+            .isolate_cmd_for_test(
+                std::process::Command::new("true"),
+                "Game",
+                &game,
+                Vec::new(),
+                Vec::new(),
+                None,
+            )
+            .unwrap_err();
+        assert!(err.contains("bubblewrap"), "{}", err);
+        assert!(err.contains("Game"), "{}", err);
+    }
+
+    #[test]
+    fn validate_isolate_paths_deny_and_allow() {
+        let _env = crate::test_env::lock();
+        let base = std::env::temp_dir().join(format!(
+            "corky_iso_val_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::env::set_var("HOME", &base);
+        let home = base.clone();
+        std::fs::create_dir_all(home.join("Games/Saves")).unwrap();
+        std::fs::create_dir_all(home.join(".local/share/CorkyTux")).unwrap();
+        // HOME itself and ancestors deny.
+        assert!(validate_isolate_path("G", home.to_str().unwrap()).is_err());
+        assert!(validate_isolate_path("G", "/").is_err());
+        assert!(validate_isolate_path("G", "/home").is_err());
+        // Sensitive subdirs deny.
+        for sensitive in [".ssh", ".gnupg", ".config", ".mozilla"] {
+            let dir = home.join(sensitive);
+            std::fs::create_dir_all(&dir).unwrap();
+            assert!(
+                validate_isolate_path("G", dir.to_str().unwrap()).is_err(),
+                "{}",
+                sensitive
+            );
+        }
+        // Steam data denies.
+        let steam = home.join(".local/share/Steam/steamapps/compatdata/0");
+        std::fs::create_dir_all(&steam).unwrap();
+        assert!(validate_isolate_path("G", steam.to_str().unwrap()).is_err());
+        // Symlink to HOME denies.
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&home, base.join("link")).unwrap();
+        #[cfg(unix)]
+        assert!(validate_isolate_path("G", base.join("link").to_str().unwrap()).is_err());
+        // Normal subfolders allow (canonical result).
+        let saves = home.join("Games/Saves");
+        assert_eq!(
+            validate_isolate_path("G", saves.to_str().unwrap()).unwrap(),
+            Some(saves.clone())
+        );
+        // Escaping .. denies.
+        let esc = home.join("Games/../.ssh");
+        assert!(validate_isolate_path("G", esc.to_str().unwrap()).is_err());
+        // Another game's sandbox denies; own allows.
+        let other = home.join(".local/share/CorkyTux/sandbox-home/Other");
+        std::fs::create_dir_all(&other).unwrap();
+        assert!(validate_isolate_path("G", other.to_str().unwrap()).is_err());
+        let own = home.join(".local/share/CorkyTux/sandbox-home/G");
+        std::fs::create_dir_all(&own).unwrap();
+        assert_eq!(
+            validate_isolate_path("G", own.to_str().unwrap()).unwrap(),
+            Some(own)
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

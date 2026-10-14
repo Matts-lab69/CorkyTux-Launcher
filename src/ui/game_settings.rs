@@ -795,14 +795,44 @@ fn build_run_tab(
     let iso_paths = gtk::Entry::new();
     iso_paths.set_placeholder_text(Some("Extra writable paths, separated by ;"));
     iso_paths.set_text(&state.config.game_value(game_name, "IsolatePaths").unwrap_or_default());
+    let iso_note = gtk::Label::new(None);
+    iso_note.set_halign(gtk::Align::Start);
+    iso_note.set_wrap(true);
+    iso_note.add_css_class("time-label");
+    iso_note.set_visible(false);
     {
         let state_c = state.clone();
         let game_c = game_name.to_string();
+        let note_c = iso_note.clone();
         iso_paths.connect_changed(move |e| {
-            state_c.config.set_game_value(&game_c, "IsolatePaths", &e.text().to_string());
+            let text = e.text().to_string();
+            let mut first_err: Option<String> = None;
+            for part in text.split(';') {
+                let p = part.trim();
+                if p.is_empty() {
+                    continue;
+                }
+                if let Err(reason) =
+                    crate::backend::isolation::validate_isolate_path(&game_c, p)
+                {
+                    first_err = Some(format!("Not saved ({}): {}", reason, p));
+                    break;
+                }
+            }
+            match first_err {
+                Some(reason) => {
+                    note_c.set_text(&reason);
+                    note_c.set_visible(true);
+                }
+                None => {
+                    state_c.config.set_game_value(&game_c, "IsolatePaths", &text);
+                    note_c.set_visible(false);
+                }
+            }
         });
     }
     iso_inner.append(&iso_paths);
+    iso_inner.append(&iso_note);
     page.append(&iso_frame);
     // Steam games launched by the client (steam://): the sandbox can't apply
     // (foreign process), so I hide the option instead of promising something

@@ -270,7 +270,7 @@ impl ProtonManager {
         mut rw: Vec<PathBuf>,
         ro: Vec<PathBuf>,
         chdir: Option<PathBuf>,
-    ) -> Command {
+    ) -> Result<Command, String> {
         let config = super::ConfigManager::new();
         let global = config
             .launcher_value(super::isolation::GLOBAL_KEY)
@@ -279,26 +279,35 @@ impl ProtonManager {
         let (isolate, reason) =
             super::isolation::decide(game.get("isolated").map(|v| v.as_str()), global);
         if !isolate {
-            return cmd;
+            return Ok(cmd);
         }
-        rw.extend(super::isolation::extra_paths(
-            game.get("isolatepaths").map(|v| v.as_str()).unwrap_or(""),
-        ));
+        if !super::isolation::bwrap_available() {
+            if reason == "global default for new prefixes" {
+                return Err(format!(
+                    "Isolation is on for \"{}\" (global default IsolateNewPrefixes) but bubblewrap is missing or broken. Install bubblewrap, or turn off IsolateNewPrefixes in Settings.",
+                    game_name
+                ));
+            }
+            return Err(format!(
+                "Isolation is on for \"{}\" (per-game switch) but bubblewrap is missing or broken. Install bubblewrap, or turn Isolation off for this game in Game Settings.",
+                game_name
+            ));
+        }
+        rw.extend(
+            super::isolation::extra_paths(
+                game_name,
+                game.get("isolatepaths").map(|v| v.as_str()).unwrap_or(""),
+            )
+            .map_err(|e| format!("Isolation paths rejected for \"{}\": {}", game_name, e))?,
+        );
         let spec = super::isolation::SandboxSpec {
             game_name: game_name.to_string(),
             rw_dirs: rw,
             ro_dirs: ro,
             chdir,
         };
-        if !super::isolation::bwrap_available() {
-            eprintln!(
-                "[CorkyTux] WARNING: isolation requested for '{}' ({}) but bubblewrap is missing/broken — launching UNSANDBOXED",
-                game_name, reason
-            );
-            return cmd;
-        }
         eprintln!("[CorkyTux] isolation on for '{}' ({})", game_name, reason);
-        super::isolation::wrap_command(cmd, &spec)
+        Ok(super::isolation::wrap_command(cmd, &spec))
     }
 
     /// Game folder for the sandbox: the executable's dir, else mainpath.
@@ -1258,7 +1267,7 @@ impl ProtonManager {
                     leg_rw,
                     leg_ro,
                     leg_gdir,
-                );
+                )?;
                 Self::attach_log_file(&mut wrapped_cmd, game_name);
                 let child = wrapped_cmd
                     .spawn()
@@ -1476,7 +1485,7 @@ impl ProtonManager {
             iso_rw,
             iso_ro,
             iso_chdir,
-        );
+        )?;
 
         Self::attach_log_file(&mut wrapped_cmd, game_name);
         let child = wrapped_cmd
@@ -2861,7 +2870,7 @@ impl ProtonManager {
             vec![prefix_for_iso.clone()],
             tool_ro,
             Some(prefix_for_iso),
-        );
+        )?;
 
         let child = cmd
             .spawn()
@@ -3196,6 +3205,23 @@ impl ProtonManager {
         } else {
             base.join("pfx")
         }
+    }
+
+    /// If the game has no prefix configured (empty PrefixPath), assign and
+    /// create its individual default (see individual_prefix_path).
+    /// Emulator games never reach here (they return before any prefix
+    /// handling).
+    #[cfg(test)]
+    pub(crate) fn isolate_cmd_for_test(
+        &self,
+        cmd: Command,
+        game_name: &str,
+        game: &std::collections::HashMap<String, String>,
+        rw: Vec<PathBuf>,
+        ro: Vec<PathBuf>,
+        chdir: Option<PathBuf>,
+    ) -> Result<Command, String> {
+        self.isolate_cmd(cmd, game_name, game, rw, ro, chdir)
     }
 
     /// If the game has no prefix configured (empty PrefixPath), assign and
