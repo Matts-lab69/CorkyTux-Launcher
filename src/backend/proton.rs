@@ -282,7 +282,8 @@ impl ProtonManager {
             return Ok(cmd);
         }
         if !super::isolation::bwrap_available() {
-            if reason == "global default for new prefixes" {
+            use super::isolation::IsolationReason;
+            if reason == IsolationReason::GlobalDefault {
                 return Err(format!(
                     "Isolation is on for \"{}\" (global default IsolateNewPrefixes) but bubblewrap is missing or broken. Install bubblewrap, or turn off IsolateNewPrefixes in Settings.",
                     game_name
@@ -306,8 +307,8 @@ impl ProtonManager {
             ro_dirs: ro,
             chdir,
         };
-        eprintln!("[CorkyTux] isolation on for '{}' ({})", game_name, reason);
-        Ok(super::isolation::wrap_command(cmd, &spec))
+        eprintln!("[CorkyTux] isolation on for '{}' ({})", game_name, reason.as_str());
+        super::isolation::wrap_command(cmd, &spec)
     }
 
     /// Game folder for the sandbox: the executable's dir, else mainpath.
@@ -1629,12 +1630,12 @@ impl ProtonManager {
             let bw = if super::isolation::bwrap_available() {
                 "ready"
             } else {
-                "MISSING - launches UNSANDBOXED with warning"
+                "MISSING - isolated launches fail"
             };
             h.push_str(&format!(
                 "Isolation: {} ({}) · bubblewrap {}\n",
                 on(active),
-                reason,
+                reason.as_str(),
                 bw
             ));
         }
@@ -3211,23 +3212,6 @@ impl ProtonManager {
     /// create its individual default (see individual_prefix_path).
     /// Emulator games never reach here (they return before any prefix
     /// handling).
-    #[cfg(test)]
-    pub(crate) fn isolate_cmd_for_test(
-        &self,
-        cmd: Command,
-        game_name: &str,
-        game: &std::collections::HashMap<String, String>,
-        rw: Vec<PathBuf>,
-        ro: Vec<PathBuf>,
-        chdir: Option<PathBuf>,
-    ) -> Result<Command, String> {
-        self.isolate_cmd(cmd, game_name, game, rw, ro, chdir)
-    }
-
-    /// If the game has no prefix configured (empty PrefixPath), assign and
-    /// create its individual default (see individual_prefix_path).
-    /// Emulator games never reach here (they return before any prefix
-    /// handling).
     pub fn ensure_individual_prefix(&self, game_name: &str) -> PathBuf {
         let config = super::ConfigManager::new();
         let cur = config
@@ -3242,6 +3226,19 @@ impl ProtonManager {
         fs::create_dir_all(&p).ok();
         config.set_game_value(game_name, "PrefixPath", &p.display().to_string());
         p
+    }
+
+    #[cfg(test)]
+    pub(crate) fn isolate_cmd_for_test(
+        &self,
+        cmd: Command,
+        game_name: &str,
+        game: &std::collections::HashMap<String, String>,
+        rw: Vec<PathBuf>,
+        ro: Vec<PathBuf>,
+        chdir: Option<PathBuf>,
+    ) -> Result<Command, String> {
+        self.isolate_cmd(cmd, game_name, game, rw, ro, chdir)
     }
 
     pub fn query_folder_size(&self, path: &Path) -> u64 {

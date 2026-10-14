@@ -81,14 +81,33 @@ fn which_bwrap() -> Option<PathBuf> {
     })
 }
 
+/// Why isolation decided the way it did. Matched by callers instead of
+/// comparing reason strings.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum IsolationReason {
+    PerGame,
+    GlobalDefault,
+    Off,
+}
+
+impl IsolationReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            IsolationReason::PerGame => "per-game switch on",
+            IsolationReason::GlobalDefault => "global default for new prefixes",
+            IsolationReason::Off => "isolation off",
+        }
+    }
+}
+
 /// My isolation decision for a game. `game_isolated`: the per-game key
 /// value ("true"/"false"/absent). I return (isolate, reason).
-pub fn decide(game_isolated: Option<&str>, global_default: bool) -> (bool, &'static str) {
+pub fn decide(game_isolated: Option<&str>, global_default: bool) -> (bool, IsolationReason) {
     match game_isolated.map(str::trim) {
-        Some("true") | Some("1") => (true, "per-game switch on"),
-        Some("false") | Some("0") => (false, "per-game switch off"),
-        _ if global_default => (true, "global default for new prefixes"),
-        _ => (false, "isolation off"),
+        Some("true") | Some("1") => (true, IsolationReason::PerGame),
+        Some("false") | Some("0") => (false, IsolationReason::Off),
+        _ if global_default => (true, IsolationReason::GlobalDefault),
+        _ => (false, IsolationReason::Off),
     }
 }
 
@@ -350,9 +369,9 @@ pub fn sandbox_argv(
 
 /// I wrap `cmd` in bwrap per `spec` (takes ownership). Command envs travel
 /// as `--setenv`; the rest of the environment is inherited and stdio stays as
-/// in the direct spawn. If bwrap is missing I return the command untouched
-/// (my caller warns loudly).
-pub fn wrap_command(cmd: Command, spec: &SandboxSpec) -> Command {
+/// in the direct spawn. Errors when bubblewrap is missing instead of
+/// launching unsandboxed.
+pub fn wrap_command(cmd: Command, spec: &SandboxSpec) -> Result<Command, String> {
     let cmd_envs: Vec<(String, String)> = cmd
         .get_envs()
         .filter_map(|(k, v)| {
@@ -369,21 +388,7 @@ pub fn wrap_command(cmd: Command, spec: &SandboxSpec) -> Command {
     // `std::process::Command` exposes no current_dir: I carry the cwd in
     // `spec.chdir` (game folder) and apply it as --chdir.
     let Some(argv) = sandbox_argv(&cmd_envs, None, spec) else {
-        let mut c = Command::new(program);
-        for a in &args {
-            c.arg(a);
-        }
-        for (k, v) in cmd.get_envs() {
-            match v {
-                Some(vv) => {
-                    c.env(k, vv);
-                }
-                None => {
-                    c.env_remove(k);
-                }
-            }
-        }
-        return c;
+        return Err("bubblewrap is missing or broken, cannot build sandbox".to_string());
     };
     let mut wrapped = Command::new(&argv[0]);
     for a in &argv[1..] {
@@ -394,7 +399,7 @@ pub fn wrap_command(cmd: Command, spec: &SandboxSpec) -> Command {
     for a in &args {
         wrapped.arg(a);
     }
-    wrapped
+    Ok(wrapped)
 }
 
 fn dedup(paths: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -413,11 +418,11 @@ mod tests {
 
     #[test]
     fn decide_explicit_wins_over_global() {
-        assert_eq!(decide(Some("true"), false).0, true);
-        assert_eq!(decide(Some("false"), true).0, false);
-        assert_eq!(decide(None, true).0, true);
-        assert_eq!(decide(None, false).0, false);
-        assert_eq!(decide(Some(""), true).0, true);
+        assert_eq!(decide(Some("true"), false), (true, IsolationReason::PerGame));
+        assert_eq!(decide(Some("false"), true), (false, IsolationReason::Off));
+        assert_eq!(decide(None, true), (true, IsolationReason::GlobalDefault));
+        assert_eq!(decide(None, false), (false, IsolationReason::Off));
+        assert_eq!(decide(Some(""), true), (true, IsolationReason::GlobalDefault));
     }
 
     #[test]
