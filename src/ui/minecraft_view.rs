@@ -5066,6 +5066,7 @@ impl MinecraftView {
                     let dl = gtk::Label::new(Some(desc));
                     dl.set_halign(gtk::Align::Start);
                     dl.set_wrap(true);
+                    dl.add_css_class("info-value");
                     body.append(&dl);
                 }
                 if let Some((label, cb)) = install_slot.borrow_mut().take() {
@@ -5755,6 +5756,7 @@ impl MinecraftView {
                     let dl = gtk::Label::new(Some(desc));
                     dl.set_halign(gtk::Align::Start);
                     dl.set_wrap(true);
+                    dl.add_css_class("info-value");
                     body.append(&dl);
                 }
                 if !body_txt.is_empty() {
@@ -5767,10 +5769,16 @@ impl MinecraftView {
                     tv.set_wrap_mode(gtk::WrapMode::Word);
                     let buf = tv.buffer();
                     let accent = v.state.theme.accent_color();
+                    // Explicit body foreground: TextView defaults do not
+                    // follow the dialog theme reliably, keep body readable
+                    // in light and dark.
+                    let body_tag = gtk::TextTag::new(Some("body-text"));
+                    body_tag.set_foreground(Some(&v.state.theme.text_main()));
+                    buf.tag_table().add(&body_tag);
                     for seg in md_segments(&body_txt) {
                         match seg {
                             MdSeg::Text(x) => {
-                                buf.insert(&mut buf.end_iter(), &x);
+                                buf.insert_with_tags(&mut buf.end_iter(), &x, &[&body_tag]);
                             }
                             MdSeg::Link(label, url) => {
                                 let tag_name = format!("link::{}", url);
