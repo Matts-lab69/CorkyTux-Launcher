@@ -1,0 +1,104 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+# The CI only needs to read the repository. No write scopes, no secrets.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  ci:
+    # ubuntu-24.04 ships GTK 4.14, libadwaita 1.5 and glib 2.80, which is what
+    # Cargo.toml asks for (gtk4 "v4_12", libadwaita "v1_5", glib "v2_80").
+    # The "Check GTK versions" step below proves it on the runner.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            pkg-config \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libglib2.0-dev
+
+      - name: Check GTK versions
+        run: |
+          set -euo pipefail
+          require_min() {
+            pkg="$1"; min="$2"; have=""
+            have="$(pkg-config --modversion "$pkg")"
+            echo "$pkg: $have (required >= $min)"
+            lowest="$(printf '%s\n%s\n' "$min" "$have" | sort -V | head -n1)"
+            if [ "$lowest" != "$min" ]; then
+              echo "ERROR: $pkg $have is older than the required $min"
+              exit 1
+            fi
+          }
+          require_min gtk4 4.12
+          require_min libadwaita-1 1.5
+          require_min glib-2.0 2.80
+
+      - name: Install Rust toolchain
+        # I use the rustup that the runner already ships instead of a third
+        # party action: one less supply chain dependency to pin.
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+          rustc --version
+          cargo --version
+          cargo fmt --version
+          cargo clippy --version
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2 (2.9.3)
+
+      - name: cargo fmt --check
+        # The repository is not formatted yet (1187 hunks in 39 files), so
+        # this step only reports. It becomes blocking with the reformat commit.
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cargo fmt --all -- --check 2>&1 | tee fmt.log
+          status="${PIPESTATUS[0]}"
+          hunks="$(grep -c '^Diff in' fmt.log || true)"
+          files="$(grep '^Diff in' fmt.log | sed 's/^Diff in //; s/:[0-9]*:$//' | sort -u | wc -l)"
+          echo "cargo fmt --check: exit=$status hunks=$hunks files=$files (non-blocking until the reformat commit lands)"
+          exit 0
+
+      - name: cargo clippy --all-targets
+        # No -D warnings: clippy reports, the job does not fail on lint.
+        # The counts are printed so the log says how many warnings there are.
+        run: |
+          set -o pipefail
+          cargo clippy --all-targets --locked --message-format=short 2>&1 | tee clippy.log
+          status="${PIPESTATUS[0]}"
+          warnings="$(grep -c ': warning:' clippy.log || true)"
+          errors="$(grep -c ': error' clippy.log || true)"
+          echo "clippy summary: warnings=$warnings errors=$errors exit=$status"
+          exit $status
+
+      - name: cargo test
+        run: cargo test --locked
+
+      - name: cargo build --release
+        run: cargo build --release --locked
