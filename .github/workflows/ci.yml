@@ -77,10 +77,13 @@ jobs:
       - name: Install the plugins for the tests
         # The suite copies the installed heroic-store plugin out of the real
         # HOME, so the runner needs the plugins in the same place the
-        # launcher installs them.
+        # launcher installs them. The checkout is pinned to a commit, not to
+        # a branch: the CI must not change under my feet. Bump the ref
+        # deliberately when the plugin repo moves.
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: Matts-lab69/CorkyTux-Plugins
+          ref: 52540218036694998c01204ba351176ca7dcdbad # main @ 2026-10-21
           path: plugins-src
           # The first checkout owns the workspace: this one must not clean it.
           clean: false
