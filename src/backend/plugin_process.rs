@@ -856,6 +856,23 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn plugin_children_lead_their_own_process_group() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("sleep 5");
+        own_process_group(&mut cmd);
+        let mut child = cmd.spawn().expect("spawn");
+        let pgid = unsafe { libc::getpgid(child.id() as libc::pid_t) };
+        assert_eq!(
+            pgid,
+            child.id() as libc::pid_t,
+            "the plugin must lead its own process group"
+        );
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn process_killer_uses_the_syscall_directly() {
         let mut child = Command::new(program("sleep"))
             .arg("30")
