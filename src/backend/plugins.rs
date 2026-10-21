@@ -707,11 +707,7 @@ impl PluginManager {
             return;
         }
         let path = super::proton::ProtonManager::log_path(game);
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-        {
+        if let Ok(mut f) = super::proton::ProtonManager::open_game_log(&path, true) {
             use std::io::Write;
             let _ = writeln!(f, "\n[CorkyTux] {}", text);
         }

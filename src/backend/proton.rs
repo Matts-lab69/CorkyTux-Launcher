@@ -1704,8 +1704,40 @@ impl ProtonManager {
         }
     }
 
+    /// Open the game log for writing.
+    ///
+    /// The log carries the game output and, now and then, a launch argument,
+    /// so it is owner-only from the very first byte. A log left by an older
+    /// version with mode 0644 is tightened the first time I open it.
+    pub fn open_game_log(path: &Path, append: bool) -> std::io::Result<fs::File> {
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true).create(true);
+        if append {
+            opts.append(true);
+        } else {
+            opts.truncate(true);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            // The mode applies to the file I create here. An existing file
+            // keeps its own mode, so I tighten it right after opening it.
+            opts.mode(0o600);
+        }
+        let file = opts.open(path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = file.metadata()?.permissions().mode() & 0o777;
+            if mode & 0o077 != 0 {
+                file.set_permissions(fs::Permissions::from_mode(0o600))?;
+            }
+        }
+        Ok(file)
+    }
+
     fn attach_log_file(cmd: &mut Command, game_name: &str) {
-        if let Ok(f) = fs::File::create(Self::log_path(game_name)) {
+        if let Ok(f) = Self::open_game_log(&Self::log_path(game_name), false) {
             if let Ok(f2) = f.try_clone() {
                 cmd.stdout(Stdio::from(f));
                 cmd.stderr(Stdio::from(f2));
@@ -2331,11 +2363,7 @@ impl ProtonManager {
         } else {
             // Lutris parity: stamp how the process ended into its own log.
             let path = Self::log_path(&game);
-            if let Ok(mut f) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&path)
-            {
+            if let Ok(mut f) = Self::open_game_log(&path, true) {
                 use std::io::Write;
                 let _ = writeln!(f, "\n[CorkyTux] Exit with return code {}", code);
             }
@@ -3995,5 +4023,42 @@ mod steam_prefix_tests {
         );
         let _ = std::fs::remove_dir_all(&base);
         let _ = std::fs::remove_dir_all(&base2);
+    }
+}
+
+#[cfg(test)]
+mod game_log_tests {
+    use super::ProtonManager;
+    use std::path::Path;
+
+    #[cfg(unix)]
+    fn mode(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn game_log_is_owner_only_from_the_open_and_migrates_an_old_file() {
+        let dir = std::env::temp_dir().join(format!("corky_game_log_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("game.log");
+
+        // New file: 0600 straight from the open, no later chmod.
+        let file = ProtonManager::open_game_log(&path, false).unwrap();
+        drop(file);
+        assert_eq!(mode(&path), 0o600, "a new game log must be owner-only");
+
+        // A log left by an older version with 0644 is tightened on open.
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        let file = ProtonManager::open_game_log(&path, true).unwrap();
+        drop(file);
+        assert_eq!(mode(&path), 0o600, "an old game log must be tightened");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
