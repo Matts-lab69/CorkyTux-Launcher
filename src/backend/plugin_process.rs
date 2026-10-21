@@ -225,6 +225,20 @@ fn join_reader(h: std::thread::JoinHandle<String>) -> String {
     h.join().unwrap_or_default()
 }
 
+/// I put every plugin child in its own process group (`setpgid(0, 0)` runs
+/// in the child before `exec`). With that, a timeout or a cancel can signal
+/// the plugin and every helper it spawned, instead of leaving orphans behind.
+///
+/// The child becomes the leader of the group, so the group id is its pid.
+#[cfg(unix)]
+fn own_process_group(cmd: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    cmd.process_group(0);
+}
+
+#[cfg(not(unix))]
+fn own_process_group(_cmd: &mut Command) {}
+
 /// I run `cmd` capturing stdout/stderr and kill it past `limit`.
 ///
 /// I wrote this to replace `timeout(1)`. That binary comes from coreutils, not
@@ -232,15 +246,16 @@ fn join_reader(h: std::thread::JoinHandle<String>) -> String {
 /// when absent each caller failed differently, and `list_emulators_in` even
 /// returned an empty list with no warning.
 ///
-/// I keep `cmd` on piped stdout/stderr even if the caller set null. Same kill
-/// semantics as `timeout(1)` without `--foreground`: I only signal the direct
-/// child, not the process group.
+/// I keep `cmd` on piped stdout/stderr even if the caller set null. The child
+/// runs in its own process group (see `own_process_group`), so a timeout can
+/// take the whole plugin tree down.
 pub fn output_with_timeout(
     cmd: &mut Command,
     limit: std::time::Duration,
 ) -> Result<TimedOutput, String> {
     use std::io::Read;
 
+    own_process_group(cmd);
     let mut child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -396,6 +411,7 @@ fn spawn_streaming_inner(
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         apply_plugin_env(&mut cmd);
+        own_process_group(&mut cmd);
         let child = cmd.spawn();
         let mut child = match child {
             Ok(c) => {
@@ -624,6 +640,23 @@ mod tests {
         let output = cmd.output().expect("sh must run");
         std::env::remove_var("CORKYTUX_TEST_SECRET");
         assert_eq!(String::from_utf8_lossy(&output.stdout), "unset");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plugin_children_lead_their_own_process_group() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("sleep 5");
+        own_process_group(&mut cmd);
+        let mut child = cmd.spawn().expect("spawn");
+        let pgid = unsafe { libc::getpgid(child.id() as libc::pid_t) };
+        assert_eq!(
+            pgid,
+            child.id() as libc::pid_t,
+            "the plugin must lead its own process group"
+        );
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[cfg(unix)]
