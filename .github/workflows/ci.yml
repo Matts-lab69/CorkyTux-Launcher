@@ -39,9 +39,7 @@ jobs:
             pkg-config \
             libgtk-4-dev \
             libadwaita-1-dev \
-            libglib2.0-dev \
-            xvfb \
-            xauth
+            libglib2.0-dev
 
       - name: Check GTK versions
         run: |
@@ -74,27 +72,6 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2 (2.9.3)
 
-      - name: Install the plugins for the tests
-        # The suite copies the installed heroic-store plugin out of the real
-        # HOME, so the runner needs the plugins in the same place the
-        # launcher installs them. The checkout is pinned to a commit, not to
-        # a branch: the CI must not change under my feet. Bump the ref
-        # deliberately when the plugin repo moves.
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: Matts-lab69/CorkyTux-Plugins
-          ref: 52540218036694998c01204ba351176ca7dcdbad # main @ 2026-10-21
-          path: plugins-src
-          # The first checkout owns the workspace: this one must not clean it.
-          clean: false
-          sparse-checkout: heroic-store
-          sparse-checkout-cone-mode: true
-      - name: Copy the plugins into the launcher plugins dir
-        run: |
-          mkdir -p "$HOME/.local/share/CorkyTux/plugins"
-          cp -r plugins-src/heroic-store "$HOME/.local/share/CorkyTux/plugins/"
-          ls -l "$HOME/.local/share/CorkyTux/plugins/heroic-store/heroic-store"
-
       - name: cargo fmt --check
         # The repository is not formatted yet (1187 hunks in 39 files), so
         # this step only reports. It becomes blocking with the reformat commit.
@@ -125,14 +102,9 @@ jobs:
           exit $status
 
       - name: cargo test
-        # Two tests in the suite are not hermetic yet: one calls gtk::init()
-        # (it needs a display) and one copies the installed heroic-store
-        # plugin from the real HOME. I give them both here: a virtual
-        # display and the plugins from the plugin repository. The test also
-        # needs the compiled helper, so the binaries are built first.
-        run: |
-          cargo build --locked --bins
-          xvfb-run -a cargo test --locked
+        # The suite is hermetic: no display, no installed plugin and no
+        # network. It runs on a bare runner.
+        run: cargo test --locked
 
       - name: cargo build --release
         run: cargo build --release --locked
