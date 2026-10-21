@@ -60,8 +60,10 @@ const PLUGIN_ENV_ALLOWLIST: &[&str] = &[
     "PULSE_SERVER", "PULSE_COOKIE", "PIPEWIRE_RUNTIME_DIR", "PIPEWIRE_REMOTE",
     "PIPEWIRE_NODE", "JAVA_HOME", "PROTONPATH", "GAMEID", "MANGOHUD",
     "WINEDLLOVERRIDES", "WINEFSYNC", "WINEESYNC", "DESKTOP_SESSION",
-    "XDG_CURRENT_DESKTOP", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
-    "http_proxy", "https_proxy", "no_proxy", "ALL_PROXY", "all_proxy",
+    "XDG_CURRENT_DESKTOP", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "HTTP_PROXY", "HTTPS_PROXY",
+    "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "ALL_PROXY",
+    "all_proxy",
 ];
 
 fn plugin_env_allowed(key: &str) -> bool {
@@ -566,6 +568,9 @@ mod tests {
         assert!(plugin_env_allowed("PATH"));
         assert!(plugin_env_allowed("HOME"));
         assert!(plugin_env_allowed("LC_ALL"));
+        assert!(plugin_env_allowed("SSL_CERT_FILE"));
+        assert!(plugin_env_allowed("REQUESTS_CA_BUNDLE"));
+        assert!(plugin_env_allowed("HTTPS_PROXY"));
         assert!(!plugin_env_allowed("LD_PRELOAD"));
         assert!(!plugin_env_allowed("LD_LIBRARY_PATH"));
         assert!(!plugin_env_allowed("PYTHONPATH"));
