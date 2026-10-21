@@ -97,9 +97,10 @@ jobs:
         # this step only reports. It becomes blocking with the reformat commit.
         continue-on-error: true
         run: |
-          set -o pipefail
+          set +e
           cargo fmt --all -- --check 2>&1 | tee fmt.log
           status="${PIPESTATUS[0]}"
+          set -e
           hunks="$(grep -c '^Diff in' fmt.log || true)"
           files="$(grep '^Diff in' fmt.log | sed 's/^Diff in //; s/:[0-9]*:$//' | sort -u | wc -l)"
           echo "cargo fmt --check: exit=$status hunks=$hunks files=$files (non-blocking until the reformat commit lands)"
@@ -109,11 +110,14 @@ jobs:
         # No -D warnings: clippy reports, the job does not fail on lint.
         # The counts are printed so the log says how many warnings there are.
         run: |
-          set -o pipefail
+          set +e
           cargo clippy --all-targets --locked --message-format=short 2>&1 | tee clippy.log
           status="${PIPESTATUS[0]}"
-          warnings="$(grep -c ': warning:' clippy.log || true)"
-          errors="$(grep -c ': error' clippy.log || true)"
+          set -e
+          # Cargo colorizes its output: the counts only work on plain text.
+          sed -r 's/\x1B\[[0-9;]*[mK]//g' clippy.log > clippy.plain.log
+          warnings="$(grep -c 'warning:' clippy.plain.log || true)"
+          errors="$(grep -c 'error:' clippy.plain.log || true)"
           echo "clippy summary: warnings=$warnings errors=$errors exit=$status"
           exit $status
 
