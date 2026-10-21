@@ -130,6 +130,36 @@ pub struct TimedOutput {
 /// my UI.
 const PIPE_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// One-shot plugin commands must always answer. Long installs and auth flows
+/// get half an hour; scans get five minutes; launch/stop and ordinary queries
+/// get two minutes. No plugin call is allowed to wait forever.
+const DEFAULT_SINGLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+const SCAN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+const LONG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1800);
+
+fn single_timeout(args: &[&str]) -> std::time::Duration {
+    match args.first().copied() {
+        Some("install")
+        | Some("setup")
+        | Some("auth")
+        | Some("ely-auth")
+        | Some("java-install")
+        | Some("umu-setup")
+        | Some("uninstall")
+        | Some("curse-auth-config") => LONG_TIMEOUT,
+        Some("scan")
+        | Some("diagnose")
+        | Some("heroic-scan")
+        | Some("curse-test")
+        | Some("versions")
+        | Some("mods-add")
+        | Some("addons-install") => SCAN_TIMEOUT,
+        // `run` waits for the plugin to launch, not for the game to exit.
+        Some("run") | Some("stop") => std::time::Duration::from_secs(60),
+        _ => DEFAULT_SINGLE_TIMEOUT,
+    }
+}
+
 /// I join a pipe reader with a margin: on timeout I drop its result and let
 /// the thread detach instead of blocking my caller.
 fn join_reader(h: std::thread::JoinHandle<String>) -> String {
@@ -251,12 +281,20 @@ fn parse_final_doc(body: &str) -> Option<serde_json::Value> {
 }
 
 pub fn run_single_json(exe: &Path, args: &[&str]) -> Result<serde_json::Value, String> {
-    let output = Command::new(exe)
-        .args(args)
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| format!("Could not execute {}: {}", exe.display(), e))?;
-    let body = String::from_utf8_lossy(&output.stdout).to_string();
+    run_single_json_with_timeout(exe, args, single_timeout(args))
+}
+
+pub fn run_single_json_with_timeout(
+    exe: &Path,
+    args: &[&str],
+    limit: std::time::Duration,
+) -> Result<serde_json::Value, String> {
+    let mut cmd = Command::new(exe);
+    cmd.args(args).stdin(Stdio::null());
+    let command = args.first().copied().unwrap_or("command");
+    let output = output_with_timeout(&mut cmd, limit)
+        .map_err(|e| format!("{} {} failed: {}", exe.display(), command, e))?;
+    let body = output.stdout;
     if let Some(doc) = parse_final_doc(&body) {
         if doc.get("type").and_then(|t| t.as_str()) == Some("error") {
             return Err(doc.get("message").and_then(|m| m.as_str()).unwrap_or("plugin error").to_string());
@@ -266,12 +304,12 @@ pub fn run_single_json(exe: &Path, args: &[&str]) -> Result<serde_json::Value, S
         }
         return Ok(doc);
     }
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !output.success {
+        let err = output.stderr.trim().to_string();
         let out = body.trim().to_string();
         let msg = if !err.is_empty() { err } else { out };
         return Err(if msg.is_empty() {
-            format!("Plugin exited with code {:?}", output.status.code())
+            format!("Plugin exited with code {:?}", output.code)
         } else if msg.len() > 300 {
             msg[..300].to_string()
         } else {
@@ -438,4 +476,36 @@ where
     glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
         on_msg(rx.try_recv())
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_shot_commands_have_bounded_deadlines() {
+        assert_eq!(single_timeout(&["install"]), LONG_TIMEOUT);
+        assert_eq!(single_timeout(&["scan", "/tmp"]), SCAN_TIMEOUT);
+        assert_eq!(single_timeout(&["run", "/tmp/game"]), std::time::Duration::from_secs(60));
+        assert_eq!(single_timeout(&["status"]), DEFAULT_SINGLE_TIMEOUT);
+        assert!(LONG_TIMEOUT > SCAN_TIMEOUT);
+        assert!(SCAN_TIMEOUT > DEFAULT_SINGLE_TIMEOUT);
+    }
+
+    #[test]
+    fn run_single_json_terminates_a_hung_plugin() {
+        let started = std::time::Instant::now();
+        let err = run_single_json_with_timeout(
+            Path::new("sleep"),
+            &["30"],
+            std::time::Duration::from_millis(200),
+        )
+        .expect_err("sleep must be terminated");
+        assert!(err.contains("terminated") || err.contains("limit"), "{}", err);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "timeout took too long: {:?}",
+            started.elapsed()
+        );
+    }
 }

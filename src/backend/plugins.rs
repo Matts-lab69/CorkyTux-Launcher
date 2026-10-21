@@ -581,7 +581,7 @@ impl PluginManager {
             cmd,
             std::time::Duration::from_secs(limit_secs),
         )
-        .map_err(|e| format!("Plugin failed to start: {}", e))?;
+        .map_err(|e| format!("Plugin command failed: {}", e))?;
         if !output.success {
             let err = output.stderr.trim().to_string();
             // Scripts print usage/help to stdout on arg errors; surface it.
@@ -944,19 +944,22 @@ impl PluginManager {
         if !exe.exists() {
             return Err("Emulator Manager plugin not installed".into());
         }
-        let output = Command::new(&exe)
-            .args(["corky-install", name])
-            .output()
-            .map_err(|e| format!("Install failed: {}", e))?;
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let mut cmd = Command::new(&exe);
+        cmd.args(["corky-install", name]);
+        let output = super::plugin_process::output_with_timeout(
+            &mut cmd,
+            std::time::Duration::from_secs(1800),
+        )
+        .map_err(|e| format!("Install failed for {}: {}", name, e))?;
+        if !output.success {
+            let err = output.stderr.trim().to_string();
             return Err(if err.is_empty() {
                 format!("Install failed for {}", name)
             } else {
                 err
             });
         }
-        let v: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
+        let v: serde_json::Value = serde_json::from_str(&output.stdout).unwrap_or_default();
         let ok = v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
         let msg = v.get("message").and_then(|x| x.as_str()).unwrap_or("").to_string();
         if ok {
@@ -982,19 +985,22 @@ impl PluginManager {
         if !exe.exists() {
             return Err("Emulator Manager plugin not installed".into());
         }
-        let output = Command::new(&exe)
-            .args(["corky-link", name, path])
-            .output()
-            .map_err(|e| format!("Link failed: {}", e))?;
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let mut cmd = Command::new(&exe);
+        cmd.args(["corky-link", name, path]);
+        let output = super::plugin_process::output_with_timeout(
+            &mut cmd,
+            std::time::Duration::from_secs(60),
+        )
+        .map_err(|e| format!("Link failed for {}: {}", name, e))?;
+        if !output.success {
+            let err = output.stderr.trim().to_string();
             return Err(if err.is_empty() {
                 format!("Link failed for {}", name)
             } else {
                 err
             });
         }
-        let v: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
+        let v: serde_json::Value = serde_json::from_str(&output.stdout).unwrap_or_default();
         let ok = v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
         let msg = v.get("message").and_then(|x| x.as_str()).unwrap_or("").to_string();
         if ok {
@@ -1018,12 +1024,15 @@ impl PluginManager {
         if !exe.exists() {
             return Err("Emulator Manager plugin not installed".into());
         }
-        let output = Command::new(&exe)
-            .args(["corky-remove", name])
-            .output()
-            .map_err(|e| format!("Remove failed: {}", e))?;
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let mut cmd = Command::new(&exe);
+        cmd.args(["corky-remove", name]);
+        let output = super::plugin_process::output_with_timeout(
+            &mut cmd,
+            std::time::Duration::from_secs(60),
+        )
+        .map_err(|e| format!("Remove failed for {}: {}", name, e))?;
+        if !output.success {
+            let err = output.stderr.trim().to_string();
             return Err(if err.is_empty() {
                 format!("Remove failed for {}", name)
             } else {
@@ -1048,12 +1057,15 @@ impl PluginManager {
         if !exe.exists() {
             return Err("Emulator Manager plugin not installed".into());
         }
-        let output = Command::new(&exe)
-            .args(["corky-unlink", name])
-            .output()
-            .map_err(|e| format!("Unlink failed: {}", e))?;
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let mut cmd = Command::new(&exe);
+        cmd.args(["corky-unlink", name]);
+        let output = super::plugin_process::output_with_timeout(
+            &mut cmd,
+            std::time::Duration::from_secs(60),
+        )
+        .map_err(|e| format!("Unlink failed for {}: {}", name, e))?;
+        if !output.success {
+            let err = output.stderr.trim().to_string();
             return Err(if err.is_empty() {
                 format!("Unlink failed for {}", name)
             } else {
@@ -1063,7 +1075,7 @@ impl PluginManager {
         // The plugin answers {"ok":bool,"message":str}: I propagate the reason
         // instead of swallowing it, because "was not linked" is useful info
         // when a row went stale.
-        let v: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
+        let v: serde_json::Value = serde_json::from_str(&output.stdout).unwrap_or_default();
         let ok = v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
         let msg = v.get("message").and_then(|x| x.as_str()).unwrap_or("").to_string();
         if ok {
