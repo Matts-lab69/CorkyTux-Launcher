@@ -211,6 +211,14 @@ fn make_private_dir(dir: &Path) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
+        // Never follow a symlink: a link under $HOME must not let the launcher
+        // chmod an unrelated target (a game prefix, a library, /etc, ...).
+        let Ok(meta) = fs::symlink_metadata(dir) else {
+            return;
+        };
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            return;
+        }
         let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
     }
 }
@@ -410,17 +418,9 @@ impl ConfigManager {
             let _ = fs::remove_file(&tmp);
             return Err(format!("atomic write failed: {}", e));
         }
-        // Launcher.ini can hold API keys, so an old 0644 file must be
-        // tightened here as well as on first creation.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Err(e) = file.set_permissions(fs::Permissions::from_mode(0o600)) {
-                drop(file);
-                let _ = fs::remove_file(&tmp);
-                return Err(format!("atomic write failed: {}", e));
-            }
-        }
+        // `mode(0o600)` above is applied by the kernel at O_CREAT. The umask
+        // can only clear bits, never add them, so a fresh tmp can never be
+        // group/world accessible; no post-open chmod is needed.
         // fsync the file before publishing it: rename is atomic, but the
         // data must already be on disk when the name flips.
         if let Err(e) = file.sync_all() {
@@ -1000,6 +1000,32 @@ mod tests {
         assert_eq!(
             std::fs::metadata(&private).unwrap().permissions().mode() & 0o777,
             0o700
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_directory_does_not_follow_symlinks_or_recurse() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = mktmp("corky_cfg_private_link");
+        let target = base.join("outside");
+        let child = target.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(&child, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let link = base.join("CorkyTux");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        super::make_private_dir(&link);
+        assert_eq!(
+            std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o755,
+            "symlink target must keep its mode"
+        );
+        assert_eq!(
+            std::fs::metadata(&child).unwrap().permissions().mode() & 0o777,
+            0o755,
+            "make_private_dir must not recurse"
         );
         let _ = std::fs::remove_dir_all(&base);
     }
