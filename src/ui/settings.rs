@@ -1488,6 +1488,7 @@ pub fn show_settings_modal(
     runtime_note.add_css_class("time-label");
     misc_inner.append(&runtime_note);
     misc_inner.append(&misc_switch("gamesUsesUmu", "Use umu-launcher (unified Proton runner)", false, true, state));
+    misc_inner.append(&misc_switch("checkUpdatesOnStartup", "Check for updates on startup", false, true, state));
     let umu_status = gtk::Label::new(Some(if umu_avail {
         "umu-run: ready"
     } else {
@@ -2335,6 +2336,22 @@ pub fn show_settings_modal(
             .arg("https://github.com/Matts-lab69/corkytux").spawn();
     });
     about_page.append(&github_btn);
+
+    let update_btn = gtk::Button::with_label(if crate::ui::update_dialog::restart_pending() {
+        "Restart to finish updating"
+    } else {
+        "Check for launcher updates"
+    });
+    update_btn.add_css_class("settings-btn");
+    update_btn.set_margin_top(12);
+    {
+        let state_c = state.clone();
+        let parent_c = parent.clone();
+        update_btn.connect_clicked(move |_| {
+            crate::ui::update_dialog::check_now(&state_c, &parent_c);
+        });
+    }
+    about_page.append(&update_btn);
 
     page_stack.add_titled(&about_page, Some("about"), "About");
 

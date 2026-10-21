@@ -16,3 +16,4 @@ pub mod mcx_theme;
 pub mod minecraft_view;
 pub mod stores_view;
 pub mod import_manager;
+pub mod update_dialog;

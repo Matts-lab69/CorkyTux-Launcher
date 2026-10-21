@@ -586,6 +586,15 @@ impl ConfigManager {
         d
     }
 
+    /// Staging area for self-update downloads: tarballs (.part while
+    /// downloading), extracted staging dirs, cached latest.json.
+    /// Under the user data dir, never in a shared /tmp.
+    pub fn downloads_dir(&self) -> PathBuf {
+        let d = self.data_dir().join("downloads");
+        fs::create_dir_all(&d).ok();
+        d
+    }
+
     /// Only the user-configured proton paths (base + Path 2/3).
     /// Steam compat dirs are NOT scanned: only what the user added.
     pub fn all_proton_paths(&self) -> Vec<PathBuf> {

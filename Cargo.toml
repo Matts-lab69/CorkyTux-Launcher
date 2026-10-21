@@ -14,6 +14,11 @@ pango = { version = "0.20" }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+semver = "1"
+sha2 = "0.10"
+tar = "0.4"
+flate2 = "1"
+url = "2"
 regex = "1"
 libc = "0.2"
 # Solo la usa src/bin/webdriver_login.rs. Descomprime el Chromium que se

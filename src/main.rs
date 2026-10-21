@@ -1051,6 +1051,17 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     // Auto-install check at startup (also re-armed after list changes).
     maybe_autoinstall_proton(&state, &window);
 
+    // Opt-in launcher update check: cached 6h, silent unless an update
+    // is available and not skipped. Never blocks startup.
+    {
+        let state_c = state.clone();
+        let win_c = window.clone();
+        glib::idle_add_local(move || {
+            crate::ui::update_dialog::auto_check(&state_c, &win_c);
+            glib::ControlFlow::Break
+        });
+    }
+
     // Warning indicators for both checks (off the main loop; also refreshed
     // after library/path changes and after a Store refresh) + focus hook.
     refresh_warn_buttons(&state);
@@ -1762,6 +1773,14 @@ fn main() {
     // The child survives the parent exit, so the game keeps running while
     // the launcher itself never opens a window.
     let args: Vec<String> = std::env::args().collect();
+    // Health probe for the self-updater: print and exit before GTK, the
+    // display, or any config I/O. Output is exactly "corkytux X.Y.Z".
+    // Only a lone `--version` counts: `corkytux --version --play X` and
+    // every other combination fall through to the normal argument flow.
+    if args.len() == 2 && args[1] == "--version" {
+        println!("corkytux {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     // One-time fill for games left without any prefix: assign their
     // individual path (persisted, no dirs created). Idempotent.
     // Runs before everything, including headless --play launches.

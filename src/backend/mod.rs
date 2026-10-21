@@ -1,4 +1,5 @@
 pub mod config;
+pub mod self_update;
 pub mod theme;
 pub mod game_model;
 pub mod proton;
