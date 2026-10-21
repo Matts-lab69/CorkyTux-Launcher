@@ -121,8 +121,11 @@ jobs:
         # Two tests in the suite are not hermetic yet: one calls gtk::init()
         # (it needs a display) and one copies the installed heroic-store
         # plugin from the real HOME. I give them both here: a virtual
-        # display and the plugins from the plugin repository.
-        run: xvfb-run -a cargo test --locked
+        # display and the plugins from the plugin repository. The test also
+        # needs the compiled helper, so the binaries are built first.
+        run: |
+          cargo build --locked --bins
+          xvfb-run -a cargo test --locked
 
       - name: cargo build --release
         run: cargo build --release --locked
