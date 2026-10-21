@@ -298,11 +298,11 @@ impl PluginManager {
 
     pub fn set_enabled(&self, plugin_id: &str, enabled: bool) {
         // I match the legacy layout: [Plugins] section, "1"/"0"
-        super::ConfigManager::new().set_launcher_value_in(
+        super::ConfigManager::log_launcher_write(super::ConfigManager::new().set_launcher_value_in(
             "Plugins",
             &format!("{}.enabled", plugin_id),
             if enabled { "1" } else { "0" },
-        );
+        ));
         for plugin in self.imp().plugins.borrow_mut().iter_mut() {
             if plugin.id == plugin_id {
                 plugin.enabled = enabled;
@@ -320,13 +320,26 @@ impl PluginManager {
         fs::remove_dir_all(dir).map_err(|e| format!("Could not delete {}: {}", dir.display(), e))
     }
 
+    /// Order contract for `remove_plugin`: clear the `Launcher.ini` entry
+    /// first, then delete the directory. If the ini write fails nothing
+    /// is touched; a failed delete is reported to the caller.
+    pub(crate) fn remove_plugin_steps(
+        dir: &std::path::Path,
+        clear_ini: impl FnOnce() -> Result<(), String>,
+    ) -> Result<(), String> {
+        clear_ini()?;
+        Self::remove_plugin_dir(dir)?;
+        Ok(())
+    }
+
     pub fn remove_plugin(&self, plugin_id: &str) -> Result<(), String> {
         let dir = self.plugins_dir().join(plugin_id);
-        Self::remove_plugin_dir(&dir)?;
-        super::ConfigManager::new().remove_launcher_value_in(
-            "Plugins",
-            &format!("{}.enabled", plugin_id),
-        );
+        Self::remove_plugin_steps(&dir, || {
+            super::ConfigManager::new().remove_launcher_value_in(
+                "Plugins",
+                &format!("{}.enabled", plugin_id),
+            )
+        })?;
         self.refresh();
         Ok(())
     }
@@ -1229,5 +1242,41 @@ mod tests {
         let cut = PluginManager::tail_msg(&uni, 10);
         assert!(cut.ends_with("end"), "{}", cut);
         assert!(cut.starts_with("..."), "{}", cut);
+    }
+
+    #[test]
+    fn remove_plugin_clears_ini_before_deleting_dir() {
+        let base = std::env::temp_dir().join("corky_plug_order");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        // Happy path: ini clears, then the directory goes.
+        let dir = base.join("plug");
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        let mut ini_cleared = false;
+        PluginManager::remove_plugin_steps(&dir, || {
+            ini_cleared = true;
+            Ok(())
+        })
+        .unwrap();
+        assert!(ini_cleared, "ini step never ran");
+        assert!(!dir.exists(), "directory not deleted");
+        // Ini failure: the directory must be untouched.
+        let dir2 = base.join("plug2");
+        std::fs::create_dir_all(dir2.join("sub")).unwrap();
+        let err = PluginManager::remove_plugin_steps(&dir2, || Err("boom".into())).unwrap_err();
+        assert_eq!(err, "boom");
+        assert!(dir2.is_dir(), "directory deleted before a failed ini write");
+        // Delete failure: the ini was cleared first, and the error surfaces.
+        let odd = base.join("as-file");
+        std::fs::write(&odd, b"x").unwrap();
+        let mut cleared_first = false;
+        let err2 = PluginManager::remove_plugin_steps(&odd, || {
+            cleared_first = true;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(cleared_first, "ini must be cleared before the delete step");
+        assert!(err2.contains("Could not delete"), "got: {}", err2);
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

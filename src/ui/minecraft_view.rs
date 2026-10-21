@@ -2803,7 +2803,9 @@ impl MinecraftView {
         // on purpose when it still hosts a sibling instance.
         let still_there = vers_dir.join(&inst.id).exists() || legacy_ver.exists();
         for k in ["Fav", "Time", "Last", "Name", "Ram", "Java", "Account"] {
-            self.state.config.remove_launcher_value_in("User Settings", &format!("Mc{}_{}", k, safe_id(id)));
+            crate::backend::ConfigManager::log_launcher_write(
+                self.state.config.remove_launcher_value_in("User Settings", &format!("Mc{}_{}", k, safe_id(id))),
+            );
         }
         if *self.detail_id.borrow() == id {
             *self.detail_id.borrow_mut() = String::new();

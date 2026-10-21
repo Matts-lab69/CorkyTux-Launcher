@@ -5,13 +5,17 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Set only when the first Games.ini write of this run already snapshotted
 /// the on-disk file (see `save_games_ini`). Process-wide, NOT per instance:
 /// several call sites build a fresh `ConfigManager::new()` per action, and
 /// each instance would otherwise re-backup on its first write.
 static GAMES_BACKED_UP: AtomicBool = AtomicBool::new(false);
+
+/// Unique tmp counter for Launcher.ini atomic writes (pid + counter
+/// means two saves in the same process never share a tmp name).
+static LAUNCHER_TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Keep only the 5 newest `Games.ini.bak-YYYYmmdd-HHMMSS` snapshots next to
 /// Games.ini; delete older ones. Only touches files matching the pattern.
@@ -326,14 +330,110 @@ impl ConfigManager {
         *last = Some(data);
     }
 
-    pub fn save_launcher_ini(&self) {
+    pub fn save_launcher_ini(&self) -> Result<(), String> {
         let data = self.imp().launcher_ini.borrow().to_string();
         let mut last = self.imp().last_launcher_content.borrow_mut();
         if last.as_deref() == Some(data.as_str()) {
-            return;
+            return Ok(());
         }
-        fs::write(self.launcher_ini_path(), &data).ok();
+        // Atomic write in the destination dir. A valid symlink resolves
+        // to its target (the link itself is preserved); a broken one is
+        // an error and is never replaced by a regular file.
+        let configured = self.launcher_ini_path();
+        let is_symlink = fs::symlink_metadata(&configured)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false);
+        let dest = match fs::canonicalize(&configured) {
+            Ok(p) => p,
+            Err(e) if is_symlink => {
+                return Err(format!(
+                    "cannot write Launcher.ini: symlink {} is broken: {}",
+                    configured.display(),
+                    e
+                ))
+            }
+            Err(_) => configured,
+        };
+        Self::atomic_write_same_dir(&dest, data.as_bytes())?;
         *last = Some(data);
+        Ok(())
+    }
+
+    /// Tmp + rename inside the destination dir, keeping the existing
+    /// mode and removing the tmp on failure. Launcher.ini only.
+    /// The tmp is opened with O_EXCL under a unique name (pid +
+    /// counter), fsynced before the rename, so a crash cannot leave a
+    /// truncated Launcher.ini and two writers cannot share a tmp.
+    fn atomic_write_same_dir(dest: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+        use std::io::Write as _;
+        let parent = dest
+            .parent()
+            .ok_or_else(|| "atomic write failed: no parent".to_string())?;
+        let file_name = dest
+            .file_name()
+            .ok_or_else(|| "atomic write failed: no file name".to_string())?
+            .to_string_lossy()
+            .to_string();
+        let seq = LAUNCHER_TMP_SEQ.fetch_add(1, Ordering::Relaxed);
+        let tmp = parent.join(format!(
+            ".{}.{}.{}.new",
+            file_name,
+            std::process::id(),
+            seq
+        ));
+        #[cfg(unix)]
+        let mode = fs::metadata(dest).ok().map(|m| {
+            use std::os::unix::fs::PermissionsExt;
+            m.permissions().mode()
+        });
+        // create_new(true) is O_CREAT|O_EXCL: a stale tmp is never reused.
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+            .map_err(|e| format!("atomic write failed: {}", e))?;
+        if let Err(e) = file.write_all(bytes) {
+            drop(file);
+            let _ = fs::remove_file(&tmp);
+            return Err(format!("atomic write failed: {}", e));
+        }
+        #[cfg(unix)]
+        if let Some(mode) = mode {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = match file.metadata() {
+                Ok(m) => m.permissions(),
+                Err(e) => {
+                    drop(file);
+                    let _ = fs::remove_file(&tmp);
+                    return Err(format!("atomic write failed: {}", e));
+                }
+            };
+            perms.set_mode(mode);
+            if let Err(e) = fs::set_permissions(&tmp, perms) {
+                drop(file);
+                let _ = fs::remove_file(&tmp);
+                return Err(format!("atomic write failed: {}", e));
+            }
+        }
+        // fsync the file before publishing it: rename is atomic, but the
+        // data must already be on disk when the name flips.
+        if let Err(e) = file.sync_all() {
+            drop(file);
+            let _ = fs::remove_file(&tmp);
+            return Err(format!("atomic write failed: {}", e));
+        }
+        drop(file);
+        if let Err(e) = fs::rename(&tmp, dest) {
+            let _ = fs::remove_file(&tmp);
+            return Err(format!("atomic write failed: {}", e));
+        }
+        // Best effort: fsync the directory so the rename itself survives
+        // a power loss. Errors here do not undo a committed write.
+        #[cfg(unix)]
+        if let Ok(d) = fs::File::open(parent) {
+            let _ = d.sync_all();
+        }
+        Ok(())
     }
 
     pub fn game_names(&self) -> Vec<String> {
@@ -377,22 +477,33 @@ impl ConfigManager {
         self.launcher_value_in("User Settings", key)
     }
 
+    /// Fire-and-forget settings save: a failed Launcher.ini write is
+    /// reported instead of dropped. One helper for every best-effort
+    /// save, so the message and the policy live in a single place.
+    pub fn log_launcher_write(result: Result<(), String>) {
+        if let Err(e) = result {
+            eprintln!("[CorkyTux] Launcher.ini write failed: {}", e);
+        }
+    }
+
     pub fn set_launcher_value(&self, key: &str, value: &str) {
-        self.set_launcher_value_in("User Settings", key, value);
+        // Fire-and-forget setter: callers that need to react to a write
+        // failure use `set_launcher_value_in` and handle the Result.
+        Self::log_launcher_write(self.set_launcher_value_in("User Settings", key, value));
     }
 
     pub fn launcher_value_in(&self, section: &str, key: &str) -> Option<String> {
         self.imp().launcher_ini.borrow().get_value(section, key)
     }
 
-    pub fn set_launcher_value_in(&self, section: &str, key: &str, value: &str) {
+    pub fn set_launcher_value_in(&self, section: &str, key: &str, value: &str) -> Result<(), String> {
         self.imp().launcher_ini.borrow_mut().set_value(section, key, value);
-        self.save_launcher_ini();
+        self.save_launcher_ini()
     }
 
-    pub fn remove_launcher_value_in(&self, section: &str, key: &str) {
+    pub fn remove_launcher_value_in(&self, section: &str, key: &str) -> Result<(), String> {
         self.imp().launcher_ini.borrow_mut().remove_value(section, key);
-        self.save_launcher_ini();
+        self.save_launcher_ini()
     }
 
     pub fn pick_folder(&self, title: &str) -> Option<PathBuf> {
@@ -795,6 +906,65 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn launcher_ini_atomic_write() {
+        let base = mktmp("corky_cfg_atomic");
+        let cfg = ConfigManager::for_test_dir(&base);
+        cfg.set_launcher_value("K", "v1");
+        let ini = cfg.config_dir().join("Launcher.ini");
+        assert!(std::fs::read_to_string(&ini).unwrap().contains("v1"));
+        // Symlink: replaced by a link to the real target.
+        let target = base.join("real.ini");
+        std::fs::rename(&ini, &target).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&target, &ini).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perm = std::fs::metadata(&target).unwrap().permissions();
+            perm.set_mode(0o600);
+            std::fs::set_permissions(&target, perm).unwrap();
+        }
+        cfg.set_launcher_value("K", "v2");
+        // Link preserved, content updated through it, mode kept.
+        assert!(std::fs::symlink_metadata(&ini).unwrap().file_type().is_symlink());
+        assert!(std::fs::read_to_string(&target).unwrap().contains("v2"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        // No orphan tmp files.
+        let orphans: Vec<_> = std::fs::read_dir(cfg.config_dir())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".new"))
+            .collect();
+        assert!(orphans.is_empty(), "orphan tmp: {:?}", orphans);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn launcher_ini_broken_symlink_is_not_replaced() {
+        let base = mktmp("corky_cfg_broken_link");
+        let cfg = ConfigManager::for_test_dir(&base);
+        let link = cfg.config_dir().join("Launcher.ini");
+        let missing = base.join("missing-target.ini");
+        std::os::unix::fs::symlink(&missing, &link).unwrap();
+        // canonicalize fails: the error must surface, and the symlink
+        // must stay a symlink instead of being replaced by a file.
+        let err = cfg
+            .set_launcher_value_in("User Settings", "K", "v")
+            .expect_err("broken symlink must fail");
+        assert!(err.contains("broken"), "got: {}", err);
+        let meta = std::fs::symlink_metadata(&link).unwrap();
+        assert!(meta.file_type().is_symlink());
+        assert_eq!(std::fs::read_link(&link).unwrap(), missing);
+        assert!(!missing.exists());
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
