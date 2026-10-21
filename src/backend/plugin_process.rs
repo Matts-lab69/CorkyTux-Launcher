@@ -578,6 +578,26 @@ mod tests {
         assert!(!plugin_env_allowed("SSH_AUTH_SOCK"));
     }
 
+    /// The proxy variables are part of the allowlist: a plugin that talks
+    /// HTTPS has to go through the same proxy as the launcher, and the
+    /// `no_proxy` list decides what stays direct. Both spellings count,
+    /// because the tools do not agree on the case.
+    #[test]
+    fn plugin_environment_keeps_the_proxy_variables() {
+        for key in [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "NO_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "no_proxy",
+            "ALL_PROXY",
+            "all_proxy",
+        ] {
+            assert!(plugin_env_allowed(key), "{} must reach the plugin", key);
+        }
+    }
+
     #[test]
     fn plugin_environment_is_cleared_before_spawn() {
         std::env::set_var("CORKYTUX_TEST_SECRET", "leak");
