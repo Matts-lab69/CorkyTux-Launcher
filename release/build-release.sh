@@ -8,6 +8,19 @@ VERSION=$(grep -m1 '^version' Cargo.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 ARCH=$(uname -m)
 TARBALL="corkytux-${VERSION}-linux-${ARCH}.tar.gz"
 
+# Tag argument is mandatory: a release can never ship an untagged
+# version. Fails when it does not match Cargo.toml.
+# The self-updater requires tag vX.Y.Z == Cargo version.
+if [[ -z "${1:-}" ]]; then
+  echo "Usage: ./build-release.sh vX.Y.Z (must match Cargo.toml)" >&2
+  exit 1
+fi
+EXPECTED="${1#v}"
+if [[ "$EXPECTED" != "$VERSION" ]]; then
+  echo "Version mismatch: arg $1 vs Cargo.toml $VERSION" >&2
+  exit 1
+fi
+
 echo "=== Building CorkyTux v${VERSION} (release) ==="
 cargo build --release --bins
 
@@ -38,5 +51,15 @@ rm -rf "$STAGE"
 
 echo "Created: ${TARBALL} ($(du -h "$TARBALL" | cut -f1))"
 tar tzf "$TARBALL"
+echo ""
+
+# checksums.txt travels next to the tarball: the self-updater requires
+# the API digest, and when this file is attached it must agree too.
+CHECKSUMS="checksums.txt"
+sha256sum "$TARBALL" > "$CHECKSUMS"
+echo "Checksums (${CHECKSUMS}):"
+cat "$CHECKSUMS"
+echo ""
+echo "Upload BOTH ${TARBALL} and ${CHECKSUMS} to the GitHub release."
 echo ""
 echo "Install: tar xzf ${TARBALL} && cd corkytux-${VERSION} && ./install.sh"
