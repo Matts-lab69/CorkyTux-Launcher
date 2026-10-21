@@ -577,6 +577,7 @@ impl PluginManager {
     /// I run a plugin and return its final JSON document. `limit_secs` is my
     /// time budget; I enforce it in-process, without relying on `timeout(1)`.
     fn run_json(cmd: &mut Command, limit_secs: u64) -> Result<serde_json::Value, String> {
+        super::plugin_process::apply_plugin_env(cmd);
         let output = super::plugin_process::output_with_timeout(
             cmd,
             std::time::Duration::from_secs(limit_secs),
@@ -854,6 +855,7 @@ impl PluginManager {
         // Guarded so a stuck manager can never freeze the UI thread.
         let mut cmd = Command::new(&exe);
         cmd.arg("corky-list");
+        super::plugin_process::apply_plugin_env(&mut cmd);
         let output = match super::plugin_process::output_with_timeout(
             &mut cmd,
             std::time::Duration::from_secs(15),
@@ -946,6 +948,7 @@ impl PluginManager {
         }
         let mut cmd = Command::new(&exe);
         cmd.args(["corky-install", name]);
+        super::plugin_process::apply_plugin_env(&mut cmd);
         let output = super::plugin_process::output_with_timeout(
             &mut cmd,
             std::time::Duration::from_secs(1800),
@@ -987,6 +990,7 @@ impl PluginManager {
         }
         let mut cmd = Command::new(&exe);
         cmd.args(["corky-link", name, path]);
+        super::plugin_process::apply_plugin_env(&mut cmd);
         let output = super::plugin_process::output_with_timeout(
             &mut cmd,
             std::time::Duration::from_secs(60),
@@ -1026,6 +1030,7 @@ impl PluginManager {
         }
         let mut cmd = Command::new(&exe);
         cmd.args(["corky-remove", name]);
+        super::plugin_process::apply_plugin_env(&mut cmd);
         let output = super::plugin_process::output_with_timeout(
             &mut cmd,
             std::time::Duration::from_secs(60),
@@ -1059,6 +1064,7 @@ impl PluginManager {
         }
         let mut cmd = Command::new(&exe);
         cmd.args(["corky-unlink", name]);
+        super::plugin_process::apply_plugin_env(&mut cmd);
         let output = super::plugin_process::output_with_timeout(
             &mut cmd,
             std::time::Duration::from_secs(60),

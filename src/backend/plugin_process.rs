@@ -31,12 +31,62 @@ impl ProcessKiller {
         *self.pid.lock().unwrap() = None;
     }
 
-    /// SIGTERM the managed child, if any; drops the registration.
+    /// SIGTERM the managed child directly. A `kill` binary resolved through
+    /// PATH would be attacker-controlled if the launcher itself was started
+    /// with a modified PATH; the syscall has no lookup step.
     pub fn kill(&self) {
         let pid = self.current();
         self.clear();
         if let Some(pid) = pid {
-            let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+            #[cfg(unix)]
+            unsafe {
+                let _ = libc::kill(pid as libc::pid_t, libc::SIGTERM);
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = pid;
+            }
+        }
+    }
+}
+
+/// Variables a plugin may inherit. Everything else is dropped, especially
+/// launcher tokens, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `PYTHONPATH`,
+/// `PYTHONHOME`, shell startup hooks and SSH/Git credentials.
+const PLUGIN_ENV_ALLOWLIST: &[&str] = &[
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TZ", "TERM",
+    "COLORTERM", "TMPDIR", "TMP", "TEMP", "DISPLAY", "WAYLAND_DISPLAY",
+    "WAYLAND_SOCKET", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR",
+    "PULSE_SERVER", "PULSE_COOKIE", "PIPEWIRE_RUNTIME_DIR", "PIPEWIRE_REMOTE",
+    "PIPEWIRE_NODE", "JAVA_HOME", "PROTONPATH", "GAMEID", "MANGOHUD",
+    "WINEDLLOVERRIDES", "WINEFSYNC", "WINEESYNC", "DESKTOP_SESSION",
+    "XDG_CURRENT_DESKTOP", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "no_proxy", "ALL_PROXY", "all_proxy",
+];
+
+fn plugin_env_allowed(key: &str) -> bool {
+    PLUGIN_ENV_ALLOWLIST.contains(&key)
+        || key.starts_with("LC_")
+        || key.starts_with("XDG_")
+        || key.starts_with("STEAM_COMPAT_")
+        || key.starts_with("PROTON_")
+        || key.starts_with("UMU_")
+        || key.starts_with("DXVK_")
+        || key.starts_with("VKD3D_")
+        || key.starts_with("SDL_")
+        || key.starts_with("WINE")
+}
+
+/// Apply the plugin environment allowlist. Called immediately before every
+/// plugin spawn so a plugin never sees the launcher's secrets or loader
+/// injection variables.
+pub fn apply_plugin_env(cmd: &mut Command) {
+    cmd.env_clear();
+    for (key, value) in std::env::vars_os() {
+        if let Some(key) = key.to_str() {
+            if plugin_env_allowed(key) {
+                cmd.env(key, value);
+            }
         }
     }
 }
@@ -291,6 +341,7 @@ pub fn run_single_json_with_timeout(
 ) -> Result<serde_json::Value, String> {
     let mut cmd = Command::new(exe);
     cmd.args(args).stdin(Stdio::null());
+    apply_plugin_env(&mut cmd);
     let command = args.first().copied().unwrap_or("command");
     let output = output_with_timeout(&mut cmd, limit)
         .map_err(|e| format!("{} {} failed: {}", exe.display(), command, e))?;
@@ -337,12 +388,13 @@ fn spawn_streaming_inner(
 ) -> mpsc::Receiver<PluginEvent> {
     let (tx, rx) = mpsc::channel::<PluginEvent>();
     std::thread::spawn(move || {
-        let child = Command::new(&exe)
-            .args(&args)
+        let mut cmd = Command::new(&exe);
+        cmd.args(&args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn();
+            .stderr(Stdio::piped());
+        apply_plugin_env(&mut cmd);
+        let child = cmd.spawn();
         let mut child = match child {
             Ok(c) => {
                 if let Some(k) = &killer {
@@ -507,5 +559,41 @@ mod tests {
             "timeout took too long: {:?}",
             started.elapsed()
         );
+    }
+
+    #[test]
+    fn plugin_environment_policy_drops_secrets_and_loaders() {
+        assert!(plugin_env_allowed("PATH"));
+        assert!(plugin_env_allowed("HOME"));
+        assert!(plugin_env_allowed("LC_ALL"));
+        assert!(!plugin_env_allowed("LD_PRELOAD"));
+        assert!(!plugin_env_allowed("LD_LIBRARY_PATH"));
+        assert!(!plugin_env_allowed("PYTHONPATH"));
+        assert!(!plugin_env_allowed("CORKYTUX_API_KEY"));
+        assert!(!plugin_env_allowed("SSH_AUTH_SOCK"));
+    }
+
+    #[test]
+    fn plugin_environment_is_cleared_before_spawn() {
+        std::env::set_var("CORKYTUX_TEST_SECRET", "leak");
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
+            .arg("printf '%s' \"${CORKYTUX_TEST_SECRET-unset}\"");
+        apply_plugin_env(&mut cmd);
+        let output = cmd.output().expect("sh must run");
+        std::env::remove_var("CORKYTUX_TEST_SECRET");
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "unset");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_killer_uses_the_syscall_directly() {
+        let mut child = Command::new("sleep").arg("30").spawn().expect("sleep");
+        let killer = ProcessKiller::new();
+        killer.register(&child);
+        killer.kill();
+        let status = child.wait().expect("wait");
+        assert!(!status.success());
+        assert!(status.code().is_none(), "expected signal death, got {:?}", status.code());
     }
 }
