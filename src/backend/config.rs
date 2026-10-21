@@ -204,6 +204,17 @@ glib::wrapper! {
     pub struct ConfigManager(ObjectSubclass<imp::ConfigManager>);
 }
 
+/// The launcher keeps secrets in this tree (`Launcher.ini`, plugin account
+/// state). Directories are owner-only so a world-readable file left by an
+/// older version is not enough to expose a token.
+fn make_private_dir(dir: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
+    }
+}
+
 impl ConfigManager {
     /// Sharing bug fix: ConfigManager used to allocate an independent
     /// in-memory copy per `new()`. A write through one instance (e.g.
@@ -245,6 +256,8 @@ impl ConfigManager {
         let data_dir = home.join(".local").join("share").join("CorkyTux");
         fs::create_dir_all(&config_dir).ok();
         fs::create_dir_all(&data_dir).ok();
+        make_private_dir(&config_dir);
+        make_private_dir(&data_dir);
         *self.imp().config_dir.borrow_mut() = config_dir;
         *self.imp().data_dir.borrow_mut() = data_dir;
     }
@@ -359,8 +372,8 @@ impl ConfigManager {
         Ok(())
     }
 
-    /// Tmp + rename inside the destination dir, keeping the existing
-    /// mode and removing the tmp on failure. Launcher.ini only.
+    /// Tmp + rename inside the destination dir, tightening the result to
+    /// owner-only and removing the tmp on failure. Launcher.ini only.
     /// The tmp is opened with O_EXCL under a unique name (pid +
     /// counter), fsynced before the rename, so a crash cannot leave a
     /// truncated Launcher.ini and two writers cannot share a tmp.
@@ -381,15 +394,15 @@ impl ConfigManager {
             std::process::id(),
             seq
         ));
-        #[cfg(unix)]
-        let mode = fs::metadata(dest).ok().map(|m| {
-            use std::os::unix::fs::PermissionsExt;
-            m.permissions().mode()
-        });
         // create_new(true) is O_CREAT|O_EXCL: a stale tmp is never reused.
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options
             .open(&tmp)
             .map_err(|e| format!("atomic write failed: {}", e))?;
         if let Err(e) = file.write_all(bytes) {
@@ -397,19 +410,12 @@ impl ConfigManager {
             let _ = fs::remove_file(&tmp);
             return Err(format!("atomic write failed: {}", e));
         }
+        // Launcher.ini can hold API keys, so an old 0644 file must be
+        // tightened here as well as on first creation.
         #[cfg(unix)]
-        if let Some(mode) = mode {
+        {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = match file.metadata() {
-                Ok(m) => m.permissions(),
-                Err(e) => {
-                    drop(file);
-                    let _ = fs::remove_file(&tmp);
-                    return Err(format!("atomic write failed: {}", e));
-                }
-            };
-            perms.set_mode(mode);
-            if let Err(e) = fs::set_permissions(&tmp, perms) {
+            if let Err(e) = file.set_permissions(fs::Permissions::from_mode(0o600)) {
                 drop(file);
                 let _ = fs::remove_file(&tmp);
                 return Err(format!("atomic write failed: {}", e));
@@ -924,6 +930,15 @@ mod tests {
         cfg.set_launcher_value("K", "v1");
         let ini = cfg.config_dir().join("Launcher.ini");
         assert!(std::fs::read_to_string(&ini).unwrap().contains("v1"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&ini).unwrap().permissions().mode() & 0o777,
+                0o600,
+                "new Launcher.ini must be owner-only"
+            );
+        }
         // Symlink: replaced by a link to the real target.
         let target = base.join("real.ini");
         std::fs::rename(&ini, &target).unwrap();
@@ -952,6 +967,40 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().ends_with(".new"))
             .collect();
         assert!(orphans.is_empty(), "orphan tmp: {:?}", orphans);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn launcher_ini_tightens_an_existing_world_readable_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = mktmp("corky_cfg_tighten");
+        let ini = base.join("Launcher.ini");
+        std::fs::write(&ini, "[User Settings]\nK=old\n").unwrap();
+        std::fs::set_permissions(&ini, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let cfg = ConfigManager::for_test_dir(&base);
+        cfg.set_launcher_value("K", "new");
+        assert_eq!(
+            std::fs::metadata(&ini).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert!(std::fs::read_to_string(&ini).unwrap().contains("new"));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_directories_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = mktmp("corky_cfg_private_dir");
+        let private = base.join("CorkyTux");
+        std::fs::create_dir_all(&private).unwrap();
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o755)).unwrap();
+        super::make_private_dir(&private);
+        assert_eq!(
+            std::fs::metadata(&private).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
         let _ = std::fs::remove_dir_all(&base);
     }
 
