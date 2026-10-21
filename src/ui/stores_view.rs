@@ -3517,6 +3517,35 @@ fn login_failure_message(why: &str, detail: &str) -> String {
 mod tests {
     use super::*;
 
+    /// Stub of the heroic-store plugin: it answers the `bins` command with
+    /// the same shape as the real one (it only checks that the binaries are
+    /// in the plugin bin dir), so the precheck test needs no installed
+    /// plugin and no network.
+    const STUB_PLUGIN_BINS: &str = r#"#!/usr/bin/env python3
+import json
+from pathlib import Path
+
+bin_dir = Path.home() / ".config" / "CorkyTux" / "plugins" / "heroic-store" / "bin"
+print(json.dumps({
+    "type": "done",
+    "ok": True,
+    "bins": {
+        "legendary": (bin_dir / "legendary").is_file(),
+        "gogdl": (bin_dir / "gogdl").is_file(),
+    },
+}))
+"#;
+
+    /// Stub of `webdriver_login --probe`: it only reports whether the
+    /// Chromium cache is in the HOME.
+    const STUB_HELPER_PROBE: &str = r#"#!/bin/sh
+if ls "$HOME"/.local/share/corkytux/chrome-*/chrome-linux64/chrome >/dev/null 2>&1; then
+  echo '{"type": "chrome_probe", "cached": true}'
+else
+  echo '{"type": "chrome_probe", "cached": false}'
+fi
+"#;
+
     #[test]
     fn base_por_tienda() {
         let e = StorePageHandle::default_games_dir("epic");
@@ -3619,9 +3648,10 @@ mod tests {
     /// I must show my modal. (My cached `deps_ok` blocked re-checking;
     /// I removed it: I evaluate fresh on every entry.)
     ///
-    /// I stay hermetic with no network: temp HOME + a copy of my real plugin script
-    /// + helper real localizado junto al binario de test. Toca procesos
-    /// reales (`bins` en Python, `--probe` en Rust) contra ese sandbox.
+    /// I stay hermetic with no network and no installed plugin: a temp HOME
+    /// with two fixtures (a plugin stub that answers `bins` and a helper
+    /// stub that answers `--probe`). The test must not depend on what the
+    /// machine has installed.
     #[test]
     fn precheck_detecta_borrado_externo_y_dispara_modal() {
         use std::os::unix::fs::PermissionsExt;
@@ -3629,7 +3659,6 @@ mod tests {
         // Process env is shared by all test threads: hold the lock for the
         // whole test and let Drop restore HOME + helper, even on panic.
         let _env = crate::test_env::lock();
-        let orig_home = std::env::var("HOME").unwrap_or_default();
         let base = std::env::temp_dir().join(format!(
             "corkytux-precheck-{}-{}",
             std::process::id(),
@@ -3640,17 +3669,10 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&base);
 
-        // I sandbox: a copy of my plugin script + bins + Chromium cache.
-        let script_origen = std::path::PathBuf::from(&orig_home)
-            .join(".local/share/CorkyTux/plugins/heroic-store/heroic-store");
-        assert!(
-            script_origen.is_file(),
-            "the installed plugin to copy into the sandbox is missing: {}",
-            script_origen.display()
-        );
+        // I sandbox: my plugin stub + bins + Chromium cache.
         let script = base.join(".local/share/CorkyTux/plugins/heroic-store/heroic-store");
         std::fs::create_dir_all(script.parent().expect("the script parent")).unwrap();
-        std::fs::copy(&script_origen, &script).unwrap();
+        std::fs::write(&script, STUB_PLUGIN_BINS).unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
 
         let bin_dir = base.join(".config/CorkyTux/plugins/heroic-store/bin");
@@ -3660,19 +3682,12 @@ mod tests {
         std::fs::write(&leg, b"x").unwrap();
         std::fs::write(&gog, b"x").unwrap();
 
-        // I use my real helper: the binary next to my test harness (built by
-        // `cargo test` when compiling all targets).
-        let exe = std::env::current_exe().expect("current_exe");
-        let helper = exe
-            .parent()
-            .and_then(|d| d.parent())
-            .map(|d| d.join("webdriver_login"))
-            .expect("the helper path");
-        assert!(
-            helper.is_file(),
-            "the compiled helper for --probe is missing: {}",
-            helper.display()
-        );
+        // The helper is a stub as well: it only reports whether the
+        // Chromium cache is in the HOME, like `webdriver_login --probe`.
+        let helper = base.join("webdriver_login_stub");
+        std::fs::write(&helper, STUB_HELPER_PROBE).unwrap();
+        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+
         let chrome = base.join(
             ".local/share/corkytux/chrome-154.0.8037.57/chrome-linux64/chrome",
         );
