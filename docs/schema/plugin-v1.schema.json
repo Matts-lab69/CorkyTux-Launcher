@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Matts-lab69/CorkyTux-Launcher/main/docs/schema/plugin-v1.schema.json",
+  "title": "CorkyTux plugin manifest v1 (runtime)",
+  "description": "Forward-compatible runtime schema. Unknown optional fields are ignored; security-critical values are enforced by the launcher, not by this schema.",
+  "type": "object",
+  "required": ["name", "version", "entry"],
+  "properties": {
+    "protocolVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "entry": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "UI hint. An unknown value is treated as tool at runtime."
+    },
+    "minLauncherVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "description": "Closed at runtime. An unknown permission fails closed with unsupported_permission."
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+      },
+      "uniqueItems": true
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Deprecated v0 alias: these are command names, not permissions."
+    },
+    "source": {
+      "type": "string"
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Legacy transport metadata. New plugins may omit it."
+    }
+  },
+  "additionalProperties": true
+}
