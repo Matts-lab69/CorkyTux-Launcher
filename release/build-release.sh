@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# ─── CorkyTux Release Builder v3.0.13 (Rust) ─────────────────────
+# ─── CorkyTux Release Builder (Rust) ────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
@@ -8,9 +8,9 @@ VERSION=$(grep -m1 '^version' Cargo.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 ARCH=$(uname -m)
 TARBALL="corkytux-${VERSION}-linux-${ARCH}.tar.gz"
 
-# Tag argument is mandatory: a release can never ship an untagged
-# version. Fails when it does not match Cargo.toml.
-# The self-updater requires tag vX.Y.Z == Cargo version.
+# Version argument is mandatory and must match Cargo.toml.
+# This script does not verify that the git tag exists.
+# The self-updater requires the published tag vX.Y.Z == Cargo version.
 if [[ -z "${1:-}" ]]; then
   echo "Usage: ./build-release.sh vX.Y.Z (must match Cargo.toml)" >&2
   exit 1
@@ -28,9 +28,9 @@ BIN="target/release/corkytux"
 [[ -f "$BIN" ]] || { echo "Build failed: $BIN not found" >&2; exit 1; }
 ls -lh "$BIN"
 
-# El login de las tiendas lo hace este binario aparte, que habla WebDriver y
-# por eso es async. El launcher lo busca a su lado, asi que tiene que viajar
-# en el mismo tarball.
+# Store login runs in this separate binary, which speaks WebDriver and
+# is therefore async. The launcher looks for it next to itself, so it
+# has to travel in the same tarball.
 HELPER="target/release/webdriver_login"
 [[ -f "$HELPER" ]] || { echo "Build failed: $HELPER not found" >&2; exit 1; }
 ls -lh "$HELPER"
