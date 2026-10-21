@@ -1,115 +1,274 @@
-# CorkyTux
+<p align="center">
+  <img src="assets/corkytux.png" width="120" alt="CorkyTux Logo">
+</p>
 
-CorkyTux is a Linux game launcher written in Rust with GTK4 and
-libadwaita. It keeps a single game library and launches Windows titles
-through Proton/Wine and umu. Optional plugins add Minecraft, Epic/GOG
-stores, emulators, AppImages, RPG Maker runtimes, dependency tools, and
-other integrations; plugins are installed separately from the launcher.
+<h1 align="center">CorkyTux</h1>
+
+<p align="center">
+  <strong>Linux Game Launcher (Rust + GTK4/libadwaita)</strong><br>
+  Preserve your video games: unified library + multi-purpose plugins.
+</p>
+
+> **Alpha** — CorkyTux is under active development. If anything breaks,
+> report it in [Issues](https://github.com/Matts-lab69/CorkyTux-Launcher/issues).
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Rust-recent%20stable-orange?logo=rust&logoColor=white" alt="Rust">
+  <img src="https://img.shields.io/badge/GTK-4.12%2B-blue?logo=gtk&logoColor=white" alt="GTK4">
+  <img src="https://img.shields.io/badge/libadwaita-1.5%2B-green" alt="libadwaita">
+  <img src="https://img.shields.io/badge/Platform-Linux-orange?logo=linux&logoColor=white" alt="Linux">
+  <img src="https://img.shields.io/badge/License-AGPL--3.0-purple" alt="License">
+</p>
+
+<p align="center">
+  <a href="#what-is-corkytux">What is</a> •
+  <a href="#features">Features</a> •
+  <a href="#quick-start">Quick start</a> •
+  <a href="#build-from-source">Build</a> •
+  <a href="#installation">Installation</a> •
+  <a href="#configuration-and-data-paths">Paths</a> •
+  <a href="#self-update">Self-update</a> •
+  <a href="#architecture">Architecture</a> •
+  <a href="#credits">Credits</a> •
+  <a href="#license">License</a>
+</p>
+
+---
+
+## What is CorkyTux?
+
+CorkyTux is a Linux launcher built with **Rust + GTK4/libadwaita** to
+**preserve video games**: a unified library for Windows games through
+Proton/Wine and umu, Steam/Lutris/Heroic scans, and emulators, plus
+multi-purpose plugins.
 
 CorkyTux began as a C++/Qt/QML application; the current launcher is the
 Rust/GTK4 codebase in this repository.
 
-## Requirements and build from source
+---
 
-Build requirements:
+## Features
 
-- A Rust toolchain with Cargo (edition 2021).
-- `pkg-config` and a C compiler.
-- GTK 4.12 development files.
-- libadwaita 1.5 development files.
+### Library
+Unified library, filters, search, recently played cards, favorites, playtime, per-game logs.
 
-`Cargo.toml` enables the GTK `v4_12` and libadwaita `v1_5` features. At
-runtime, `install.sh` checks for `libgtk-4.so.1`, `libadwaita-1.so.0`,
-`libpango-1.0.so.0`, `libcairo.so.2`, `libgdk_pixbuf-2.0.so.0`, and
-`libglib-2.0.so.0`.
+### Proton/Wine
+Per-game Proton version and prefix, umu, EAC/BattlEye, EOS, Wine virtual desktop, environment variables, arguments, DLL overrides, Steam/Lutris/Heroic scans.
 
-On Debian/Ubuntu, the build packages are `pkg-config`,
-`build-essential`, `libgtk-4-dev`, and `libadwaita-1-dev`. Package names
-for other distributions are listed in [docs/BUILD.md](docs/BUILD.md).
+---
 
-Build both binaries:
+## Plugins
+
+Plugins are installed separately. See
+[CorkyTux-Plugins](https://github.com/Matts-lab69/CorkyTux-Plugins) for
+binaries and guides.
+
+- `minecraft-launcher`: Minecraft Java, accounts, loaders, Modrinth/CurseForge.
+- `heroic-store`: Epic/GOG stores, library, promos, deals.
+- `emulator-manager`: retro emulator install and ROM detection.
+- `appimage-launcher`: scan and integrate AppImages.
+- `rpgmaker-runtime`: RPG Maker MV/MZ and 2000/2003 runtimes.
+- `dependency-installer`: detect and install missing Windows components.
+- `dll-overrides-automator`: manage `WINEDLLOVERRIDES`.
+
+---
+
+## Quick start
+
+### Install from tarball
+
+Download the tarball from
+[Releases](https://github.com/Matts-lab69/CorkyTux-Launcher/releases).
+
+```bash
+tar -xzf corkytux-*-linux-*.tar.gz
+cd corkytux-*/
+./install.sh
+```
+
+For example, the current version produces
+`corkytux-3.1.2-linux-x86_64.tar.gz` and extracts to `corkytux-3.1.2/`.
+
+### Build from source
 
 ```bash
 git clone https://github.com/Matts-lab69/CorkyTux-Launcher.git
 cd CorkyTux-Launcher
 cargo build --release --bins
+```
+
+### Run
+
+```bash
+corkytux
+# or, without installing:
 ./target/release/corkytux
 ```
 
-The build produces `target/release/corkytux` and
-`target/release/webdriver_login`. The second binary handles the
-Epic/GOG WebDriver login used by the store plugin.
+---
 
-## Installation
+## Build from source
 
-Install from a release tarball. Do not use `sudo`; `install.sh` writes
-only under your home directory.
+### Prerequisites
+
+| Distro | Rust | pkg-config | gcc | GTK4 dev | libadwaita dev |
+|--------|------|------------|-----|----------|----------------|
+| Debian/Ubuntu | `cargo rustc` | `pkg-config` | `build-essential` | `libgtk-4-dev` | `libadwaita-1-dev` |
+| Fedora/RHEL | `cargo rust` | `pkg-config` | `gcc` (+ `base-devel`) | `gtk4-devel` | `libadwaita-devel` |
+| Arch | `rust` | `pkgconf` | `base-devel` | `gtk4` | `libadwaita` |
+| openSUSE | `cargo rust` | `pkgconf` | `patterns-devel-base` | `gtk4-devel` | `libadwaita-devel` |
+| Gentoo | `dev-lang/rust` | `dev-util/pkgconfig` | `sys-devel/gcc` | `gui-libs/gtk:4` | `gui-libs/libadwaita` |
+
+`Cargo.toml` enables the GTK `v4_12` and libadwaita `v1_5` features, so
+GTK 4.12+ and libadwaita 1.5+ are required. `Cargo.toml` does not declare
+`rust-version`; use a recent stable Rust toolchain (edition 2021).
+
+### Install Rust
+
+If Rust is not installed, use rustup:
 
 ```bash
-tar -xzf corkytux-3.1.2-linux-x86_64.tar.gz
-cd corkytux-3.1.2
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+### Verify GTK and libadwaita
+
+```bash
+pkg-config --modversion gtk4 libadwaita-1
+```
+
+The output must be 4.12 or newer for `gtk4` and 1.5 or newer for
+`libadwaita-1`. If a module is missing, install the development package
+listed in the table above.
+
+### Clone and build
+
+```bash
+git clone https://github.com/Matts-lab69/CorkyTux-Launcher.git
+cd CorkyTux-Launcher
+cargo build --release --bins
+```
+
+The build produces `target/release/corkytux` and
+`target/release/webdriver_login`. The second binary is the Epic/GOG
+WebDriver login helper. The release profile enables LTO and strip.
+
+### Run without installing
+
+```bash
+./target/release/corkytux
+```
+
+### Create the tarball
+
+```bash
+./release/build-release.sh vX.Y.Z
+```
+
+Replace `vX.Y.Z` with the `version` in `Cargo.toml`; the version argument
+is mandatory and must match it. The script does not check that the git tag
+exists. The script creates
+`corkytux-<version>-linux-<arch>.tar.gz` and `checksums.txt`. The tarball
+contains `corkytux`, `webdriver_login`, `install.sh`, `uninstall.sh`,
+`corkytux.png`, `corkytux.desktop.in`, and `assets/`.
+
+### Install the tarball
+
+```bash
+tar -xzf corkytux-*-linux-*.tar.gz
+cd corkytux-*/
 ./install.sh
 ```
 
-The release script names the tarball from the `Cargo.toml` version and
-`uname -m`. `install.sh` writes:
+Do not use `sudo`; `install.sh` writes under `$HOME`. Paths are listed in
+[Installation](#installation).
 
-- `~/.local/share/corkytux/corkytux` (launcher binary)
-- `~/.local/share/corkytux/webdriver_login` (store login helper)
-- `~/.local/share/corkytux/assets/` (bundled UI assets)
-- `~/.local/bin/corkytux` (symlink)
-- `~/.local/share/icons/corkytux.png` (icon)
-- `~/.local/share/applications/corkytux.desktop` (desktop entry)
+### Troubleshooting
 
-If `~/.local/bin` is not on `PATH`, add it as `install.sh` suggests.
+| Symptom | Cause | Fix | Basis |
+|---------|-------|-----|-------|
+| `pkg-config` cannot find `gtk4` or `libadwaita-1` | Development packages are missing or `PKG_CONFIG_PATH` is incomplete | Install the GTK4 and libadwaita development packages for your distribution | Deduced |
+| GTK or libadwaita is too old | Installed version is below 4.12 or 1.5 | Upgrade the distribution packages or build newer libraries | Deduced; minimum comes from `Cargo.toml` |
+| Linker or `gcc` is missing | No C toolchain | Install `build-essential`, `gcc`, or `base-devel` | Deduced |
+| `rustc` is too old | `Cargo.toml` does not declare `rust-version`; the crate uses edition 2021 | Run `rustup update stable`; no numeric minimum is declared | Deduced; missing `rust-version` is verified |
+| `version argument does not match Cargo.toml` | The version argument differs from `Cargo.toml` | Pass the exact version from `Cargo.toml` | Verified by `release/build-release.sh` |
+| `corkytux` is not in `PATH` | `~/.local/bin` is not on `PATH` | Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile | Verified by `release/install.sh` |
 
-At runtime CorkyTux uses:
+---
 
-- `~/.config/CorkyTux/Launcher.ini` and `~/.config/CorkyTux/Games.ini`
-- `~/.config/CorkyTux/banners/` and `~/.config/CorkyTux/icons/`
-- `~/.local/share/CorkyTux/plugins/` (installed plugins)
-- `~/.local/share/CorkyTux/prefixes/` (game prefixes)
-- `~/.local/share/CorkyTux/downloads/` (self-update staging)
-- `~/.cache/CorkyTux/` (icon cache)
+## Installation
 
-Run `./uninstall.sh` from the extracted tarball to remove the installed
-files. The uninstaller asks before deleting game and plugin data, the
-cache, or the configuration.
+### Install from a release tarball
+
+```bash
+tar -xzf corkytux-*-linux-*.tar.gz
+cd corkytux-*/
+./install.sh
+```
+
+`install.sh` does not use `sudo`.
+
+| File | Destination |
+|------|-------------|
+| `corkytux` | `~/.local/share/corkytux/corkytux` |
+| `webdriver_login` | `~/.local/share/corkytux/webdriver_login` |
+| `assets/` | `~/.local/share/corkytux/assets/` |
+| `corkytux` (symlink) | `~/.local/bin/corkytux` |
+| `corkytux.png` | `~/.local/share/icons/corkytux.png` |
+| `corkytux.desktop` | `~/.local/share/applications/corkytux.desktop` |
+
+### Uninstall
+
+```bash
+cd corkytux-*/
+./uninstall.sh
+```
+
+---
+
+## Configuration and data paths
+
+| Path | Contents |
+|------|----------|
+| `~/.config/CorkyTux/Launcher.ini` | Launcher settings |
+| `~/.config/CorkyTux/Games.ini` | Game library |
+| `~/.config/CorkyTux/banners/` | Game banners |
+| `~/.config/CorkyTux/icons/` | Game icons |
+| `~/.local/share/CorkyTux/plugins/` | Installed plugins |
+| `~/.local/share/CorkyTux/prefixes/` | Game prefixes |
+| `~/.local/share/CorkyTux/downloads/` | Self-update staging |
+| `~/.cache/CorkyTux/modicons/` | Minecraft mod icon cache |
+
+---
+
+## Optional runtime tools
+
+| Tool | Feature |
+|------|---------|
+| `python3` + `requests` (+ `minecraft_launcher_lib`, `psutil` for MC) | all Python plugins |
+| `java` 8/17/21/25 | Minecraft plugin |
+| `steam` | Proton games / Steam scan |
+| `umu-run` / `umu-launcher` | umu Proton (auto-installed by heroic-store to `tools/umu`, v1.4.4) |
+| `lutris`, `heroic`, `legendary`, `gogdl` | scans / Epic+GOG (legendary/gogdl auto-downloaded by plugin setup) |
+| `sqlite3` | Lutris `pga.db` scan |
+| `curl`, `tar`, `unzip`/`unrar`, `ffmpeg` | Proton downloads, artwork |
+| `gamemode`, `mangohud`, `zenity`/`kdialog`, `glxinfo` | optional launch helpers |
+
+---
 
 ## Self-update
 
-Self-update is opt-in. The startup check is controlled by
-**Settings > Misc > Check for updates on startup**, which is off by
-default. Manual checks are available from **Settings > About > Check for
-launcher updates**. After an update installs and waits for a restart,
-the same button becomes **Restart to finish updating**.
+- Opt-in: **Settings > Misc > Check for updates on startup** is off by default. Manual checks are in **Settings > About > Check for launcher updates**. Startup checks run at most once every six hours.
+- Source: GitHub Releases at `Matts-lab69/CorkyTux-Launcher`.
+- Integrity: the GitHub release API SHA256 digest is mandatory; `checksums.txt` is optional and must match when present.
+- Hosts: HTTPS only; redirects only to `github.com`, `objects.githubusercontent.com`, and `release-assets.githubusercontent.com` for assets, and `api.github.com` and `github.com` for metadata.
+- Limits: 200 MiB total, 50 MiB per file, 10,000 entries; no absolute paths, `..`, symlinks, hardlinks, or unexpected files.
+- Rollback: every replaced file is backed up and restored on failure; backups are pruned after a successful install.
+- Restart: the launcher quits and a detached sleeper starts the new binary after the old process exits.
+- Scope: only copies installed by `install.sh` under `~/.local/share/corkytux` can self-update. Repository builds report that they must be updated manually.
 
-Updates come from GitHub Releases
-(`Matts-lab69/CorkyTux-Launcher`). The updater:
-
-- Uses HTTPS only and follows redirects only to `github.com`,
-  `objects.githubusercontent.com`, and
-  `release-assets.githubusercontent.com`. Release metadata comes from
-  `api.github.com` and `github.com`.
-- Requires the SHA256 digest published by the GitHub release API. A
-  release without a digest is refused. If the release also carries
-  `checksums.txt`, its entry for the tarball must match the API digest.
-- Extracts only the expected files, with a 200 MiB total limit, a 50 MiB
-  per-file limit, and a 10,000-entry limit. Absolute paths, `..`,
-  symlinks, hardlinks, and unexpected entries are rejected.
-- Checks that the new binary answers `--version` with the release
-  version before replacing anything.
-- Backs up every file it replaces and restores the previous binary,
-  helper, icon, and assets if any install step fails. Backups are pruned
-  only after a successful install.
-- Quits the running instance and starts the new binary through a
-  detached sleeper that waits for the old process to exit.
-
-Self-update only works for copies installed by `install.sh` under
-`~/.local/share/corkytux`. A build run from the repository or another
-directory reports that it was not installed with `install.sh` and must
-be updated manually. The startup check runs at most once every six
-hours.
+---
 
 ## --version
 
@@ -117,26 +276,77 @@ hours.
 corkytux --version
 ```
 
-prints `corkytux X.Y.Z` and exits without opening a window. The flag is
-recognized only when it is the sole argument; any other combination
-falls through to the normal command-line handling.
+Prints `corkytux X.Y.Z` and exits without opening a window. The flag is
+recognized only when it is the sole argument.
+
+---
 
 ## Release
 
-Build a release tarball with the release script. The tag is mandatory and
-must match the version in `Cargo.toml`:
+1. Bump `version` in `Cargo.toml`.
+2. Run `cargo check`; it refreshes the version entry in `Cargo.lock` without upgrading dependencies.
+3. Commit `Cargo.toml` and `Cargo.lock` together.
+4. Build the release and check the tarball:
 
 ```bash
-./release/build-release.sh v3.1.2
+./release/build-release.sh vX.Y.Z
+VERSION=$(grep -m1 '^version' Cargo.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+tar tzf "corkytux-${VERSION}-linux-$(uname -m).tar.gz"
 ```
 
-The script runs `cargo build --release --bins`, packages
-`corkytux-3.1.2-linux-<arch>.tar.gz` with the launcher, the login
-helper, `install.sh`, `uninstall.sh`, the icon, and the assets, and
-writes `checksums.txt` with the tarball's SHA256. Upload both the
-tarball and `checksums.txt` to the GitHub release.
+5. Create and push the tag:
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+6. Create the GitHub Release and upload the tarball and `checksums.txt`.
+
+`vX.Y.Z` is the `Cargo.toml` version; the version argument is mandatory
+and must match it. The script does not check that the git tag exists.
+The versioned tarball example above uses the same value. The script
+builds with `cargo build --release --bins`, creates
+`corkytux-<version>-linux-<arch>.tar.gz`, and writes `checksums.txt`.
+
+---
+
+## Architecture
+
+```text
+src/main.rs                     Adw window, pages games/minecraft/stores
+src/bin/webdriver_login.rs      WebDriver login helper for Epic/GOG
+src/ui/sidebar.rs               library, filters, search, Minecraft/Store toggles
+src/ui/center.rs                Recently Played cards
+src/ui/details_panel.rs         banner, Play/Stop, async cached install size
+src/ui/game_settings.rs         Proton/prefix, EAC/BE, EOS, WineVDesktop, env, args, isolation
+src/ui/settings.rs              visuals, paths, protons, plugins, integrations, about
+src/ui/minecraft_view.rs        MC library/detail/browse (Modrinth/CurseForge)
+src/ui/stores_view.rs           Epic/GOG tabs, session, library, promos, deals
+src/ui/update_dialog.rs         self-update check, progress, restart prompt
+src/backend/proton.rs           Proton/umu launch, EAC/BE envs, legendary launch, playtime/logs
+src/backend/isolation.rs        bubblewrap sandbox (private HOME, prefix+game rw, runners ro)
+src/backend/plugin_process.rs   JSON-lines spawn + 50ms pump
+src/backend/self_update.rs      GitHub Releases check, download, verify, install, restart
+src/backend/game_model.rs       GameEntry <-> Games.ini
+src/backend/config.rs           Launcher.ini + Games.ini
+docs/                           BUILD, audits (multidistro, perf), wine-isolation design
+assets/                         bundled icons (light + dark)
+release/                        install.sh, uninstall.sh, build-release.sh, corkytux.png, corkytux.desktop.in
+plugins/<name>/                 separate repo (CorkyTux-Plugins): plugin binary + plugin.json
+```
+
+---
+
+## Credits
+
+- [@Cristioro](https://github.com/Cristioro) — UI ideas and suggestions
+  to make the code more efficient.
+- [@ZzEdovec](https://github.com/ZzEdovec) — some interfaces and icons
+  used or inspired by this person's repositories.
+
+---
 
 ## License
 
-CorkyTux is licensed under the GNU Affero General Public License v3.0.
-See [LICENSE](LICENSE).
+AGPL-3.0 — see [LICENSE](LICENSE).
