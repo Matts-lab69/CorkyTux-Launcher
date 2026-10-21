@@ -1159,6 +1159,15 @@ impl ProtonManager {
                 if !code.is_empty() {
                     let uid = doc.get("account_id").and_then(|x| x.as_str()).unwrap_or("");
                     let uname = doc.get("display_name").and_then(|x| x.as_str()).unwrap_or("");
+                    // The exchange code has to travel in the game argv: the
+                    // Epic client reads it from `-auth_password` and there is
+                    // no env var or file alternative (Heroic and Legendary
+                    // do the same). Residual risk: any local user can read
+                    // the argv of the game while it runs, and a game that
+                    // echoes its own command line would write the code to
+                    // its log. I mitigate what I can: the game log is 0600
+                    // and every copy the launcher makes (the log view and
+                    // the saved log) is redacted.
                     launch_args.push_str(&format!(
                         " -auth_login=unused -auth_password={} -auth_type=exchangecode -epicenv=Prod -EpicPortal -epicusername={} -epicuserid={}",
                         code, uname, uid));
@@ -1697,11 +1706,14 @@ impl ProtonManager {
         let content = fs::read_to_string(&path).unwrap_or_default();
         // Keep the tail so the UI never chokes on huge logs
         const MAX: usize = 200_000;
-        if content.len() > MAX {
+        let tail = if content.len() > MAX {
             content[content.len() - MAX..].to_string()
         } else {
             content
-        }
+        };
+        // The game output can carry a launch argument (the Epic exchange
+        // code). I never show it as it is.
+        super::redact::redact_secrets(&tail)
     }
 
     /// Open the game log for writing.

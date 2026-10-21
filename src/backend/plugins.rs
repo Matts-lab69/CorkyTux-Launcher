@@ -791,6 +791,9 @@ impl PluginManager {
             } else {
                 "install failed".into()
             };
+            // The installer output comes from a plugin: it can carry a
+            // secret. I redact it before it reaches the dialog or the log.
+            let msg = super::redact::redact_secrets(&msg);
             Self::log_dep_output(game, &format!("dep install failed\n{}", msg));
             return Err(Self::tail_msg(&msg, 2000));
         }
