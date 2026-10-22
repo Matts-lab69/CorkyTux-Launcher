@@ -528,6 +528,9 @@ mod tests {
 
     #[test]
     fn sandbox_home_is_sandboxed() {
+        // HOME is process-global and another test swaps it: read it under
+        // the shared lock so the value cannot change mid-test.
+        let _env = crate::test_env::lock();
         let h = sandbox_home("Hollow Knight: Silksong!");
         assert!(h.ends_with("sandbox-home/Hollow_Knight__Silksong"));
         assert!(!h.to_string_lossy().contains(' '));
