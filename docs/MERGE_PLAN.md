@@ -226,18 +226,24 @@ gate for every .NET verb and the valid winetricks verbs.
 
 ### 4.4 Runtime floor and the release build
 
-Measured on the tested binary (`target/release/corkytux`):
+Measured on the tested binary (`target/release/corkytux`, built on this
+Gentoo machine) and on the artifact built by the release workflow on
+`ubuntu-24.04` (run 39839991506, dry run):
 
-- `objdump -T target/release/corkytux | grep -o 'GLIBC_[0-9.]*' | sort -V -u | tail -3`
-  gives `GLIBC_2.34`, `GLIBC_2.35`, `GLIBC_2.39`. The 2.39 entries
-  (`pidfd_spawnp`, `pidfd_getpid`) are weak in the symbol table but they
-  still appear in `objdump -p` under `VERNEED` with flags `0x00`. A two-line
-  C program that references both with `__attribute__((weak))` produces the
-  same `0x00`, so this is how the linker records the reference; glibc only
-  tolerates a missing version when the flag is `0x02` (`VER_FLG_WEAK`). The
-  loader therefore asks for glibc 2.39. Treat **glibc 2.39** as the floor. No older-glibc runtime was
-  available here, so the floor is read from the ELF headers, not from a run
-  on 2.35.
+- `objdump -T ... | grep -o 'GLIBC_[0-9.]*' | sort -V -u | tail -3`
+  gives `GLIBC_2.34`, `GLIBC_2.35`, `GLIBC_2.39` on both. The 2.39 entries
+  (`pidfd_spawnp`, `pidfd_getpid`) are weak in the symbol table. The local
+  build lists `GLIBC_2.39` under `VERNEED` with flags `0x00`, so its loader
+  asks for 2.39; a two-line C program that references both with
+  `__attribute__((weak))` produces the same `0x00` with the local binutils.
+  The CI build lists the same version with flags `0x02` (`VER_FLG_WEAK`),
+  and glibc tolerates a missing version exactly when the flag is `0x02`, so
+  that binary does not make 2.39 a hard requirement (its strong entries stop
+  at 2.35).
+- The published floor stays **glibc 2.39**: it is the glibc of the build
+  runner, the only environment where the release is built, and the flag
+  difference was measured, not exercised. No runtime test on glibc
+  2.35-2.38 was done, and GTK 4.12 excludes most of those systems anyway.
 - GTK, libadwaita and glib: `gtk4` feature `v4_12`, `libadwaita` feature
   `v1_5` and `glib` feature `v2_80` in `Cargo.toml`, repeated as
   `require_min gtk4 4.12`, `require_min libadwaita-1 1.5` and
@@ -260,50 +266,28 @@ measured on this machine; the enforced floor is the one above.
 | Debian 13 | 2.41 | 4.18 | supported |
 | Debian 12 | 2.36 | 4.8 | not supported: GTK too old |
 | Fedora 40 | 2.39 | 4.14 | supported |
-| Fedora 39 | 2.38 | 4.12 | not supported: glibc too old |
+| Fedora 39 | 2.38 | 4.12 | not supported: documented glibc floor 2.39 (its GTK would pass; untested) |
 | Arch, Gentoo, openSUSE Tumbleweed | rolling | >= 4.14 | supported |
 
-Proposal: build the release in the CI on `ubuntu-24.04`, the same runner the
-tests already use, triggered by the tag. That gives the same glibc 2.39 floor
-as the binary built here and removes the "built on the maintainer's Gentoo"
-question. Sketch, to be added in its own PR after the merges:
+The release is built by `.github/workflows/release.yml` (PR #15) on
+`ubuntu-24.04`, the same runner the tests use, triggered by a `vX.Y.Z` tag:
 
-```yaml
-name: release
-on:
-  push:
-    tags: ["v*"]
-permissions:
-  contents: read          # default for every job
-jobs:
-  build:
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@<sha>        # v4, pinned like ci.yml
-      - uses: Swatinem/rust-cache@<sha>     # v2
-      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
-      - run: cargo test --locked
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: ./release/build-release.sh "$GITHUB_REF_NAME"
-      - uses: actions/upload-artifact@<sha>
-  publish:
-    needs: build
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write       # only this job can write
-    steps:
-      - uses: actions/download-artifact@<sha>
-      - run: gh release create "$GITHUB_REF_NAME" ./*.tar.gz checksums.txt --verify-tag --notes-file ...
-```
+- The tag must equal `v` plus the `Cargo.toml` version, otherwise the job
+  stops before building; `build-release.sh` repeats the check.
+- `cargo test --locked`, then `release/build-release.sh <tag>`.
+- The tarball and `checksums.txt` travel as a run artifact. The publish job
+  is the only one with `contents: write`, runs only for a tag, and opens a
+  draft release with `--generate-notes`. Nothing is published automatically.
+- `workflow_dispatch` runs the same build as a dry run (artifact only, no
+  release), which is how it was verified: run 39839991506, artifact
+  `corkytux-v3.1.2`, `sha256sum -c` clean, and `tar tzf` with a single
+  top-level `corkytux-3.1.2/`.
+- No repository secrets, every action pinned by SHA, no
+  `pull_request_target`.
 
-Rules for that workflow: no `pull_request_target`, no repository secrets,
-`GITHUB_TOKEN` only in the publish job, every action pinned by SHA as in
-`ci.yml`, and `build-release.sh` already refuses a tag that does not match
-`Cargo.toml`. The binaries stay unsigned; the maintainer uploads the
-`.minisig` files by hand with `gh release upload` after the release exists,
-so no signing key ever reaches the CI.
+The binaries stay unsigned; the maintainer edits the draft notes, uploads
+the `.minisig` files by hand with `gh release upload` and publishes, so no
+signing key ever reaches the CI.
 
 ### 4.5 The tarball install and uninstall test
 
