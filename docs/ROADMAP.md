@@ -9,6 +9,41 @@ projects share. Each item is written so it can become one GitHub issue.
 Priorities: P0 blocks a secure or reliable plugin release; P1 is required for
 the first versioned protocol; P2 is follow-up work.
 
+## Status of the items
+
+| Item | State |
+|---|---|
+| 1 | in PR: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3), [Launcher #6](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/6), [Plugins #2](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/2) |
+| 2 | in PR: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (the deadlines) and [Launcher #5](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/5) (the group kill) |
+| 3 | in PR: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (the allowlist) and [Launcher #5](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/5) (the group kill) |
+| 4 | open |
+| 5 | open |
+| 6 | open |
+| 7 | open |
+| 8 | open |
+| 9 | open |
+| 10 | open |
+| 11 | in PR: [Launcher #1](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/1) |
+| 12 | open |
+| 13 | open |
+| 14 | open |
+| 15 | open |
+| 16 | open |
+| 17 | open |
+| 18 | open |
+| 19 | open |
+| 20 | partly done: the Ely.by password travels on stdin in [Launcher #8](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/8) and [Plugins #5](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/5) |
+| 21 | in PR: [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) and [Plugins #6](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/6) |
+| 22 | in PR: [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) |
+| 23 | open |
+| 24 | open |
+| 25 | in PR: [Launcher #4](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/4) and [Launcher #7](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/7) (the CI and the hermetic tests), [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) and [Plugins #6](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/6) (the lint) |
+
+Nothing here is merged yet: every "in PR" line points to an open pull
+request. The concrete defects, with the file and the line, live in
+`../PENDIENTES.md`. This document keeps the strategy, the order and the
+milestones; `../PENDIENTES.md` keeps what is broken and where.
+
 ## Priority order
 
 1. Runtime safety: file permissions, command timeouts and a clean environment.
@@ -20,6 +55,8 @@ the first versioned protocol; P2 is follow-up work.
 ## 1. Runtime safety
 
 ### 1. Fix secrets at rest and directory permissions (P0)
+
+**Status:** in PR: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3), [Launcher #6](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/6), [Plugins #2](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/2).
 
 New `Launcher.ini` files are created with the process umask and can be `0644`,
 yet the file can contain `IntegrationApiKey` and a CurseForge key. Plugin token
@@ -37,6 +74,8 @@ Security finding: #6.
 
 ### 2. Enforce per-command timeouts and cancellation (P0)
 
+**Status:** in PR: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (the deadlines) and [Launcher #5](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/5) (the group kill). The sites that still call external binaries are listed in `../PENDIENTES.md` (C08).
+
 `run_single_json`, emulator install/link/remove/unlink and AppImage run currently
 use unbounded `Command::output()`. Give every command a declared deadline, kill
 the process group on expiry, and surface a retryable error.
@@ -52,6 +91,8 @@ it launches.
 Security finding: #9.
 
 ### 3. Clean the plugin environment and terminate by PID (P0)
+
+**Status:** in PR: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (the allowlist) and [Launcher #5](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/5) (the group kill).
 
 Plugin processes inherit the full launcher environment, including tokens and
 loader variables, and `ProcessKiller` resolves `kill` through `PATH`. Build an
@@ -70,6 +111,8 @@ Security finding: #12.
 
 ### 4. Rotate and remove the hardcoded SteamGridDB key (P0)
 
+**Status:** open.
+
 `IntegrationManager` embeds a public SteamGridDB key in the binary. Treat it as
 leaked, rotate it and move to a user-supplied key or a server-side proxy with
 per-user quotas. Never ship a shared secret in a desktop binary.
@@ -85,6 +128,8 @@ Security finding: #7.
 
 ### 5. Replace plugin `tar -xf` with a safe extractor (P0)
 
+**Status:** open. The current state is in `../PENDIENTES.md` (D05).
+
 The plugin installer currently runs `tar -xf` as the user with no path,
 symlink, hardlink, entry-count or size checks. Reuse the hardened extraction
 model already present in `src/backend/self_update.rs` or implement an equivalent
@@ -97,6 +142,8 @@ Acceptance: `../`, absolute paths, symlinks, hardlinks, device nodes and bomb
 archives are rejected; extraction is atomic and cleaned on failure.
 
 ### 6. Harden Proton, GE and AppImage downloads (P0)
+
+**Status:** open.
 
 Proton/GE downloads and emulator AppImage downloads use HTTPS but no artifact
 hash or signature, and Proton extraction uses `tar -xzf` directly into the
@@ -113,6 +160,8 @@ write outside the target; an oversized archive is refused before unpacking.
 
 ### 7. Sign plugin releases and verify before install and execution (P0)
 
+**Status:** open. The procedure is written in `docs/PLUGIN_PROTOCOL.md` ([Launcher #1](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/1)), the code is not written.
+
 Sign each release artifact with minisign, publish the public key and a detached
 signature, and verify the signature before extraction. Re-verify the installed
 entrypoint hash before execution or on every launch. The private key stays
@@ -125,6 +174,8 @@ installed entrypoint is refused; the UI shows the signer and fingerprint.
 
 ### 8. Add SHA-256 checksums and pin the download origin (P0)
 
+**Status:** open. The current state is in `../PENDIENTES.md` (D05, D06).
+
 Publish `checksums.txt` per release and verify the downloaded archive against
 it. Pin the repository, release tag and asset name; do not trust an arbitrary
 `browser_download_url` returned by the API.
@@ -135,6 +186,8 @@ Acceptance: checksum mismatch aborts before extraction; redirects to other
 hosts are rejected; the selected asset must match the expected name.
 
 ### 9. Add signed self-update and key rotation (P0)
+
+**Status:** open. The procedure is written in `docs/PLUGIN_PROTOCOL.md` ([Launcher #1](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/1)), the code is not written.
 
 Self-update already checks SHA-256 against the GitHub release digest and an
 optional `checksums.txt`, but both come from the same release. Add a detached
@@ -147,6 +200,8 @@ Acceptance: a compromised GitHub release cannot install without the private
 key; a rotated key is accepted only through an explicit signed transition.
 
 ### 10. Close the self-update TOCTOU window (P1)
+
+**Status:** open.
 
 The staged binary is health-checked and later copied by path; a same-user writer
 can swap it in between. Hash and copy from the same file descriptor, or copy to
@@ -162,6 +217,8 @@ must fail; no path-based re-open remains between verification and rename.
 
 ### 11. Publish the versioned plugin protocol and JSON Schema (P1)
 
+**Status:** in PR: [Launcher #1](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/1).
+
 Write `docs/PLUGIN_PROTOCOL.md` with the v1 contract and add a machine-readable
 JSON Schema under `docs/schema/plugin-v1.schema.json`. Use a resolvable `$id`
 and define extension rules that do not contradict forward-compatible minors.
@@ -171,6 +228,8 @@ the schema rejects the current malformed manifests; the document has a
 compatibility and deprecation section.
 
 ### 12. Make manifests canonical and validate them at load time (P1)
+
+**Status:** open.
 
 Require `protocolVersion`, `id`, `name`, `version`, `entry`, `type`,
 `capabilities` and `protocol`. Validate `id` against the directory name, reject
@@ -185,6 +244,8 @@ the error names the file and the missing field.
 
 ### 13. Dispatch plugins by manifest, not hardcoded ids (P1)
 
+**Status:** open. The current state is in `../PENDIENTES.md` (D16, D17).
+
 Replace the fixed `ID`/`ENTRY` pairs and `plugin_exe(id, entry)` call sites with
 a registry loaded from validated manifests. Keep typed adapters where the UI
 needs a specific capability, but resolve the executable through the manifest.
@@ -196,6 +257,8 @@ Acceptance: changing `entry` in a valid manifest changes the executed file; no
 code path uses a hardcoded plugin path for a new plugin.
 
 ### 14. Standardize the response envelope and error parsing (P1)
+
+**Status:** open.
 
 Define one envelope for single and JSON Lines modes: `type`, `ok`, `data`,
 `error`. The launcher must read the same error field in `run_single_json` and
@@ -209,6 +272,8 @@ a crash all produce the same UI error path.
 
 ### 15. Define and enforce the exit-code contract (P1)
 
+**Status:** open.
+
 Keep `0`, `2`, `3`, `4`, `5` and `6`; document what each plugin may use and map
 codes to UI categories. Reject undocumented non-zero codes unless the manifest
 declares them.
@@ -218,6 +283,8 @@ behave as documented; a plugin returning an unknown code gets a generic error.
 
 ### 16. Add a `describe` command for plugin metadata (P2)
 
+**Status:** open.
+
 Let a plugin report its commands, capabilities, settings schema and runtime
 requirements without the launcher parsing plugin-specific output. Use it for
 emulator settings and add-game cards.
@@ -226,6 +293,8 @@ Acceptance: the launcher can render a plugin card and a settings form from
 `describe`; no UI code parses `emulators` JSON directly.
 
 ### 17. Specify the release archive layout (P1)
+
+**Status:** open.
 
 Document and test that every release asset is a `.tar.gz` with one top-level
 `<id>/` directory containing the executable, `plugin.json`, `README.md` and
@@ -240,6 +309,8 @@ with two plugin directories is rejected.
 
 ### 18. Add a compatibility matrix and deprecation policy (P2)
 
+**Status:** open.
+
 Maintain a table of Launcher versions, protocol versions and plugin versions.
 Define how long old majors are supported and how the UI warns before an
 incompatible plugin is disabled.
@@ -247,6 +318,8 @@ incompatible plugin is disabled.
 Acceptance: the matrix is checked in; the loader uses it to warn or block.
 
 ### 19. Add a trust and permission prompt before first execution (P1)
+
+**Status:** open.
 
 Show plugin id, publisher, version, signer, capabilities and install path.
 Require explicit consent for capabilities that execute code, write outside the
@@ -257,6 +330,8 @@ Acceptance: a new or changed signer requires a new prompt; disabling a plugin
 stops all execution paths.
 
 ### 20. Keep auth codes out of argv and logs (P1)
+
+**Status:** partly done: the Ely.by password travels on stdin in [Launcher #8](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/8) and [Plugins #5](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/5). The Epic exchange code still travels in the game argv: see `../PENDIENTES.md` (N02).
 
 The Epic/EOS exchange code and display name are concatenated into a launch
 argument string. The code is visible in `/proc/<pid>/cmdline`, and a display
@@ -272,6 +347,8 @@ or `-`-prefixed text cannot inject extra arguments.
 
 ### 21. Repair the official plugin documentation (P1)
 
+**Status:** in PR: [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) and [Plugins #6](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/6).
+
 The current docs describe commands that the plugins do not accept: AppImage
 `scan` is a single-file command, RPG Maker `install` uses subcommands, Heroic
 `logout` requires `--store`, and the Minecraft guide uses an older CLI. Versions
@@ -283,6 +360,8 @@ RPG Maker, Heroic and Minecraft examples use the current syntax.
 
 ### 22. Add the AGPL license, per-plugin guides and stable assets (P1)
 
+**Status:** in PR: [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3).
+
 Add a root `LICENSE` (AGPL-3.0), fix the README link to it, add minimal guides
 for `dependency-installer` and `dll-overrides-automator`, and keep the logo at
 the stable `assets/corkytux.png` path.
@@ -291,6 +370,8 @@ Acceptance: every plugin directory has a README; the license link resolves; the
 logo URL returns 200 from the default branch; the vendor `NOTICE` remains.
 
 ### 23. Improve plugin install and update UX (P2)
+
+**Status:** open.
 
 Show version, signer, capabilities, size, install path and update availability
 before install. After install, show whether the signature and manifest are
@@ -302,6 +383,8 @@ without confirmation.
 
 ### 24. Make plugin errors actionable (P2)
 
+**Status:** open. The redaction of the plugin output is in [Launcher #6](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/6); the truncated description is in `../PENDIENTES.md` (D07).
+
 Replace generic "plugin failed" messages with the command, exit code, plugin
 id and a remediation hint. Keep the raw stderr available in a details expander
 and redact tokens.
@@ -310,6 +393,8 @@ Acceptance: each exit code maps to a message; tests cover missing backend,
 auth failure, timeout and malformed JSON.
 
 ### 25. Add linting and integration tests (P1)
+
+**Status:** in PR: [Launcher #4](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/4) and [Launcher #7](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/7) (the CI and the hermetic tests), [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) and [Plugins #6](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/6) (the lint).
 
 Run `ruff` on all plugin Python, `shellcheck` on `heroic-store/install.sh`,
 `python -m json.tool` on every manifest, and the JSON Schema validation from
@@ -323,11 +408,17 @@ suite runs with `cargo test` and does not require network access.
 
 ## Suggested sequence
 
-1. Permissions, timeouts and environment (items 1-3).
+1. Permissions, timeouts and environment (items 1-3): in flight in
+   [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3),
+   [Launcher #5](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/5),
+   [Launcher #6](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/6) and
+   [Plugins #2](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/2).
 2. SteamGridDB key rotation (item 4).
 3. Safe plugin, Proton and AppImage extraction (items 5-6).
 4. Checksums and signatures (items 7-10).
-5. Protocol v1, manifests and migration (items 11-25).
+5. Protocol v1, manifests and migration (items 11-25): the document is in
+   [Launcher #1](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/1), the
+   rest is open.
 
 ## Out of scope
 
