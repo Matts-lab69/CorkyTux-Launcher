@@ -1,0 +1,173 @@
+name: release
+
+# Two ways in:
+#   - push a tag vX.Y.Z: build, then open a DRAFT release with the tarball
+#     and checksums.txt. Nothing is published automatically.
+#   - workflow_dispatch: dry run. It builds the same tarball, checks it and
+#     leaves it as an artifact of the run. It never creates a release and it
+#     never needs a tag in the repository.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to simulate (vX.Y.Z). Must match Cargo.toml."
+        required: true
+        type: string
+
+# Every job reads. Only the publish job can write, and only for its own run.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    # Same runner as ci.yml: GTK 4.14, libadwaita 1.5, glib 2.80 and
+    # glibc 2.39, which is the floor the binaries are documented against.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Resolve the tag
+        id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TAG: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="$INPUT_TAG"
+          if [ "$EVENT" = "push" ]; then
+            tag="$REF_TAG"
+          fi
+          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Not a vX.Y.Z tag: '$tag'" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Check the tag matches Cargo.toml
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="$(grep -m1 '^version' Cargo.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+          echo "tag=${TAG} Cargo.toml=${version}"
+          if [ "$TAG" != "v${version}" ]; then
+            echo "The tag and Cargo.toml disagree; bump Cargo.toml first." >&2
+            exit 1
+          fi
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            pkg-config \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libglib2.0-dev
+
+      - name: Check GTK versions
+        run: |
+          set -euo pipefail
+          require_min() {
+            pkg="$1"; min="$2"; have=""
+            have="$(pkg-config --modversion "$pkg")"
+            echo "$pkg: $have (required >= $min)"
+            lowest="$(printf '%s\n%s\n' "$min" "$have" | sort -V | head -n1)"
+            if [ "$lowest" != "$min" ]; then
+              echo "ERROR: $pkg $have is older than the required $min"
+              exit 1
+            fi
+          }
+          require_min gtk4 4.12
+          require_min libadwaita-1 1.5
+          require_min glib-2.0 2.80
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2 (2.9.3)
+
+      - name: cargo test
+        run: cargo test --locked
+
+      - name: Build the tarball
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: ./release/build-release.sh "$TAG"
+
+      - name: Check what was built
+        run: |
+          set -euo pipefail
+          tarball="$(ls corkytux-*.tar.gz)"
+          echo "=== tar tzf ${tarball}"
+          tar tzf "$tarball" | sed -n '1,12p'
+          echo "=== sha256sum -c checksums.txt"
+          sha256sum -c checksums.txt
+          echo "=== glibc floor of the CI binary"
+          objdump -T target/release/corkytux \
+            | grep -o 'GLIBC_[0-9.]*' | sort -V -u | tail -3
+
+      - name: Upload the artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 (4.6.2)
+        with:
+          name: corkytux-${{ steps.tag.outputs.tag }}
+          path: |
+            corkytux-*.tar.gz
+            checksums.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    # Only a tag push opens a release, and it is always a draft: the
+    # maintainer edits the notes, attaches the .minisig files and publishes.
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download the artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4 (4.3.0)
+        with:
+          name: corkytux-${{ needs.build.outputs.tag }}
+          path: dist
+
+      - name: Open the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ls -l dist
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists: upload the assets with --clobber."
+            gh release upload "$TAG" dist/*.tar.gz dist/checksums.txt --clobber
+          else
+            gh release create "$TAG" dist/*.tar.gz dist/checksums.txt \
+              --draft \
+              --verify-tag \
+              --title "CorkyTux ${TAG#v}" \
+              --generate-notes
+          fi
