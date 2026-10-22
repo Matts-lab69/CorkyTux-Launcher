@@ -536,6 +536,19 @@ where
 mod tests {
     use super::*;
 
+    /// The absolute path of a program, so the test does not depend on the
+    /// process PATH: the isolation test breaks it on purpose, and the tests
+    /// of this module run in parallel with it.
+    fn program(name: &str) -> PathBuf {
+        for dir in ["/bin", "/usr/bin", "/usr/local/bin"] {
+            let candidate = Path::new(dir).join(name);
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+        PathBuf::from(name)
+    }
+
     #[test]
     fn one_shot_commands_have_bounded_deadlines() {
         assert_eq!(single_timeout(&["install"]), LONG_TIMEOUT);
@@ -548,9 +561,12 @@ mod tests {
 
     #[test]
     fn run_single_json_terminates_a_hung_plugin() {
+        // The lock keeps the isolation test from breaking the PATH while I
+        // spawn a program by name.
+        let _env = crate::test_env::lock();
         let started = std::time::Instant::now();
         let err = run_single_json_with_timeout(
-            Path::new("sleep"),
+            &program("sleep"),
             &["30"],
             std::time::Duration::from_millis(200),
         )
@@ -601,7 +617,7 @@ mod tests {
     #[test]
     fn plugin_environment_is_cleared_before_spawn() {
         std::env::set_var("CORKYTUX_TEST_SECRET", "leak");
-        let mut cmd = Command::new("sh");
+        let mut cmd = Command::new(program("sh"));
         cmd.arg("-c")
             .arg("printf '%s' \"${CORKYTUX_TEST_SECRET-unset}\"");
         apply_plugin_env(&mut cmd);
@@ -613,7 +629,10 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn process_killer_uses_the_syscall_directly() {
-        let mut child = Command::new("sleep").arg("30").spawn().expect("sleep");
+        let mut child = Command::new(program("sleep"))
+            .arg("30")
+            .spawn()
+            .expect("sleep");
         let killer = ProcessKiller::new();
         killer.register(&child);
         killer.kill();
