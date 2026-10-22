@@ -45,7 +45,51 @@ After the plugins are in `main`:
 | 5 | #4 | `ci/launcher-workflow` | It needs the hermetic tests (they are merged in) and it is the workflow that runs on every later PR. | Nothing. |
 | 6 | #1, #2 | `docs/plugin-protocol-v1`, `docs/roadmap` | Documentation only, no dependency with anything. | Nothing. |
 
-## 3. The `cargo fmt` commit
+## 3. Merge strategy
+
+A PR that stands on its own is **squashed**: `main` gets one commit that
+says what the change does, and the branch's own commits stay in the PR for
+the review. A PR that is the **base of a stack** is merged with a **merge
+commit**: squashing it would move the base of the children and force a
+rebase of every branch stacked on it. The leaves of a stack are merged with
+a merge commit too, once their branch is retargeted to `main`.
+
+| Repository | PR | Strategy | Why |
+|---|---|---|---|
+| Launcher | #1, #2, #6 | squash | Standalone: protocol document, roadmap, secret logs. |
+| Launcher | #3 | **merge commit** | Base of the stack #5 (process group) and #8 (Ely.by stdin). |
+| Launcher | #5, #8 | merge commit, after retargeting to `main` | They are the leaves of the #3 stack. |
+| Launcher | #4 | squash | Standalone: the CI workflow, the hermetic tests merged into it and the two planning documents. One unit of work. |
+| Launcher | #7 | **closed without merging** | Its commits are already inside #4. Once #4 is in `main`, #7 has nothing left to merge: close it with a comment pointing at #4. |
+| Plugins | #1, #4 | squash | Standalone: the Mono gate and the dependency installer verbs. |
+| Plugins | #3 | **merge commit** | Base of the stack #6 (entrypoint lint). |
+| Plugins | #6 | merge commit, after retargeting to `main` | Leaf of the #3 stack. |
+| Plugins | #2 | **merge commit** | Base of the stack #5 (Ely.by stdin). |
+| Plugins | #5 | merge commit, after retargeting to `main` | Leaf of the #2 stack. |
+
+## 4. Coordinated release: the Ely.by password on stdin
+
+Launcher PR #8 and Plugins PR #5 change one feature from both sides, so
+they must be **published together**: a plugin release
+(`minecraft-launcher` 1.2.0) and a Launcher release. Merging the code in
+the two repositories can happen in any order; the **binaries** have to
+reach the user together.
+
+| Launcher | Plugin | What the user sees |
+|---|---|---|
+| new | old | The Ely.by sign-in fails with a clear message: "the installed Ely.by plugin is too old: it does not accept the password on stdin. Update it from Settings > Plugins. I do not put the password in the command line on purpose." The password never reaches the command line. |
+| old | new | The sign-in fails with the plugin's message: "the password must arrive on stdin (--password-stdin): the command line is visible to every local user". The old launcher still sends the password in the argv, so the plugin refuses it. |
+| new | new | The sign-in works: the launcher writes the password on the plugin stdin and closes the pipe. |
+| old | old | Works as before, with the password in the argv. |
+
+Both failure messages are deliberate: neither side falls back to the
+command line, so a mismatch is a visible refusal and not a silent leak.
+
+**Release notes**: the entry has to say that the Ely.by sign-in needs the
+new `minecraft-launcher` plugin (1.2.0) together with the new launcher, and
+that the mismatched pairs refuse the sign-in on purpose.
+
+## 5. The `cargo fmt` commit
 
 It goes last, after every code PR is in `main`, so the reformat diff never
 mixes formatting with new code.
@@ -64,7 +108,7 @@ mixes formatting with new code.
 The same idea applies to the plugins repo with ruff, but there the tool is
 ruff and the ignored findings are the 58 of the entrypoints.
 
-## 4. After everything is merged
+## 6. After everything is merged
 
 - `main` of both repositories has the CI (the launcher) and the lint
   (the plugins).
