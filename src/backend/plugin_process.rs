@@ -883,6 +883,9 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn the_stdin_arrives_and_the_timeout_kills_the_group() {
+        // The lock keeps the isolation test from breaking the PATH while the
+        // script of this test calls `cat` and `sleep` by name.
+        let _env = crate::test_env::lock();
         let dir = std::env::temp_dir().join(format!("corky-stdin-group-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
