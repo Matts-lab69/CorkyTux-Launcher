@@ -834,7 +834,10 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn plugin_children_lead_their_own_process_group() {
-        let mut cmd = Command::new("sh");
+        // The lock keeps the isolation test from breaking the PATH while I
+        // spawn a program by name.
+        let _env = crate::test_env::lock();
+        let mut cmd = Command::new(program("sh"));
         cmd.arg("-c").arg("sleep 5");
         own_process_group(&mut cmd);
         let mut child = cmd.spawn().expect("spawn");
