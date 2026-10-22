@@ -23,11 +23,18 @@ Two repositories, one ruleset each, on the `main` branch:
 | Required approving reviews | 0 now, 1 later | 0 now, 1 later | When a second person reviews. A rule of 1 would block a solo merge. |
 | Require signed commits | OFF | OFF | When the signing key exists. Today there is none, and the minisign work in the protocol document is not implemented. |
 | Require linear history | OFF | OFF | The plan merges PRs with merge commits. |
-| Restrict who can bypass | Owner only | Owner only | Now. The bypass is audited in the audit log. |
+| Restrict who can bypass | Nobody (empty list) | Nobody (empty list) | Now. The bypass list stays empty. |
 
-The bypass list matters: the owner can still push to `main` in an
-emergency (a broken release, a security fix), and every bypass is recorded.
-"Do not allow bypassing the above settings" stays OFF on purpose.
+The bypass list stays **empty**, and "Do not allow bypassing the above
+settings" stays OFF. The reason is the agent: it works with the owner's
+credentials, so an owner in the bypass list would put the agent in it too,
+and the rule would stop being a rule.
+
+For a one-off exception (a broken release, a security fix that cannot wait
+for a CI run), the ruleset is temporarily set to **Disabled** and it is
+re-enabled right after the exception. The change of state is visible in the
+repository audit log, which is the trace I want instead of a permanent
+bypass.
 
 ## Why the status checks wait
 
