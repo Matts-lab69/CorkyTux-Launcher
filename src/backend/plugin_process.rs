@@ -780,6 +780,9 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn timeout_kills_the_plugin_group() {
+        // The lock keeps the isolation test from breaking the PATH while the
+        // script of this test calls `sleep` by name.
+        let _env = crate::test_env::lock();
         let dir = std::env::temp_dir().join(format!("corky-group-kill-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
