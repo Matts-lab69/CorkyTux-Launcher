@@ -218,6 +218,18 @@ cd corkytux-*/
 | `corkytux.png` | `~/.local/share/icons/corkytux.png` |
 | `corkytux.desktop` | `~/.local/share/applications/corkytux.desktop` |
 
+### Check the installation
+
+```bash
+corkytux --version     # prints: corkytux X.Y.Z
+command -v corkytux    # must print ~/.local/bin/corkytux
+```
+
+If `command -v corkytux` prints nothing, `~/.local/bin` is not on your
+`PATH`: add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile
+(`~/.bashrc`, `~/.zshrc`) and open a new shell. If the path is printed and
+the version is not, re-run `./install.sh`.
+
 ### Uninstall
 
 ```bash
