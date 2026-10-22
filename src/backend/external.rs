@@ -466,8 +466,34 @@ impl MinecraftManager {
         plugin_process::run_single_json(&Self::exe(), &["auth-config", "--show"])
     }
 
+    /// Sign in to Ely.by.
+    ///
+    /// The password travels on stdin, never in the command line: an argv is
+    /// readable by every local user (`ps`, `/proc/<pid>/cmdline`). I ask
+    /// the plugin first whether it understands that channel: an old plugin
+    /// does not, and I refuse instead of falling back to the command line.
     pub fn ely_auth(username: &str, password: &str) -> Result<serde_json::Value, String> {
-        plugin_process::run_single_json(&Self::exe(), &["ely-auth", "--username", username, "--password", password])
+        let exe = Self::exe();
+        let probe = plugin_process::run_single_json(&exe, &["ely-auth", "--probe"]);
+        let supports = probe
+            .as_ref()
+            .ok()
+            .and_then(|v| v.get("password_stdin"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !supports {
+            return Err(
+                "the installed Ely.by plugin is too old: it does not accept the password on \
+                 stdin. Update it from Settings > Plugins. I do not put the password in the \
+                 command line on purpose."
+                    .into(),
+            );
+        }
+        plugin_process::run_single_json_with_stdin(
+            &exe,
+            &["ely-auth", "--username", username, "--password-stdin"],
+            password,
+        )
     }
 
     pub fn ely_refresh(account: &str) -> Result<serde_json::Value, String> {
@@ -973,3 +999,113 @@ impl MinecraftManager {
     }
 }
 
+
+#[cfg(test)]
+mod ely_password_tests {
+    use super::MinecraftManager;
+    use std::path::{Path, PathBuf};
+
+    const SECRET: &str = "s3cr3t-p4ssw0rd";
+
+    /// A fake plugin that records what it received: its argv, its own
+    /// `/proc/self/cmdline` and its stdin.
+    fn fake_plugin(dir: &Path, new_plugin: bool) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let argv_file = dir.join("argv.txt");
+        let cmdline_file = dir.join("cmdline.txt");
+        let stdin_file = dir.join("stdin.txt");
+        let script = dir.join("minecraft-launcher");
+        let answer = if new_plugin {
+            r#"if [ "$2" = "--probe" ]; then
+  echo '{"type": "done", "ok": true, "password_stdin": true}'
+  exit 0
+fi
+echo '{"type": "done", "ok": true, "username": "player"}'"#
+        } else {
+            // An old plugin: it does not know the probe nor the stdin.
+            r#"echo '{"ok": false, "error": "Unknown command: ely-auth"}'
+exit 2"#
+        };
+        let body = format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > {argv}\ntr '\\0' '\\n' < /proc/self/cmdline > {cmdline}\ncat > {stdin}\n{answer}\n",
+            argv = argv_file.display(),
+            cmdline = cmdline_file.display(),
+            stdin = stdin_file.display(),
+            answer = answer,
+        );
+        std::fs::write(&script, body).unwrap();
+        let mut perms = std::fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).unwrap();
+        (script, argv_file, cmdline_file, stdin_file)
+    }
+
+    /// A HOME with the fake plugin in the place the launcher looks for it.
+    fn sandbox(tag: &str, new_plugin: bool) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+        let base = std::env::temp_dir().join(format!("corky_ely_{}_{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let home = base.join("home");
+        let dir = home.join(".local/share/CorkyTux/plugins/minecraft-launcher");
+        std::fs::create_dir_all(&dir).unwrap();
+        let (script, argv, cmdline, stdin) = fake_plugin(&dir, new_plugin);
+        assert!(script.is_file());
+        (base, argv, cmdline, stdin)
+    }
+
+    fn read(path: &Path) -> String {
+        std::fs::read_to_string(path).unwrap_or_default()
+    }
+
+    #[test]
+    fn the_ely_password_never_reaches_the_command_line() {
+        let _env = crate::test_env::lock();
+        let (base, argv_file, cmdline_file, stdin_file) = sandbox("new", true);
+        let home = base.join("home");
+        std::env::set_var("HOME", &home);
+
+        let out = MinecraftManager::ely_auth("player", SECRET).expect("the sign-in must run");
+        assert_eq!(out.get("username").and_then(|v| v.as_str()), Some("player"));
+
+        // The command line (argv and /proc/<pid>/cmdline) has no password.
+        assert!(!read(&argv_file).contains(SECRET), "argv: {}", read(&argv_file));
+        assert!(
+            !read(&cmdline_file).contains(SECRET),
+            "cmdline: {}",
+            read(&cmdline_file)
+        );
+        // The plugin did get it, on stdin.
+        assert!(read(&stdin_file).contains(SECRET), "stdin: {}", read(&stdin_file));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn an_old_plugin_gets_a_clear_error_and_never_the_password() {
+        let _env = crate::test_env::lock();
+        let (base, argv_file, cmdline_file, stdin_file) = sandbox("old", false);
+        let home = base.join("home");
+        std::env::set_var("HOME", &home);
+
+        let err = MinecraftManager::ely_auth("player", SECRET).expect_err("the old plugin must fail");
+        assert!(err.contains("too old"), "{}", err);
+        assert!(err.contains("stdin"), "{}", err);
+        assert!(!err.contains(SECRET), "the error must not carry the password");
+        // The password never reached the plugin at all.
+        assert!(!read(&argv_file).contains(SECRET), "argv: {}", read(&argv_file));
+        assert!(!read(&cmdline_file).contains(SECRET), "cmdline");
+        assert!(!read(&stdin_file).contains(SECRET), "stdin: {}", read(&stdin_file));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The redactor is the last net for any residual leak: its patterns are
+    /// covered by the tests of `backend::redact` (branch
+    /// `fix/launcher-secret-logs`).
+    #[test]
+    fn the_redactor_covers_a_password() {
+        // The module lives in the secret-logs branch; here I only check that
+        // the launcher does not build a message with the password in it.
+        let err = MinecraftManager::ely_auth("player", SECRET);
+        if let Err(e) = err {
+            assert!(!e.contains(SECRET), "the error must not carry the password");
+        }
+    }
+}

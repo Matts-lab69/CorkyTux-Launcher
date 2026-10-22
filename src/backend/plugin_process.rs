@@ -316,7 +316,7 @@ pub fn output_with_timeout(
     cmd: &mut Command,
     limit: std::time::Duration,
 ) -> Result<TimedOutput, String> {
-    output_with_timeout_scope(cmd, limit, KillScope::Group)
+    output_with_timeout_full(cmd, limit, KillScope::Group, None)
 }
 
 /// Same as `output_with_timeout`, with an explicit kill scope.
@@ -325,14 +325,52 @@ pub fn output_with_timeout_scope(
     limit: std::time::Duration,
     scope: KillScope,
 ) -> Result<TimedOutput, String> {
+    output_with_timeout_full(cmd, limit, scope, None)
+}
+
+/// Same as `output_with_timeout`, but the child gets something on its stdin.
+///
+/// I write the payload and close the pipe right away, so the child sees the
+/// end of the input. This is how a secret reaches a plugin: a password in
+/// the command line is visible to every local user through `ps` and
+/// `/proc/<pid>/cmdline`.
+pub fn output_with_timeout_stdin(
+    cmd: &mut Command,
+    limit: std::time::Duration,
+    input: Option<&str>,
+) -> Result<TimedOutput, String> {
+    output_with_timeout_full(cmd, limit, KillScope::Group, input)
+}
+
+/// The one implementation: a kill scope and an optional stdin payload.
+fn output_with_timeout_full(
+    cmd: &mut Command,
+    limit: std::time::Duration,
+    scope: KillScope,
+    input: Option<&str>,
+) -> Result<TimedOutput, String> {
     use std::io::Read;
 
     own_process_group(cmd);
     let mut child = cmd
+        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Could not spawn process: {}", e))?;
+
+    // The payload is small (a password): it fits in the pipe buffer, so
+    // writing it here cannot block. I close the pipe right after, so the
+    // child knows the input is complete.
+    if let Some(payload) = input {
+        if let Some(mut pipe) = child.stdin.take() {
+            use std::io::Write;
+            let _ = pipe.write_all(payload.as_bytes());
+            let _ = pipe.write_all(b"\n");
+            let _ = pipe.flush();
+            // Dropping the pipe closes it.
+        }
+    }
 
     // I drain the streams on side threads: if the plugin fills the pipe
     // buffer (64 KiB) while I wait for its exit, both sides would deadlock.
@@ -439,13 +477,35 @@ pub fn run_single_json_with_timeout(
     args: &[&str],
     limit: std::time::Duration,
 ) -> Result<serde_json::Value, String> {
+    run_single_json_inner(exe, args, limit, None)
+}
+
+/// Run a one-shot plugin command with a payload on its stdin.
+///
+/// The payload never appears in the command line: I use it for the Ely.by
+/// password, which every local user could otherwise read with `ps` or from
+/// `/proc/<pid>/cmdline`.
+pub fn run_single_json_with_stdin(
+    exe: &Path,
+    args: &[&str],
+    payload: &str,
+) -> Result<serde_json::Value, String> {
+    run_single_json_inner(exe, args, single_timeout(args), Some(payload))
+}
+
+fn run_single_json_inner(
+    exe: &Path,
+    args: &[&str],
+    limit: std::time::Duration,
+    input: Option<&str>,
+) -> Result<serde_json::Value, String> {
     let mut cmd = Command::new(exe);
-    cmd.args(args).stdin(Stdio::null());
+    cmd.args(args);
     apply_plugin_env(&mut cmd);
     let command = args.first().copied().unwrap_or("command");
     // `run` starts a game: only the plugin process may be signalled.
     let scope = kill_scope_for(args);
-    let output = output_with_timeout_scope(&mut cmd, limit, scope)
+    let output = output_with_timeout_full(&mut cmd, limit, scope, input)
         .map_err(|e| format!("{} {} failed: {}", exe.display(), command, e))?;
     let body = output.stdout;
     if let Some(doc) = parse_final_doc(&body) {
