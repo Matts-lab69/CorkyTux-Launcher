@@ -878,6 +878,53 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The two halves together: the stdin arrives complete and closed, and
+    /// the timeout takes the whole plugin group down.
+    #[cfg(unix)]
+    #[test]
+    fn the_stdin_arrives_and_the_timeout_kills_the_group() {
+        let dir = std::env::temp_dir().join(format!("corky-stdin-group-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let stdin_file = dir.join("stdin.txt");
+        let pidfile = dir.join("child.pid");
+        let script = dir.join("fake-plugin");
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let body = format!(
+                "#!/bin/sh\ncat > {}\nsleep 30 &\necho $! > {}\nsleep 30\n",
+                stdin_file.display(),
+                pidfile.display()
+            );
+            std::fs::write(&script, body).unwrap();
+            let mut perms = std::fs::metadata(&script).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&script, perms).unwrap();
+        }
+
+        let mut cmd = Command::new(&script);
+        cmd.args(["scan", "/tmp"]);
+        apply_plugin_env(&mut cmd);
+        let scope = kill_scope_for(&["scan", "/tmp"]);
+        let err = output_with_timeout_full(
+            &mut cmd,
+            std::time::Duration::from_millis(400),
+            scope,
+            Some("s3cret"),
+        )
+        .expect_err("the plugin must time out");
+        assert!(err.contains("terminated") || err.contains("limit"), "{}", err);
+
+        // The stdin arrived complete and the pipe was closed.
+        let got = std::fs::read_to_string(&stdin_file).unwrap_or_default();
+        assert_eq!(got, "s3cret\n", "the payload must arrive whole");
+
+        // The helper of the plugin died with the group.
+        let pid = wait_for_pid(&pidfile);
+        assert!(!process_alive(pid), "the helper must die with the group");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[cfg(unix)]
     #[test]
     fn plugin_children_lead_their_own_process_group() {
