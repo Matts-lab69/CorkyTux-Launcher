@@ -3948,7 +3948,9 @@ mod steam_prefix_tests {
 
     #[test]
     fn ensure_leaves_steam_games_alone() {
-        gtk::init().unwrap();
+        // I do not call gtk::init() here: this test only touches the
+        // filesystem, and a display would make it fail on a headless
+        // runner (and in a container).
         let pm = super::ProtonManager::new();
         // Deduced compat dir: returned, never written, never created.
         let (base, cfg) = test_cfg("steam_hit");
