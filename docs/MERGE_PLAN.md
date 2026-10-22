@@ -15,15 +15,19 @@ Rules that apply to the whole plan:
 
 ## 1. CorkyTux-Plugins
 
-The lint workflow lives in PR #3, so the other plugin PRs only get CI once
-it is in `main`. That is why #3 goes first.
+PR #3 is already in `main` (`f8de746`, merge commit): it brought the lint
+workflow and the ruff config that covers the entrypoints. Every branch below
+is rebased on top of the previous one, so the order of this table is also the
+order of the commits in the stack.
 
-| Order | PR | Branch | Why here | Rebase after |
+| Order | PR | Branch | Why here | After the merge |
 |---|---|---|---|---|
-| 1 | #3 | `docs/plugin-docs-and-lint` | It adds the lint workflow and the ruff config that covers the entrypoints. | #2 and #4 carry a cherry-pick of the lint fixes: drop that commit when rebasing. #1 does not touch those files. |
-| 2 | #1 | `fix/dotnet-mono-gate-all-verbs` | Pre-existing PR, same file as #4. The merge is clean, but #4 is easier to review on top of it. | #4 (same file: `dependency-installer/dependency-installer`). |
-| 3 | #4 | `fix/dependency-installer-verbs` | It carries `e001905` out of the local `main`. | After the merge, reset the local `main`: `git branch -f main origin/main`. The commit is already in `main` through the PR. |
-| 4 | #2 | `fix/plugin-secrets` | Independent of the rest (Minecraft and Heroic files). | Nothing. |
+| 1 | #1 | `fix/dotnet-mono-gate-all-verbs` | Pre-existing PR, same file as #4. | #4 is already rebased on its new base. |
+| 2 | #4 | `fix/dependency-installer-verbs` | It carries `e001905` out of the local `main`. | `git branch -f main origin/main` (the commit is in `main` through the PR). |
+| 3 | #2 | `fix/plugin-secrets` | Independent of the rest (Minecraft and Heroic files). | #5 is already rebased on its new base. |
+| 4 | #5 | `fix/ely-password-stdin` | It needs the private state of #2 and ships with Launcher #8 (Ely.by on stdin). | It is retargeted to `main` and merged. |
+| 5 | #7 | `fix/epic-catalog-version` | The catalog version and date of the Epic games. | It is retargeted to `main` and merged. |
+| 6 | #6 | `style/entrypoint-lint` | Last: it fixes the 58 findings and turns the ruff step blocking again. | `main` ends with ruff at zero findings. |
 
 After the plugins are in `main`:
 
@@ -36,36 +40,44 @@ After the plugins are in `main`:
 
 ## 2. CorkyTux-Launcher
 
-| Order | PR | Branch | Why here | Rebase after |
+PRs #1, #2, #4, #9 and #10 are already in `main`. #7 was closed without
+merging: its two commits are inside #4 (squash).
+
+| Order | PR | Branch | Why here | After the merge |
 |---|---|---|---|---|
-| 1 | #3 | `fix/plugin-runtime-safety` | It is the base of #5 and it carries the environment allowlist and the per-command timeouts. | #5: retarget from `fix/plugin-runtime-safety` to `main` (it is stacked). #6 and #7 merge clean, but rebasing keeps the history linear. |
-| 2 | #5 | `fix/plugin-process-group` | It needs the timeouts from #3. | Nothing. |
-| 3 | #6 | `fix/launcher-secret-logs` | It shares `plugins.rs` and `proton.rs` with #3 and #7. All the merges are clean. | Nothing. |
-| 4 | #7 | `test/hermetic-ui-tests` | The two tests that needed a display and an installed plugin. Its commits are already merged into #4. | If #4 is merged first, #7 becomes empty and is closed instead of merged. |
-| 5 | #4 | `ci/launcher-workflow` | It needs the hermetic tests (they are merged in) and it is the workflow that runs on every later PR. | Nothing. |
-| 6 | #1, #2 | `docs/plugin-protocol-v1`, `docs/roadmap` | Documentation only, no dependency with anything. | Nothing. |
+| 1 | #3 | `fix/plugin-runtime-safety` | It is the base of #5 and #8: the environment allowlist, the timeouts and the test fixes. | #5 is retargeted to `main`. |
+| 2 | #5 | `fix/plugin-process-group` | It needs the timeouts of #3. | #8 is retargeted to `main`. |
+| 3 | #8 | `fix/ely-password-stdin` | Leaf of the stack. It ships with Plugins #5 (Ely.by on stdin). | Nothing. |
+| 4 | #6 | `fix/launcher-secret-logs` | Standalone. It shares `plugins.rs` and `proton.rs` with the others, but every merge is clean. | Nothing. |
 
 ## 3. Merge strategy
 
 A PR that stands on its own is **squashed**: `main` gets one commit that
 says what the change does, and the branch's own commits stay in the PR for
-the review. A PR that is the **base of a stack** is merged with a **merge
-commit**: squashing it would move the base of the children and force a
-rebase of every branch stacked on it. The leaves of a stack are merged with
-a merge commit too, once their branch is retargeted to `main`.
+the review.
+
+**Exception, decided on 2026-10-22: every PR of a chain that has been
+rebased one on top of another is merged with a merge commit, leaves
+included.** Squashing a branch that is the base of the next one rewrites the
+commits the children were rebased on, so every child would need a rebase
+again before it could merge; with the whole Plugins chain in that shape
+(#1 -> #4 -> #2 -> #5 -> #7 -> #6), a squash in the middle turns a clean
+sequence into a chain of force pushes. A merge commit keeps the branch SHAs
+the review approved and leaves the children exactly where they were rebased.
+The price is one merge commit per PR in the history; the rule "no commit is
+rewritten inside a merged PR" stays intact.
 
 | Repository | PR | Strategy | Why |
 |---|---|---|---|
-| Launcher | #1, #2, #6 | squash | Standalone: protocol document, roadmap, secret logs. |
-| Launcher | #3 | **merge commit** | Base of the stack #5 (process group) and #8 (Ely.by stdin). |
-| Launcher | #5, #8 | merge commit, after retargeting to `main` | They are the leaves of the #3 stack. |
-| Launcher | #4 | squash | Standalone: the CI workflow, the hermetic tests merged into it and the two planning documents. One unit of work. |
-| Launcher | #7 | **closed without merging** | Its commits are already inside #4. Once #4 is in `main`, #7 has nothing left to merge: close it with a comment pointing at #4. |
-| Plugins | #1, #4 | squash | Standalone: the Mono gate and the dependency installer verbs. |
-| Plugins | #3 | **merge commit** | Base of the stack #6 (entrypoint lint). |
-| Plugins | #6 | merge commit, after retargeting to `main` | Leaf of the #3 stack. |
-| Plugins | #2 | **merge commit** | Base of the stack #5 (Ely.by stdin). |
-| Plugins | #5 | merge commit, after retargeting to `main` | Leaf of the #2 stack. |
+| Launcher | #6 | squash | Standalone: secret logs. It is not the base of any other PR. |
+| Launcher | #3 | **merge commit** | Base of the stack #5 -> #8. |
+| Launcher | #5 | **merge commit** | Second of the stack: retargeted to `main` after #3, then merged. |
+| Launcher | #8 | **merge commit** | Leaf of the stack: retargeted to `main` after #5, then merged. |
+| Plugins | #1, #4, #2, #5, #7, #6 | **merge commit** (all of them) | The chain is rebased one on top of another: a squash anywhere in the middle moves the base of the next PR. |
+
+Before each merge, `git merge-tree --write-tree --name-only origin/main
+origin/<branch>` must come out clean (exit 0). If it reports a conflict, the
+sequence stops and the conflict is resolved in the branch, not in `main`.
 
 ## 4. Coordinated release: the Ely.by password on stdin
 
