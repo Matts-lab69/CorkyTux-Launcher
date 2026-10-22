@@ -319,31 +319,15 @@ pub fn output_with_timeout(
     output_with_timeout_full(cmd, limit, KillScope::Group, None)
 }
 
-/// Same as `output_with_timeout`, with an explicit kill scope.
-pub fn output_with_timeout_scope(
-    cmd: &mut Command,
-    limit: std::time::Duration,
-    scope: KillScope,
-) -> Result<TimedOutput, String> {
-    output_with_timeout_full(cmd, limit, scope, None)
-}
-
-/// Same as `output_with_timeout`, but the child gets something on its stdin.
-///
-/// I write the payload and close the pipe right away, so the child sees the
-/// end of the input. This is how a secret reaches a plugin: a password in
-/// the command line is visible to every local user through `ps` and
-/// `/proc/<pid>/cmdline`.
-pub fn output_with_timeout_stdin(
-    cmd: &mut Command,
-    limit: std::time::Duration,
-    input: Option<&str>,
-) -> Result<TimedOutput, String> {
-    output_with_timeout_full(cmd, limit, KillScope::Group, input)
-}
-
 /// The one implementation: a kill scope and an optional stdin payload.
-fn output_with_timeout_full(
+///
+/// The scope says what a timeout is allowed to signal: the whole group of
+/// the plugin, or only the plugin itself (`run` starts a game that has to
+/// survive). The payload is written on the stdin of the child and the pipe
+/// is closed right away, so the child sees the end of the input. This is
+/// how a secret reaches a plugin: a password in the command line is visible
+/// to every local user through `ps` and `/proc/<pid>/cmdline`.
+pub fn output_with_timeout_full(
     cmd: &mut Command,
     limit: std::time::Duration,
     scope: KillScope,
