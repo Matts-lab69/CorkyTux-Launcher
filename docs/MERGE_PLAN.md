@@ -108,7 +108,22 @@ mixes formatting with new code.
 The same idea applies to the plugins repo with ruff, but there the tool is
 ruff and the ignored findings are the 58 of the entrypoints.
 
-## 6. After everything is merged
+## 6. The `CHANGELOG.md` task
+
+It belongs to the preparation of the next release, not to this plan. When
+the release is assembled:
+
+- Create `CHANGELOG.md` with an `## [Unreleased]` section at the top.
+- One line per change, grouped by area (runtime safety, secrets, protocol
+  v1, CI, docs), each line with the pull request it came from.
+- The fixes that this plan closes are not copied into `PENDIENTES.md`: they
+  live in the git history and in the changelog. `PENDIENTES.md` only keeps
+  what is still open.
+- The release notes for the Ely.by sign-in have to say that it needs the
+  new `minecraft-launcher` plugin (1.2.0) together with the new launcher
+  (see the section above).
+
+## 7. After everything is merged
 
 - `main` of both repositories has the CI (the launcher) and the lint
   (the plugins).
