@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Matts-lab69/CorkyTux-Launcher/main/docs/schema/plugin-v1-strict.schema.json",
+  "title": "CorkyTux plugin manifest v1 (strict registry/CI)",
+  "description": "Canonical v1 manifest for the official registry and CI. Unlike the runtime schema, this rejects unknown fields, types and permissions.",
+  "type": "object",
+  "required": [
+    "protocolVersion",
+    "id",
+    "name",
+    "version",
+    "entry",
+    "type",
+    "minLauncherVersion",
+    "permissions",
+    "commands"
+  ],
+  "properties": {
+    "protocolVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "entry": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "appimage",
+        "tool",
+        "store",
+        "minecraft",
+        "rpgmaker",
+        "emulator",
+        "emulator-manager",
+        "proton",
+        "integration"
+      ]
+    },
+    "minLauncherVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "network",
+          "filesystem.read",
+          "filesystem.write",
+          "process.spawn",
+          "process.signal",
+          "credentials.read",
+          "credentials.write",
+          "desktop.integrate",
+          "game.launch",
+          "system.package"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+      },
+      "uniqueItems": true,
+      "minItems": 1
+    },
+    "source": {
+      "type": "string"
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}
