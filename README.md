@@ -73,6 +73,19 @@ binaries and guides.
 
 ---
 
+## Requirements
+
+The prebuilt tarball needs a 64-bit Linux system with:
+
+- GTK 4.12 or newer.
+- libadwaita 1.5 or newer.
+
+The official binary is built on Ubuntu 24.04 (glibc 2.39); an older glibc was
+not tested. The build enables the GTK `v4_12` and libadwaita `v1_5` features,
+so a newer distribution is fine and an older GTK or libadwaita is not.
+
+---
+
 ## Quick start
 
 ### Install from tarball
