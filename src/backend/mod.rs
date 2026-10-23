@@ -10,6 +10,7 @@ pub mod plugin_process;
 pub mod external;
 pub mod shortcuts;
 pub mod import_move;
+pub mod redact;
 
 pub use config::ConfigManager;
 pub use theme::ThemeManager;

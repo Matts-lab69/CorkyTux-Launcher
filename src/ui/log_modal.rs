@@ -7,6 +7,41 @@ use std::rc::Rc;
 use crate::backend::theme::ThemeManager;
 use crate::ui::helpers;
 
+/// Write the game log into the launcher's logs dir.
+///
+/// The log carries the game output, and the game output can carry a launch
+/// argument (the Epic exchange code), so I redact it before writing and I
+/// write the file owner-only. The game name comes from the library: it must
+/// not escape the logs dir with a path separator.
+pub fn write_saved_log(home: &str, game_name: &str, text: &str) -> std::io::Result<String> {
+    let ts = std::process::Command::new("date")
+        .arg("+%Y-%m-%d-%H-%M")
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "log".into());
+    let dir = format!("{}/.local/share/CorkyTux/logs", home);
+    std::fs::create_dir_all(&dir).ok();
+    let safe_game: String = game_name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let path = format!("{}/{} ({}).log", dir, safe_game, ts);
+    let safe_text = crate::backend::redact::redact_secrets(text);
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    use std::io::Write;
+    opts.open(&path)?
+        .write_all(safe_text.as_bytes())?;
+    Ok(path)
+}
+
 pub struct LogModal {
     dialog: adw::Dialog,
     log_buffer: gtk::TextBuffer,
@@ -189,24 +224,12 @@ impl LogModal {
             // Save straight into the launcher's own logs dir
             // (~/.local/share/CorkyTux/logs), never Documents.
             let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-            let ts = std::process::Command::new("date")
-                .arg("+%Y-%m-%d-%H-%M")
-                .output()
-                .ok()
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| "log".into());
-            let dir = format!("{}/.local/share/CorkyTux/logs", home);
-            std::fs::create_dir_all(&dir).ok();
-            let path = format!("{}/{} ({}).log", dir, game_c, ts);
-            {
-                match std::fs::write(&path, &text) {
-                    Ok(()) => {
-                        crate::ui::helpers::present_msg(&parent_c, "Log saved", &path);
-                    }
-                    Err(e) => {
-                        crate::ui::helpers::present_msg(&parent_c, "Could not save log", &e.to_string());
-                    }
+            match write_saved_log(&home, &game_c, &text) {
+                Ok(path) => {
+                    crate::ui::helpers::present_msg(&parent_c, "Log saved", &path);
+                }
+                Err(e) => {
+                    crate::ui::helpers::present_msg(&parent_c, "Could not save log", &e.to_string());
                 }
             }
         });
@@ -332,5 +355,48 @@ impl LogModal {
                 glib::ControlFlow::Break
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::write_saved_log;
+
+    #[cfg(unix)]
+    fn mode(path: &std::path::Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_log_is_redacted_and_owner_only() {
+        let home = std::env::temp_dir().join(format!("corky_saved_log_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let text = "wine: -auth_password=secretExchangeCode -auth_login=unused\nplain line";
+        let path = write_saved_log(home.to_str().unwrap(), "My Game", text).expect("save");
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(!content.contains("secretExchangeCode"), "{}", content);
+        assert!(content.contains("-auth_password=<REDACTED>"), "{}", content);
+        assert!(content.contains("plain line"), "{}", content);
+        assert_eq!(mode(std::path::Path::new(&path)), 0o600, "the saved log must be owner-only");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_log_name_cannot_escape_the_logs_dir() {
+        let home = std::env::temp_dir().join(format!("corky_saved_log_escape_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let path = write_saved_log(home.to_str().unwrap(), "../../etc/passwd", "x").expect("save");
+        let logs_dir = home.join(".local/share/CorkyTux/logs");
+        assert!(
+            std::path::Path::new(&path).starts_with(&logs_dir),
+            "the saved log must stay inside the logs dir: {}",
+            path
+        );
+        let _ = std::fs::remove_dir_all(&home);
     }
 }
