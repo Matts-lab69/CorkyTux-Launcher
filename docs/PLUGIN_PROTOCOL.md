@@ -357,3 +357,195 @@ official registry.
   or logs.
 - Official artifacts have a valid minisign signature from a trusted key.
 - `minLauncherVersion` is high enough for every feature and permission used.
+
+## 9. Commands the launcher sends (implementation notes)
+
+Status: this section describes the launcher that ships with these changes
+(3.2.0, with `minecraft-launcher` 1.2.0). It is not the v1 target above: it
+records the exact argv and the JSON keys the launcher reads today, so a plugin
+author can test against the real caller.
+
+Source of truth: `src/backend/external.rs`, `src/backend/plugins.rs` and
+`src/backend/proton.rs`. Every call is `Command::new(exe)` plus one argument
+per element: no shell, no string interpolation. The environment is cleared and
+rebuilt from the allowlist in `plugin_process.rs` (`PLUGIN_ENV_ALLOWLIST` plus
+the `LC_`, `XDG_`, `STEAM_COMPAT_`, `PROTON_`, `UMU_`, `DXVK_`, `VKD3D_`,
+`SDL_` and `WINE*` prefixes). Launcher 3.1.2 did not clear the environment;
+the allowlist is part of the same release as the Ely.by change.
+
+### 9.1 No credentials on the command line
+
+A password, token, API key or authorization code must not be an argument:
+`ps` and `/proc/<pid>/cmdline` expose the argv to every local user. Secrets
+travel on stdin or stay in plugin-owned files under
+`~/.config/CorkyTux/plugins/<id>/`.
+
+The launcher checks the capability before it sends anything:
+
+| Call | argv | stdin | Expected answer | Launcher reads |
+|---|---|---|---|---|
+| Probe | `ely-auth --probe` | empty | `{"type":"done","ok":true,"password_stdin":true}` on stdout, exit 0 | `password_stdin` must be `true`. Any error, timeout, exit code or missing field makes the launcher refuse the sign-in with "the installed Ely.by plugin is too old: it does not accept the password on stdin..." and it never falls back to an argument |
+| Sign-in | `ely-auth --username <name> --password-stdin` | the password on the first line, then EOF (the launcher writes the password plus a newline and closes the pipe) | `{"type":"done","ok":true,...}` | `account_id`, `username`, `ely` |
+
+The probe runs on every sign-in, not once per install. A plugin that answers
+`password_stdin` must accept exactly the second line; a plugin that only
+accepts `--password <secret>` is refused, and the launcher does not retry with
+the argument. The two sides are tested by
+`minecraft-launcher/tests/test_ely_password.py`, which runs the real
+entrypoint as a subprocess with the same argv and a cleaned environment.
+
+Known deviation: `curse-auth-config --api-key <key>` still sends the
+CurseForge key as an argument. It is a local, user-supplied third-party key,
+not an account credential, but it is the same class of exposure and should
+move to stdin with the next CurseForge change.
+
+### 9.2 Inventory
+
+"None" means the launcher sends nothing there. "Forwarded" means the launcher
+returns the document to its caller without enforcing a key; the plugin README
+owns those fields. Streamed commands answer with JSON Lines (`progress`, then
+`done` or `error`) and the launcher reads `type`, `stage`, `percent`,
+`message` and `code`.
+
+#### appimage-launcher
+
+| argv | Required | Optional | Read |
+|---|---|---|---|
+| `scan <path>` | path | - | forwarded |
+| `status` | - | - | forwarded |
+| `icon <path> --out <dir>` | path, out | - | forwarded |
+| `integrate <path>` | path | `--move` | forwarded |
+| `run <path> [args...]` | path | game arguments | none (detached; stdout and stderr to `/dev/null`) |
+
+#### rpgmaker-runtime
+
+| argv | Required | Optional | Read |
+|---|---|---|---|
+| `scan <path>` | path | - | `engine` |
+| `status` | - | - | forwarded |
+| `install check` | - | - | forwarded |
+| `install box` | - | - | forwarded |
+| `install runtime <kind>` | kind | version | forwarded |
+| `run <path>` | path | `--runtime R`, `--allow-network`, `--allow-game-writes` | forwarded |
+| `stop <path>` | path | - | forwarded |
+| `session-status <path>` | path | - | `state` (`running`, `timeout`, `exited`) and `codes` |
+| `sessions <dir>` | dir | - | `sessions` |
+| `runtime-remove <kind> <version>` | both | - | forwarded |
+| `config-show` | - | - | forwarded |
+| `diagnose <path>` | path | `--runtime R` | forwarded |
+
+`session-status` is polled while a game is parked, so it must be cheap and
+must not need network.
+
+#### heroic-store
+
+| argv | Required | Optional | Read |
+|---|---|---|---|
+| `status` | - | `--quick` | forwarded |
+| `setup`, `bins`, `umu-status`, `heroic-scan`, `eos-code`, `free-promos` | - | - | forwarded |
+| `gog-rail --list <sale\|new\|free>` | list | `--refresh` | forwarded |
+| `auth --store <epic\|gog>` | store | `--code C` | stream (`auth_url`, `done`) |
+| `library --store S` | store | `--refresh` | forwarded |
+| `installed-status --store S` | store | - | `installed` |
+| `epic-deals --start N --count N` | both | - | forwarded |
+| `gog-store-search --query Q --limit N` | both | - | forwarded |
+| `install --store S --app-id A` | both | `--path P` | stream |
+| `uninstall --store S --app-id A` | both | - | forwarded |
+| `cleanup-stale --store S --app-id A` | both | - | forwarded |
+| `launch-info --store S --app-id A` | both | - | forwarded |
+| `game-info --store S --app-id A` | both | - | forwarded |
+| `refresh-library --store S --lang L` | both | - | stream, cancellable |
+| `logout --store S` | store | - | forwarded |
+| `umu-setup` | - | - | stream |
+
+`status --quick` is the launcher's cheap path: it must not call a store API.
+
+#### minecraft-launcher: read-only
+
+| argv | Required | Optional | Read |
+|---|---|---|---|
+| `status --mc-dir D` | mc_dir | - | forwarded |
+| `setup` | - | - | forwarded |
+| `offline --name N` | name | - | forwarded |
+| `unaccount --account A` | account | - | forwarded |
+| `java-detect` | - | - | forwarded |
+| `java-use --path P` | path | - | forwarded |
+| `manifest-java --mc-version V` | version | - | forwarded |
+| `java-required --version V --mc-dir D` | both | - | forwarded |
+| `auth-config --show` | - | - | `configured` |
+| `auth-config --client-id ID` | id | - | forwarded |
+| `versions` | - | `--all` | forwarded |
+| `ely-auth --probe` | - | - | `password_stdin` (see 9.1) |
+| `ely-auth --username U --password-stdin` | username, stdin | - | account fields |
+| `ely-refresh --account A` | account | - | forwarded |
+| `ely-validate --account A` | account | - | forwarded |
+| `ely-skin --name N` | name | `--uuid U`, `--refresh` | forwarded |
+| `mods-list` | - | - | forwarded |
+| `mod-toggle --file F` | file | - | forwarded |
+| `mods-add --path P` | path | `--force` | forwarded |
+| `addons-list --addon-type T` | addon_type | - | forwarded |
+| `mod-search --query Q --project-type T --mc-version V --loader L --limit N` | all five | - | forwarded |
+| `mod-versions --project-id P --mc-version V --loader L --project-type T` | all four | - | forwarded |
+| `mod-project --project-id P` | project_id | - | forwarded |
+| `mod-check-updates --addon-type T --mc-version V --loader L` | all three | `--mc-dir D` | forwarded |
+| `mod-match --addon-type T --mc-dir D` | both | - | forwarded |
+| `mod-update --file F --addon-type T` | both | `--mc-dir D` | forwarded |
+| `loader-versions --loader L --mc-version V` | both | - | forwarded |
+| `loader-versions --mc-version V --loaders a,b` | both | - | forwarded |
+| `cf-search --query Q --kind K --mc-version V --loader L --limit N` | all five | - | forwarded |
+| `cf-versions --mod-id M --mc-version V --loader L --kind K` | all four | - | forwarded |
+| `cf-project --mod-id M` | mod_id | - | forwarded |
+| `curse-auth-config --show` | - | - | `configured` |
+| `curse-auth-config --api-key K` | key (see the deviation in 9.1) | - | forwarded |
+| `curse-test` | - | - | forwarded |
+| `instance-delete --version V --mc-dir D` | both | - | forwarded |
+| `stop` | - | `--account A` | forwarded |
+
+#### minecraft-launcher: streamed
+
+| argv | Required | Optional |
+|---|---|---|
+| `install --version V` | version | `--loader L`, `--loader-version LV`, `--mc-dir D` |
+| `launch --version V --max-memory-mb N` | version, memory | `--account A`, `--java J`, `--mc-dir D`, `--min-memory-mb N`, `--jvm-arg A` (repeatable), `--resolution R`, `--wrapper W`, `--pre-hook H` |
+| `java-install --version V` | version | - |
+| `auth` | - | - |
+| `mod-install --project-id P --addon-type T` | both | `--mc-dir D`, `--version-id V`, `--mc-version V`, `--loader L` |
+| `modpack-install --project-id P` | project_id | `--version-id V`, `--mc-dir D` |
+| `cf-install --mod-id M --kind K --addon-type T` | three | `--mc-dir D`, `--file-id F`, `--mc-version V`, `--loader L` |
+| `cf-modpack-install --pack-id P` | pack_id | `--file-id F`, `--mc-dir D` |
+| `modpack-import --path P --mc-dir D` | both | - |
+
+Streams are read line by line (`classify`): `progress` carries `stage` and
+`percent`; the last `done` or `error` document decides the outcome. A
+cancellation signals the scope that `kill_scope_for` returns: the plugin
+process alone for `run` (a game must outlive the launcher), the whole process
+group otherwise.
+
+#### dependency-installer
+
+| argv | Required | Optional | Read |
+|---|---|---|---|
+| `scan <gamedir>` | dir | `--prefix P`, `--proton PATH` | `ok`, `deps[].id`, `deps[].status`, `deps[].desc`, `message` |
+| `install --prefix P dep...` | prefix and at least one dep | `--proton PATH` | `ok`, `error`, `failed[]`, `results[].ok/id/desc/error/code`, `message` |
+
+`install` prints `{"type":"progress",...}` lines before the final document; the
+launcher reads per line and keeps the last object.
+
+#### dll-overrides-automator
+
+| argv | Required | Optional | Read |
+|---|---|---|---|
+| `scan <gamedir>` | dir | - | `ok`, `overrides`, `error` |
+
+#### emulator-manager
+
+| argv | Required | Optional | Read |
+|---|---|---|---|
+| `corky-list` | - | - | `ok`, `emulators[].name/path/description/installed/linked/source/settings` |
+| `corky-install <name>` | name | - | `message` |
+| `corky-link <name> <path>` | both | - | `message` |
+| `corky-remove <name>` | name | - | `message` |
+| `corky-unlink <name>` | name | - | `message` |
+
+The `corky-*` calls are the launcher's own adapter into the plugin; the
+standalone plugin keeps its interactive UI.
