@@ -4,6 +4,56 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
+/// What a timeout or a cancel is allowed to signal.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum KillScope {
+    /// The plugin and every helper it spawned: its process group.
+    Group,
+    /// Only the plugin process. The game it launched must survive.
+    Process,
+}
+
+impl Default for KillScope {
+    /// A helper that is not registered anywhere is a normal command, so its
+    /// whole group goes down.
+    fn default() -> Self {
+        KillScope::Group
+    }
+}
+
+/// `run` launches a game that has to outlive the plugin, so I never signal
+/// its process group. Every other command can be cancelled, and its helper
+/// children must go down with it.
+pub fn kill_scope_for(args: &[&str]) -> KillScope {
+    match args.first().copied() {
+        Some("run") => KillScope::Process,
+        _ => KillScope::Group,
+    }
+}
+
+fn kill_scope_for_owned(args: &[String]) -> KillScope {
+    match args.first().map(|s| s.as_str()) {
+        Some("run") => KillScope::Process,
+        _ => KillScope::Group,
+    }
+}
+
+/// Signal every process of the group led by `pid`.
+///
+/// I only call this while the child is still alive (not reaped), so its pid
+/// is still reserved and cannot have been reused: the group is still mine.
+fn kill_group(pid: u32, sig: libc::c_int) {
+    #[cfg(unix)]
+    unsafe {
+        // A negative pid means "every process in that group".
+        let _ = libc::kill(-(pid as libc::pid_t), sig);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (pid, sig);
+    }
+}
+
 /// Handle to a streaming plugin child so a background batch (e.g. the
 /// library description re-resolution) can be cancelled from the launcher.
 /// Killing signals SIGTERM; the child self-exits when the launcher dies
@@ -11,11 +61,15 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone, Default)]
 pub struct ProcessKiller {
     pid: Arc<Mutex<Option<u32>>>,
+    scope: Arc<Mutex<KillScope>>,
 }
 
 impl ProcessKiller {
     pub fn new() -> Self {
-        Self { pid: Arc::new(Mutex::new(None)) }
+        Self {
+            pid: Arc::new(Mutex::new(None)),
+            scope: Arc::new(Mutex::new(KillScope::Group)),
+        }
     }
 
     /// PID of the managed child, if one is currently registered.
@@ -23,7 +77,8 @@ impl ProcessKiller {
         *self.pid.lock().unwrap()
     }
 
-    fn register(&self, child: &Child) {
+    fn register(&self, child: &Child, scope: KillScope) {
+        *self.scope.lock().unwrap() = scope;
         *self.pid.lock().unwrap() = Some(child.id());
     }
 
@@ -31,20 +86,28 @@ impl ProcessKiller {
         *self.pid.lock().unwrap() = None;
     }
 
-    /// SIGTERM the managed child directly. A `kill` binary resolved through
-    /// PATH would be attacker-controlled if the launcher itself was started
-    /// with a modified PATH; the syscall has no lookup step.
+    /// SIGTERM the managed child, if any; drops the registration.
+    ///
+    /// With `KillScope::Group` the whole group goes down, so a cancelled scan
+    /// does not leave helper processes behind. `run` keeps `KillScope::Process`:
+    /// the game it started must survive the plugin.
     pub fn kill(&self) {
         let pid = self.current();
+        let scope = *self.scope.lock().unwrap();
         self.clear();
         if let Some(pid) = pid {
             #[cfg(unix)]
             unsafe {
+                if scope == KillScope::Group {
+                    kill_group(pid, libc::SIGTERM);
+                }
+                // The direct child may have left the group on its own
+                // (setsid), so I signal it explicitly too.
                 let _ = libc::kill(pid as libc::pid_t, libc::SIGTERM);
             }
             #[cfg(not(unix))]
             {
-                let _ = pid;
+                let _ = (pid, scope);
             }
         }
     }
@@ -225,6 +288,20 @@ fn join_reader(h: std::thread::JoinHandle<String>) -> String {
     h.join().unwrap_or_default()
 }
 
+/// I put every plugin child in its own process group (`setpgid(0, 0)` runs
+/// in the child before `exec`). With that, a timeout or a cancel can signal
+/// the plugin and every helper it spawned, instead of leaving orphans behind.
+///
+/// The child becomes the leader of the group, so the group id is its pid.
+#[cfg(unix)]
+fn own_process_group(cmd: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    cmd.process_group(0);
+}
+
+#[cfg(not(unix))]
+fn own_process_group(_cmd: &mut Command) {}
+
 /// I run `cmd` capturing stdout/stderr and kill it past `limit`.
 ///
 /// I wrote this to replace `timeout(1)`. That binary comes from coreutils, not
@@ -232,15 +309,25 @@ fn join_reader(h: std::thread::JoinHandle<String>) -> String {
 /// when absent each caller failed differently, and `list_emulators_in` even
 /// returned an empty list with no warning.
 ///
-/// I keep `cmd` on piped stdout/stderr even if the caller set null. Same kill
-/// semantics as `timeout(1)` without `--foreground`: I only signal the direct
-/// child, not the process group.
+/// I keep `cmd` on piped stdout/stderr even if the caller set null. The child
+/// runs in its own process group (see `own_process_group`), so a timeout can
+/// take the whole plugin tree down.
 pub fn output_with_timeout(
     cmd: &mut Command,
     limit: std::time::Duration,
 ) -> Result<TimedOutput, String> {
+    output_with_timeout_scope(cmd, limit, KillScope::Group)
+}
+
+/// Same as `output_with_timeout`, with an explicit kill scope.
+pub fn output_with_timeout_scope(
+    cmd: &mut Command,
+    limit: std::time::Duration,
+    scope: KillScope,
+) -> Result<TimedOutput, String> {
     use std::io::Read;
 
+    own_process_group(cmd);
     let mut child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -280,7 +367,18 @@ pub fn output_with_timeout(
     };
 
     if timed_out {
-        let _ = child.kill();
+        match scope {
+            // The plugin and every helper it spawned go down together.
+            KillScope::Group => {
+                kill_group(child.id(), libc::SIGKILL);
+                // The direct child may have left the group on its own.
+                let _ = child.kill();
+            }
+            // Only the plugin: the game it launched has to survive.
+            KillScope::Process => {
+                let _ = child.kill();
+            }
+        }
         let _ = child.wait();
         // I join with a margin, not plain `join`: if the plugin left
         // grandchildren holding the pipe, a direct join would hang.
@@ -345,7 +443,9 @@ pub fn run_single_json_with_timeout(
     cmd.args(args).stdin(Stdio::null());
     apply_plugin_env(&mut cmd);
     let command = args.first().copied().unwrap_or("command");
-    let output = output_with_timeout(&mut cmd, limit)
+    // `run` starts a game: only the plugin process may be signalled.
+    let scope = kill_scope_for(args);
+    let output = output_with_timeout_scope(&mut cmd, limit, scope)
         .map_err(|e| format!("{} {} failed: {}", exe.display(), command, e))?;
     let body = output.stdout;
     if let Some(doc) = parse_final_doc(&body) {
@@ -389,6 +489,7 @@ fn spawn_streaming_inner(
     killer: Option<ProcessKiller>,
 ) -> mpsc::Receiver<PluginEvent> {
     let (tx, rx) = mpsc::channel::<PluginEvent>();
+    let scope = kill_scope_for_owned(&args);
     std::thread::spawn(move || {
         let mut cmd = Command::new(&exe);
         cmd.args(&args)
@@ -396,11 +497,12 @@ fn spawn_streaming_inner(
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         apply_plugin_env(&mut cmd);
+        own_process_group(&mut cmd);
         let child = cmd.spawn();
         let mut child = match child {
             Ok(c) => {
                 if let Some(k) = &killer {
-                    k.register(&c);
+                    k.register(&c, scope);
                 }
                 c
             }
@@ -626,6 +728,132 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&output.stdout), "unset");
     }
 
+    /// A fake plugin: it starts a helper process and then hangs, so the
+    /// launcher has to time it out.
+    #[cfg(unix)]
+    fn fake_plugin(dir: &Path, pidfile: &Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let script = dir.join("fake-plugin");
+        let body = format!(
+            "#!/bin/sh\nsleep 30 &\necho $! > {}\nsleep 30\n",
+            pidfile.display()
+        );
+        std::fs::write(&script, body).unwrap();
+        let mut perms = std::fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).unwrap();
+        script
+    }
+
+    /// The pid the fake plugin wrote for its helper.
+    #[cfg(unix)]
+    fn wait_for_pid(pidfile: &Path) -> i32 {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            if let Ok(text) = std::fs::read_to_string(pidfile) {
+                if let Ok(pid) = text.trim().parse::<i32>() {
+                    return pid;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        panic!("the fake plugin never wrote {}", pidfile.display());
+    }
+
+    /// A zombie is dead: it only waits for its parent to reap it.
+    #[cfg(unix)]
+    fn process_alive(pid: i32) -> bool {
+        let stat = std::path::PathBuf::from(format!("/proc/{}/stat", pid));
+        match std::fs::read_to_string(&stat) {
+            Ok(text) => {
+                let after = match (text.find('('), text.rfind(')')) {
+                    (Some(a), Some(b)) if b > a => &text[b + 1..],
+                    _ => return true,
+                };
+                let state = after.split_whitespace().next().unwrap_or("");
+                state != "Z" && state != "X"
+            }
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn timeout_kills_the_plugin_group() {
+        // The lock keeps the isolation test from breaking the PATH while the
+        // script of this test calls `sleep` by name.
+        let _env = crate::test_env::lock();
+        let dir = std::env::temp_dir().join(format!("corky-group-kill-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let pidfile = dir.join("child.pid");
+        let script = fake_plugin(&dir, &pidfile);
+
+        let err = run_single_json_with_timeout(
+            &script,
+            &["scan", "/tmp"],
+            std::time::Duration::from_millis(400),
+        )
+        .expect_err("the plugin must time out");
+        assert!(err.contains("terminated") || err.contains("limit"), "{}", err);
+
+        let pid = wait_for_pid(&pidfile);
+        assert!(
+            !process_alive(pid),
+            "the helper of the plugin must die with the plugin group"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_timeout_keeps_the_launched_process_alive() {
+        let dir = std::env::temp_dir().join(format!("corky-group-run-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let pidfile = dir.join("child.pid");
+        let script = fake_plugin(&dir, &pidfile);
+
+        // `run` launches a game: the timeout may only take the plugin down.
+        let err = run_single_json_with_timeout(
+            &script,
+            &["run", "/tmp/game"],
+            std::time::Duration::from_millis(400),
+        )
+        .expect_err("the plugin must time out");
+        assert!(err.contains("terminated") || err.contains("limit"), "{}", err);
+
+        let pid = wait_for_pid(&pidfile);
+        assert!(
+            process_alive(pid),
+            "the process launched by `run` must survive the plugin timeout"
+        );
+        unsafe {
+            libc::kill(pid, libc::SIGKILL);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plugin_children_lead_their_own_process_group() {
+        // The lock keeps the isolation test from breaking the PATH while I
+        // spawn a program by name.
+        let _env = crate::test_env::lock();
+        let mut cmd = Command::new(program("sh"));
+        cmd.arg("-c").arg("sleep 5");
+        own_process_group(&mut cmd);
+        let mut child = cmd.spawn().expect("spawn");
+        let pgid = unsafe { libc::getpgid(child.id() as libc::pid_t) };
+        assert_eq!(
+            pgid,
+            child.id() as libc::pid_t,
+            "the plugin must lead its own process group"
+        );
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
     #[cfg(unix)]
     #[test]
     fn process_killer_uses_the_syscall_directly() {
@@ -634,7 +862,7 @@ mod tests {
             .spawn()
             .expect("sleep");
         let killer = ProcessKiller::new();
-        killer.register(&child);
+        killer.register(&child, KillScope::Process);
         killer.kill();
         let status = child.wait().expect("wait");
         assert!(!status.success());
