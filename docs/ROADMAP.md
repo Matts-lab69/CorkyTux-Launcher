@@ -13,9 +13,9 @@ the first versioned protocol; P2 is follow-up work.
 
 | Item | State |
 |---|---|
-| 1 | in PR: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3), [Launcher #6](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/6), [Plugins #2](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/2) |
-| 2 | in PR: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (the deadlines) and [Launcher #5](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/5) (the group kill) |
-| 3 | in PR: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (the allowlist) and [Launcher #5](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/5) (the group kill) |
+| 1 | merged: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (`875866d`), [Launcher #6](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/6) (`7e36652`), [Plugins #2](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/2) (`0d0b3c1`) |
+| 2 | merged: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (`875866d`, the deadlines) and [Launcher #5](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/5) (`b724a41`, the group kill) |
+| 3 | merged: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (`875866d`, the allowlist) and [Launcher #5](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/5) (`b724a41`, the group kill) |
 | 4 | open |
 | 5 | open |
 | 6 | open |
@@ -32,16 +32,16 @@ the first versioned protocol; P2 is follow-up work.
 | 17 | open |
 | 18 | open |
 | 19 | open |
-| 20 | partly done: the Ely.by password travels on stdin in [Launcher #8](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/8) and [Plugins #5](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/5) |
-| 21 | in PR: [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) and [Plugins #6](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/6) |
-| 22 | in PR: [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) |
+| 20 | partly done: the Ely.by password travels on stdin in [Launcher #8](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/8) (`8131cc5`) and [Plugins #5](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/5) (`1c44332`), both merged; the Epic exchange code still travels in the game argv |
+| 21 | merged: [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) (`f8de746`) and [Plugins #6](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/6) (`b59e3eb`) |
+| 22 | merged: [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) (`f8de746`) |
 | 23 | open |
 | 24 | open |
-| 25 | in PR: [Launcher #4](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/4) and [Launcher #7](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/7) (the CI and the hermetic tests), [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) and [Plugins #6](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/6) (the lint) |
+| 25 | merged: [Launcher #4](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/4) (`f444237`) and [Launcher #7](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/7) (closed; its commits are inside #4) (the CI and the hermetic tests), [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) (`f8de746`) and [Plugins #6](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/6) (`b59e3eb`) (the lint) |
 
-Nothing here is merged yet: every "in PR" line points to an open pull
-request. The concrete defects, with the file and the line, live in
-`../PENDIENTES.md`. This document keeps the strategy, the order and the
+Items marked merged point to the pull request and the commit in `main`;
+items still marked open have no merged change. The concrete defects, with
+the file and the line, live in `../PENDIENTES.md`. This document keeps the strategy, the order and the
 milestones; `../PENDIENTES.md` keeps what is broken and where.
 
 ## Priority order
@@ -56,7 +56,7 @@ milestones; `../PENDIENTES.md` keeps what is broken and where.
 
 ### 1. Fix secrets at rest and directory permissions (P0)
 
-**Status:** in PR: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3), [Launcher #6](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/6), [Plugins #2](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/2).
+**Status:** merged: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (`875866d`), [Launcher #6](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/6) (`7e36652`), [Plugins #2](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/2) (`0d0b3c1`).
 
 New `Launcher.ini` files are created with the process umask and can be `0644`,
 yet the file can contain `IntegrationApiKey` and a CurseForge key. Plugin token
@@ -74,7 +74,7 @@ Security finding: #6.
 
 ### 2. Enforce per-command timeouts and cancellation (P0)
 
-**Status:** in PR: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (the deadlines) and [Launcher #5](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/5) (the group kill). The sites that still call external binaries are listed in `../PENDIENTES.md` (C08).
+**Status:** merged: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (`875866d`, the deadlines) and [Launcher #5](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/5) (`b724a41`, the group kill). The sites that still call external binaries are listed in `../PENDIENTES.md` (C08).
 
 `run_single_json`, emulator install/link/remove/unlink and AppImage run currently
 use unbounded `Command::output()`. Give every command a declared deadline, kill
@@ -92,7 +92,7 @@ Security finding: #9.
 
 ### 3. Clean the plugin environment and terminate by PID (P0)
 
-**Status:** in PR: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (the allowlist) and [Launcher #5](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/5) (the group kill).
+**Status:** merged: [Launcher #3](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/3) (`875866d`, the allowlist) and [Launcher #5](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/5) (`b724a41`, the group kill).
 
 Plugin processes inherit the full launcher environment, including tokens and
 loader variables, and `ProcessKiller` resolves `kill` through `PATH`. Build an
@@ -331,7 +331,7 @@ stops all execution paths.
 
 ### 20. Keep auth codes out of argv and logs (P1)
 
-**Status:** partly done: the Ely.by password travels on stdin in [Launcher #8](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/8) and [Plugins #5](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/5). The Epic exchange code still travels in the game argv: see `../PENDIENTES.md` (N02).
+**Status:** partly done: the Ely.by password travels on stdin in [Launcher #8](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/8) (`8131cc5`) and [Plugins #5](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/5) (`1c44332`), both merged. The Epic exchange code still travels in the game argv: see `../PENDIENTES.md` (N02).
 
 The Epic/EOS exchange code and display name are concatenated into a launch
 argument string. The code is visible in `/proc/<pid>/cmdline`, and a display
@@ -347,7 +347,7 @@ or `-`-prefixed text cannot inject extra arguments.
 
 ### 21. Repair the official plugin documentation (P1)
 
-**Status:** in PR: [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) and [Plugins #6](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/6).
+**Status:** merged: [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) (`f8de746`) and [Plugins #6](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/6) (`b59e3eb`).
 
 The current docs describe commands that the plugins do not accept: AppImage
 `scan` is a single-file command, RPG Maker `install` uses subcommands, Heroic
@@ -360,7 +360,7 @@ RPG Maker, Heroic and Minecraft examples use the current syntax.
 
 ### 22. Add the AGPL license, per-plugin guides and stable assets (P1)
 
-**Status:** in PR: [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3).
+**Status:** merged: [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) (`f8de746`).
 
 Add a root `LICENSE` (AGPL-3.0), fix the README link to it, add minimal guides
 for `dependency-installer` and `dll-overrides-automator`, and keep the logo at
@@ -383,7 +383,7 @@ without confirmation.
 
 ### 24. Make plugin errors actionable (P2)
 
-**Status:** open. The redaction of the plugin output is in [Launcher #6](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/6); the truncated description is in `../PENDIENTES.md` (D07).
+**Status:** open. The redaction of the plugin output is in [Launcher #6](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/6) (`7e36652`); the truncated description is in `../PENDIENTES.md` (D07).
 
 Replace generic "plugin failed" messages with the command, exit code, plugin
 id and a remediation hint. Keep the raw stderr available in a details expander
@@ -394,7 +394,7 @@ auth failure, timeout and malformed JSON.
 
 ### 25. Add linting and integration tests (P1)
 
-**Status:** in PR: [Launcher #4](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/4) and [Launcher #7](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/7) (the CI and the hermetic tests), [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) and [Plugins #6](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/6) (the lint).
+**Status:** merged: [Launcher #4](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/4) (`f444237`) and [Launcher #7](https://github.com/Matts-lab69/CorkyTux-Launcher/pull/7) (closed; its commits are inside #4) (the CI and the hermetic tests), [Plugins #3](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/3) (`f8de746`) and [Plugins #6](https://github.com/Matts-lab69/CorkyTux-Plugins/pull/6) (`b59e3eb`) (the lint).
 
 Run `ruff` on all plugin Python, `shellcheck` on `heroic-store/install.sh`,
 `python -m json.tool` on every manifest, and the JSON Schema validation from
