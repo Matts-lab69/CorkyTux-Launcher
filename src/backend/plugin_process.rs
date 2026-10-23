@@ -31,12 +31,64 @@ impl ProcessKiller {
         *self.pid.lock().unwrap() = None;
     }
 
-    /// SIGTERM the managed child, if any; drops the registration.
+    /// SIGTERM the managed child directly. A `kill` binary resolved through
+    /// PATH would be attacker-controlled if the launcher itself was started
+    /// with a modified PATH; the syscall has no lookup step.
     pub fn kill(&self) {
         let pid = self.current();
         self.clear();
         if let Some(pid) = pid {
-            let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+            #[cfg(unix)]
+            unsafe {
+                let _ = libc::kill(pid as libc::pid_t, libc::SIGTERM);
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = pid;
+            }
+        }
+    }
+}
+
+/// Variables a plugin may inherit. Everything else is dropped, especially
+/// launcher tokens, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `PYTHONPATH`,
+/// `PYTHONHOME`, shell startup hooks and SSH/Git credentials.
+const PLUGIN_ENV_ALLOWLIST: &[&str] = &[
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TZ", "TERM",
+    "COLORTERM", "TMPDIR", "TMP", "TEMP", "DISPLAY", "WAYLAND_DISPLAY",
+    "WAYLAND_SOCKET", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR",
+    "PULSE_SERVER", "PULSE_COOKIE", "PIPEWIRE_RUNTIME_DIR", "PIPEWIRE_REMOTE",
+    "PIPEWIRE_NODE", "JAVA_HOME", "PROTONPATH", "GAMEID", "MANGOHUD",
+    "WINEDLLOVERRIDES", "WINEFSYNC", "WINEESYNC", "DESKTOP_SESSION",
+    "XDG_CURRENT_DESKTOP", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "HTTP_PROXY", "HTTPS_PROXY",
+    "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "ALL_PROXY",
+    "all_proxy",
+];
+
+fn plugin_env_allowed(key: &str) -> bool {
+    PLUGIN_ENV_ALLOWLIST.contains(&key)
+        || key.starts_with("LC_")
+        || key.starts_with("XDG_")
+        || key.starts_with("STEAM_COMPAT_")
+        || key.starts_with("PROTON_")
+        || key.starts_with("UMU_")
+        || key.starts_with("DXVK_")
+        || key.starts_with("VKD3D_")
+        || key.starts_with("SDL_")
+        || key.starts_with("WINE")
+}
+
+/// Apply the plugin environment allowlist. Called immediately before every
+/// plugin spawn so a plugin never sees the launcher's secrets or loader
+/// injection variables.
+pub fn apply_plugin_env(cmd: &mut Command) {
+    cmd.env_clear();
+    for (key, value) in std::env::vars_os() {
+        if let Some(key) = key.to_str() {
+            if plugin_env_allowed(key) {
+                cmd.env(key, value);
+            }
         }
     }
 }
@@ -129,6 +181,36 @@ pub struct TimedOutput {
 /// stdout open would block forever; without this margin the `join` would hang
 /// my UI.
 const PIPE_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// One-shot plugin commands must always answer. Long installs and auth flows
+/// get half an hour; scans get five minutes; launch/stop and ordinary queries
+/// get two minutes. No plugin call is allowed to wait forever.
+const DEFAULT_SINGLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+const SCAN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+const LONG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1800);
+
+fn single_timeout(args: &[&str]) -> std::time::Duration {
+    match args.first().copied() {
+        Some("install")
+        | Some("setup")
+        | Some("auth")
+        | Some("ely-auth")
+        | Some("java-install")
+        | Some("umu-setup")
+        | Some("uninstall")
+        | Some("curse-auth-config") => LONG_TIMEOUT,
+        Some("scan")
+        | Some("diagnose")
+        | Some("heroic-scan")
+        | Some("curse-test")
+        | Some("versions")
+        | Some("mods-add")
+        | Some("addons-install") => SCAN_TIMEOUT,
+        // `run` waits for the plugin to launch, not for the game to exit.
+        Some("run") | Some("stop") => std::time::Duration::from_secs(60),
+        _ => DEFAULT_SINGLE_TIMEOUT,
+    }
+}
 
 /// I join a pipe reader with a margin: on timeout I drop its result and let
 /// the thread detach instead of blocking my caller.
@@ -251,12 +333,21 @@ fn parse_final_doc(body: &str) -> Option<serde_json::Value> {
 }
 
 pub fn run_single_json(exe: &Path, args: &[&str]) -> Result<serde_json::Value, String> {
-    let output = Command::new(exe)
-        .args(args)
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| format!("Could not execute {}: {}", exe.display(), e))?;
-    let body = String::from_utf8_lossy(&output.stdout).to_string();
+    run_single_json_with_timeout(exe, args, single_timeout(args))
+}
+
+pub fn run_single_json_with_timeout(
+    exe: &Path,
+    args: &[&str],
+    limit: std::time::Duration,
+) -> Result<serde_json::Value, String> {
+    let mut cmd = Command::new(exe);
+    cmd.args(args).stdin(Stdio::null());
+    apply_plugin_env(&mut cmd);
+    let command = args.first().copied().unwrap_or("command");
+    let output = output_with_timeout(&mut cmd, limit)
+        .map_err(|e| format!("{} {} failed: {}", exe.display(), command, e))?;
+    let body = output.stdout;
     if let Some(doc) = parse_final_doc(&body) {
         if doc.get("type").and_then(|t| t.as_str()) == Some("error") {
             return Err(doc.get("message").and_then(|m| m.as_str()).unwrap_or("plugin error").to_string());
@@ -266,12 +357,12 @@ pub fn run_single_json(exe: &Path, args: &[&str]) -> Result<serde_json::Value, S
         }
         return Ok(doc);
     }
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !output.success {
+        let err = output.stderr.trim().to_string();
         let out = body.trim().to_string();
         let msg = if !err.is_empty() { err } else { out };
         return Err(if msg.is_empty() {
-            format!("Plugin exited with code {:?}", output.status.code())
+            format!("Plugin exited with code {:?}", output.code)
         } else if msg.len() > 300 {
             msg[..300].to_string()
         } else {
@@ -299,12 +390,13 @@ fn spawn_streaming_inner(
 ) -> mpsc::Receiver<PluginEvent> {
     let (tx, rx) = mpsc::channel::<PluginEvent>();
     std::thread::spawn(move || {
-        let child = Command::new(&exe)
-            .args(&args)
+        let mut cmd = Command::new(&exe);
+        cmd.args(&args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn();
+            .stderr(Stdio::piped());
+        apply_plugin_env(&mut cmd);
+        let child = cmd.spawn();
         let mut child = match child {
             Ok(c) => {
                 if let Some(k) = &killer {
@@ -438,4 +530,114 @@ where
     glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
         on_msg(rx.try_recv())
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The absolute path of a program, so the test does not depend on the
+    /// process PATH: the isolation test breaks it on purpose, and the tests
+    /// of this module run in parallel with it.
+    fn program(name: &str) -> PathBuf {
+        for dir in ["/bin", "/usr/bin", "/usr/local/bin"] {
+            let candidate = Path::new(dir).join(name);
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+        PathBuf::from(name)
+    }
+
+    #[test]
+    fn one_shot_commands_have_bounded_deadlines() {
+        assert_eq!(single_timeout(&["install"]), LONG_TIMEOUT);
+        assert_eq!(single_timeout(&["scan", "/tmp"]), SCAN_TIMEOUT);
+        assert_eq!(single_timeout(&["run", "/tmp/game"]), std::time::Duration::from_secs(60));
+        assert_eq!(single_timeout(&["status"]), DEFAULT_SINGLE_TIMEOUT);
+        assert!(LONG_TIMEOUT > SCAN_TIMEOUT);
+        assert!(SCAN_TIMEOUT > DEFAULT_SINGLE_TIMEOUT);
+    }
+
+    #[test]
+    fn run_single_json_terminates_a_hung_plugin() {
+        // The lock keeps the isolation test from breaking the PATH while I
+        // spawn a program by name.
+        let _env = crate::test_env::lock();
+        let started = std::time::Instant::now();
+        let err = run_single_json_with_timeout(
+            &program("sleep"),
+            &["30"],
+            std::time::Duration::from_millis(200),
+        )
+        .expect_err("sleep must be terminated");
+        assert!(err.contains("terminated") || err.contains("limit"), "{}", err);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "timeout took too long: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn plugin_environment_policy_drops_secrets_and_loaders() {
+        assert!(plugin_env_allowed("PATH"));
+        assert!(plugin_env_allowed("HOME"));
+        assert!(plugin_env_allowed("LC_ALL"));
+        assert!(plugin_env_allowed("SSL_CERT_FILE"));
+        assert!(plugin_env_allowed("REQUESTS_CA_BUNDLE"));
+        assert!(plugin_env_allowed("HTTPS_PROXY"));
+        assert!(!plugin_env_allowed("LD_PRELOAD"));
+        assert!(!plugin_env_allowed("LD_LIBRARY_PATH"));
+        assert!(!plugin_env_allowed("PYTHONPATH"));
+        assert!(!plugin_env_allowed("CORKYTUX_API_KEY"));
+        assert!(!plugin_env_allowed("SSH_AUTH_SOCK"));
+    }
+
+    /// The proxy variables are part of the allowlist: a plugin that talks
+    /// HTTPS has to go through the same proxy as the launcher, and the
+    /// `no_proxy` list decides what stays direct. Both spellings count,
+    /// because the tools do not agree on the case.
+    #[test]
+    fn plugin_environment_keeps_the_proxy_variables() {
+        for key in [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "NO_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "no_proxy",
+            "ALL_PROXY",
+            "all_proxy",
+        ] {
+            assert!(plugin_env_allowed(key), "{} must reach the plugin", key);
+        }
+    }
+
+    #[test]
+    fn plugin_environment_is_cleared_before_spawn() {
+        std::env::set_var("CORKYTUX_TEST_SECRET", "leak");
+        let mut cmd = Command::new(program("sh"));
+        cmd.arg("-c")
+            .arg("printf '%s' \"${CORKYTUX_TEST_SECRET-unset}\"");
+        apply_plugin_env(&mut cmd);
+        let output = cmd.output().expect("sh must run");
+        std::env::remove_var("CORKYTUX_TEST_SECRET");
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "unset");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_killer_uses_the_syscall_directly() {
+        let mut child = Command::new(program("sleep"))
+            .arg("30")
+            .spawn()
+            .expect("sleep");
+        let killer = ProcessKiller::new();
+        killer.register(&child);
+        killer.kill();
+        let status = child.wait().expect("wait");
+        assert!(!status.success());
+        assert!(status.code().is_none(), "expected signal death, got {:?}", status.code());
+    }
 }

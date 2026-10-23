@@ -54,6 +54,7 @@ impl AppImageManager {
         cmd.stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
+        plugin_process::apply_plugin_env(&mut cmd);
         cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
     }
 
