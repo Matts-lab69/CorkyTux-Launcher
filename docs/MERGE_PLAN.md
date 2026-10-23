@@ -16,18 +16,21 @@ Rules that apply to the whole plan:
 ## 1. CorkyTux-Plugins
 
 PR #3 is already in `main` (`f8de746`, merge commit): it brought the lint
-workflow and the ruff config that covers the entrypoints. Every branch below
-is rebased on top of the previous one, so the order of this table is also the
-order of the commits in the stack.
+workflow and the ruff config that covers the entrypoints. #8 and #9 are
+independent: they come from `main` and touch files the chain does not touch.
+#1 to #6 are rebased one on top of another, so their order is also the order
+of the commits in the stack.
 
 | Order | PR | Branch | Why here | After the merge |
 |---|---|---|---|---|
-| 1 | #1 | `fix/dotnet-mono-gate-all-verbs` | Pre-existing PR, same file as #4. | #4 is already rebased on its new base. |
-| 2 | #4 | `fix/dependency-installer-verbs` | It carries `e001905` out of the local `main`. | `git branch -f main origin/main` (the commit is in `main` through the PR). |
-| 3 | #2 | `fix/plugin-secrets` | Independent of the rest (Minecraft and Heroic files). | #5 is already rebased on its new base. |
-| 4 | #5 | `fix/ely-password-stdin` | It needs the private state of #2 and ships with Launcher #8 (Ely.by on stdin). | It is retargeted to `main` and merged. |
-| 5 | #7 | `fix/epic-catalog-version` | The catalog version and date of the Epic games. | It is retargeted to `main` and merged. |
-| 6 | #6 | `style/entrypoint-lint` | Last: it fixes the 58 findings and turns the ruff step blocking again. | `main` ends with ruff at zero findings. |
+| 1 | #8 | `chore/dependency-installer-2.1.4` | The version that ships: `plugin.json` 2.1.4 and the version line of the README. Independent of the chain. | Nothing. |
+| 2 | #9 | `tools/plugin-tarball` | The release tool: the tarball and `checksums.txt`. Independent; it adds `tools/` and the registry section of the README. | Nothing. |
+| 3 | #1 | `fix/dotnet-mono-gate-all-verbs` | Pre-existing PR, same file as #4. | #4 is already rebased on its new base. |
+| 4 | #4 | `fix/dependency-installer-verbs` | It carries `e001905` out of the local `main`. | `git branch -f main origin/main` (the commit is in `main` through the PR). |
+| 5 | #2 | `fix/plugin-secrets` | Independent of the rest (Minecraft and Heroic files). | #5 is already rebased on its new base. |
+| 6 | #5 | `fix/ely-password-stdin` | It needs the private state of #2 and ships with Launcher #8 (Ely.by on stdin). | It is retargeted to `main` and merged. |
+| 7 | #7 | `fix/epic-catalog-version` | The catalog version and date of the Epic games. | It is retargeted to `main` and merged. |
+| 8 | #6 | `style/entrypoint-lint` | Last: it fixes the 58 findings and turns the ruff step blocking again. | `main` ends with ruff at zero findings. |
 
 After the plugins are in `main`:
 
@@ -49,6 +52,12 @@ merging: its two commits are inside #4 (squash).
 | 2 | #5 | `fix/plugin-process-group` | It needs the timeouts of #3. | #8 is retargeted to `main`. |
 | 3 | #8 | `fix/ely-password-stdin` | Leaf of the stack. It ships with Plugins #5 (Ely.by on stdin). | Nothing. |
 | 4 | #6 | `fix/launcher-secret-logs` | Standalone. It shares `plugins.rs` and `proton.rs` with the others, but every merge is clean. | Nothing. |
+| 5 | #16 | `docs/glibc-floor-note` | Docs only: the glibc flag measured on the CI build. | Nothing. |
+
+The documentation and CI PRs merge after the code, as squash commits: #14
+(README requirements), #15 (release workflow), #16 (glibc note) and #17
+(the command inventory and the contract-test item). #13 (CHANGELOG) goes
+last, corrected against the merged reality.
 
 ## 3. Merge strategy
 
@@ -136,6 +145,19 @@ the two manual updates, and it stays broken until the user performs the
 other one.
 
 ### 4.2 Publish order and the window
+
+Before the first tag, once #15 is in `main`, the release workflow is run by
+hand from `main` (`workflow_dispatch`, dry run) with the version in
+`Cargo.toml`. It builds the tarball and opens no release and creates no tag.
+The artifact is checked before any tag exists:
+
+- `tar tzf` lists one top-level `corkytux-3.2.0/` and no absolute paths.
+- `sha256sum -c checksums.txt` passes.
+- `objdump -T` on the binary shows the expected glibc symbols.
+
+Only then the tags are created. Run `39839991506` (3.1.2) is the precedent:
+it produced `corkytux-v3.1.2`, the checksum verified and no release was
+created.
 
 Order:
 
@@ -348,8 +370,9 @@ D05 in `PENDIENTES.md` and stays open after these merges. Until it lands,
   refuses a tag that does not match the manifest.
 - `dependency-installer`: `plugin.json` stays at 2.1.3 in PRs #1 and #4, but
   `dependency-installer-v2.1.3` is already published and the tag cannot be
-  reused. Publishing those fixes needs 2.1.4 (tag
-  `dependency-installer-v2.1.4`, asset `dependency-installer-2.1.4.tar.gz`).
+  reused. Publishing those fixes needs 2.1.4: Plugins #8 does the bump in
+  `plugin.json` and the README; the tag `dependency-installer-v2.1.4` and the
+  asset `dependency-installer-2.1.4.tar.gz` are created at release time.
   Without the bump the fixes never reach the registry.
 - `minecraft-launcher` 1.2.0 and `heroic-store` 1.2.0 are already bumped in
   the branches and the local integration build reports those versions.
