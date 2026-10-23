@@ -316,23 +316,45 @@ pub fn output_with_timeout(
     cmd: &mut Command,
     limit: std::time::Duration,
 ) -> Result<TimedOutput, String> {
-    output_with_timeout_scope(cmd, limit, KillScope::Group)
+    output_with_timeout_full(cmd, limit, KillScope::Group, None)
 }
 
-/// Same as `output_with_timeout`, with an explicit kill scope.
-pub fn output_with_timeout_scope(
+/// The one implementation: a kill scope and an optional stdin payload.
+///
+/// The scope says what a timeout is allowed to signal: the whole group of
+/// the plugin, or only the plugin itself (`run` starts a game that has to
+/// survive). The payload is written on the stdin of the child and the pipe
+/// is closed right away, so the child sees the end of the input. This is
+/// how a secret reaches a plugin: a password in the command line is visible
+/// to every local user through `ps` and `/proc/<pid>/cmdline`.
+pub fn output_with_timeout_full(
     cmd: &mut Command,
     limit: std::time::Duration,
     scope: KillScope,
+    input: Option<&str>,
 ) -> Result<TimedOutput, String> {
     use std::io::Read;
 
     own_process_group(cmd);
     let mut child = cmd
+        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Could not spawn process: {}", e))?;
+
+    // The payload is small (a password): it fits in the pipe buffer, so
+    // writing it here cannot block. I close the pipe right after, so the
+    // child knows the input is complete.
+    if let Some(payload) = input {
+        if let Some(mut pipe) = child.stdin.take() {
+            use std::io::Write;
+            let _ = pipe.write_all(payload.as_bytes());
+            let _ = pipe.write_all(b"\n");
+            let _ = pipe.flush();
+            // Dropping the pipe closes it.
+        }
+    }
 
     // I drain the streams on side threads: if the plugin fills the pipe
     // buffer (64 KiB) while I wait for its exit, both sides would deadlock.
@@ -439,13 +461,35 @@ pub fn run_single_json_with_timeout(
     args: &[&str],
     limit: std::time::Duration,
 ) -> Result<serde_json::Value, String> {
+    run_single_json_inner(exe, args, limit, None)
+}
+
+/// Run a one-shot plugin command with a payload on its stdin.
+///
+/// The payload never appears in the command line: I use it for the Ely.by
+/// password, which every local user could otherwise read with `ps` or from
+/// `/proc/<pid>/cmdline`.
+pub fn run_single_json_with_stdin(
+    exe: &Path,
+    args: &[&str],
+    payload: &str,
+) -> Result<serde_json::Value, String> {
+    run_single_json_inner(exe, args, single_timeout(args), Some(payload))
+}
+
+fn run_single_json_inner(
+    exe: &Path,
+    args: &[&str],
+    limit: std::time::Duration,
+    input: Option<&str>,
+) -> Result<serde_json::Value, String> {
     let mut cmd = Command::new(exe);
-    cmd.args(args).stdin(Stdio::null());
+    cmd.args(args);
     apply_plugin_env(&mut cmd);
     let command = args.first().copied().unwrap_or("command");
     // `run` starts a game: only the plugin process may be signalled.
     let scope = kill_scope_for(args);
-    let output = output_with_timeout_scope(&mut cmd, limit, scope)
+    let output = output_with_timeout_full(&mut cmd, limit, scope, input)
         .map_err(|e| format!("{} {} failed: {}", exe.display(), command, e))?;
     let body = output.stdout;
     if let Some(doc) = parse_final_doc(&body) {
@@ -831,6 +875,56 @@ mod tests {
         unsafe {
             libc::kill(pid, libc::SIGKILL);
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The two halves together: the stdin arrives complete and closed, and
+    /// the timeout takes the whole plugin group down.
+    #[cfg(unix)]
+    #[test]
+    fn the_stdin_arrives_and_the_timeout_kills_the_group() {
+        // The lock keeps the isolation test from breaking the PATH while the
+        // script of this test calls `cat` and `sleep` by name.
+        let _env = crate::test_env::lock();
+        let dir = std::env::temp_dir().join(format!("corky-stdin-group-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let stdin_file = dir.join("stdin.txt");
+        let pidfile = dir.join("child.pid");
+        let script = dir.join("fake-plugin");
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let body = format!(
+                "#!/bin/sh\ncat > {}\nsleep 30 &\necho $! > {}\nsleep 30\n",
+                stdin_file.display(),
+                pidfile.display()
+            );
+            std::fs::write(&script, body).unwrap();
+            let mut perms = std::fs::metadata(&script).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&script, perms).unwrap();
+        }
+
+        let mut cmd = Command::new(&script);
+        cmd.args(["scan", "/tmp"]);
+        apply_plugin_env(&mut cmd);
+        let scope = kill_scope_for(&["scan", "/tmp"]);
+        let err = output_with_timeout_full(
+            &mut cmd,
+            std::time::Duration::from_millis(400),
+            scope,
+            Some("s3cret"),
+        )
+        .expect_err("the plugin must time out");
+        assert!(err.contains("terminated") || err.contains("limit"), "{}", err);
+
+        // The stdin arrived complete and the pipe was closed.
+        let got = std::fs::read_to_string(&stdin_file).unwrap_or_default();
+        assert_eq!(got, "s3cret\n", "the payload must arrive whole");
+
+        // The helper of the plugin died with the group.
+        let pid = wait_for_pid(&pidfile);
+        assert!(!process_alive(pid), "the helper must die with the group");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
