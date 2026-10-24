@@ -711,8 +711,9 @@ pub fn show_add_game_modal(
             let art_exe_send = state_c.game_model.get_game(&art_name).map(|g| g.executable).unwrap_or_default();
             let art_sid_send = state_c.game_model.get_game(&art_name).map(|g| g.steam_id).unwrap_or_default();
             let art_slug_send = state_c.game_model.get_game(&art_name).map(|g| g.lutris_slug).unwrap_or_default();
+            let art_key_send = crate::backend::integration::IntegrationManager::user_sgdb_key();
             std::thread::spawn(move || {
-                let mut out = crate::backend::integration::IntegrationManager::resolve_artwork_static(&art_name_send, &art_sid_send, &art_slug_send);
+                let mut out = crate::backend::integration::IntegrationManager::resolve_artwork_static(&art_name_send, &art_sid_send, &art_slug_send, art_key_send.as_deref());
                 if out.0.is_none() && art_exe_send.to_lowercase().ends_with(".exe") {
                     out.0 = crate::backend::integration::IntegrationManager::extract_exe_icon_static(&art_exe_send, &art_name_send);
                 }

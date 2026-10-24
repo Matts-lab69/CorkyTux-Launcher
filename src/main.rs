@@ -393,15 +393,16 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                     std::sync::mpsc::channel::<(Option<String>, Option<String>)>();
                 let send_name = art_name.clone();
                 std::thread::spawn(move || {
+                    let sgdb_key = IntegrationManager::user_sgdb_key();
                     let (mut i, mut b) = if needs_appimage {
                         let i = IntegrationManager::extract_appimage_icon_static(&send_exe, &send_name);
                         (i, None)
                     } else if needs_rpg {
                         let i = IntegrationManager::extract_rpg_icon_static(&send_exe, &send_name);
-                        let (_, b) = IntegrationManager::resolve_artwork_static(&send_name, &send_sid, &send_slug);
+                        let (_, b) = IntegrationManager::resolve_artwork_static(&send_name, &send_sid, &send_slug, sgdb_key.as_deref());
                         (i, b)
                     } else {
-                        let mut out = IntegrationManager::resolve_artwork_static(&send_name, &send_sid, &send_slug);
+                        let mut out = IntegrationManager::resolve_artwork_static(&send_name, &send_sid, &send_slug, sgdb_key.as_deref());
                         if out.0.is_none() {
                             let exe_path = send_exe.clone();
                             if exe_path.to_lowercase().ends_with(".exe") {

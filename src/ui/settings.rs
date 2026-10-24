@@ -2008,6 +2008,66 @@ pub fn show_settings_modal(
     int_status.add_css_class("time-label");
     integrations_page.append(&int_status);
 
+    // SteamGridDB needs a user key: the binary does not embed one. With no
+    // key the artwork lookup simply skips SteamGridDB and this label says so
+    // instead of failing silently.
+    let art_card = gtk::Frame::new(None);
+    art_card.add_css_class("page-card");
+    let art_col = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    art_col.set_margin_top(6);
+    art_col.set_margin_bottom(6);
+    art_col.set_margin_start(10);
+    art_col.set_margin_end(10);
+    let art_title = gtk::Label::new(Some("SteamGridDB artwork"));
+    art_title.set_halign(gtk::Align::Start);
+    art_title.add_css_class("details-title");
+    art_col.append(&art_title);
+    let art_desc = gtk::Label::new(Some(
+        "Covers and icons for games that Steam or Lutris do not provide. \
+         The key is stored in your user config, never in the binary.",
+    ));
+    art_desc.set_halign(gtk::Align::Start);
+    art_desc.set_wrap(true);
+    art_desc.add_css_class("time-label");
+    art_col.append(&art_desc);
+    let art_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let art_entry = gtk::Entry::new();
+    art_entry.set_placeholder_text(Some("SteamGridDB API key"));
+    art_entry.set_visibility(false);
+    art_entry.set_hexpand(true);
+    art_entry.set_text(&state.integration.api_key());
+    art_row.append(&art_entry);
+    let art_save = gtk::Button::with_label("Save");
+    art_save.add_css_class("add-btn");
+    art_row.append(&art_save);
+    art_col.append(&art_row);
+    let art_status = gtk::Label::new(None);
+    art_status.set_halign(gtk::Align::Start);
+    art_status.set_wrap(true);
+    art_status.add_css_class("time-label");
+    art_status.set_text(if state.integration.api_key().trim().is_empty() {
+        "Artwork disabled: add your SteamGridDB key to download covers and icons."
+    } else {
+        "Artwork enabled."
+    });
+    art_col.append(&art_status);
+    art_card.set_child(Some(&art_col));
+    integrations_page.append(&art_card);
+
+    let state_key = state.clone();
+    let art_status_c = art_status.clone();
+    art_save.connect_clicked(move |_| {
+        let key = art_entry.text().trim().to_string();
+        state_key.integration.set_api_key(&key);
+        if key.is_empty() {
+            art_status_c.set_text(
+                "Artwork disabled: add your SteamGridDB key to download covers and icons.",
+            );
+        } else {
+            art_status_c.set_text("Artwork enabled.");
+        }
+    });
+
     for (source_name, desc) in [
         ("Steam", "Import installed Steam games with their existing Proton prefixes"),
         ("Lutris", "Largest Linux gaming platform – scan installed Lutris games"),
