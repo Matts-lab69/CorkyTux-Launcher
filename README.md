@@ -100,7 +100,7 @@ cd corkytux-*/
 ```
 
 For example, the current version produces
-`corkytux-3.1.2-linux-x86_64.tar.gz` and extracts to `corkytux-3.1.2/`.
+`corkytux-3.2.0-linux-x86_64.tar.gz` and extracts to `corkytux-3.2.0/`.
 
 ### Build from source
 
