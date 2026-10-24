@@ -307,9 +307,9 @@ The release is built by `.github/workflows/release.yml` (PR #15) on
 - No repository secrets, every action pinned by SHA, no
   `pull_request_target`.
 
-The binaries stay unsigned; the maintainer edits the draft notes, uploads
-the `.minisig` files by hand with `gh release upload` and publishes, so no
-signing key ever reaches the CI.
+The 3.2.0 binaries stay unsigned. Signature verification is in preparation
+and is not part of this release; the release notes do not mention signatures,
+and no signing key reaches the CI.
 
 ### 4.5 The tarball install and uninstall test
 
