@@ -448,7 +448,7 @@ impl PluginManager {
             out.push(RegistryEntry {
                 tag,
                 name: v.get("name").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
-                description: body.chars().take(200).collect(),
+                description: truncate_description(body, 200),
                 date: v.get("published_at").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
                 url: asset_url,
                 asset_name,
@@ -1217,9 +1217,31 @@ fn which(name: &str) -> Option<PathBuf> {
     None
 }
 
+
+/// Cut a description to at most `max` characters, breaking at the last
+/// space before the limit and appending an ellipsis when truncated.
+fn truncate_description(body: &str, max: usize) -> String {
+    if body.chars().count() <= max {
+        return body.to_string();
+    }
+    let mut cut = max;
+    // walk back to a word boundary
+    while cut > 0 && !body.chars().nth(cut).map(|c| c.is_whitespace()).unwrap_or(true) {
+        cut -= 1;
+    }
+    if cut == 0 {
+        cut = max;
+    }
+    let mut out: String = body.chars().take(cut).collect();
+    out = out.trim_end().to_string();
+    out.push_str("...");
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::PluginManager;
+    use super::truncate_description;
 
     #[test]
     fn remove_plugin_dir_ok_missing_and_denied() {
@@ -1295,5 +1317,18 @@ mod tests {
         assert!(cleared_first, "ini must be cleared before the delete step");
         assert!(err2.contains("Could not delete"), "got: {}", err2);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn truncate_description_cuts_at_word_boundary() {
+        let s = "hello world this is a long description that needs trimming";
+        let got = truncate_description(s, 20);
+        assert_eq!(got, "hello world this is...");
+        assert!(got.chars().count() <= 23);
+    }
+
+    #[test]
+    fn truncate_description_short_unchanged() {
+        assert_eq!(truncate_description("short", 20), "short");
     }
 }
