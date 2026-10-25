@@ -266,7 +266,20 @@ impl IntegrationManager {
         let _ = Command::new("xdg-open").arg(url).spawn();
     }
 
-    const SGDB_KEY: &'static str = "0ab12f62e2d5e6b3717161be0c5e68fa";
+    /// SteamGridDB credentials are user supplied: the binary does not embed
+    /// a key. Without one the artwork lookup skips SteamGridDB instead of
+    /// sending an empty bearer token and failing silently.
+    fn key_or_none(value: &str) -> Option<&str> {
+        let value = value.trim();
+        if value.is_empty() { None } else { Some(value) }
+    }
+
+    pub fn user_sgdb_key() -> Option<String> {
+        let value = super::ConfigManager::new()
+            .launcher_value("IntegrationApiKey")
+            .unwrap_or_default();
+        Self::key_or_none(&value).map(|k| k.to_string())
+    }
 
     /// Download helper: min_bytes required, Referer for steamgriddb CDN.
     fn download_art(
@@ -327,10 +340,11 @@ impl IntegrationManager {
     fn sgdb_get(
         client: &reqwest::blocking::Client,
         url: &str,
+        key: &str,
     ) -> Result<String, String> {
         client
             .get(url)
-            .bearer_auth(Self::SGDB_KEY)
+            .bearer_auth(key)
             .header("User-Agent", "CorkyTux/3.0")
             .send()
             .map_err(|e| e.to_string())?
@@ -349,10 +363,16 @@ impl IntegrationManager {
             .game_value(game_name, "LutrisSlug")
             .unwrap_or_default();
         let slug = if slug.is_empty() { slugify(game_name) } else { slug };
-        Self::resolve_artwork_static(game_name, steam_id, &slug)
+        let key = Self::user_sgdb_key();
+        Self::resolve_artwork_static(game_name, steam_id, &slug, key.as_deref())
     }
 
-    pub fn resolve_artwork_static(game_name: &str, steam_id: &str, slug: &str) -> (Option<String>, Option<String>) {
+    pub fn resolve_artwork_static(
+        game_name: &str,
+        steam_id: &str,
+        slug: &str,
+        sgdb_key: Option<&str>,
+    ) -> (Option<String>, Option<String>) {
         let home = home_dir().unwrap_or_default();
         let banners_dir = home.join(".config").join("CorkyTux").join("banners");
         let icons_dir = home.join(".config").join("CorkyTux").join("icons");
@@ -505,43 +525,45 @@ impl IntegrationManager {
             }
         }
 
-        let mut grid_id = String::new();
-        if (banner.is_none() || icon.is_none() || icon_is_wide) && !game_name.trim().is_empty() {
-            let search_url = format!(
-                "https://www.steamgriddb.com/api/v2/search/autocomplete/{}",
-                url_encode_query(game_name.trim())
-            );
-            if let Ok(body) = Self::sgdb_get(&client, &search_url) {
-                grid_id = find_grid_id(&body, game_name);
+        if let Some(key) = sgdb_key {
+            let mut grid_id = String::new();
+            if (banner.is_none() || icon.is_none() || icon_is_wide) && !game_name.trim().is_empty() {
+                let search_url = format!(
+                    "https://www.steamgriddb.com/api/v2/search/autocomplete/{}",
+                    url_encode_query(game_name.trim())
+                );
+                if let Ok(body) = Self::sgdb_get(&client, &search_url, key) {
+                    grid_id = find_grid_id(&body, game_name);
+                }
             }
-        }
-        if !grid_id.is_empty() {
-            if banner.is_none() {
-                let d = banners_dir.join(format!("{}-sgdb.jpg", slugify(game_name)));
-                if Self::file_valid(&d, 1000) {
-                    banner = Some(d.display().to_string());
-                } else {
-                    let url = format!(
-                        "https://www.steamgriddb.com/api/v2/grids/game/{}?dimensions=600x900&types=static",
-                        grid_id
-                    );
-                    if let Ok(gb) = Self::sgdb_get(&client, &url) {
-                        if let Some(u) = json_field(&gb, "url") {
-                            if Self::download_art(&client, &u.replace("\\/", "/"), &d) {
-                                banner = Some(d.display().to_string());
+            if !grid_id.is_empty() {
+                if banner.is_none() {
+                    let d = banners_dir.join(format!("{}-sgdb.jpg", slugify(game_name)));
+                    if Self::file_valid(&d, 1000) {
+                        banner = Some(d.display().to_string());
+                    } else {
+                        let url = format!(
+                            "https://www.steamgriddb.com/api/v2/grids/game/{}?dimensions=600x900&types=static",
+                            grid_id
+                        );
+                        if let Ok(gb) = Self::sgdb_get(&client, &url, key) {
+                            if let Some(u) = json_field(&gb, "url") {
+                                if Self::download_art(&client, &u.replace("\\/", "/"), &d) {
+                                    banner = Some(d.display().to_string());
+                                }
                             }
                         }
                     }
                 }
-            }
-            if icon.is_none() || icon_is_wide {
-                let d = icons_dir.join(format!("{}-sgdb.png", slugify(game_name)));
-                if Self::file_valid(&d, 100) {
-                    icon = Some(d.display().to_string());
-                } else if let Some(found) =
-                    Self::sgdb_icon_for(&client, &grid_id, game_name, &icons_dir)
-                {
-                    icon = Some(found);
+                if icon.is_none() || icon_is_wide {
+                    let d = icons_dir.join(format!("{}-sgdb.png", slugify(game_name)));
+                    if Self::file_valid(&d, 100) {
+                        icon = Some(d.display().to_string());
+                    } else if let Some(found) =
+                        Self::sgdb_icon_for(&client, &grid_id, game_name, &icons_dir, key)
+                    {
+                        icon = Some(found);
+                    }
                 }
             }
         }
@@ -557,12 +579,13 @@ impl IntegrationManager {
         grid_id: &str,
         game_name: &str,
         icons_dir: &std::path::PathBuf,
+        key: &str,
     ) -> Option<String> {
         let url = format!(
             "https://www.steamgriddb.com/api/v2/icons/game/{}?limit=20",
             grid_id
         );
-        let ib = Self::sgdb_get(client, &url).ok()?;
+        let ib = Self::sgdb_get(client, &url, key).ok()?;
         // Prefer .png URLs
         let mut urls: Vec<String> = Vec::new();
         let mut r = ib.as_str();
@@ -1631,5 +1654,12 @@ mod tests {
         // Idempotente sobre una ruta inexistente (no error).
         m.remove_dir_recursive(&base.display().to_string()).unwrap();
         assert!(!base.exists());
+    }
+
+    #[test]
+    fn sgdb_key_ignores_blank_values() {
+        assert_eq!(IntegrationManager::key_or_none(""), None);
+        assert_eq!(IntegrationManager::key_or_none("   "), None);
+        assert_eq!(IntegrationManager::key_or_none(" abc "), Some("abc"));
     }
 }
