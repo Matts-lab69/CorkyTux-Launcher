@@ -31,6 +31,11 @@ pub fn slugify(name: &str) -> String {
 }
 
 fn app_menu_dir() -> PathBuf {
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        if !xdg.is_empty() && PathBuf::from(&xdg).is_absolute() {
+            return PathBuf::from(&xdg).join("applications");
+        }
+    }
     let home = std::env::var("HOME").unwrap_or_default();
     PathBuf::from(&home).join(".local/share/applications")
 }
@@ -207,5 +212,25 @@ pub fn rename(game: &str, new_name: &str) {
     }
     if desktop {
         let _ = enable_desktop(new_name);
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::app_menu_dir;
+    use crate::test_env::lock;
+    use std::path::PathBuf;
+
+    #[test]
+    fn app_menu_dir_honours_xdg_data_home() {
+        let _g = lock();
+        let prev_xdg = std::env::var("XDG_DATA_HOME").ok();
+        let prev_home = std::env::var("HOME").ok();
+        std::env::set_var("XDG_DATA_HOME", "/tmp/xdg-data-test");
+        std::env::set_var("HOME", "/tmp/home-test");
+        let got = app_menu_dir();
+        // restore
+        match prev_xdg { Some(v) => std::env::set_var("XDG_DATA_HOME", v), None => std::env::remove_var("XDG_DATA_HOME") }
+        match prev_home { Some(v) => std::env::set_var("HOME", v), None => std::env::remove_var("HOME") }
+        assert_eq!(got, PathBuf::from("/tmp/xdg-data-test/applications"));
     }
 }
