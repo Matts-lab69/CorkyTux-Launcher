@@ -652,3 +652,227 @@ fn show_restart(state: &AppState, parent: &adw::ApplicationWindow, tag: &str, lo
     dlg.set_child(Some(&col));
     dlg.present(Some(parent));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use sha2::Digest;
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+
+    struct TempHome(PathBuf);
+
+    impl Drop for TempHome {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    struct EnvVarGuard(&'static str, Option<std::ffi::OsString>);
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &std::path::Path) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self(key, previous)
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match self.1.take() {
+                Some(value) => std::env::set_var(self.0, value),
+                None => std::env::remove_var(self.0),
+            }
+        }
+    }
+
+    fn archive(version: &str, reported_version: &str) -> Vec<u8> {
+        let script = format!(
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'corkytux {}'; exit 0; fi\nexit 0\n",
+            reported_version
+        );
+        let encoder = GzEncoder::new(Vec::new(), Compression::default());
+        let mut tarball = tar::Builder::new(encoder);
+        let mut header = tar::Header::new_gnu();
+        header.set_size(script.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        tarball
+            .append_data(
+                &mut header,
+                format!("corkytux-{}/corkytux", version),
+                script.as_bytes(),
+            )
+            .unwrap();
+        tarball.into_inner().unwrap().finish().unwrap()
+    }
+
+    fn local_release(
+        version: &str,
+        reported_version: &str,
+    ) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let tag = format!("v{}", version);
+        let asset_name =
+            self_update::expected_asset_name(&semver::Version::parse(version).unwrap());
+        let asset_path = format!(
+            "/Matts-lab69/CorkyTux-Launcher/releases/download/{}/{}",
+            tag, asset_name
+        );
+        let checksums_path = format!(
+            "/Matts-lab69/CorkyTux-Launcher/releases/download/{}/checksums.txt",
+            tag
+        );
+        let archive = archive(version, reported_version);
+        let digest = format!("{:x}", sha2::Sha256::digest(&archive));
+        let checksums = format!("{}  {}\n", digest, asset_name);
+        let api = serde_json::json!({
+            "tag_name": tag,
+            "name": tag,
+            "body": "loopback updater fixture",
+            "draft": false,
+            "prerelease": false,
+            "assets": [
+                {
+                    "name": asset_name,
+                    "browser_download_url": format!("{}{}", base, asset_path),
+                    "digest": format!("sha256:{}", digest),
+                    "size": archive.len()
+                },
+                {
+                    "name": "checksums.txt",
+                    "browser_download_url": format!("{}{}", base, checksums_path),
+                    "size": checksums.len()
+                }
+            ]
+        })
+        .to_string();
+        let api_url = format!(
+            "{}/repos/Matts-lab69/CorkyTux-Launcher/releases/latest",
+            base
+        );
+        let handle = std::thread::spawn(move || {
+            let mut paths = Vec::new();
+            for _ in 0..3 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request_line = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut request_line)
+                    .unwrap();
+                let path = request_line
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("")
+                    .to_string();
+                let (content_type, body) =
+                    if path == "/repos/Matts-lab69/CorkyTux-Launcher/releases/latest" {
+                        ("application/json", api.as_bytes().to_vec())
+                    } else if path == asset_path {
+                        ("application/octet-stream", archive.clone())
+                    } else if path == checksums_path {
+                        ("text/plain", checksums.as_bytes().to_vec())
+                    } else {
+                        ("text/plain", Vec::new())
+                    };
+                paths.push(path);
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    content_type,
+                    body.len()
+                )
+                .unwrap();
+                stream.write_all(&body).unwrap();
+            }
+            paths
+        });
+        (api_url, handle)
+    }
+
+    fn test_snapshot(home: &std::path::Path) -> Snapshot {
+        let install_dir = home.join(".local/share/corkytux");
+        let icon_dir = home.join(".local/share/icons");
+        let desktop_file = home.join(".local/share/applications/corkytux.desktop");
+        let symlink = home.join(".local/bin/corkytux");
+        let downloads_dir = home.join(".local/share/CorkyTux/Downloads");
+        std::fs::create_dir_all(&install_dir).unwrap();
+        std::fs::create_dir_all(&icon_dir).unwrap();
+        std::fs::create_dir_all(desktop_file.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(symlink.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(&downloads_dir).unwrap();
+        std::fs::write(install_dir.join("corkytux"), b"original v3.1.2 binary").unwrap();
+        Snapshot {
+            downloads_dir,
+            install_dir,
+            icon_dir,
+            desktop_file,
+            symlink,
+            current: semver::Version::parse("3.1.2").unwrap(),
+        }
+    }
+
+    fn fetch_release(api_url: String) -> self_update::ReleaseInfo {
+        let _api = self_update::ApiUrlGuard::set(api_url);
+        let self_update::ApiOutcome::Fresh(body, _) = self_update::api_get_latest(None).unwrap()
+        else {
+            panic!("loopback release API unexpectedly returned 304");
+        };
+        self_update::parse_latest_release(&body).unwrap()
+    }
+
+    #[test]
+    fn loopback_update_installs_verified_release_and_rolls_back_bad_binary() {
+        let _env = crate::test_env::lock();
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let home = std::env::temp_dir().join(format!(
+            "corky_update_e2e_{}_{}",
+            std::process::id(),
+            SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let _temp_home = TempHome(home.clone());
+        let _home_env = EnvVarGuard::set("HOME", &home);
+        let xdg_data = home.join("xdg-data");
+        let xdg_config = home.join("xdg-config");
+        std::fs::create_dir_all(&xdg_data).unwrap();
+        std::fs::create_dir_all(&xdg_config).unwrap();
+        let _xdg_data_env = EnvVarGuard::set("XDG_DATA_HOME", &xdg_data);
+        let _xdg_config_env = EnvVarGuard::set("XDG_CONFIG_HOME", &xdg_config);
+        let snap = test_snapshot(&home);
+        let (tx, _rx) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        let (api_url, server) = local_release("3.1.3", "3.1.3");
+        let info = fetch_release(api_url);
+        assert_eq!(
+            self_update::decide_update(&snap.current, &info, ""),
+            self_update::UpdateDecision::Available
+        );
+        let result = download_and_install(&snap, &info, &tx, &cancel).unwrap();
+        let paths = server.join().unwrap();
+        assert_eq!(paths.len(), 3);
+        assert!(paths[0].ends_with("/releases/latest"));
+        assert!(paths.iter().any(|path| path.ends_with("checksums.txt")));
+        let installed = std::fs::read_to_string(snap.install_dir.join("corkytux")).unwrap();
+        assert!(installed.contains("corkytux 3.1.3"));
+        assert!(!result.is_empty());
+
+        let (api_url, server) = local_release("3.1.4", "9.9.9");
+        let info = fetch_release(api_url);
+        assert_eq!(
+            self_update::decide_update(&snap.current, &info, ""),
+            self_update::UpdateDecision::Available
+        );
+        let err = download_and_install(&snap, &info, &tx, &cancel).unwrap_err();
+        let paths = server.join().unwrap();
+        assert_eq!(paths.len(), 3);
+        assert!(err.contains("wrong version"));
+        let rolled_back = std::fs::read_to_string(snap.install_dir.join("corkytux")).unwrap();
+        assert!(rolled_back.contains("corkytux 3.1.3"));
+    }
+}
