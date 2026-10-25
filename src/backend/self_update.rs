@@ -18,7 +18,6 @@
 
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -35,16 +34,17 @@ fn api_latest_url() -> String {
     API_LATEST_URL.to_string()
 }
 const USER_AGENT: &str = concat!("CorkyTux/", env!("CARGO_PKG_VERSION"));
-/// Closed redirect target list for release assets, evidenced
-/// 2026-10-14: github.com -> release-assets.githubusercontent.com.
+/// Closed redirect target list, evidenced 2026-10-14: release assets
+/// redirect github.com -> release-assets.githubusercontent.com.
+/// api.github.com is allowed ONLY for the release-metadata query,
+/// never for artifact downloads (see API_HOSTS below).
 const ASSET_HOSTS: &[&str] = &[
     "github.com",
     "objects.githubusercontent.com",
     "release-assets.githubusercontent.com",
 ];
-const API_HOSTS: &[&str] = &["api.github.com"];
+const API_HOSTS: &[&str] = &["api.github.com", "github.com"];
 const MAX_REDIRECTS: u32 = 5;
-const MAX_API_REDIRECTS: u32 = 0;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Total cap for one request including the body stream. Honest note:
 /// the 30 s inactivity guard below is evaluated between reads only;
@@ -331,6 +331,42 @@ fn redirect_error(original: &str, status: Option<u16>, target: &str, reason: &st
     )
 }
 
+fn updater_debug_enabled() -> bool {
+    std::env::var("CORKYTUX_DEBUG_UPDATER")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+fn log_redirect_hop(
+    original: &str,
+    hop: usize,
+    current: &str,
+    status: Option<u16>,
+    target: Option<&str>,
+    allowed: &[&str],
+    result: &str,
+) {
+    if !updater_debug_enabled() {
+        return;
+    }
+    let status = status
+        .map(|code| format!("HTTP {}", code))
+        .unwrap_or_else(|| "not-sent".into());
+    let target = target
+        .map(safe_url_for_message)
+        .unwrap_or_else(|| "<none>".into());
+    eprintln!(
+        "[updater-debug] original={} hop={} url={} status={} target={} allowlist=[{}] result={}",
+        safe_url_for_message(original),
+        hop,
+        safe_url_for_message(current),
+        status,
+        target,
+        allowed.join(","),
+        result
+    );
+}
+
 fn initial_request_rejection_reason(url: &str, allowed: &[&str]) -> Option<String> {
     #[cfg(test)]
     if let Some(hook) = test_host_override() {
@@ -421,7 +457,6 @@ fn get_guarded(
     max_redirects: u32,
 ) -> Result<reqwest::blocking::Response, String> {
     let mut current = url.to_string();
-    let mut visited = HashSet::from([current.clone()]);
     let mut redirects_followed = 0;
     let mut previous_status = None;
     #[cfg(test)]
@@ -437,6 +472,15 @@ fn get_guarded(
             redirect_rejection_reason(&current, allowed)
         };
         if let Some(reason) = reason {
+            log_redirect_hop(
+                url,
+                redirects_followed as usize,
+                &current,
+                previous_status,
+                Some(&current),
+                allowed,
+                &format!("rejected: {}", reason),
+            );
             return Err(redirect_error(url, previous_status, &current, &reason));
         }
         let mut req = client.get(current.clone());
@@ -445,7 +489,21 @@ fn get_guarded(
                 req = req.header("If-None-Match", tag);
             }
         }
-        let resp = req.send().map_err(|e| format!("request failed: {}", e))?;
+        let resp = match req.send() {
+            Ok(resp) => resp,
+            Err(_) => {
+                log_redirect_hop(
+                    url,
+                    redirects_followed as usize,
+                    &current,
+                    None,
+                    None,
+                    allowed,
+                    "transport error",
+                );
+                return Err("request failed before an HTTP response".into());
+            }
+        };
         let status = resp.status().as_u16();
         if (300..400).contains(&status) {
             let Some(loc) = resp
@@ -453,6 +511,15 @@ fn get_guarded(
                 .get("location")
                 .and_then(|h| h.to_str().ok())
             else {
+                log_redirect_hop(
+                    url,
+                    redirects_followed as usize,
+                    &current,
+                    Some(status),
+                    None,
+                    allowed,
+                    "rejected: missing or invalid Location",
+                );
                 return Err(redirect_error(
                     url,
                     Some(status),
@@ -464,6 +531,15 @@ fn get_guarded(
             let joined = match url::Url::parse(&current).and_then(|base| base.join(loc)) {
                 Ok(target) => target.to_string(),
                 Err(_) => {
+                    log_redirect_hop(
+                        url,
+                        redirects_followed as usize,
+                        &current,
+                        Some(status),
+                        Some(loc),
+                        allowed,
+                        "rejected: Location could not be resolved",
+                    );
                     return Err(redirect_error(
                         url,
                         Some(status),
@@ -472,6 +548,15 @@ fn get_guarded(
                     ));
                 }
             };
+            log_redirect_hop(
+                url,
+                redirects_followed as usize,
+                &current,
+                Some(status),
+                Some(&joined),
+                allowed,
+                "redirect",
+            );
             #[cfg(test)]
             {
                 let test_host = test_host_override();
@@ -496,19 +581,20 @@ fn get_guarded(
                     &format!("redirect limit of {} hops exceeded", max_redirects),
                 ));
             }
-            if !visited.insert(joined.clone()) {
-                return Err(redirect_error(
-                    url,
-                    Some(status),
-                    &joined,
-                    "redirect loop detected",
-                ));
-            }
             current = joined;
             redirects_followed += 1;
             previous_status = Some(status);
             continue;
         }
+        log_redirect_hop(
+            url,
+            redirects_followed as usize,
+            &current,
+            Some(status),
+            None,
+            allowed,
+            "response",
+        );
         return Ok(resp);
     }
 }
@@ -531,7 +617,7 @@ pub fn api_get_latest(etag: Option<&str>) -> Result<ApiOutcome, String> {
         &api_latest_url(),
         etag,
         API_HOSTS,
-        MAX_API_REDIRECTS,
+        MAX_REDIRECTS,
     )?;
     match resp.status().as_u16() {
         304 => Ok(ApiOutcome::NotModified),
@@ -3006,9 +3092,13 @@ mod tests {
     }
 
     fn redirect_response(location: &str) -> Vec<u8> {
+        redirect_response_status(302, location)
+    }
+
+    fn redirect_response_status(status: u16, location: &str) -> Vec<u8> {
         format!(
-            "HTTP/1.1 302 Found\r\nLocation: {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-            location
+            "HTTP/1.1 {} Redirect\r\nLocation: {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            status, location,
         )
         .into_bytes()
     }
@@ -3023,9 +3113,9 @@ mod tests {
     }
 
     #[test]
-    fn guarded_get_allows_a_same_host_relative_redirect_without_auth() {
+    fn guarded_get_allows_a_301_to_an_allowlisted_asset_host_without_auth() {
         let (url, requests) = serve_replies(vec![
-            redirect_response("/asset"),
+            redirect_response_status(301, "/asset"),
             ok_response("artifact"),
         ]);
         let client = http_client().unwrap();
@@ -3036,6 +3126,22 @@ mod tests {
         assert!(requests.iter().all(|request| !request.to_ascii_lowercase().contains("authorization:")));
         assert!(host_allowed_in("https://github.com/repo/releases/download/v1/a.tar.gz", ASSET_HOSTS));
         assert!(host_allowed_in("https://release-assets.githubusercontent.com/file", ASSET_HOSTS));
+    }
+
+    #[test]
+    fn local_301_to_explicit_github_asset_host_is_allowed_without_following() {
+        let location = "https://release-assets.githubusercontent.com/download/file";
+        let (url, requests) =
+            serve_replies(vec![redirect_response_status(301, location)]);
+        let response = http_client().unwrap().get(&url).send().unwrap();
+        assert_eq!(response.status().as_u16(), 301);
+        let target = url::Url::parse(&url)
+            .unwrap()
+            .join(response.headers().get("location").unwrap().to_str().unwrap())
+            .unwrap()
+            .to_string();
+        assert!(redirect_rejection_reason(&target, ASSET_HOSTS).is_none());
+        assert_eq!(requests.recv().unwrap().len(), 1);
     }
 
     #[test]
@@ -3062,12 +3168,19 @@ mod tests {
 
     #[test]
     fn guarded_get_rejects_redirect_loops_and_excess_hops() {
-        let (loop_url, loop_requests) = serve_replies(vec![redirect_response("/")]);
+        let (loop_url, loop_requests) = serve_replies(vec![
+            redirect_response_status(301, "/"),
+            redirect_response_status(301, "/"),
+            redirect_response_status(301, "/"),
+            redirect_response_status(301, "/"),
+            redirect_response_status(301, "/"),
+            redirect_response_status(301, "/"),
+        ]);
         let client = http_client().unwrap();
         let loop_err = get_guarded(&client, &loop_url, None, ASSET_HOSTS, MAX_REDIRECTS)
             .unwrap_err();
-        assert!(loop_err.contains("redirect loop detected"));
-        assert_eq!(loop_requests.recv().unwrap().len(), 1);
+        assert!(loop_err.contains("redirect limit of 5 hops exceeded"));
+        assert_eq!(loop_requests.recv().unwrap().len(), 6);
 
         let (chain_url, chain_requests) = serve_replies(vec![
             redirect_response("/one"),
@@ -3080,30 +3193,54 @@ mod tests {
     }
 
     #[test]
-    fn api_metadata_uses_only_the_observed_direct_endpoint() {
+    fn api_metadata_accepts_200_and_exact_api_allowlist() {
         let (url, requests) = serve_replies(vec![ok_response(SAMPLE_JSON)]);
         let client = http_client().unwrap();
-        let response = get_guarded(&client, &url, None, API_HOSTS, MAX_API_REDIRECTS).unwrap();
+        let response = get_guarded(&client, &url, None, API_HOSTS, MAX_REDIRECTS).unwrap();
         assert_eq!(response.status().as_u16(), 200);
         assert!(response.text().unwrap().contains("\"tag_name\""));
         assert_eq!(requests.recv().unwrap().len(), 1);
-        assert!(host_allowed_in(
-            "https://api.github.com/repos/Matts-lab69/CorkyTux-Launcher/releases/latest",
-            API_HOSTS
-        ));
-        assert!(!host_allowed_in("https://github.com/", API_HOSTS));
+        let api_url = "https://api.github.com/repos/Matts-lab69/CorkyTux-Launcher/releases/latest";
+        assert!(host_allowed_in(api_url, API_HOSTS));
+        assert!(!host_allowed_in(api_url, ASSET_HOSTS));
     }
 
     #[test]
-    fn api_metadata_rejects_a_repositories_id_redirect() {
-        let (url, requests) =
-            serve_replies(vec![redirect_response("/repositories/123/releases/latest")]);
+    fn api_metadata_follows_301_to_repositories_id_path() {
+        let (url, requests) = serve_replies(vec![
+            redirect_response_status(301, "/repositories/123/releases/latest"),
+            ok_response(SAMPLE_JSON),
+        ]);
         let client = http_client().unwrap();
-        let err = get_guarded(&client, &url, None, API_HOSTS, MAX_API_REDIRECTS).unwrap_err();
-        assert!(err.contains(&url));
-        assert!(err.contains("HTTP 302"));
-        assert!(err.contains("redirect limit of 0 hops exceeded"));
-        assert_eq!(requests.recv().unwrap().len(), 1);
+        let response = get_guarded(&client, &url, None, API_HOSTS, MAX_REDIRECTS).unwrap();
+        assert_eq!(response.status().as_u16(), 200);
+        assert!(response.text().unwrap().contains("\"tag_name\""));
+        assert_eq!(requests.recv().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn api_metadata_301_to_same_url_reaches_the_five_hop_limit() {
+        let (url, requests) = serve_replies(vec![
+            redirect_response_status(301, "/"),
+            redirect_response_status(301, "/"),
+            redirect_response_status(301, "/"),
+            redirect_response_status(301, "/"),
+            redirect_response_status(301, "/"),
+            redirect_response_status(301, "/"),
+        ]);
+        let client = http_client().unwrap();
+        let err = get_guarded(&client, &url, None, API_HOSTS, MAX_REDIRECTS).unwrap_err();
+        assert!(err.contains("redirect limit of 5 hops exceeded"));
+        assert_eq!(requests.recv().unwrap().len(), 6);
+    }
+
+    #[test]
+    fn api_url_is_rejected_if_misrouted_through_asset_allowlist() {
+        let api_url = "https://api.github.com/repos/Matts-lab69/CorkyTux-Launcher/releases/latest";
+        let client = http_client().unwrap();
+        let err = get_guarded(&client, api_url, None, ASSET_HOSTS, MAX_REDIRECTS).unwrap_err();
+        assert!(err.contains("target https://api.github.com/repos/"));
+        assert!(err.contains("host api.github.com is not allowed"));
     }
 
     #[test]
