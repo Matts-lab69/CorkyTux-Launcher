@@ -355,6 +355,12 @@ src/backend/plugin_process.rs   JSON-lines spawn + 50ms pump
 src/backend/self_update.rs      GitHub Releases check, download, verify, install, restart
 src/backend/game_model.rs       GameEntry <-> Games.ini
 src/backend/config.rs           Launcher.ini + Games.ini
+src/backend/external.rs         plugin command wrappers (Minecraft, Heroic, RPG, dependency installer)
+src/backend/import_move.rs      permanent import, prefix moves, Steam library import
+src/backend/integration.rs      Lutris/Steam scans, artwork, SGDB
+src/backend/plugins.rs          plugin registry, download, install, update
+src/backend/shortcuts.rs        .desktop entries and app menu
+src/backend/theme.rs            GTK theme helpers
 docs/                           BUILD, audits (multidistro, perf), wine-isolation design
 assets/                         bundled icons (light + dark)
 release/                        install.sh, uninstall.sh, build-release.sh, corkytux.png, corkytux.desktop.in

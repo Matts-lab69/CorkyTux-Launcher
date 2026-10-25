@@ -16,7 +16,7 @@ use crate::backend::import_move::{Blocker, ImportMode, Preflight};
 use crate::ui::helpers;
 
 /// Description of "Permanent import". I keep it worded per my spec.
-const DESC_PERMANENT: &str = "Your games will be imported into the launcher and also moved to a Games folder in your /home (only install_path and prefix_path are moved). This avoids warnings or bugs caused by unregistered paths or lost executables.";
+const DESC_PERMANENT: &str = "Your games will be imported into the launcher and also moved to a Games folder in your home directory (only install_path and prefix_path are moved). This avoids warnings or bugs caused by unregistered paths or lost executables.";
 
 const DESC_TEST: &str = "Registers the game with its current paths, as they are. No files are moved.";
 
@@ -368,4 +368,15 @@ fn space_blocker_message(blockers: &[Blocker]) -> Option<String> {
 /// Convenience for callers: the Games root the move writes into.
 pub fn games_root() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Games")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DESC_PERMANENT;
+
+    #[test]
+    fn import_description_does_not_hardcode_home() {
+        assert!(!DESC_PERMANENT.contains("/home"),
+                "import text must not hardcode /home (wrong on /var/home)");
+    }
 }
