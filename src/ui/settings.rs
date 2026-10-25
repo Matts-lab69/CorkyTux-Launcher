@@ -1604,6 +1604,7 @@ pub fn show_settings_modal(
                     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                     let arrow = gtk::Button::with_label(if *emu_exp_c.borrow() { "▼" } else { "▶" });
                     arrow.set_width_request(32);
+                    arrow.set_valign(gtk::Align::Center);
                     arrow.add_css_class("settings-btn");
                     {
                         let exp_c = emu_exp_c.clone();
@@ -1634,10 +1635,7 @@ pub fn show_settings_modal(
                     name_lbl.set_halign(gtk::Align::Start);
                     name_lbl.set_hexpand(true);
                     name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                    let del = gtk::Button::with_label("✕");
-                    del.add_css_class("destructive-action");
-                    del.add_css_class("danger-btn");
-                    del.set_width_request(36);
+                    let del = plugin_remove_button();
                     let state_cc = state_c.clone();
                     let pid = p.id.clone();
                     let slot_cc = slot_c.clone();
@@ -1712,11 +1710,7 @@ pub fn show_settings_modal(
                     sw.connect_active_notify(move |s| {
                         state_cc.plugins.set_enabled(&pid, s.is_active());
                     });
-                    let del = gtk::Button::with_label("✕");
-                    del.add_css_class("destructive-action");
-                    del.add_css_class("danger-btn");
-                    del.set_valign(gtk::Align::Center);
-                    del.set_width_request(36);
+                    let del = plugin_remove_button();
                     let state_cc2 = state_c.clone();
                     let pid2 = p.id.clone();
                     let slot_cc2 = slot_c.clone();
@@ -2797,6 +2791,15 @@ fn start_proton_download(
         );
         let _ = tx2.send(ProtonTabMsg::Downloaded(res.map(|_| tag2).map_err(|e| e)));
     });
+}
+
+fn plugin_remove_button() -> gtk::Button {
+    let button = gtk::Button::with_label("✕");
+    button.add_css_class("destructive-action");
+    button.add_css_class("danger-btn");
+    button.set_valign(gtk::Align::Center);
+    button.set_width_request(36);
+    button
 }
 
 /// Yes/no confirm dialog for deleting a whole plugin directory. Shows the
