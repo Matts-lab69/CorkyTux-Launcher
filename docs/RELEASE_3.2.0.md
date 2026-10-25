@@ -228,6 +228,19 @@ gh release edit v3.2.0 --draft=false --title "CorkyTux 3.2.0" \
   --notes-file /tmp/opencode/rel-3.2.0/notes-corkytux-3.2.0.md
 ```
 
+## Dry run result (2026-10-25)
+
+Run `40148473363` (`workflow_dispatch`, ref `release/3.2.0`, input `tag=v3.2.0`)
+succeeded. The artifact is named `corkytux-v3.2.0`, as the workflow and the
+notes assume. Checks on the downloaded artifact:
+
+- `tar tzf`: one top-level `corkytux-3.2.0/`, no absolute paths.
+- `sha256sum -c checksums.txt`: clean.
+- `objdump -T`: `GLIBC_2.34`, `GLIBC_2.35`, `GLIBC_2.39`.
+
+The `publish` job did not run (no tag), so no release and no tag were
+created.
+
 ## Before publishing (draft checks)
 
 Drafts do not appear in `/releases/latest`, so list the draft directly and
