@@ -241,6 +241,44 @@ notes assume. Checks on the downloaded artifact:
 The `publish` job did not run (no tag), so no release and no tag were
 created.
 
+## Updater test plan (temp HOME, mock API)
+
+The installed 3.1.2 binary predates the updater (first updater commit
+`dbfdeda`, 2026-10-21, in no tag), so it cannot self-update. The first real
+update that can be tested is **3.2.0 -> 3.2.1**. To exercise the updater now:
+
+1. Build a launcher tarball from a commit that contains the updater (for
+   example the current `main` after the updater PR merges) with the version
+   set to `3.1.2` so the updater sees a newer release:
+   `cargo build --release`, then `release/build-release.sh 3.1.2` (or edit
+   `Cargo.toml` temporarily on a throwaway branch).
+2. Install it into a temp HOME with the shipped installer:
+   `HOME=/tmp/corky-updater-test ./install.sh /tmp/corky-updater-test/.local ...`
+   (or extract the tarball by hand). Keep the real `~/.config/CorkyTux` and
+   `~/.local/share/CorkyTux` untouched.
+3. Point the binary at a local mock of the GitHub API. The override is
+   compiled only under `cfg(test)`, so a release binary cannot be redirected
+   without a test build; the practical options are a hosts-file redirect of
+   `api.github.com` to `127.0.0.1` plus a local HTTPS server with a trusted
+   self-signed certificate, or running the loopback suite in
+   `src/backend/self_update.rs` (64 tests, `test_api_override`). The unit
+   suite is the verified path; the end-to-end binary path above was **not**
+   run by me.
+4. Serve a release JSON whose `tag_name` is `v3.2.0`, with an asset named
+   `corkytux-3.2.0-linux-x86_64.tar.gz`, a real `digest`, and a matching
+   `checksums.txt`. Let the installed 3.1.2 binary check for updates and
+   accept.
+5. Verify: the download, the `--version` health check on the staged binary,
+   the atomic replace, the `assets.bak-*` backup, and the rollback on a
+   forced bad digest.
+
+Backup and rollback steps for a real machine:
+- Back up `~/.local/share/corkytux` and `~/.config/CorkyTux` before testing.
+- Keep the previous binary as `corkytux.bak-<timestamp>` (the installer
+  already does this; do not delete it).
+- If the update breaks, restore the backup binary and the config directory,
+  then run `corkytux --version` to confirm.
+
 ## Before publishing (draft checks)
 
 Drafts do not appear in `/releases/latest`, so list the draft directly and
