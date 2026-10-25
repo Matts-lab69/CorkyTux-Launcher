@@ -14,7 +14,7 @@ parser de `Games.ini` normaliza las claves a minúsculas y el lanzador lee
 `steamoverlay=false`; si falta, el valor por defecto es apagado.
 
 - UI y guardado: [src/ui/game_settings.rs:377](../src/ui/game_settings.rs#L377), [src/ui/game_settings.rs:401](../src/ui/game_settings.rs#L401), [src/ui/game_settings.rs:173](../src/ui/game_settings.rs#L173).
-- Clave que consume el lanzador y valor por defecto: [src/backend/proton.rs:1145](../src/backend/proton.rs#L1145).
+- Clave que consume el lanzador y valor por defecto: [src/backend/proton.rs:1315](../src/backend/proton.rs#L1315).
 - Acceso a Games.ini: [src/backend/config.rs:464](../src/backend/config.rs#L464), [src/backend/config.rs:468](../src/backend/config.rs#L468).
 
 Al activarla, el lanzador busca `gameoverlayrenderer.so` bajo estos cuatro
@@ -25,10 +25,10 @@ roots, en `ubuntu12_32` y `ubuntu12_64`:
 concatena ambas rutas en una cadena `LD_PRELOAD` con dos puntos y un `:`
 inicial. Si no encuentra ninguna, no añade las variables de overlay.
 
-- Roots: [src/backend/proton.rs:538](../src/backend/proton.rs#L538).
-- Resolución de bibliotecas de 32 y 64 bits: [src/backend/proton.rs:554](../src/backend/proton.rs#L554).
-- El `:` inicial y la asignación a `LD_PRELOAD`: [src/backend/proton.rs:552](../src/backend/proton.rs#L552), [src/backend/proton.rs:1431](../src/backend/proton.rs#L1431).
-- Capa Vulkan: `ENABLE_VK_LAYER_VALVE_steam_overlay_1=1`; identificador overlay: `SteamOverlayGameId`, por defecto `480`: [src/backend/proton.rs:1146](../src/backend/proton.rs#L1146), [src/backend/proton.rs:1431](../src/backend/proton.rs#L1431), [src/backend/proton.rs:1433](../src/backend/proton.rs#L1433).
+- Roots: [src/backend/proton.rs:690](../src/backend/proton.rs#L690).
+- Resolución de bibliotecas de 32 y 64 bits: [src/backend/proton.rs:706](../src/backend/proton.rs#L706).
+- El `:` inicial y las asignaciones a `LD_PRELOAD`: [src/backend/proton.rs:704](../src/backend/proton.rs#L704), [src/backend/proton.rs:1537](../src/backend/proton.rs#L1537), [src/backend/proton.rs:1626](../src/backend/proton.rs#L1626).
+- Capa Vulkan: `ENABLE_VK_LAYER_VALVE_steam_overlay_1=1`; identificador overlay: `SteamOverlayGameId`, por defecto `480`: [src/backend/proton.rs:1316](../src/backend/proton.rs#L1316), [src/backend/proton.rs:1538](../src/backend/proton.rs#L1538), [src/backend/proton.rs:1539](../src/backend/proton.rs#L1539), [src/backend/proton.rs:1627](../src/backend/proton.rs#L1627), [src/backend/proton.rs:1628](../src/backend/proton.rs#L1628).
 
 No se asigna `SteamGameId` en este flujo. Proton directo asigna
 `SteamAppId` al Steam ID del juego o a `0`, y define
@@ -36,9 +36,9 @@ No se asigna `SteamGameId` en este flujo. Proton directo asigna
 `~/.steam/steam` si no hay ninguno). `steam_client_path_for` usa la misma
 lista de roots, que incluye Flatpak pero no Snap.
 
-- Path de cliente: [src/backend/proton.rs:588](../src/backend/proton.rs#L588).
-- Proton directo: [src/backend/proton.rs:1363](../src/backend/proton.rs#L1363), [src/backend/proton.rs:1379](../src/backend/proton.rs#L1379).
-- Legendary: [src/backend/proton.rs:375](../src/backend/proton.rs#L375), [src/backend/proton.rs:381](../src/backend/proton.rs#L381).
+- Path de cliente: [src/backend/proton.rs:740](../src/backend/proton.rs#L740).
+- Proton directo: [src/backend/proton.rs:1558](../src/backend/proton.rs#L1558), [src/backend/proton.rs:1574](../src/backend/proton.rs#L1574).
+- Legendary: [src/backend/proton.rs:527](../src/backend/proton.rs#L527), [src/backend/proton.rs:533](../src/backend/proton.rs#L533).
 
 Las rutas no son iguales en todos los runners:
 
@@ -51,7 +51,7 @@ Las rutas no son iguales en todos los runners:
   pero no aplica el preload del overlay ni su `SteamOverlayGameId`.
 - No se configura `VK_LAYER_PATH` explícitamente.
 
-Evidencia: UMU [src/backend/proton.rs:1326](../src/backend/proton.rs#L1326), [src/backend/proton.rs:1333](../src/backend/proton.rs#L1333); Legendary [src/backend/proton.rs:1238](../src/backend/proton.rs#L1238), [src/backend/proton.rs:375](../src/backend/proton.rs#L375).
+Evidencia: UMU [src/backend/proton.rs:1522](../src/backend/proton.rs#L1522), [src/backend/proton.rs:1531](../src/backend/proton.rs#L1531); Legendary early return [src/backend/proton.rs:1424](../src/backend/proton.rs#L1424), client path [src/backend/proton.rs:527](../src/backend/proton.rs#L527).
 
 MangoHud se activa por `MANGOHUD=1`. GameMode envuelve el comando después;
 copia argumentos y variables del comando interior. El orden y la
@@ -59,8 +59,8 @@ compatibilidad efectiva del loader dependen además de qué wrapper usa cada
 juego; no hay una prueba de overlay con MangoHud/GameMode/gamescope en este
 repositorio.
 
-- MangoHud: [src/backend/proton.rs:1415](../src/backend/proton.rs#L1415).
-- Wrapper GameMode: [src/backend/proton.rs:1472](../src/backend/proton.rs#L1472).
+- MangoHud: [src/backend/proton.rs:1610](../src/backend/proton.rs#L1610).
+- Wrapper GameMode: [src/backend/proton.rs:1667](../src/backend/proton.rs#L1667).
 
 ## Quién inicia Steam
 
@@ -75,7 +75,7 @@ arranques automáticos en `ProtonManager::run_game`:
    `steamid`, hace la misma detección y, si parece cerrado, inicia
    `steam -silent`.
 
-Evidencia: ruta `steam://` [src/backend/proton.rs:1079](../src/backend/proton.rs#L1079), [src/backend/proton.rs:1083](../src/backend/proton.rs#L1083), [src/backend/proton.rs:1088](../src/backend/proton.rs#L1088), [src/backend/proton.rs:1096](../src/backend/proton.rs#L1096); autoarranque del runner [src/backend/proton.rs:1183](../src/backend/proton.rs#L1183), [src/backend/proton.rs:1184](../src/backend/proton.rs#L1184), [src/backend/proton.rs:1188](../src/backend/proton.rs#L1188), [src/backend/proton.rs:1193](../src/backend/proton.rs#L1193).
+Evidencia: ruta `steam://` [src/backend/proton.rs:1233](../src/backend/proton.rs#L1233), [src/backend/proton.rs:1242](../src/backend/proton.rs#L1242), [src/backend/proton.rs:1252](../src/backend/proton.rs#L1252), [src/backend/proton.rs:1265](../src/backend/proton.rs#L1265); autoarranque del runner [src/backend/proton.rs:1353](../src/backend/proton.rs#L1353), [src/backend/proton.rs:1356](../src/backend/proton.rs#L1356), [src/backend/proton.rs:1365](../src/backend/proton.rs#L1365), [src/backend/proton.rs:1375](../src/backend/proton.rs#L1375).
 
 `which` solo detecta el ejecutable disponible en `PATH`; `pidof` solo
 comprueba que haya un proceso con ese nombre. No se lee
@@ -113,19 +113,35 @@ en una máquina concreta.
 
 ## Instrumentación y decisión
 
-El log actual se titula “CorkyTux debug log”, pero no incluye `steamoverlay`,
-`LD_PRELOAD`, `ENABLE_VK_LAYER_VALVE_steam_overlay_1`, `SteamOverlayGameId`, ni
-marcas de tiempo de detección/arranque/readiness/lanzamiento. Sus opciones
-registran Steam runtime, UMU, GameMode, MangoHud, WineD3D y Wayland, no los
-valores de entorno finales: [src/backend/proton.rs:1626](../src/backend/proton.rs#L1626).
+El log habitual titulado “CorkyTux debug log” sigue sin incluir el entorno del
+overlay. Esta rama añade instrumentación separada, desactivada por defecto:
+establece `CORKYTUX_DEBUG_STEAM=1` antes de abrir CorkyTux para escribir líneas
+`[steam-debug]` con timestamp Unix en milisegundos. Registra detección del
+comando/proceso, petición y resultado de `steam -silent`, snapshot de readiness
+antes y después de `steam://`, y runner/entorno justo antes del lanzamiento.
+Los valores listados incluyen `LD_PRELOAD` (solo nombres de bibliotecas),
+`ENABLE_VK_LAYER_VALVE_steam_overlay_1`, `SteamOverlayGameId`, `SteamAppId`,
+`SteamGameId`, `GAMEID`, `STORE` y `STEAM_COMPAT_CLIENT_INSTALL_PATH` (HOME se
+redacta). No escribe PIDs, ActiveUser, IDs de cuenta ni otras variables de
+entorno.
 
-No he añadido instrumentación ni espera en esta rama. El código sí demuestra
-una carrera y una posible discrepancia de ruta en bwrap, pero falta aislar cuál
-explica el fallo observado. Antes de cambiar el arranque por defecto propongo
-una prueba A/B con los pasos siguientes. Si la carrera queda confirmada, el
-cambio debe limitar la espera al toggle explícito de overlay, usar una señal
-de sesión lista y un timeout configurable, y mostrar un aviso al agotarse; no
-debe volver a introducir `which`, `pgrep` ni `pidof`.
+El detector usa `/proc/<pid>/comm` para localizar `steam` y consulta los
+roots nativo, Flatpak y Snap en busca de un `registry.vdf` con `ActiveUser`
+distinto de cero. Devuelve `NotRunning`, `NoActiveUser` o `Ready`; aún no se
+usa para bloquear ni modificar el arranque. Fixtures temporales cubren las
+tres ubicaciones sin lanzar procesos.
+
+Snapshot de esta máquina: `/proc` no mostró un `comm` llamado exactamente
+`steam`; entre las rutas consultadas hubo un `registry.vdf` legible, pero no
+contenía una clave `ActiveUser` reconocible. No se midió el tiempo hasta
+`Ready`: eso exigiría observar un arranque real, y no se lanzó Steam.
+
+El código demuestra una carrera y una posible discrepancia de ruta en bwrap,
+pero falta aislar cuál explica el fallo observado. Antes de cambiar el
+arranque por defecto propongo una prueba A/B con los pasos siguientes. Si la
+carrera queda confirmada, la espera debe limitarse al toggle explícito de
+overlay, usar readiness y un timeout configurable, y mostrar un aviso al
+agotarse; el nuevo detector no debe introducir `which`, `pgrep` ni `pidof`.
 
 ## Prueba manual
 
@@ -140,9 +156,15 @@ debe volver a introducir `which`, `pgrep` ni `pidof`.
    `Shift+Tab` y mide el mismo intervalo.
 4. Repite con aislamiento apagado solo si el primer caso lo tenía activado;
    no cambies varios ajustes en la misma comparación.
-5. Si falla, comparte el log de debug de ese juego, el runner (Proton directo
-   o UMU), si Steam es nativo/Flatpak/Snap, Wayland/X11, y las tres medidas.
-   Redacta tu nombre de usuario y cualquier valor privado antes de pegarlo.
+5. Si falla, comparte las líneas `[steam-debug]` de la terminal desde la
+   detección hasta `game-spawn`, el log de debug del juego, el runner (Proton
+   directo o UMU), si Steam es nativo/Flatpak/Snap, Wayland/X11 y las tres
+   medidas. La instrumentación redacta HOME y no imprime PIDs ni cuenta; aun
+   así revisa el texto antes de compartirlo.
+
+Para activar la traza en una prueba manual, lanza CorkyTux desde una terminal
+con `CORKYTUX_DEBUG_STEAM=1` en el entorno del proceso. No hace falta editar
+`Games.ini`, cambiar ajustes ni reiniciar Steam para activar el logging.
 
 No puedo verificar sin Steam real: el estado de login/`ActiveUser`, el tiempo
 real hasta sesión lista, la visualización de `Shift+Tab`, el efecto de

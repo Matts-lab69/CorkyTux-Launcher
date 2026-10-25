@@ -5,9 +5,161 @@ use std::cell::{Cell, RefCell};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn home_dir() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SteamReadiness {
+    NotRunning,
+    NoActiveUser,
+    Ready,
+}
+
+fn steam_process_present(proc_root: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(proc_root) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        if !entry.file_name().to_string_lossy().bytes().all(|byte| byte.is_ascii_digit()) {
+            return false;
+        }
+        fs::read_to_string(entry.path().join("comm"))
+            .map(|comm| comm.trim() == "steam")
+            .unwrap_or(false)
+    })
+}
+
+fn steam_registry_paths(home: &Path) -> Vec<PathBuf> {
+    vec![
+        home.join(".steam/registry.vdf"),
+        home.join(".local/share/Steam/registry.vdf"),
+        home.join(".var/app/com.valvesoftware.Steam/.steam/registry.vdf"),
+        home.join(".var/app/com.valvesoftware.Steam/.steam/steam/registry.vdf"),
+        home.join(".var/app/com.valvesoftware.Steam/data/Steam/registry.vdf"),
+        home.join("snap/steam/common/.steam/registry.vdf"),
+        home.join("snap/steam/common/.local/share/Steam/registry.vdf"),
+    ]
+}
+
+fn registry_has_active_user(path: &Path) -> bool {
+    let Ok(contents) = fs::read_to_string(path) else {
+        return false;
+    };
+    contents.lines().any(|line| {
+        let mut fields = line.split_whitespace();
+        let key = fields.next().unwrap_or("").trim_matches('"');
+        if !key.eq_ignore_ascii_case("ActiveUser") {
+            return false;
+        }
+        fields
+            .next()
+            .unwrap_or("")
+            .trim_matches('"')
+            .parse::<u64>()
+            .map(|id| id != 0)
+            .unwrap_or(false)
+    })
+}
+
+fn steam_readiness(home: &Path, proc_root: &Path) -> SteamReadiness {
+    if !steam_process_present(proc_root) {
+        return SteamReadiness::NotRunning;
+    }
+    if !steam_registry_paths(home)
+        .iter()
+        .any(|path| registry_has_active_user(path))
+    {
+        return SteamReadiness::NoActiveUser;
+    }
+    SteamReadiness::Ready
+}
+
+fn steam_debug_enabled() -> bool {
+    std::env::var("CORKYTUX_DEBUG_STEAM")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+fn steam_debug_log(event: &str, detail: &str) {
+    if !steam_debug_enabled() {
+        return;
+    }
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default();
+    eprintln!("[steam-debug] unix_ms={} event={} {}", millis, event, detail);
+}
+
+fn log_steam_readiness(context: &str, home: &Path) {
+    if !steam_debug_enabled() {
+        return;
+    }
+    let state = steam_readiness(home, Path::new("/proc"));
+    steam_debug_log(
+        "steam-session-snapshot",
+        &format!("context={} state={:?} source=proc+registry.vdf", context, state),
+    );
+    if state == SteamReadiness::Ready {
+        steam_debug_log("steam-ready", &format!("context={} signal=ActiveUser+proc", context));
+    }
+}
+
+fn redact_home_path(value: &str) -> String {
+    home_dir()
+        .and_then(|home| home.to_str().map(str::to_owned))
+        .filter(|home| !home.is_empty())
+        .map(|home| value.replace(&home, "~"))
+        .unwrap_or_else(|| value.to_string())
+}
+
+fn steam_launch_environment(cmd: &Command) -> String {
+    const KEYS: &[&str] = &[
+        "LD_PRELOAD",
+        "ENABLE_VK_LAYER_VALVE_steam_overlay_1",
+        "SteamOverlayGameId",
+        "SteamAppId",
+        "SteamGameId",
+        "GAMEID",
+        "STORE",
+        "STEAM_COMPAT_CLIENT_INSTALL_PATH",
+    ];
+    KEYS.iter()
+        .map(|key| {
+            let configured = cmd
+                .get_envs()
+                .find(|(name, _)| name.to_string_lossy() == *key);
+            let value = match configured {
+                Some((_, Some(value))) => value.to_string_lossy().to_string(),
+                Some((_, None)) => "<removed>".to_string(),
+                None => std::env::var(key).unwrap_or_else(|_| "<unset>".to_string()),
+            };
+            let value = if *key == "LD_PRELOAD" {
+                let files = value
+                    .split(':')
+                    .filter(|path| !path.is_empty())
+                    .map(|path| {
+                        Path::new(path)
+                            .file_name()
+                            .map(|name| name.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "<unknown>".to_string())
+                    })
+                    .collect::<Vec<_>>();
+                if files.is_empty() {
+                    value
+                } else {
+                    files.join(":")
+                }
+            } else {
+                redact_home_path(&value)
+            };
+            format!("{}={}", key, value)
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Parseo de argsBefore/argsAfter respetando comillas simples y dobles.
@@ -1076,21 +1228,37 @@ impl ProtonManager {
         // friends, achievements) work correctly.
         if let Some(sid) = Self::steam_rungame_id(&game) {
             // Auto-start Steam client so the protocol handler is ready.
-            if Command::new("which").arg("steam").stdout(Stdio::null()).stderr(Stdio::null()).status()
+            let home = home_dir().unwrap_or_default();
+            log_steam_readiness("steam-id-before-start", &home);
+            let steam_command_available = Command::new("which").arg("steam").stdout(Stdio::null()).stderr(Stdio::null()).status()
                 .map(|s| s.success()).unwrap_or(false)
-            {
+            ;
+            steam_debug_log(
+                "steam-command-detected",
+                &format!("route=steam-id available={}", steam_command_available),
+            );
+            if steam_command_available {
                 let running = Command::new("sh")
                     .args(["-c", "pidof steam >/dev/null 2>&1"])
                     .status()
                     .map(|s| s.success())
                     .unwrap_or(false);
+                steam_debug_log(
+                    "steam-process-detected",
+                    &format!("route=steam-id running={}", running),
+                );
                 if !running {
-                    let _ = Command::new("steam")
+                    steam_debug_log("steam-start-request", "route=steam-id mode=silent");
+                    let started = Command::new("steam")
                         .arg("-silent")
                         .stdin(Stdio::null())
                         .stdout(Stdio::null())
                         .stderr(Stdio::null())
                         .spawn();
+                    steam_debug_log(
+                        "steam-start-result",
+                        if started.is_ok() { "route=steam-id spawned=true" } else { "route=steam-id spawned=false" },
+                    );
                 }
             }
             Command::new("xdg-open")
@@ -1100,6 +1268,8 @@ impl ProtonManager {
                 .stderr(Stdio::null())
                 .spawn()
                 .map_err(|e| format!("Failed to open Steam: {}", e))?;
+            log_steam_readiness("steam-id-after-protocol-request", &home);
+            steam_debug_log("game-launch", "route=steam-uri");
             return Ok(());
         }
         if executable.is_empty() {
@@ -1181,21 +1351,37 @@ impl ProtonManager {
         // Launch Steam in background; the game connects via Steamworks
         // when ready — no blocking wait needed.
         if steam_overlay || !steam_id.trim().is_empty() {
-            if Command::new("which").arg("steam").stdout(Stdio::null()).stderr(Stdio::null()).status()
+            let home = home_dir().unwrap_or_default();
+            log_steam_readiness("proton-before-start", &home);
+            let steam_command_available = Command::new("which").arg("steam").stdout(Stdio::null()).stderr(Stdio::null()).status()
                 .map(|s| s.success()).unwrap_or(false)
-            {
+            ;
+            steam_debug_log(
+                "steam-command-detected",
+                &format!("route=proton available={}", steam_command_available),
+            );
+            if steam_command_available {
                 let running = Command::new("sh")
                     .args(["-c", "pidof steam >/dev/null 2>&1"])
                     .status()
                     .map(|s| s.success())
                     .unwrap_or(false);
+                steam_debug_log(
+                    "steam-process-detected",
+                    &format!("route=proton running={}", running),
+                );
                 if !running {
-                    let _ = Command::new("steam")
+                    steam_debug_log("steam-start-request", "route=proton mode=silent");
+                    let started = Command::new("steam")
                         .arg("-silent")
                         .stdin(Stdio::null())
                         .stdout(Stdio::null())
                         .stderr(Stdio::null())
                         .spawn();
+                    steam_debug_log(
+                        "steam-start-result",
+                        if started.is_ok() { "route=proton spawned=true" } else { "route=proton spawned=false" },
+                    );
                 }
             }
         }
@@ -1281,6 +1467,13 @@ impl ProtonManager {
                 if let Some(d) = &leg_gdir {
                     leg_rw.push(d.clone());
                 }
+                if steam_debug_enabled() {
+                    log_steam_readiness("legendary-before-game-spawn", &home_dir().unwrap_or_default());
+                    steam_debug_log(
+                        "game-launch-environment",
+                        &format!("runner=legendary {}", steam_launch_environment(&wrapped_cmd)),
+                    );
+                }
                 let mut wrapped_cmd = self.isolate_cmd(
                     wrapped_cmd,
                     game_name,
@@ -1290,9 +1483,11 @@ impl ProtonManager {
                     leg_gdir,
                 )?;
                 Self::attach_log_file(&mut wrapped_cmd, game_name);
+                steam_debug_log("game-spawn", "runner=legendary");
                 let child = wrapped_cmd
                     .spawn()
                     .map_err(|e| format!("Failed to launch: {}", e))?;
+                steam_debug_log("game-spawned", "runner=legendary");
                 *self.imp().running_child.borrow_mut() = Some(child);
                 self.begin_session(game_name);
                 return Ok(());
@@ -1486,6 +1681,26 @@ impl ProtonManager {
             final_cmd
         };
 
+        let runner_name = if use_umu { "umu" } else { "proton" };
+        if steam_debug_enabled() {
+            log_steam_readiness("before-game-spawn", &home_dir().unwrap_or_default());
+            steam_debug_log(
+                "game-launch-environment",
+                &format!(
+                    "runner={} isolation={} {}",
+                    runner_name,
+                    super::isolation::decide(
+                        game.get("isolated").map(String::as_str),
+                        config.launcher_value(super::isolation::GLOBAL_KEY)
+                            .map(|value| value == "1")
+                            .unwrap_or(false),
+                    )
+                    .0,
+                    steam_launch_environment(&wrapped_cmd),
+                ),
+            );
+        }
+
         // Sandbox Bottles-style (Fase 4): el flujo no aislado no cambia.
         if let Some(rt) = &steam_rt_sh {
             if let Some(p) = rt.parent() {
@@ -1509,9 +1724,11 @@ impl ProtonManager {
         )?;
 
         Self::attach_log_file(&mut wrapped_cmd, game_name);
+    steam_debug_log("game-spawn", &format!("runner={}", runner_name));
         let child = wrapped_cmd
             .spawn()
             .map_err(|e| format!("Failed to launch: {}", e))?;
+        steam_debug_log("game-spawned", &format!("runner={}", runner_name));
         *self.imp().running_child.borrow_mut() = Some(child);
         self.begin_session(game_name);
         Ok(())
@@ -3592,8 +3809,12 @@ fn which(name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{launch_allowed, ParkedKind, ParkedSession, ProtonManager};
+    use super::{
+        launch_allowed, steam_readiness, ParkedKind, ParkedSession, ProtonManager,
+        SteamReadiness,
+    };
     use glib::subclass::prelude::*;
+    use std::fs;
 
     fn wine_section() -> std::collections::HashMap<String, String> {
         [("executable".to_string(), "/g/G.exe".to_string())]
@@ -3651,6 +3872,55 @@ mod tests {
         let mut src = wine_section();
         src.insert("source".to_string(), "AppImage".to_string());
         assert!(!ProtonManager::section_is_wine(&src));
+    }
+
+    #[test]
+    fn steam_readiness_reads_native_flatpak_and_snap_fixtures() {
+        static SEQ: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(0);
+        let base = std::env::temp_dir().join(format!(
+            "corky_steam_ready_{}_{}",
+            std::process::id(),
+            SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let _ = fs::remove_dir_all(&base);
+        let home = base.join("home");
+        let proc_root = base.join("proc");
+        let comm = proc_root.join("123/comm");
+        fs::create_dir_all(comm.parent().unwrap()).unwrap();
+        fs::write(&comm, "steam\n").unwrap();
+
+        for registry_rel in [
+            ".steam/registry.vdf",
+            ".var/app/com.valvesoftware.Steam/.steam/registry.vdf",
+            "snap/steam/common/.steam/registry.vdf",
+        ] {
+            let registry = home.join(registry_rel);
+            fs::create_dir_all(registry.parent().unwrap()).unwrap();
+            fs::write(&registry, "\"Registry\"\n{\n\t\"ActiveUser\"\t\"12345\"\n}\n")
+                .unwrap();
+            assert_eq!(
+                steam_readiness(&home, &proc_root),
+                SteamReadiness::Ready,
+                "fixture {} should report a signed-in Steam session",
+                registry_rel
+            );
+            fs::write(&registry, "\"Registry\"\n{\n\t\"ActiveUser\"\t\"0\"\n}\n")
+                .unwrap();
+            assert_eq!(
+                steam_readiness(&home, &proc_root),
+                SteamReadiness::NoActiveUser,
+                "fixture {} should report no active user",
+                registry_rel
+            );
+        }
+
+        fs::remove_file(comm).unwrap();
+        assert_eq!(
+            steam_readiness(&home, &proc_root),
+            SteamReadiness::NotRunning
+        );
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
