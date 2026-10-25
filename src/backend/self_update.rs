@@ -3220,14 +3220,16 @@ mod tests {
 
     #[test]
     fn api_metadata_301_to_same_url_reaches_the_five_hop_limit() {
-        let (url, requests) = serve_replies(vec![
-            redirect_response_status(301, "/"),
-            redirect_response_status(301, "/"),
-            redirect_response_status(301, "/"),
-            redirect_response_status(301, "/"),
-            redirect_response_status(301, "/"),
-            redirect_response_status(301, "/"),
+        let location = "/repos/Matts-lab69/CorkyTux-Launcher/releases/latest";
+        let (base, requests) = serve_replies(vec![
+            redirect_response_status(301, location),
+            redirect_response_status(301, location),
+            redirect_response_status(301, location),
+            redirect_response_status(301, location),
+            redirect_response_status(301, location),
+            redirect_response_status(301, location),
         ]);
+        let url = format!("{}{}", base.trim_end_matches('/'), location);
         let client = http_client().unwrap();
         let err = get_guarded(&client, &url, None, API_HOSTS, MAX_REDIRECTS).unwrap_err();
         assert!(err.contains("redirect limit of 5 hops exceeded"));
