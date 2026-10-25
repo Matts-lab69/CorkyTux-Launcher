@@ -230,21 +230,22 @@ gh release edit v3.2.0 --draft=false --title "CorkyTux 3.2.0" \
   --notes-file /tmp/opencode/rel-3.2.0/notes-corkytux-3.2.0.md
 ```
 
-## Dry run result (2026-10-25)
+## Dry run 40148473363 (ejecutado desde la rama release/3.2.0)
 
 Run `40148473363` (`workflow_dispatch`, ref `release/3.2.0`, input `tag=v3.2.0`)
-succeeded. The artifact is named `corkytux-v3.2.0`, as the workflow and the
-notes assume. Checks on the downloaded artifact:
+succeeded. El artefacto se llama `corkytux-v3.2.0`, como asume el workflow y
+las notas. Comprobaciones sobre el artefacto descargado:
 
-- `tar tzf`: one top-level `corkytux-3.2.0/`, no absolute paths.
-- `sha256sum -c checksums.txt`: clean.
+- `tar tzf`: un solo top-level `corkytux-3.2.0/`, sin rutas absolutas.
+- `sha256sum -c checksums.txt`: limpio.
 - `objdump -T`: `GLIBC_2.34`, `GLIBC_2.35`, `GLIBC_2.39`.
 
-The `publish` job did not run (no tag), so no release and no tag were
-created. That run was from the release branch; after the three
-prerequisites and PR #23 merge, **repeat the dry run from `main`** with
-`v3.2.0` and re-check `tar tzf`, `sha256sum -c` and `objdump`. Then, once
-the tag push creates the draft, verify the sha256 digest of every draft
+El job `publish` no corrió (sin tag), así que no se creó release ni tag.
+Dry run 40148473363 ejecutado desde la rama release/3.2.0. Pendiente:
+repetirlo desde main (v3.2.0) tras mergear #22, el arreglo del actualizador
+y #23, y verificar de nuevo tar tzf, sha256sum -c y objdump. Entonces, una
+vez que el push del tag cree el draft, verificar el digest sha256 de cada
+asset del draft
 asset with `gh api` before publishing (see below).
 
 ## Updater test plan (temp HOME, mock API)
