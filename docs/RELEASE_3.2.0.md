@@ -9,13 +9,15 @@ it.
 1. PR #22 (`fix/no-embedded-sgdb-key`): remove the embedded SteamGridDB key,
    so the 3.2.0 binary never carries it. Key rotation is the maintainer's
    task.
-2. The updater redirect fix (agent B, `fix/updater-redirect`,
-   `/tmp/corkytux-updater`). The installed 3.1.2 binary fails with
+2. The updater redirect fix (agent B delivers it; **I merge it**, and only
+   with the maintainer's approval, once B delivers and the maintainer
+   reviews it). Branch `fix/updater-redirect`, worktree
+   `/tmp/corkytux-updater`. The installed 3.1.2 binary fails with
    "Update failed: redirect target not allowed:
    https://api.github.com/repos/Matts-lab69/CorkyTux-Launcher/releases/latest";
    the 64 `self_update` tests pass but do not cover that case. Agent B's
-   notes go in `docs/UPDATER_NOTES.md`; I only integrate that PR after
-   approval and do not reimplement the fix.
+   notes go in `docs/UPDATER_NOTES.md` (agent B's file; I do not edit it).
+   I do not reimplement the fix; I only integrate B's PR.
 3. PR #23 (`release/3.2.0`): the version bump and this preparation. It
    goes last.
 
@@ -239,7 +241,11 @@ notes assume. Checks on the downloaded artifact:
 - `objdump -T`: `GLIBC_2.34`, `GLIBC_2.35`, `GLIBC_2.39`.
 
 The `publish` job did not run (no tag), so no release and no tag were
-created.
+created. That run was from the release branch; after the three
+prerequisites and PR #23 merge, **repeat the dry run from `main`** with
+`v3.2.0` and re-check `tar tzf`, `sha256sum -c` and `objdump`. Then, once
+the tag push creates the draft, verify the sha256 digest of every draft
+asset with `gh api` before publishing (see below).
 
 ## Updater test plan (temp HOME, mock API)
 
