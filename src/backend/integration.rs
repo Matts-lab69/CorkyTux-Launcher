@@ -1213,23 +1213,27 @@ impl IntegrationManager {
 
     pub fn scan_steam(&self) -> Vec<IntegrationEntry> {
         let mut results = Vec::new();
-        let steam_dir = home_dir()
-            .unwrap_or_default()
-            .join(".steam")
-            .join("steam")
-            .join("steamapps");
-        // Steam keeps libraries in libraryfolders.vdf (VDF format, NOT json)
-        let mut steam_dirs = vec![steam_dir.clone()];
-        for candidate in [
-            steam_dir.join("libraryfolders.vdf"),
-            steam_dir.join("libraryfolders.json"),
-        ] {
-            if let Ok(content) = fs::read_to_string(&candidate) {
-                for lib_path in parse_library_paths(&content) {
-                    let expanded = shellexpand::tilde(&lib_path).to_string();
-                    let p = PathBuf::from(&expanded).join("steamapps");
-                    if p.exists() && !steam_dirs.contains(&p) {
-                        steam_dirs.push(p);
+        let home = home_dir().unwrap_or_default();
+        // Steam keeps libraries in libraryfolders.vdf (VDF format, NOT json).
+        // Walk every Steam root (native + Flatpak) instead of hardcoding
+        // ~/.steam/steam, so a Flatpak Steam install is seen.
+        let mut steam_dirs: Vec<PathBuf> = Vec::new();
+        for root in crate::backend::proton::ProtonManager::steam_roots(&home) {
+            let steamapps = root.join("steamapps");
+            if steamapps.exists() && !steam_dirs.contains(&steamapps) {
+                steam_dirs.push(steamapps.clone());
+            }
+            for candidate in [
+                steamapps.join("libraryfolders.vdf"),
+                steamapps.join("libraryfolders.json"),
+            ] {
+                if let Ok(content) = fs::read_to_string(&candidate) {
+                    for lib_path in parse_library_paths(&content) {
+                        let expanded = shellexpand::tilde(&lib_path).to_string();
+                        let p = PathBuf::from(&expanded).join("steamapps");
+                        if p.exists() && !steam_dirs.contains(&p) {
+                            steam_dirs.push(p);
+                        }
                     }
                 }
             }
@@ -1661,5 +1665,27 @@ mod tests {
         assert_eq!(IntegrationManager::key_or_none(""), None);
         assert_eq!(IntegrationManager::key_or_none("   "), None);
         assert_eq!(IntegrationManager::key_or_none(" abc "), Some("abc"));
+    }
+
+    #[test]
+    fn scan_steam_covers_flatpak_steam() {
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("flatpak-steam-test");
+        let _ = std::fs::remove_dir_all(&base);
+        let steamapps = base.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps");
+        std::fs::create_dir_all(&steamapps).unwrap();
+        std::fs::write(steamapps.join("appmanifest_123.acf"),
+            r#""appid"		"123"
+"name"		"FlatpakGame"
+"installdir"		"flatpakgame"
+"#).unwrap();
+        let prev_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &base);
+        let m = IntegrationManager::new();
+        let res = m.scan_steam();
+        match prev_home { Some(v) => std::env::set_var("HOME", v), None => std::env::remove_var("HOME") }
+        let _ = std::fs::remove_dir_all(&base);
+        assert!(res.iter().any(|e| e.name == "FlatpakGame"),
+                "Flatpak Steam game not found: {:?}", res);
     }
 }
