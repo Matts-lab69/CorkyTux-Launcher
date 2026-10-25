@@ -215,6 +215,14 @@ pub fn classify(value: serde_json::Value) -> PluginEvent {
 /// edit landed on the dead copy while I kept running the old one. When I touch
 /// plugin code I edit the plugin repo and reinstall; I never patch the copy.
 pub fn plugins_base_dir() -> PathBuf {
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        if !xdg.is_empty() {
+            let p = PathBuf::from(&xdg);
+            if p.is_absolute() {
+                return p.join("CorkyTux").join("plugins");
+            }
+        }
+    }
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     PathBuf::from(home).join(".local").join("share").join("CorkyTux").join("plugins")
 }
@@ -225,7 +233,17 @@ pub fn plugin_exe(plugin_id: &str, entry: &str) -> PathBuf {
 
 pub fn plugin_available(plugin_id: &str, entry: &str) -> bool {
     let exe = plugin_exe(plugin_id, entry);
-    exe.exists()
+    if !exe.exists() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(&exe) {
+            return meta.permissions().mode() & 0o111 != 0;
+        }
+    }
+    true
 }
 
 /// Output of a process that finished within its time limit.
@@ -961,5 +979,36 @@ mod tests {
         let status = child.wait().expect("wait");
         assert!(!status.success());
         assert!(status.code().is_none(), "expected signal death, got {:?}", status.code());
+    }
+
+    #[test]
+    fn plugins_base_dir_honours_xdg_data_home() {
+        let _g = crate::test_env::lock();
+        let prev = std::env::var("XDG_DATA_HOME").ok();
+        let prev_home = std::env::var("HOME").ok();
+        std::env::set_var("XDG_DATA_HOME", "/tmp/xdg-data-pp");
+        std::env::set_var("HOME", "/tmp/home-pp");
+        let got = plugins_base_dir();
+        match prev { Some(v) => std::env::set_var("XDG_DATA_HOME", v), None => std::env::remove_var("XDG_DATA_HOME") }
+        match prev_home { Some(v) => std::env::set_var("HOME", v), None => std::env::remove_var("HOME") }
+        assert_eq!(got, std::path::PathBuf::from("/tmp/xdg-data-pp/CorkyTux/plugins"));
+    }
+
+    #[test]
+    fn plugin_available_requires_executable_bit() {
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("pp-avail-test");
+        let _ = std::fs::remove_dir_all(&base);
+        let prev = std::env::var("XDG_DATA_HOME").ok();
+        std::env::set_var("XDG_DATA_HOME", &base);
+        std::fs::create_dir_all(base.join("CorkyTux/plugins/x")).unwrap();
+        let exe = base.join("CorkyTux/plugins/x/entry");
+        std::fs::write(&exe, b"#!/bin/sh\n").unwrap();
+        assert!(!plugin_available("x", "entry"));
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(plugin_available("x", "entry"));
+        let _ = std::fs::remove_dir_all(&base);
+        match prev { Some(v) => std::env::set_var("XDG_DATA_HOME", v), None => std::env::remove_var("XDG_DATA_HOME") }
     }
 }

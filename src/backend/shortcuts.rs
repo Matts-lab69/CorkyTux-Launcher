@@ -31,6 +31,11 @@ pub fn slugify(name: &str) -> String {
 }
 
 fn app_menu_dir() -> PathBuf {
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        if !xdg.is_empty() && PathBuf::from(&xdg).is_absolute() {
+            return PathBuf::from(&xdg).join("applications");
+        }
+    }
     let home = std::env::var("HOME").unwrap_or_default();
     PathBuf::from(&home).join(".local/share/applications")
 }
@@ -85,6 +90,21 @@ fn exec_quote(s: &str) -> String {
     format!("\"{}\"", out)
 }
 
+/// Escape a value for a single-line `.desktop` entry (backslash, newline, tab, CR).
+fn desktop_escape(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\r' => out.push_str("\\r"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 fn description_for(game_name: &str, cfg: &super::ConfigManager) -> String {
     if let Some(d) = cfg.game_value(game_name, "Description") {
         let d = d.trim().to_string();
@@ -132,15 +152,15 @@ fn build_entry(name: &str) -> Result<String, String> {
     let mut entry = String::new();
     entry.push_str("[Desktop Entry]\n");
     entry.push_str("Type=Application\n");
-    entry.push_str(&format!("Name={}\n", name));
-    entry.push_str(&format!("Comment={}\n", comment));
+    entry.push_str(&format!("Name={}\n", desktop_escape(name)));
+    entry.push_str(&format!("Comment={}\n", desktop_escape(&comment)));
     entry.push_str("Exec=");
-    entry.push_str(&format!("{} --play {}", exe, exec_quote(name)));
+    entry.push_str(&format!("{} --play {}", exec_quote(&exe), exec_quote(name)));
     entry.push_str("\nTerminal=false\n");
     entry.push_str("StartupNotify=false\n");
     entry.push_str(&icon_line);
     entry.push_str("Categories=Game;\n");
-    entry.push_str(&format!("X-CorkyTux-Game={}\n", name));
+    entry.push_str(&format!("X-CorkyTux-Game={}\n", desktop_escape(name)));
     Ok(entry)
 }
 
@@ -154,7 +174,7 @@ pub fn enable_app_menu(name: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -177,7 +197,7 @@ pub fn enable_desktop(name: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -207,5 +227,37 @@ pub fn rename(game: &str, new_name: &str) {
     }
     if desktop {
         let _ = enable_desktop(new_name);
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::app_menu_dir;
+    use super::desktop_escape;
+    use crate::test_env::lock;
+    use std::path::PathBuf;
+
+    #[test]
+    fn app_menu_dir_honours_xdg_data_home() {
+        let _g = lock();
+        let prev_xdg = std::env::var("XDG_DATA_HOME").ok();
+        let prev_home = std::env::var("HOME").ok();
+        std::env::set_var("XDG_DATA_HOME", "/tmp/xdg-data-test");
+        std::env::set_var("HOME", "/tmp/home-test");
+        let got = app_menu_dir();
+        // restore
+        match prev_xdg { Some(v) => std::env::set_var("XDG_DATA_HOME", v), None => std::env::remove_var("XDG_DATA_HOME") }
+        match prev_home { Some(v) => std::env::set_var("HOME", v), None => std::env::remove_var("HOME") }
+        assert_eq!(got, PathBuf::from("/tmp/xdg-data-test/applications"));
+    }
+
+    #[test]
+    fn desktop_escape_handles_backslash_and_newline() {
+        assert_eq!(desktop_escape("a\\b"), "a\\\\b");
+        assert_eq!(desktop_escape("line1\nline2"), "line1\\nline2");
+    }
+
+    #[test]
+    fn desktop_escape_passthrough_plain() {
+        assert_eq!(desktop_escape("Hello World"), "Hello World");
     }
 }

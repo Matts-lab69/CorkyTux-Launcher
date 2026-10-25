@@ -620,6 +620,24 @@ impl ConfigManager {
                 }
             }
         }
+        // Steam's per-user compatibilitytools.d and the system Proton builds
+        // are never configured by the user but are valid Proton installs.
+        if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            for root in [home.join(".local/share/Steam"),
+                         home.join(".steam/steam"),
+                         home.join(".var/app/com.valvesoftware.Steam/data/Steam")] {
+                let compat = root.join("compatibilitytools.d");
+                if !paths.contains(&compat) {
+                    paths.push(compat);
+                }
+            }
+        }
+        for system in [PathBuf::from("/usr/share/proton"),
+                       PathBuf::from("/usr/lib/proton")] {
+            if !paths.contains(&system) {
+                paths.push(system);
+            }
+        }
         paths
     }
 
@@ -1274,6 +1292,24 @@ mod tests {
         assert_eq!(cfg.migrate_empty_prefixes(), 0);
         assert_eq!(cfg.game_value("SteamGame", "PrefixPath").as_deref(), Some(""));
         assert_eq!(cfg.game_value("SteamSrc", "PrefixPath").as_deref(), Some(""));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn all_proton_paths_includes_steam_compat_and_system() {
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("cfg-proton-paths");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let prev_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &base);
+        let cfg = ConfigManager::for_test_dir(&base);
+        let paths = cfg.all_proton_paths();
+        match prev_home { Some(v) => std::env::set_var("HOME", v), None => std::env::remove_var("HOME") }
+        let has_compat = paths.iter().any(|p| p.to_string_lossy().contains("compatibilitytools.d"));
+        let has_system = paths.iter().any(|p| p == std::path::Path::new("/usr/share/proton") || p == std::path::Path::new("/usr/lib/proton"));
+        assert!(has_compat, "missing steam compatibilitytools.d path: {:?}", paths);
+        assert!(has_system, "missing system proton path: {:?}", paths);
         let _ = std::fs::remove_dir_all(&base);
     }
 }

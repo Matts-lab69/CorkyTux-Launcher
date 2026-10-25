@@ -87,7 +87,8 @@ creates:
 - `checksums.txt`
 
 For example, version `3.2.0` on x86_64 produces
-`corkytux-3.2.0-linux-x86_64.tar.gz`. The tarball contains `corkytux`,
+`corkytux-3.2.0-linux-x86_64.tar.gz`. The architecture comes from `uname -m`
+(`x86_64`, `aarch64`, ...). The tarball contains `corkytux`,
 `webdriver_login`, `install.sh`, `uninstall.sh`, `corkytux.png`,
 `corkytux.desktop.in`, and `assets/`.
 
