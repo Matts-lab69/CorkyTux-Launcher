@@ -18,6 +18,7 @@
 
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -34,17 +35,16 @@ fn api_latest_url() -> String {
     API_LATEST_URL.to_string()
 }
 const USER_AGENT: &str = concat!("CorkyTux/", env!("CARGO_PKG_VERSION"));
-/// Closed redirect target list, evidenced 2026-10-14: release assets
-/// redirect github.com -> release-assets.githubusercontent.com.
-/// api.github.com is allowed ONLY for the release-metadata query,
-/// never for artifact downloads (see API_HOSTS below).
+/// Closed redirect target list for release assets, evidenced
+/// 2026-10-14: github.com -> release-assets.githubusercontent.com.
 const ASSET_HOSTS: &[&str] = &[
     "github.com",
     "objects.githubusercontent.com",
     "release-assets.githubusercontent.com",
 ];
-const API_HOSTS: &[&str] = &["api.github.com", "github.com"];
+const API_HOSTS: &[&str] = &["api.github.com"];
 const MAX_REDIRECTS: u32 = 5;
+const MAX_API_REDIRECTS: u32 = 0;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Total cap for one request including the body stream. Honest note:
 /// the 30 s inactivity guard below is evaluated between reads only;
@@ -270,23 +270,77 @@ fn host_allowed_in(url: &str, allowed: &[&str]) -> bool {
             }
         }
     }
+    redirect_rejection_reason(url, allowed).is_none()
+}
+
+fn redirect_rejection_reason(url: &str, allowed: &[&str]) -> Option<String> {
+    if url.contains('\\') {
+        return Some("URL contains a backslash".into());
+    }
     let parsed = match url::Url::parse(url) {
-        Ok(u) => u,
-        Err(_) => return false,
+        Ok(parsed) => parsed,
+        Err(_) => return Some("URL is invalid".into()),
     };
     if parsed.scheme() != "https" {
-        return false;
+        return Some("only HTTPS redirects are allowed".into());
     }
     if !parsed.username().is_empty() || parsed.password().is_some() {
-        return false;
-    }
-    if parsed.port().is_some_and(|p| p != 443) {
-        return false;
+        return Some("URL credentials are not allowed".into());
     }
     match parsed.host_str() {
-        Some(h) => allowed.iter().any(|a| h == *a),
-        None => false,
+        Some(h) if allowed.iter().any(|a| h == *a) => {}
+        Some(h) => return Some(format!("host {} is not allowed by the allowlist", h)),
+        None => return Some("URL has no host".into()),
     }
+    if parsed.port().is_some_and(|p| p != 443) {
+        return Some("only the default HTTPS port is allowed".into());
+    }
+    None
+}
+
+fn safe_url_for_message(raw: &str) -> String {
+    let Ok(mut parsed) = url::Url::parse(raw) else {
+        return "<invalid URL>".into();
+    };
+    let had_query = parsed.query().is_some();
+    let had_fragment = parsed.fragment().is_some();
+    let _ = parsed.set_username("");
+    let _ = parsed.set_password(None);
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+    let mut safe = parsed.to_string();
+    if had_query {
+        safe.push_str("?REDACTED");
+    }
+    if had_fragment {
+        safe.push_str("#REDACTED");
+    }
+    safe
+}
+
+fn redirect_error(original: &str, status: Option<u16>, target: &str, reason: &str) -> String {
+    let status = status
+        .map(|code| format!("HTTP {}", code))
+        .unwrap_or_else(|| "HTTP status unavailable (initial URL rejected)".into());
+    format!(
+        "update redirect rejected: original URL {}; {}; target {}; reason: {}",
+        safe_url_for_message(original),
+        status,
+        safe_url_for_message(target),
+        reason
+    )
+}
+
+fn initial_request_rejection_reason(url: &str, allowed: &[&str]) -> Option<String> {
+    #[cfg(test)]
+    if let Some(hook) = test_host_override() {
+        if url::Url::parse(url).ok().and_then(|parsed| parsed.host_str().map(str::to_owned))
+            == Some(hook)
+        {
+            return None;
+        }
+    }
+    redirect_rejection_reason(url, allowed)
 }
 
 /// Origin pinning for artifacts: parsed with `url`, never prefix
@@ -304,16 +358,20 @@ pub fn asset_origin_ok(asset_url: &str, tag: &str, asset_name: &str) -> bool {
         Ok(u) => u,
         Err(_) => return false,
     };
-    if parsed.scheme() != "https" {
+    #[cfg(test)]
+    let test_loopback = test_host_override().as_deref() == parsed.host_str();
+    #[cfg(not(test))]
+    let test_loopback = false;
+    if parsed.scheme() != "https" && !test_loopback {
         return false;
     }
-    if parsed.host_str() != Some("github.com") {
+    if parsed.host_str() != Some("github.com") && !test_loopback {
         return false;
     }
     if !parsed.username().is_empty() || parsed.password().is_some() {
         return false;
     }
-    if parsed.port().is_some_and(|p| p != 443) {
+    if parsed.port().is_some_and(|p| p != 443) && !test_loopback {
         return false;
     }
     if parsed.query().is_some() || parsed.fragment().is_some() {
@@ -353,43 +411,106 @@ fn http_client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| format!("HTTP client failed: {}", e))
 }
 
-/// GET with manual redirect handling: at most MAX_REDIRECTS hops,
-/// each target validated by the allowlist before following.
+/// GET with manual redirect handling. Redirect limits and destination
+/// hosts are selected by the caller; no Authorization header is set.
 fn get_guarded(
     client: &reqwest::blocking::Client,
     url: &str,
     etag: Option<&str>,
     allowed: &[&str],
+    max_redirects: u32,
 ) -> Result<reqwest::blocking::Response, String> {
     let mut current = url.to_string();
-    for _ in 0..=MAX_REDIRECTS {
-        if !host_allowed_in(&current, allowed) {
-            return Err(format!("redirect target not allowed: {}", current));
+    let mut visited = HashSet::from([current.clone()]);
+    let mut redirects_followed = 0;
+    let mut previous_status = None;
+    #[cfg(test)]
+    let mut test_relative_loopback_redirect = false;
+    #[cfg(not(test))]
+    let test_relative_loopback_redirect = false;
+    loop {
+        let reason = if redirects_followed == 0 {
+            initial_request_rejection_reason(&current, allowed)
+        } else if test_relative_loopback_redirect {
+            initial_request_rejection_reason(&current, allowed)
+        } else {
+            redirect_rejection_reason(&current, allowed)
+        };
+        if let Some(reason) = reason {
+            return Err(redirect_error(url, previous_status, &current, &reason));
         }
         let mut req = client.get(current.clone());
-        if let Some(tag) = etag {
-            req = req.header("If-None-Match", tag);
+        if redirects_followed == 0 {
+            if let Some(tag) = etag {
+                req = req.header("If-None-Match", tag);
+            }
         }
         let resp = req.send().map_err(|e| format!("request failed: {}", e))?;
         let status = resp.status().as_u16();
         if (300..400).contains(&status) {
-            let loc = resp
+            let Some(loc) = resp
                 .headers()
                 .get("location")
                 .and_then(|h| h.to_str().ok())
-                .ok_or("redirect without location")?
-                .to_string();
+            else {
+                return Err(redirect_error(
+                    url,
+                    Some(status),
+                    "<missing Location>",
+                    "redirect response has no valid Location header",
+                ));
+            };
             // Resolve relative locations with Url::join, not format!.
-            let joined = url::Url::parse(&current)
-                .map_err(|_| format!("redirect target not allowed: {}", current))?
-                .join(&loc)
-                .map_err(|_| format!("redirect target not allowed: {}", loc))?;
-            current = joined.to_string();
+            let joined = match url::Url::parse(&current).and_then(|base| base.join(loc)) {
+                Ok(target) => target.to_string(),
+                Err(_) => {
+                    return Err(redirect_error(
+                        url,
+                        Some(status),
+                        loc,
+                        "Location could not be resolved against the current URL",
+                    ));
+                }
+            };
+            #[cfg(test)]
+            {
+                let test_host = test_host_override();
+                let current_host = url::Url::parse(&current)
+                    .ok()
+                    .and_then(|parsed| parsed.host_str().map(str::to_owned));
+                let target_host = url::Url::parse(&joined)
+                    .ok()
+                    .and_then(|parsed| parsed.host_str().map(str::to_owned));
+                test_relative_loopback_redirect = loc.starts_with('/')
+                    && !loc.starts_with("//")
+                    && !loc.contains('\\')
+                    && test_host.is_some()
+                    && current_host == test_host
+                    && target_host == test_host;
+            }
+            if redirects_followed >= max_redirects {
+                return Err(redirect_error(
+                    url,
+                    Some(status),
+                    &joined,
+                    &format!("redirect limit of {} hops exceeded", max_redirects),
+                ));
+            }
+            if !visited.insert(joined.clone()) {
+                return Err(redirect_error(
+                    url,
+                    Some(status),
+                    &joined,
+                    "redirect loop detected",
+                ));
+            }
+            current = joined;
+            redirects_followed += 1;
+            previous_status = Some(status);
             continue;
         }
         return Ok(resp);
     }
-    Err("too many redirects".into())
 }
 
 /// Fresh API body plus the response ETag, or NotModified on 304.
@@ -405,7 +526,13 @@ pub const MAX_API_BODY: u64 = 1024 * 1024;
 
 pub fn api_get_latest(etag: Option<&str>) -> Result<ApiOutcome, String> {
     let client = http_client()?;
-    let resp = get_guarded(&client, &api_latest_url(), etag, API_HOSTS)?;
+    let resp = get_guarded(
+        &client,
+        &api_latest_url(),
+        etag,
+        API_HOSTS,
+        MAX_API_REDIRECTS,
+    )?;
     match resp.status().as_u16() {
         304 => Ok(ApiOutcome::NotModified),
         200 => {
@@ -521,7 +648,7 @@ pub fn download_asset_limited(
         }
     }
     let client = http_client()?;
-    let mut resp = get_guarded(&client, url, None, ASSET_HOSTS)?;
+    let mut resp = get_guarded(&client, url, None, ASSET_HOSTS, MAX_REDIRECTS)?;
     if resp.status().as_u16() != 200 {
         return Err(format!("download failed: HTTP {}", resp.status()));
     }
@@ -1945,18 +2072,16 @@ fn test_host_override() -> Option<String> {
     guard.clone()
 }
 
-/// Same mutex-guarded pattern for the API base URL: no set_var races
-/// between parallel tests. Only the oversized-body test sets it, and
-/// only through the guard below, which restores None on Drop.
+// Per-test-thread override: synchronous API tests never share a URL or
+// accidentally direct another test's request at the live endpoint.
 #[cfg(test)]
-static API_TEST_STATE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+thread_local! {
+    static API_TEST_STATE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
 
 #[cfg(test)]
 fn test_api_override() -> Option<String> {
-    match API_TEST_STATE.lock().ok()?.clone() {
-        Some(u) if !u.trim().is_empty() => Some(u),
-        _ => None,
-    }
+    API_TEST_STATE.with(|state| state.borrow().clone())
 }
 
 /// RAII holder for the API override: clears it on Drop, panics
@@ -1964,23 +2089,23 @@ fn test_api_override() -> Option<String> {
 /// readers inside `api_get_latest` can never deadlock on it. Only one
 /// test ever sets an override, which rules out cross-test reads.
 #[cfg(test)]
-struct ApiUrlGuard;
+pub(crate) struct ApiUrlGuard(Option<String>);
 
 #[cfg(test)]
 impl ApiUrlGuard {
-    fn set(url: String) -> Self {
-        let mut lock = API_TEST_STATE.lock().unwrap_or_else(|e| e.into_inner());
-        *lock = Some(url);
-        drop(lock);
-        ApiUrlGuard
+    pub(crate) fn set(url: String) -> Self {
+        let previous = API_TEST_STATE.with(|state| state.replace(Some(url)));
+        ApiUrlGuard(previous)
     }
 }
 
 #[cfg(test)]
 impl Drop for ApiUrlGuard {
     fn drop(&mut self) {
-        let mut lock = API_TEST_STATE.lock().unwrap_or_else(|e| e.into_inner());
-        *lock = None;
+        let previous = self.0.take();
+        API_TEST_STATE.with(|state| {
+            state.replace(previous);
+        });
     }
 }
 
@@ -2089,6 +2214,39 @@ mod tests {
         assert!(!host_allowed("https://github.com@evil.com/a"));
         assert!(!host_allowed("https://user:pass@evil.com/a"));
         assert!(!host_allowed("https://user:pass@github.com/a"));
+    }
+
+    #[test]
+    fn api_latest_is_not_mistaken_for_an_asset_redirect_target() {
+        let api_url = "https://api.github.com/repos/Matts-lab69/CorkyTux-Launcher/releases/latest";
+        assert!(redirect_rejection_reason(api_url, API_HOSTS).is_none());
+        assert_eq!(
+            redirect_rejection_reason(api_url, ASSET_HOSTS).as_deref(),
+            Some("host api.github.com is not allowed by the allowlist")
+        );
+        let err = redirect_error(
+            api_url,
+            Some(302),
+            api_url,
+            "host api.github.com is not allowed by the allowlist",
+        );
+        assert!(err.contains("original URL https://api.github.com/repos/"));
+        assert!(err.contains("HTTP 302"));
+        assert!(err.contains("target https://api.github.com/repos/"));
+    }
+
+    #[test]
+    fn redirect_errors_redact_url_credentials_and_query_values() {
+        let err = redirect_error(
+            "https://user:password@example.com/path?token=never-print#fragment",
+            Some(302),
+            "https://user:password@example.com/next?signature=also-secret",
+            "host is not allowed",
+        );
+        assert!(!err.contains("password"));
+        assert!(!err.contains("never-print"));
+        assert!(!err.contains("also-secret"));
+        assert!(err.contains("?REDACTED"));
     }
 
     #[test]
@@ -2801,20 +2959,151 @@ mod tests {
         assert!(seen_gone);
     }
 
-    fn serve_once(response: Vec<u8>) -> String {
+    fn serve_replies(responses: Vec<Vec<u8>>) -> (String, std::sync::mpsc::Receiver<Vec<String>>) {
         let ln = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = ln.local_addr().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            if let Ok((mut s, _)) = ln.accept() {
+            let mut requests = Vec::new();
+            for response in responses {
+                if let Ok((mut s, _)) = ln.accept() {
                 use std::io::{Read, Write};
                 let mut buf = [0u8; 4096];
-                let _ = s.read(&mut buf);
+                    let len = s.read(&mut buf).unwrap_or(0);
+                    requests.push(String::from_utf8_lossy(&buf[..len]).to_string());
                 let _ = s.write_all(&response);
                 let _ = s.flush();
-                std::thread::sleep(std::time::Duration::from_millis(400));
+                } else {
+                    break;
+                }
+            }
+            let _ = tx.send(requests);
+        });
+        (format!("http://{}:{}/", addr.ip(), addr.port()), rx)
+    }
+
+    fn serve_once(response: Vec<u8>) -> String {
+        serve_replies(vec![response]).0
+    }
+
+    fn serve_http_downgrade() -> (String, std::sync::mpsc::Receiver<Vec<String>>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let url = format!("http://{}:{}/", addr.ip(), addr.port());
+        let target = format!("http://{}:{}/downgrade", addr.ip(), addr.port());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                use std::io::{Read, Write};
+                let mut buf = [0u8; 4096];
+                let len = stream.read(&mut buf).unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..len]).to_string();
+                let _ = stream.write_all(&redirect_response(&target));
+                let _ = tx.send(vec![request]);
             }
         });
-        format!("http://{}:{}/", addr.ip(), addr.port())
+        (url, rx)
+    }
+
+    fn redirect_response(location: &str) -> Vec<u8> {
+        format!(
+            "HTTP/1.1 302 Found\r\nLocation: {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            location
+        )
+        .into_bytes()
+    }
+
+    fn ok_response(body: &str) -> Vec<u8> {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn guarded_get_allows_a_same_host_relative_redirect_without_auth() {
+        let (url, requests) = serve_replies(vec![
+            redirect_response("/asset"),
+            ok_response("artifact"),
+        ]);
+        let client = http_client().unwrap();
+        let response = get_guarded(&client, &url, None, ASSET_HOSTS, MAX_REDIRECTS).unwrap();
+        assert_eq!(response.status().as_u16(), 200);
+        let requests = requests.recv().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests.iter().all(|request| !request.to_ascii_lowercase().contains("authorization:")));
+        assert!(host_allowed_in("https://github.com/repo/releases/download/v1/a.tar.gz", ASSET_HOSTS));
+        assert!(host_allowed_in("https://release-assets.githubusercontent.com/file", ASSET_HOSTS));
+    }
+
+    #[test]
+    fn guarded_get_rejects_a_foreign_host_with_context() {
+        let (url, requests) = serve_replies(vec![redirect_response("https://evil.example/file")]);
+        let client = http_client().unwrap();
+        let err = get_guarded(&client, &url, None, ASSET_HOSTS, MAX_REDIRECTS).unwrap_err();
+        assert!(err.contains(&url));
+        assert!(err.contains("HTTP 302"));
+        assert!(err.contains("https://evil.example/file"));
+        assert!(err.contains("host evil.example is not allowed"));
+        assert_eq!(requests.recv().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn guarded_get_rejects_http_downgrade() {
+        let (url, requests) = serve_http_downgrade();
+        let client = http_client().unwrap();
+        let err = get_guarded(&client, &url, None, ASSET_HOSTS, MAX_REDIRECTS).unwrap_err();
+        assert!(err.contains("only HTTPS redirects are allowed"));
+        assert!(err.contains("HTTP 302"));
+        assert_eq!(requests.recv().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn guarded_get_rejects_redirect_loops_and_excess_hops() {
+        let (loop_url, loop_requests) = serve_replies(vec![redirect_response("/")]);
+        let client = http_client().unwrap();
+        let loop_err = get_guarded(&client, &loop_url, None, ASSET_HOSTS, MAX_REDIRECTS)
+            .unwrap_err();
+        assert!(loop_err.contains("redirect loop detected"));
+        assert_eq!(loop_requests.recv().unwrap().len(), 1);
+
+        let (chain_url, chain_requests) = serve_replies(vec![
+            redirect_response("/one"),
+            redirect_response("/two"),
+        ]);
+        let chain_err = get_guarded(&client, &chain_url, None, ASSET_HOSTS, 1).unwrap_err();
+        assert!(chain_err.contains("redirect limit of 1 hops exceeded"));
+        assert!(chain_err.contains("HTTP 302"));
+        assert_eq!(chain_requests.recv().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn api_metadata_uses_only_the_observed_direct_endpoint() {
+        let (url, requests) = serve_replies(vec![ok_response(SAMPLE_JSON)]);
+        let client = http_client().unwrap();
+        let response = get_guarded(&client, &url, None, API_HOSTS, MAX_API_REDIRECTS).unwrap();
+        assert_eq!(response.status().as_u16(), 200);
+        assert!(response.text().unwrap().contains("\"tag_name\""));
+        assert_eq!(requests.recv().unwrap().len(), 1);
+        assert!(host_allowed_in(
+            "https://api.github.com/repos/Matts-lab69/CorkyTux-Launcher/releases/latest",
+            API_HOSTS
+        ));
+        assert!(!host_allowed_in("https://github.com/", API_HOSTS));
+    }
+
+    #[test]
+    fn api_metadata_rejects_a_repositories_id_redirect() {
+        let (url, requests) =
+            serve_replies(vec![redirect_response("/repositories/123/releases/latest")]);
+        let client = http_client().unwrap();
+        let err = get_guarded(&client, &url, None, API_HOSTS, MAX_API_REDIRECTS).unwrap_err();
+        assert!(err.contains(&url));
+        assert!(err.contains("HTTP 302"));
+        assert!(err.contains("redirect limit of 0 hops exceeded"));
+        assert_eq!(requests.recv().unwrap().len(), 1);
     }
 
     #[test]
