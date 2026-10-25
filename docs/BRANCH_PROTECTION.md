@@ -1,7 +1,7 @@
 # Branch protection for `main`
 
 What to configure in the repository rulesets, and when, following the merge
-order in `docs/MERGE_PLAN.md`. I do not touch the settings: this is the
+order of the release. I do not touch the settings: this is the
 checklist to apply by hand in Settings > Rules > Rulesets.
 
 Two repositories, one ruleset each, on the `main` branch:
@@ -63,7 +63,7 @@ pushes, no deletions, and every change reviewed as a PR.
 
 ## After everything is merged
 
-- The `style: cargo fmt` commit lands (see `docs/MERGE_PLAN.md`) and the
+- The `style: cargo fmt` commit lands (see the merge plan) and the
   `cargo fmt --check` step stops being `continue-on-error`. From that
   moment the format is part of the gate.
 - If the entrypoint lint findings are closed, the plugins ruff step stops

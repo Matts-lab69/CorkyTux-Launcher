@@ -41,3 +41,10 @@ Thumbs.db
 # Agent screenshots and scratch reference (regenerable, out of tree)
 docs/ui-before/
 docs/ui-reference/
+
+# Agent notes and process docs (kept out of the repo)
+AGENTS.md
+PENDIENTES.md
+*.bundle
+ai-notes/
+ai-notes-backup/
