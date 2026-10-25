@@ -4,6 +4,23 @@ Status: preparation. No tag and no release exists for 3.2.0. Nothing here is
 signed; signature verification is in preparation and the notes do not mention
 it.
 
+## Prerequisites (merge order)
+
+1. PR #22 (`fix/no-embedded-sgdb-key`): remove the embedded SteamGridDB key,
+   so the 3.2.0 binary never carries it. Key rotation is the maintainer's
+   task.
+2. The updater redirect fix (agent B, `fix/updater-redirect`,
+   `/tmp/corkytux-updater`). The installed 3.1.2 binary fails with
+   "Update failed: redirect target not allowed:
+   https://api.github.com/repos/Matts-lab69/CorkyTux-Launcher/releases/latest";
+   the 64 `self_update` tests pass but do not cover that case. Agent B's
+   notes go in `docs/UPDATER_NOTES.md`; I only integrate that PR after
+   approval and do not reimplement the fix.
+3. PR #23 (`release/3.2.0`): the version bump and this preparation. It
+   goes last.
+
+PR #21 (docs) and Plugins PR #11 (perf, 1.3.0 candidate) are independent.
+
 Release set:
 
 | Repository | Tag | Assets |
@@ -60,6 +77,9 @@ Also in 3.2.0
   the v0 adapter.
 - Runtime floor: GTK 4.12+, libadwaita 1.5+, built on Ubuntu 24.04
   (glibc 2.39). Older glibc is not tested.
+- SteamGridDB covers now require a key of your own: Settings > Integrations.
+  Without one the lookup is skipped and the status says so; Steam and Lutris
+  covers keep working.
 ```
 
 ## minecraft-launcher 1.2.0
@@ -207,6 +227,27 @@ gh release view v3.2.0 --json isDraft,assets \
 gh release edit v3.2.0 --draft=false --title "CorkyTux 3.2.0" \
   --notes-file /tmp/opencode/rel-3.2.0/notes-corkytux-3.2.0.md
 ```
+
+## Before publishing (draft checks)
+
+Drafts do not appear in `/releases/latest`, so list the draft directly and
+check every asset digest before flipping it to published:
+
+```
+gh release view v3.2.0 --json isDraft,assets \
+  --jq '{draft:.isDraft,assets:[.assets[]|{name,digest}]}'
+gh api repos/Matts-lab69/CorkyTux-Launcher/releases/tags/v3.2.0 \
+  --jq '{tag:.tag_name,draft:.draft,assets:[.assets[]|{name,digest}]}'
+```
+
+Both must show the tarball and `checksums.txt` with a non-null `sha256:`
+digest. A null digest means GitHub did not finish hashing the upload; do not
+publish.
+
+## Performance work
+
+Plugins PR #11 (`perf/minecraft-install`) is a 1.3.0 candidate and is **not**
+part of 3.2.0. It is not merged here.
 
 ## After publishing
 
