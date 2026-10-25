@@ -816,8 +816,10 @@ impl ProtonManager {
     /// they make the list look non-empty so auto-install never triggers.
     fn is_foreign_arch(name: &str) -> bool {
         let lower = name.to_lowercase();
-        let has_arm = lower.contains("aarch64") || lower.contains("arm64");
-        let has_x86 = lower.contains("x86_64");
+        let has_arm = lower.contains("aarch64") || lower.contains("arm64")
+            || lower.contains("armv7") || lower.contains("armhf");
+        let has_x86 = lower.contains("x86_64") || lower.contains("i686")
+            || lower.contains("i386");
         match std::env::consts::ARCH {
             "aarch64" => has_x86,
             _ => has_arm,
@@ -1131,8 +1133,8 @@ impl ProtonManager {
             return String::new();
         }
         match u16::from_le_bytes([content[off + 24], content[off + 25]]) {
-            0x20b => "64".to_string(),
-            0x10b => "32".to_string(),
+            0x20b | 0x8664 | 0xaa64 | 0xa641 => "64".to_string(),
+            0x10b | 0x014c | 0x01c0 => "32".to_string(),
             _ => String::new(),
         }
     }
@@ -4342,5 +4344,51 @@ mod game_log_tests {
         assert_eq!(mode(&path), 0o600, "an old game log must be tightened");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+
+#[cfg(test)]
+mod arch_tests {
+    use super::ProtonManager;
+    use std::io::Write;
+
+    fn pe_bytes(magic: u16) -> Vec<u8> {
+        let mut buf = vec![0u8; 0x40 + 26];
+        buf[0] = b'M'; buf[1] = b'Z';
+        let off: usize = 0x40;
+        buf[0x3C..0x40].copy_from_slice(&(off as u32).to_le_bytes());
+        buf[off] = b'P'; buf[off + 1] = b'E';
+        buf[off + 24..off + 26].copy_from_slice(&magic.to_le_bytes());
+        buf
+    }
+
+    fn arch_of(magic: u16) -> String {
+        let dir = std::env::temp_dir().join("arch-test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(format!("t-{:x}.exe", magic));
+        std::fs::write(&path, pe_bytes(magic)).unwrap();
+        let got = ProtonManager::detect_game_arch_simple(path.to_str().unwrap());
+        let _ = std::fs::remove_file(&path);
+        got
+    }
+
+    #[test]
+    fn detect_game_arch_simple_handles_arm_and_arm64ec() {
+        assert_eq!(arch_of(0x8664), "64"); // x86-64
+        assert_eq!(arch_of(0xaa64), "64"); // ARM64
+        assert_eq!(arch_of(0xa641), "64"); // ARM64EC
+        assert_eq!(arch_of(0x014c), "32"); // i386
+        assert_eq!(arch_of(0x01c0), "32"); // ARM
+    }
+
+    #[test]
+    fn is_foreign_arch_handles_i686_and_armv7() {
+        assert!(ProtonManager::is_foreign_arch("proton-ge-aarch64"));
+        assert!(ProtonManager::is_foreign_arch("proton-armv7"));
+        assert!(ProtonManager::is_foreign_arch("proton-armhf"));
+        assert!(!ProtonManager::is_foreign_arch("proton-x86_64"));
+        assert!(!ProtonManager::is_foreign_arch("proton-i686"));
+        assert!(!ProtonManager::is_foreign_arch("proton-i386"));
     }
 }
