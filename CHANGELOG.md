@@ -4,9 +4,9 @@ All notable changes to CorkyTux. The format follows Keep a Changelog and the
 project uses SemVer. The plugins are released from CorkyTux-Plugins and are
 named here when they ship the same day as a launcher release.
 
-## [Unreleased]
+## [3.2.0] - 2026-10-24
 
-Planned as 3.2.0. Ships with the plugin releases `minecraft-launcher` 1.2.0,
+Ships with the plugin releases `minecraft-launcher` 1.2.0,
 `heroic-store` 1.2.0 and `dependency-installer` 2.1.4. The Ely.by sign-in
 needs the launcher and `minecraft-launcher` 1.2.0 updated together.
 
