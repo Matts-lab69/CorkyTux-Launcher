@@ -146,12 +146,6 @@ other one.
 
 ### 4.2 Publish order and the window
 
-**Updater gate:** merge `fix/updater-redirect` into `main` before making the
-separate `Cargo.toml` version-bump commit for 3.2.0. The published `v3.1.2`
-tag predates the updater commit (`dbfdeda`), so installing the published 3.1.2
-binary cannot test self-update. Assuming 3.2.0 ships the updater fix, the first
-real release-to-release update test is **3.2.0 → 3.2.1**.
-
 Before the first tag, once #15 is in `main`, the release workflow is run by
 hand from `main` (`workflow_dispatch`, dry run) with the version in
 `Cargo.toml`. It builds the tarball and opens no release and creates no tag.
@@ -356,9 +350,8 @@ D05 in `PENDIENTES.md` and stays open after these merges. Until it lands,
 
 ### 4.7 Versions to bump before publishing
 
-- Launcher: merge the updater redirect fix into `main` first, then bump
-  `Cargo.toml` 3.1.2 -> 3.2.0 in its own commit; `build-release.sh` refuses a
-  tag that does not match the manifest. Keep the bump out of the updater PR.
+- Launcher: `Cargo.toml` 3.1.2 -> 3.2.0 in its own commit; `build-release.sh`
+  refuses a tag that does not match the manifest.
 - `dependency-installer`: `plugin.json` stays at 2.1.3 in PRs #1 and #4, but
   `dependency-installer-v2.1.3` is already published and the tag cannot be
   reused. Publishing those fixes needs 2.1.4: Plugins #8 does the bump in
