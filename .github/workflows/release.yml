@@ -141,7 +141,8 @@ jobs:
 
   publish:
     # Only a tag push opens a release, and it is always a draft: the
-    # maintainer edits the notes, attaches the .minisig files and publishes.
+    # maintainer edits the notes and publishes. Signature verification is
+    # in preparation and is not part of this release.
     if: github.ref_type == 'tag'
     needs: build
     runs-on: ubuntu-24.04
