@@ -1388,7 +1388,8 @@ impl StorePageHandle {
                     login_box.set_visible(true);
                     acc_row.set_visible(false);
                     hint.set_visible(true);
-                    hint.set_text(&format!("Log in to {} to list your games.", store));
+                    let store_name = if store == "epic" { "Epic Games" } else { "GOG" };
+                    hint.set_text(&format!("Log in to {} to list your games.", store_name));
                 }
                 glib::ControlFlow::Break
             }
