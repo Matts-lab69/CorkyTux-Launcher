@@ -81,3 +81,17 @@ needs the launcher and `minecraft-launcher` 1.2.0 updated together.
 - The chmod-denied test parts are skipped when the filesystem does not
   enforce permissions, instead of reporting a failure that cannot happen on
   a real install.
+
+### Updated 2026-10-25 (on top of the 3.2.0 preparation)
+
+- #24 fix(updater): redirect diagnostics and loopback tests.
+- #25 feat(steam): overlay startup readiness.
+- #26 fix(settings): align plugin row action buttons.
+- #58 fix: small pending items (#30, #31, #32, #33, #34, #35, #38, #40):
+  `.desktop` fields quoted/escaped with mode 0644; `XDG_DATA_HOME` honoured
+  in the plugin dir and in `app_menu_dir`; executable bit checked in
+  `plugin_available`; ARM/ARM64EC and i686/armv7 arch detection; Steam
+  `compatibilitytools.d` and system Proton in `all_proton_paths`; Flatpak
+  Steam roots in `scan_steam`; plugin description cut at a word boundary;
+  `/home` dropped from the import text and the README architecture map
+  completed.
