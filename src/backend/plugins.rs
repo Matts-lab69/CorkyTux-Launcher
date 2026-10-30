@@ -510,45 +510,47 @@ impl PluginManager {
             .unwrap_or("plugin.tar.gz")
             .to_string();
 
-        // Fetch checksums.txt (sibling of the tarball). Redirects to other
-        // hosts are rejected by get_guarded.
+        // Derive the release API URL from the tarball URL so we can read
+        // the digest GitHub publishes for the asset. Tarball URL shape:
+        // https://github.com/{owner}/{repo}/releases/download/{tag}/{asset}
+        let api_digest = Self::github_asset_digest(&client, url, &asset_name)?;
+
+        // Optional cross-check: checksums.txt in the same release. If it
+        // exists it must agree with the API digest; if absent we proceed
+        // with the API digest alone (older releases ship no checksums.txt).
         let checksums_url = match url.rfind('/') {
             Some(i) => format!("{}/checksums.txt", &url[..i]),
             None => return Err("Download URL has no host path".into()),
         };
-        let checksums_resp = super::self_update::get_guarded(
+        if let Ok(resp) = super::self_update::get_guarded(
             &client,
             &checksums_url,
             None,
             super::self_update::ASSET_HOSTS,
             5,
-        )
-        .map_err(|e| format!("Cannot fetch checksums.txt: {}", e))?;
-        let checksums_body = checksums_resp
-            .text()
-            .map_err(|e| format!("Cannot read checksums.txt: {}", e))?;
-        let mut expected_digest: Option<String> = None;
-        for line in checksums_body.lines() {
-            let mut parts = line.split_whitespace();
-            let hex = match parts.next() {
-                Some(h) => h,
-                None => continue,
-            };
-            let name = match parts.next() {
-                Some(n) => n.trim_start_matches('*'),
-                None => continue,
-            };
-            if name == asset_name {
-                expected_digest = Some(hex.to_lowercase());
-                break;
+        ) {
+            if let Ok(body) = resp.text() {
+                for line in body.lines() {
+                    let mut parts = line.split_whitespace();
+                    let hex = match parts.next() {
+                        Some(h) => h,
+                        None => continue,
+                    };
+                    let name = match parts.next() {
+                        Some(n) => n.trim_start_matches('*'),
+                        None => continue,
+                    };
+                    if name == asset_name {
+                        if hex.to_lowercase() != api_digest {
+                            return Err(format!(
+                                "checksums.txt disagrees with the release digest"
+                            ));
+                        }
+                        break;
+                    }
+                }
             }
         }
-        let expected_digest = match expected_digest {
-            Some(d) => d,
-            None => {
-                return Err(format!("checksums.txt does not list {}", asset_name))
-            }
-        };
 
         // Download the tarball with host-checked redirects.
         let mut resp = super::self_update::get_guarded(
@@ -591,11 +593,11 @@ impl PluginManager {
             return Err(format!("Downloaded file too small ({} bytes)", size));
         }
         let actual = format!("{:x}", hasher.finalize());
-        if actual != expected_digest {
+        if actual != api_digest {
             fs::remove_file(&dest).ok();
             return Err(format!(
                 "Checksum mismatch: expected {} got {}",
-                expected_digest, actual
+                api_digest, actual
             ));
         }
 
@@ -625,6 +627,64 @@ impl PluginManager {
         }
         on_progress(1.0, bps);
         Ok(tag.to_string())
+    }
+
+    /// Derive the release API URL from a tarball URL and read the asset
+    /// digest GitHub publishes. Returns None if the URL is not a GitHub
+    /// release URL or the asset has no digest.
+    fn github_asset_digest(
+        client: &reqwest::blocking::Client,
+        url: &str,
+        asset_name: &str,
+    ) -> Result<String, String> {
+        // url: https://github.com/{owner}/{repo}/releases/download/{tag}/{asset}
+        let parts: Vec<&str> = url.split('/').collect();
+        // find "releases" segment
+        let idx = parts
+            .iter()
+            .position(|s| *s == "releases")
+            .ok_or_else(|| "Download URL is not a GitHub release URL".to_string())?;
+        if idx + 2 >= parts.len() || parts.get(idx + 1) != Some(&"download") {
+            return Err("Download URL is not a GitHub release URL".into());
+        }
+        let owner = parts.get(idx - 2).ok_or("bad URL")?;
+        let repo = parts.get(idx - 1).ok_or("bad URL")?;
+        let tag = parts.get(idx + 2).ok_or("bad URL")?;
+        let api_url = format!(
+            "https://api.github.com/repos/{}/{}/releases/tags/{}",
+            owner, repo, tag
+        );
+        let resp = super::self_update::get_guarded(
+            client,
+            &api_url,
+            None,
+            super::self_update::ASSET_HOSTS,
+            5,
+        )
+        .map_err(|e| format!("Cannot fetch release metadata: {}", e))?;
+        let body: serde_json::Value = resp
+            .json()
+            .map_err(|e| format!("Bad release metadata: {}", e))?;
+        let assets = body
+            .get("assets")
+            .and_then(|a| a.as_array())
+            .ok_or("No assets in release metadata")?;
+        for a in assets {
+            if a.get("name").and_then(|n| n.as_str()) == Some(asset_name) {
+                let digest = a
+                    .get("digest")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                let digest = digest.strip_prefix("sha256:").unwrap_or(&digest).to_lowercase();
+                if digest.is_empty() {
+                    return Err("Release asset has no published digest".into());
+                }
+                return Ok(digest);
+            }
+        }
+        Err(format!("Asset {} not found in release", asset_name))
     }
 
     fn extract_plugin_safe(archive: &Path, dest: &Path) -> Result<(), String> {
