@@ -318,7 +318,7 @@ fn descargar_de(
 fn ensure_chrome() -> Result<PathBuf, String> {
     ensure_chrome_con(&|pct, hecho| {
         eprintln!(
-            "CHROME:descargando {}% ({:.0} MB)",
+            "CHROME:downloading {}% ({:.0} MB)",
             pct,
             hecho as f64 / 1048576.0
         );

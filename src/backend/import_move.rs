@@ -774,7 +774,7 @@ pub fn plan_for_mode(
     let mut budget = match free_bytes(games_dir) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("[import] statvfs fallo en {}: {}", games_dir.display(), e);
+            eprintln!("[import] statvfs failed on {}: {}", games_dir.display(), e);
             0
         }
     };
