@@ -336,6 +336,20 @@ builds with `cargo build --release --bins`, creates
 
 ---
 
+
+## Security
+
+- Epic Online Services exchange codes: games that use EOS authentication
+  receive the exchange code through their launch arguments
+  (`-auth_password=...`), because the Epic client reads it from argv and
+  offers no environment variable or file alternative. The code is therefore
+  visible in `/proc/<pid>/cmdline` while the game runs. The launcher
+  mitigates what it can: the game log is created with mode 0600 and every
+  copy the launcher makes (the log view and the saved log) is redacted.
+  Do not share game logs or crash reports from an EOS game without
+  reviewing them first.
+
+
 ## Architecture
 
 ```text
