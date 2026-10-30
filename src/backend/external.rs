@@ -789,9 +789,11 @@ impl MinecraftManager {
     }
 
     pub fn curse_save_key(api_key: &str) -> Result<serde_json::Value, String> {
-        plugin_process::run_single_json(
+        // The key travels on stdin so it never appears in argv or /proc.
+        plugin_process::run_single_json_with_stdin(
             &Self::exe(),
-            &["curse-auth-config", "--api-key", api_key],
+            &["curse-auth-config", "--api-key-stdin"],
+            api_key,
         )
     }
 
