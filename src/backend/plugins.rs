@@ -499,15 +499,73 @@ impl PluginManager {
         let client = reqwest::blocking::Client::builder()
             .user_agent("CorkyTux/3.0")
             .timeout(std::time::Duration::from_secs(600))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| format!("HTTP client failed: {}", e))?;
-        let mut resp = client.get(url).send().map_err(|e| format!("Download failed: {}", e))?;
+
+        let asset_name = url
+            .rsplit('/')
+            .next()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("plugin.tar.gz")
+            .to_string();
+
+        // Fetch checksums.txt (sibling of the tarball). Redirects to other
+        // hosts are rejected by get_guarded.
+        let checksums_url = match url.rfind('/') {
+            Some(i) => format!("{}/checksums.txt", &url[..i]),
+            None => return Err("Download URL has no host path".into()),
+        };
+        let checksums_resp = super::self_update::get_guarded(
+            &client,
+            &checksums_url,
+            None,
+            super::self_update::ASSET_HOSTS,
+            5,
+        )
+        .map_err(|e| format!("Cannot fetch checksums.txt: {}", e))?;
+        let checksums_body = checksums_resp
+            .text()
+            .map_err(|e| format!("Cannot read checksums.txt: {}", e))?;
+        let mut expected_digest: Option<String> = None;
+        for line in checksums_body.lines() {
+            let mut parts = line.split_whitespace();
+            let hex = match parts.next() {
+                Some(h) => h,
+                None => continue,
+            };
+            let name = match parts.next() {
+                Some(n) => n.trim_start_matches('*'),
+                None => continue,
+            };
+            if name == asset_name {
+                expected_digest = Some(hex.to_lowercase());
+                break;
+            }
+        }
+        let expected_digest = match expected_digest {
+            Some(d) => d,
+            None => {
+                return Err(format!("checksums.txt does not list {}", asset_name))
+            }
+        };
+
+        // Download the tarball with host-checked redirects.
+        let mut resp = super::self_update::get_guarded(
+            &client,
+            url,
+            None,
+            super::self_update::ASSET_HOSTS,
+            5,
+        )
+        .map_err(|e| format!("Download failed: {}", e))?;
         if !resp.status().is_success() {
             return Err(format!("Download HTTP error: {}", resp.status()));
         }
         let total = resp.content_length().unwrap_or(0);
         let mut file = fs::File::create(&dest).map_err(|e| format!("Cannot write: {}", e))?;
         let mut downloaded: u64 = 0;
+        let mut hasher = sha2::Sha256::new();
         let start = std::time::Instant::now();
         loop {
             let mut buf = vec![0u8; 256 * 1024];
@@ -518,6 +576,7 @@ impl PluginManager {
             }
             std::io::Write::write_all(&mut file, &buf[..n])
                 .map_err(|e| format!("Write failed: {}", e))?;
+            hasher.update(&buf[..n]);
             downloaded += n as u64;
             if total > 0 {
                 let secs = start.elapsed().as_secs_f64().max(0.001);
@@ -530,16 +589,22 @@ impl PluginManager {
             fs::remove_file(&dest).ok();
             return Err(format!("Downloaded file too small ({} bytes)", size));
         }
-        let status = Command::new("tar")
-            .args(["-xf", dest.to_str().unwrap_or("")])
-            .current_dir(&dir)
-            .status()
-            .map_err(|e| format!("Extract failed: {}", e))?;
-        fs::remove_file(&dest).ok();
-        if !status.success() {
-            return Err("Extraction failed".into());
+        let actual = format!("{:x}", hasher.finalize());
+        if actual != expected_digest {
+            fs::remove_file(&dest).ok();
+            return Err(format!(
+                "Checksum mismatch: expected {} got {}",
+                expected_digest, actual
+            ));
         }
-        // I detect the fresh dir holding plugin.json, like the legacy code did
+
+        // Safe extraction.
+        if let Err(e) = Self::extract_plugin_safe(&dest, &dir) {
+            fs::remove_file(&dest).ok();
+            return Err(e);
+        }
+        fs::remove_file(&dest).ok();
+
         let after: Vec<String> = fs::read_dir(&dir)
             .map(|entries| {
                 entries
@@ -561,6 +626,90 @@ impl PluginManager {
         Ok(tag.to_string())
     }
 
+    fn extract_plugin_safe(archive: &Path, dest: &Path) -> Result<(), String> {
+        use std::io::Write;
+        use std::path::Component;
+        let file = fs::File::open(archive).map_err(|e| format!("cannot read tarball: {}", e))?;
+        let gz = flate2::read::GzDecoder::new(file);
+        let mut ar = tar::Archive::new(gz);
+        let entries = ar.entries().map_err(|e| format!("bad tarball: {}", e))?;
+        const MAX_ENTRIES: usize = 10_000;
+        const MAX_FILE_BYTES: u64 = 50 * 1024 * 1024;
+        const MAX_TOTAL_BYTES: u64 = 200 * 1024 * 1024;
+        let mut total: u64 = 0;
+        let mut count: usize = 0;
+        let mut buf = [0u8; 64 * 1024];
+        for entry in entries {
+            count += 1;
+            if count > MAX_ENTRIES {
+                return Err("tarball has too many entries: refused".into());
+            }
+            let mut entry = entry.map_err(|e| format!("bad tarball entry: {}", e))?;
+            let kind = entry.header().entry_type();
+            if kind.is_symlink() || kind.is_hard_link() {
+                return Err("tarball contains a link: refused".into());
+            }
+            if !kind.is_file() && !kind.is_dir() {
+                return Err("tarball contains a special file: refused".into());
+            }
+            let rel = entry
+                .path()
+                .map_err(|e| format!("bad tarball path: {}", e))?
+                .into_owned();
+            let mut clean = PathBuf::new();
+            for c in rel.components() {
+                match c {
+                    Component::Normal(name) => clean.push(name),
+                    _ => return Err("tarball path escapes its directory: refused".into()),
+                }
+            }
+            if clean.as_os_str().is_empty() {
+                continue;
+            }
+            let target = dest.join(&clean);
+            if kind.is_dir() {
+                fs::create_dir_all(&target)
+                    .map_err(|e| format!("cannot create dir {}: {}", clean.display(), e))?;
+                continue;
+            }
+            let declared = entry
+                .header()
+                .size()
+                .map_err(|e| format!("bad tarball entry: {}", e))?;
+            if declared > MAX_FILE_BYTES {
+                return Err(format!("tarball file too large: {}", clean.display()));
+            }
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("cannot create dir {}: {}", clean.display(), e))?;
+            }
+            let mut dst = fs::File::create(&target)
+                .map_err(|e| format!("cannot write {}: {}", clean.display(), e))?;
+            let mut written: u64 = 0;
+            loop {
+                let n = entry
+                    .read(&mut buf)
+                    .map_err(|e| format!("cannot read {}: {}", clean.display(), e))?;
+                if n == 0 {
+                    break;
+                }
+                written += n as u64;
+                if written > MAX_FILE_BYTES {
+                    drop(dst);
+                    let _ = fs::remove_file(&target);
+                    return Err(format!("tarball file too large: {}", clean.display()));
+                }
+                dst.write_all(&buf[..n])
+                    .map_err(|e| format!("cannot write {}: {}", clean.display(), e))?;
+            }
+            total += written;
+            if total > MAX_TOTAL_BYTES {
+                let _ = fs::remove_file(&target);
+                return Err("tarball too large when unpacked: refused".into());
+            }
+        }
+        Ok(())
+    }
     // --- Dependency Installer + DLL Overrides Automator (I port the legacy applyScanPlugins behavior) ---
     //
     // Both are JSON-protocol scripts. All helpers below are thread-safe

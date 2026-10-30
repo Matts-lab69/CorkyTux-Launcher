@@ -38,7 +38,7 @@ const USER_AGENT: &str = concat!("CorkyTux/", env!("CARGO_PKG_VERSION"));
 /// redirect github.com -> release-assets.githubusercontent.com.
 /// api.github.com is allowed ONLY for the release-metadata query,
 /// never for artifact downloads (see API_HOSTS below).
-const ASSET_HOSTS: &[&str] = &[
+pub const ASSET_HOSTS: &[&str] = &[
     "github.com",
     "objects.githubusercontent.com",
     "release-assets.githubusercontent.com",
@@ -449,7 +449,7 @@ fn http_client() -> Result<reqwest::blocking::Client, String> {
 
 /// GET with manual redirect handling. Redirect limits and destination
 /// hosts are selected by the caller; no Authorization header is set.
-fn get_guarded(
+pub fn get_guarded(
     client: &reqwest::blocking::Client,
     url: &str,
     etag: Option<&str>,
