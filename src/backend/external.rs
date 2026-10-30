@@ -789,12 +789,27 @@ impl MinecraftManager {
     }
 
     pub fn curse_save_key(api_key: &str) -> Result<serde_json::Value, String> {
-        // The key travels on stdin so it never appears in argv or /proc.
-        plugin_process::run_single_json_with_stdin(
+        // Prefer stdin (plugin >= 1.2.0, no argv exposure). Fall back to
+        // argv for older plugins that do not know --api-key-stdin.
+        let stdin_res = plugin_process::run_single_json_with_stdin(
             &Self::exe(),
             &["curse-auth-config", "--api-key-stdin"],
             api_key,
-        )
+        );
+        match stdin_res {
+            Ok(v) => Ok(v),
+            Err(e) if e.contains("unrecognized arguments")
+                || e.contains("unknown option")
+                || e.contains("invalid choice")
+                || e.contains("error: unrecognized") =>
+            {
+                plugin_process::run_single_json(
+                    &Self::exe(),
+                    &["curse-auth-config", "--api-key", api_key],
+                )
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub fn curse_test() -> Result<serde_json::Value, String> {
