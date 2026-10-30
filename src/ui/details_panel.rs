@@ -695,7 +695,7 @@ impl DetailsPanel {
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
         if time_spent < 60 {
-            self.time_label.set_text("Time played: less than a minute".to_string());
+            self.time_label.set_text("Time played: less than a minute");
         } else {
             let h = time_spent / 3600;
             let m = (time_spent % 3600) / 60;
