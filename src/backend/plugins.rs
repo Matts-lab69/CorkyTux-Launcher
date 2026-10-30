@@ -565,7 +565,8 @@ impl PluginManager {
         let total = resp.content_length().unwrap_or(0);
         let mut file = fs::File::create(&dest).map_err(|e| format!("Cannot write: {}", e))?;
         let mut downloaded: u64 = 0;
-        let mut hasher = sha2::Sha256::new();
+        use sha2::Digest;
+        let mut hasher = sha2::Sha256::default();
         let start = std::time::Instant::now();
         loop {
             let mut buf = vec![0u8; 256 * 1024];
@@ -627,7 +628,7 @@ impl PluginManager {
     }
 
     fn extract_plugin_safe(archive: &Path, dest: &Path) -> Result<(), String> {
-        use std::io::Write;
+        use std::io::{Read, Write};
         use std::path::Component;
         let file = fs::File::open(archive).map_err(|e| format!("cannot read tarball: {}", e))?;
         let gz = flate2::read::GzDecoder::new(file);
