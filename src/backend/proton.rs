@@ -4625,3 +4625,4 @@ mod arch_tests {
         assert!(!ProtonManager::is_foreign_arch("proton-i686"));
         assert!(!ProtonManager::is_foreign_arch("proton-i386"));
     }
+}
