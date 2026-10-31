@@ -459,13 +459,8 @@ impl DetailsPanel {
     }
 
     pub fn set_time_played(&self, seconds: u64) {
-        if seconds < 3600 {
-            let m = seconds / 60;
-            self.time_label.set_text(&format!("Time played: {} min", m));
-        } else {
-            let h = seconds / 3600;
-            self.time_label.set_text(&format!("Time played: {} h", h));
-        }
+        self.time_label
+            .set_text(&format!("Time played: {}", helpers::format_playtime(seconds)));
     }
 
     pub fn set_favorited(&self, fav: bool) {

@@ -911,3 +911,40 @@ mod tests {
         }
     }
 }
+
+
+/// Format a playtime in seconds as a human-readable string. Never truncates
+/// to whole hours: 13953 s -> "3 h 53 min", 3600 s -> "1 h", 60 s -> "1 min".
+pub fn format_playtime(secs: u64) -> String {
+    if secs < 60 {
+        return "<1 min".to_string();
+    }
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    if h == 0 {
+        format!("{} min", m)
+    } else if m == 0 {
+        format!("{} h", h)
+    } else {
+        format!("{} h {} min", h, m)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::format_playtime;
+
+    #[test]
+    fn format_playtime_cases() {
+        assert_eq!(format_playtime(0), "<1 min");
+        assert_eq!(format_playtime(59), "<1 min");
+        assert_eq!(format_playtime(60), "1 min");
+        assert_eq!(format_playtime(3599), "59 min");
+        assert_eq!(format_playtime(3600), "1 h");
+        assert_eq!(format_playtime(3659), "1 h");
+        assert_eq!(format_playtime(13953), "3 h 52 min");
+        assert_eq!(format_playtime(36000), "10 h");
+        assert_eq!(format_playtime(360000), "100 h");
+    }
+}

@@ -229,17 +229,6 @@ fn java_range_text(ver: &str) -> String {
     }
 }
 
-fn fmt_playtime_long(secs: u64) -> String {
-    let h = secs / 3600;
-    let m = (secs % 3600) / 60;
-    if h == 0 {
-        return format!("{} min", m);
-    }
-    if m == 0 {
-        return format!("{} h", h);
-    }
-    format!("{} h {} min", h, m)
-}
 
 fn card(title: &str) -> (gtk::Box, gtk::Box) {
     let frame = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -3020,7 +3009,7 @@ impl MinecraftView {
         self.ov_loader.set_text(&loader_txt);
         let count = self.count_addons();
         self.ov_addons.set_text(&format!("{}", count));
-        self.ov_played.set_text(&fmt_playtime_long(inst.secs));
+        self.ov_played.set_text(&crate::ui::helpers::format_playtime(inst.secs));
         self.set_jvm.set_text(&self.inst_cfg(&inst.id, "Jvm"));
         self.set_res_w.set_text(&self.inst_cfg(&inst.id, "ResW"));
         self.set_res_h.set_text(&self.inst_cfg(&inst.id, "ResH"));
@@ -4019,7 +4008,7 @@ impl MinecraftView {
         let loader_txt = if inst.loader == "vanilla" { "Vanilla".to_string() } else { format!("{} {}", inst.loader, inst.loader_ver) };
         self.ov_loader.set_text(&loader_txt);
         self.ov_addons.set_text(&format!("{}", self.count_addons()));
-        self.ov_played.set_text(&fmt_playtime_long(inst.secs));
+        self.ov_played.set_text(&crate::ui::helpers::format_playtime(inst.secs));
     }
 
     // ============ logs tab ============
