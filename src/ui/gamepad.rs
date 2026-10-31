@@ -68,12 +68,12 @@ fn spawn_thread(tx: async_channel::Sender<GamepadMessage>) {
                             sticks.remove(&ev.id);
                             let _ = tx.send_blocking(GamepadMessage::Disconnected(name));
                         }
-                        gilrs::EventType::ButtonPressed(b) => {
+                        gilrs::EventType::ButtonPressed(b, _) => {
                             if let Some(input) = button_input(b, true) {
                                 let _ = tx.send_blocking(GamepadMessage::Input(input));
                             }
                         }
-                        gilrs::EventType::ButtonReleased(b) => {
+                        gilrs::EventType::ButtonReleased(b, _) => {
                             if let Some(input) = button_input(b, false) {
                                 let _ = tx.send_blocking(GamepadMessage::Input(input));
                             }
@@ -165,12 +165,12 @@ fn apply_action(window: &adw::ApplicationWindow, action: NavAction) {
                 Dir::Right => gtk::DirectionType::Right,
             };
             window.child_focus(direction);
-            if let Some(focus) = window.focus() {
+            if let Some(focus) = gtk::prelude::WindowExt::focus(window) {
                 ensure_visible(&focus);
             }
         }
         NavAction::Activate => {
-            if let Some(focus) = window.focus() {
+            if let Some(focus) = gtk::prelude::WindowExt::focus(window) {
                 activate(&focus);
             }
         }

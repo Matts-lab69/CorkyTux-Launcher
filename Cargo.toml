@@ -29,6 +29,8 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # Gamepad support (SDL_GameControllerDB mappings, hotplug). Apache-2.0/MIT.
 # On Linux it needs libudev; CI installs libudev-dev.
 gilrs = "=0.11.2"
+# Playpad events from the input thread to the GTK main loop.
+async-channel = "=2.3.1"
 
 
 [profile.release]
