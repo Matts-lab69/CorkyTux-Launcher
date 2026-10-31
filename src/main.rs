@@ -302,7 +302,7 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
     })
 }
 
-fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
+fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWindow {
     let state = AppState::new();
     helpers::apply_theme_css(&state.theme);
     helpers::init_accent_provider(&state.theme);
@@ -333,8 +333,20 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
         .default_width(saved_w).default_height(saved_h)
         .build();
     window.set_size_request(640, 400);
+    // Tray: the StatusNotifierItem service lives on its own thread and never
+    // touches GTK; menu events come back through an async channel.
+    let playing = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+    let watcher_alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (tray_tx, tray_rx) = async_channel::unbounded::<ui::tray::TrayMsg>();
+    let tray_handle = ui::tray::spawn(ui::tray::TrayShared {
+        playing: playing.clone(),
+        watcher_alive: watcher_alive.clone(),
+        tx: tray_tx,
+    });
+    let tray_ok = tray_handle.is_some();
     {
         let state_c = state.clone();
+        let win_for_dialog = window.clone();
         window.connect_close_request(move |win| {
             let a = win.allocation();
             state_c.config.set_launcher_value("CkWinW", &a.width().to_string());
@@ -344,7 +356,83 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
             if state_c.proton.is_game_running() {
                 state_c.proton.ledger_checkpoint();
             }
-            glib::Propagation::Proceed
+            let setting = state_c
+                .config
+                .launcher_value("closeToTray")
+                .map(|v| v == "1")
+                .unwrap_or(true);
+            let remembered = state_c.config.launcher_value("closeToTrayChoice");
+            match ui::tray::should_hide_on_close(tray_ok, setting, remembered.as_deref()) {
+                ui::tray::CloseAction::Hide => {
+                    win.set_visible(false);
+                    glib::Propagation::Stop
+                }
+                ui::tray::CloseAction::Quit => {
+                    state_c.proton.quit_close_all();
+                    glib::Propagation::Proceed
+                }
+                ui::tray::CloseAction::Ask => {
+                    let dlg = adw::MessageDialog::new(
+                        Some(&win_for_dialog),
+                        Some("Keep running in background?"),
+                        Some("CorkyTux can keep your play time up to date from the system tray."),
+                    );
+                    dlg.add_response("background", "Keep running in background");
+                    dlg.add_response("quit", "Quit");
+                    dlg.set_response_appearance("quit", adw::ResponseAppearance::Destructive);
+                    dlg.set_default_response(Some("background"));
+                    let remember = gtk::CheckButton::with_label("Remember my choice");
+                    dlg.set_extra_child(Some(&remember));
+                    let win_c = win_for_dialog.clone();
+                    let state_d = state_c.clone();
+                    dlg.connect_response(move |dlg, resp| {
+                        let remember = dlg.extra_child().and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+                            .map(|c| c.is_active())
+                            .unwrap_or(false);
+                        match resp {
+                            "background" => {
+                                if remember {
+                                    state_d.config.set_launcher_value("closeToTrayChoice", "tray");
+                                }
+                                win_c.set_visible(false);
+                            }
+                            "quit" => {
+                                if remember {
+                                    state_d.config.set_launcher_value("closeToTrayChoice", "quit");
+                                }
+                                state_d.proton.quit_close_all();
+                                if let Some(app) = win_c.application() {
+                                    app.quit();
+                                }
+                            }
+                            _ => {}
+                        }
+                        dlg.close();
+                    });
+                    dlg.present();
+                    glib::Propagation::Stop
+                }
+            }
+        });
+    }
+    {
+        let window_c = window.clone();
+        let state_t = state.clone();
+        let handle_c = tray_handle.clone();
+        glib::MainContext::default().spawn_local(async move {
+            while let Ok(msg) = tray_rx.recv().await {
+                match msg {
+                    ui::tray::TrayMsg::Show => window_c.present(),
+                    ui::tray::TrayMsg::Quit => {
+                        state_t.proton.quit_close_all();
+                        if let Some(app) = window_c.application() {
+                            app.quit();
+                        }
+                        break;
+                    }
+                }
+            }
+            let _ = handle_c;
         });
     }
 
@@ -1078,6 +1166,22 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                     }
                 }
             }
+            // Keep the tray's "Playing" line current (every 10 s).
+            if ledger_tick.get() % 5 == 0 {
+                let current = if state_c.proton.is_game_running() {
+                    Some(state_c.proton.session_game_name())
+                } else {
+                    None
+                };
+                if let Ok(mut slot) = playing.lock() {
+                    if *slot != current {
+                        *slot = current;
+                        if let Some(handle) = &tray_handle {
+                            let _ = handle.update(|_| {});
+                        }
+                    }
+                }
+            }
             if let Some((game, secs)) = state_c.proton.check_finished() {
                 if secs > 0 {
                     state_c.game_model.increment_time_spent(&game, secs);
@@ -1156,6 +1260,11 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     // after library/path changes and after a Store refresh) + focus hook.
     refresh_warn_buttons(&state);
 
+    // --background: stay in the tray. Without a tray the window must show,
+    // never leave the app invisible and unreachable.
+    if !background || !tray_ok {
+        window.present();
+    }
     window
 }
 
@@ -1863,6 +1972,10 @@ fn main() {
     // The child survives the parent exit, so the game keeps running while
     // the launcher itself never opens a window.
     let args: Vec<String> = std::env::args().collect();
+    // --background is ours, not GApplication's: keep it out of the args the
+    // application parses.
+    let background = args.iter().any(|a| a == "--background");
+    let app_args: Vec<String> = args.iter().filter(|a| *a != "--background").cloned().collect();
     // Health probe for the self-updater: print and exit before GTK, the
     // display, or any config I/O. Output is exactly "corkytux X.Y.Z".
     // Only a lone `--version` counts: `corkytux --version --play X` and
@@ -1925,9 +2038,14 @@ fn main() {
     }
     let app = adw::Application::builder()
         .application_id("com.corkytux.CorkyTux").build();
-    app.connect_activate(|app| {
-        let window = build_window(app);
-        window.present();
+    app.connect_activate(move |app| {
+        // One window, one AppState, one poller: a second launch (the desktop
+        // entry while the app runs) activates this instance and just presents.
+        if let Some(window) = app.active_window() {
+            window.present();
+            return;
+        }
+        build_window(app, background);
     });
-    app.run();
+    app.run_with_args(&app_args);
 }

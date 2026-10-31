@@ -2360,8 +2360,71 @@ impl ProtonManager {
         outcome
     }
 
+    /// When Quit closed this pid, the next start counts from now: the gap
+    /// with the launcher closed is never credited.
+    fn adopt_start_override(&self, pid: u32) -> Option<u64> {
+        let dir = Self::ledger_dir()?;
+        let tick = super::session_ledger::pid_starttime(pid)?;
+        super::session_ledger::take_closed(&dir, pid, tick)?;
+        use super::session_ledger::Clock;
+        Some(super::session_ledger::SystemClock.now())
+    }
+
+    /// Explicit Quit (D2): bank every live session up to now, then remember
+    /// each one so the next start adopts it at "now" without the gap.
+    pub fn quit_close_all(&self) {
+        let Some(dir) = Self::ledger_dir() else {
+            self.imp().game_running.set(false);
+            self.imp().session_pid.set(None);
+            self.imp().running_child.borrow_mut().take();
+            return;
+        };
+        let now = {
+            use super::session_ledger::Clock;
+            super::session_ledger::SystemClock.now()
+        };
+        let mut close_pid = |pid: u32| {
+            let _ = self.ledger_finish_pid(pid);
+            if let Some(tick) = super::session_ledger::pid_starttime(pid) {
+                let _ = super::session_ledger::record_closed(&dir, pid, tick, now);
+            }
+        };
+        let child_pid = self
+            .imp()
+            .running_child
+            .borrow()
+            .as_ref()
+            .map(|c| c.id());
+        if let Some(pid) =
+            super::session_ledger::resolve_close_pid(child_pid, self.imp().session_pid.get())
+        {
+            close_pid(pid);
+        }
+        let parked: Vec<(Option<u32>, Option<u32>)> = self
+            .imp()
+            .parked
+            .borrow()
+            .iter()
+            .map(|entry| (entry.child.as_ref().map(|c| c.id()), entry.adopted_pid))
+            .collect();
+        for (child, adopted) in parked {
+            if let Some(pid) = super::session_ledger::resolve_close_pid(child, adopted) {
+                close_pid(pid);
+            }
+        }
+        self.imp().game_running.set(false);
+        self.imp().session_pid.set(None);
+        self.imp().running_child.borrow_mut().take();
+        self.imp().parked.borrow_mut().clear();
+    }
+
     pub fn ledger_recover(&self) {
         let Some(dir) = Self::ledger_dir() else { return };
+        {
+            use super::session_ledger::Clock;
+            let now = super::session_ledger::SystemClock.now();
+            super::session_ledger::prune_closed(&dir, now);
+        }
         let clock = super::session_ledger::SystemClock;
         let alive = |pid: u32, st: u64| super::session_ledger::pid_alive_with_starttime(pid, st);
         match super::session_ledger::recover(&dir, &clock, &alive, &mut |g, d| Self::ledger_credit(g, d)) {
@@ -2907,7 +2970,9 @@ impl ProtonManager {
                 if !self.candidate_passes(scan, pid, &game, "", &mounts) {
                     continue;
                 }
-                let start = super::session_ledger::process_start_unix(pid);
+                let start = self
+                    .adopt_start_override(pid)
+                    .or_else(|| super::session_ledger::process_start_unix(pid));
                 if !should_adopt(pid, start, self.last_closed(name)) {
                     continue;
                 }
@@ -2926,7 +2991,9 @@ impl ProtonManager {
                 if !self.candidate_passes(scan, pid, &exe, &emulator, &[]) {
                     continue;
                 }
-                let start = super::session_ledger::process_start_unix(pid);
+                let start = self
+                    .adopt_start_override(pid)
+                    .or_else(|| super::session_ledger::process_start_unix(pid));
                 if !should_adopt(pid, start, self.last_closed(name)) {
                     continue;
                 }
@@ -2945,7 +3012,9 @@ impl ProtonManager {
                 .and_then(|w| self.resolve_proton(&w).ok())
                 .map(|(_, p)| p.display().to_string())
                 .unwrap_or_default();
-            let start = super::session_ledger::process_start_unix(pid);
+            let start = self
+                .adopt_start_override(pid)
+                .or_else(|| super::session_ledger::process_start_unix(pid));
             if !should_adopt(pid, start, self.last_closed(name)) {
                 continue;
             }
@@ -4861,6 +4930,108 @@ mod tests {
             .unwrap_or(0);
         let _ = std::fs::remove_dir_all(&base);
         assert_eq!(after, stored, "no second credit");
+    }
+
+    #[test]
+    fn quit_banks_once_and_writes_closed_json() {
+        let base = std::env::temp_dir().join("pm-quit-tray");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+        adopt_game("AdoptScanGame");
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let cfg = crate::backend::config::ConfigManager::new();
+        let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let mut ledger = crate::backend::session_ledger::SessionLedger::with_start(
+            "AdoptScanGame",
+            pid,
+            tick,
+            now - 600,
+        );
+        ledger.credited_until = now - 600;
+        crate::backend::session_ledger::save(&dir, &ledger).unwrap();
+        *pm.imp().session_game.borrow_mut() = "AdoptScanGame".to_string();
+        *pm.imp().session_start.borrow_mut() =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(600));
+        pm.imp().session_pid.set(Some(pid));
+        pm.imp().game_running.set(true);
+
+        pm.quit_close_all();
+
+        let stored: u64 = cfg
+            .game_value("AdoptScanGame", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let records = crate::backend::session_ledger::load_closed(&dir);
+        let ledger_gone = crate::backend::session_ledger::load(&dir, pid).is_none();
+        let _ = std::fs::remove_dir_all(&base);
+        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
+        assert!(ledger_gone, "ledger closed by Quit");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].pid, pid);
+        assert_eq!(records[0].starttime, tick);
+    }
+
+    #[test]
+    fn reopen_after_quit_starts_at_now() {
+        let base = std::env::temp_dir().join("pm-quit-reopen");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+        adopt_game("AdoptScanGame");
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let cfg = crate::backend::config::ConfigManager::new();
+        let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        crate::backend::session_ledger::record_closed(&dir, pid, tick, now).unwrap();
+
+        assert!(pm.detect_running_sessions_with(&FixedPid(pid), &cfg));
+        let ledger = crate::backend::session_ledger::load(&dir, pid).unwrap();
+        let reopened = ledger.started_at;
+        let left = crate::backend::session_ledger::load_closed(&dir);
+        let _ = std::fs::remove_dir_all(&base);
+        assert!(reopened + 2 >= now, "started now: {} vs {}", reopened, now);
+        assert!(left.is_empty(), "the record is consumed once");
+    }
+
+    #[test]
+    fn reopen_with_another_pid_keeps_the_record() {
+        let base = std::env::temp_dir().join("pm-quit-other");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+        adopt_game("AdoptScanGame");
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let cfg = crate::backend::config::ConfigManager::new();
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        crate::backend::session_ledger::record_closed(&dir, pid + 1, 1, now).unwrap();
+
+        assert!(pm.detect_running_sessions_with(&FixedPid(pid), &cfg));
+        let ledger = crate::backend::session_ledger::load(&dir, pid).unwrap();
+        let real_start = crate::backend::session_ledger::process_start_unix(pid).unwrap();
+        let left = crate::backend::session_ledger::load_closed(&dir);
+        let _ = std::fs::remove_dir_all(&base);
+        assert_eq!(ledger.started_at, real_start, "normal adoption keeps the real start");
+        assert_eq!(left.len(), 1, "the other pid's record is untouched");
     }
 
     #[test]

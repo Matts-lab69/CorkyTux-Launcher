@@ -1479,6 +1479,38 @@ pub fn show_settings_modal(
         row
     };
 
+    misc_inner.append(&misc_switch("closeToTray", "Close to tray", true, true, state));
+    {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        row.set_margin_top(4);
+        let lbl = gtk::Label::new(Some("Start with the system, minimized"));
+        lbl.add_css_class("info-value");
+        lbl.set_halign(gtk::Align::Start);
+        lbl.set_hexpand(true);
+        lbl.set_wrap(true);
+        let sw = gtk::Switch::new();
+        sw.set_halign(gtk::Align::End);
+        sw.set_active(
+            state
+                .config
+                .launcher_value("autostart")
+                .map(|v| v == "1")
+                .unwrap_or(false),
+        );
+        let state_auto = state.clone();
+        sw.connect_active_notify(move |switch| {
+            let on = switch.is_active();
+            state_auto
+                .config
+                .set_launcher_value("autostart", if on { "1" } else { "0" });
+            if let Err(e) = crate::ui::tray::apply_autostart(on) {
+                eprintln!("[autostart] {}", e);
+            }
+        });
+        row.append(&lbl);
+        row.append(&sw);
+        misc_inner.append(&row);
+    }
     misc_inner.append(&misc_switch("gamesUsesWined3d", "Use wined3d instead of DXVK", false, true, state));
     misc_inner.append(&misc_switch("gamesUsesWayland", "Prefer Wayland driver", false, true, state));
     misc_inner.append(&misc_switch("gamesUsesSteamRuntime", "Use Steam Runtime for Proton games", true, true, state));
