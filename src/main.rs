@@ -386,7 +386,7 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                     let win_c = win_for_dialog.clone();
                     let state_d = state_c.clone();
                     let remember_c = remember_btn.clone();
-                    dlg.connect_response(move |dlg, resp| {
+                    dlg.connect_response(move |dlg: &adw::MessageDialog, resp: &str| {
                         let remember = remember_c.is_active();
                         match resp {
                             "background" => {
