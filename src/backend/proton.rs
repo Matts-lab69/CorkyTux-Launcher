@@ -4456,7 +4456,6 @@ mod tests {
         assert!(deleted, "ledger removed after the close");
     }
 }
-}
 
 #[cfg(test)]
 mod steam_prefix_tests {
