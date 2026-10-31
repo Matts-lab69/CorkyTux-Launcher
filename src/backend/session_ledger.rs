@@ -1094,8 +1094,9 @@ mod tests {
             .open(dir.join("ledger.lock"))
             .unwrap();
         assert_eq!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) }, 0);
+        // The pass succeeds and skips this ledger instead of aborting.
         let out = recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d));
-        assert!(out.is_err());
+        assert_eq!(out.unwrap(), 0);
         assert_eq!(c.total, 0);
         assert!(load(&dir, 42).is_some());
         unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN); }
