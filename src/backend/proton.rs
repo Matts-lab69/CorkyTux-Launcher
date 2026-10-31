@@ -3034,15 +3034,11 @@ impl ProtonManager {
                     .borrow()
                     .as_ref()
                     .map(|c| c.id())
+                    .or_else(|| self.imp().session_pid.get())
                     .unwrap_or(0);
-                let alive = mounts.iter().any(|m| {
-                    let t = super::proc_tree::SessionTree {
-                        root_pid,
-                        root_starttime: 0,
-                        mount: m.clone(),
-                    };
-                    t.alive(&procs)
-                });
+                let root_starttime =
+                    super::session_ledger::pid_starttime(root_pid).unwrap_or(0);
+                let alive = Self::tree_alive(root_pid, root_starttime, &mounts, &procs);
                 if alive {
                     if code.is_some() {
                         *self.imp().running_child.borrow_mut() = None;
@@ -3469,6 +3465,27 @@ impl ProtonManager {
             .map(|path| path.display().to_string())
             .unwrap_or_default();
         Some(GameProcess { args, comm, exe })
+    }
+
+    /// A session tree is alive when its root (launched child or adopted pid)
+    /// is still there with the same start time, or when any process under one
+    /// of the AppImage mounts is. An adopted session has no `running_child`,
+    /// so its `session_pid` is the root instead of pid 0.
+    fn tree_alive(
+        root_pid: u32,
+        root_starttime: u64,
+        mounts: &[String],
+        procs: &[super::proc_tree::ProcInfo],
+    ) -> bool {
+        let tree = |mount: &str| super::proc_tree::SessionTree {
+            root_pid,
+            root_starttime,
+            mount: mount.to_string(),
+        };
+        if root_pid != 0 && tree("").alive(procs) {
+            return true;
+        }
+        mounts.iter().any(|mount| tree(mount).alive(procs))
     }
 
     fn appimage_tree_alive(exe: &str) -> bool {
@@ -4998,6 +5015,32 @@ mod tests {
     fn adopt_wine_game(name: &str) {
         let cfg = crate::backend::config::ConfigManager::new();
         cfg.set_game_value(name, "executable", "/games/Game.exe");
+    }
+
+    fn tree_proc(pid: u32, ppid: u32, starttime: u64, exe: &str) -> super::proc_tree::ProcInfo {
+        super::proc_tree::ProcInfo {
+            pid,
+            ppid,
+            starttime,
+            exe: exe.to_string(),
+            cmdline: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn adopted_appimage_tree_lives_by_pid_without_mounts() {
+        // Adopted AppImage: no running_child, so session_pid is the root.
+        let procs = vec![tree_proc(42, 1, 100, "/opt/game/game")];
+        assert!(ProtonManager::tree_alive(42, 100, &[], &procs));
+        // Dead pid: the tree is empty and the session closes.
+        assert!(!ProtonManager::tree_alive(42, 100, &[], &[]));
+        // A reused pid with another start time is not this session.
+        assert!(!ProtonManager::tree_alive(42, 999, &[], &procs));
+        // The mount still covers a payload whose root went away.
+        let mounts = vec!["/tmp/.mount_GameX".to_string()];
+        let payload = vec![tree_proc(77, 1, 500, "/tmp/.mount_GameX/usr/bin/game")];
+        assert!(ProtonManager::tree_alive(42, 100, &mounts, &payload));
+        assert!(!ProtonManager::tree_alive(42, 100, &mounts, &[]));
     }
 
     #[test]
