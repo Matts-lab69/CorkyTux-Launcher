@@ -165,12 +165,12 @@ fn apply_action(window: &adw::ApplicationWindow, action: NavAction) {
                 Dir::Right => gtk::DirectionType::Right,
             };
             window.child_focus(direction);
-            if let Some(focus) = gtk::prelude::WindowExt::focus(window) {
+            if let Some(focus) = gtk::prelude::GtkWindowExt::focus(window) {
                 ensure_visible(&focus);
             }
         }
         NavAction::Activate => {
-            if let Some(focus) = gtk::prelude::WindowExt::focus(window) {
+            if let Some(focus) = gtk::prelude::GtkWindowExt::focus(window) {
                 activate(&focus);
             }
         }
