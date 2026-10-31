@@ -4461,7 +4461,9 @@ mod tests {
         assert_eq!(secs, 0, "the ledger must handle the adopted close");
         // Wall time can cross one second between the setup and the close;
         // 300 s came from the fixed checkpoint, the rest from the close.
-        assert!((600..=601).contains(&stored), "credited once, got {}", stored);
+        // The 9 checkpoints and the temp dir take a couple of seconds; the
+        // close uses SystemClock, so allow that overhead.
+        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
         assert!(deleted, "ledger removed after the close");
     }
 
@@ -4508,7 +4510,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
 
         assert_eq!(secs, 0);
-        assert!((600..=601).contains(&stored), "credited once, got {}", stored);
+        // The 9 checkpoints and the temp dir take a couple of seconds; the
+        // close uses SystemClock, so allow that overhead.
+        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
         assert!(deleted);
     }
 
@@ -4555,7 +4559,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
 
         assert_eq!(secs, 0);
-        assert!((600..=601).contains(&stored), "credited once, got {}", stored);
+        // The 9 checkpoints and the temp dir take a couple of seconds; the
+        // close uses SystemClock, so allow that overhead.
+        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
         assert!(deleted);
     }
 
@@ -4602,7 +4608,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
 
         assert_eq!(secs, 0);
-        assert!((600..=601).contains(&stored), "credited once, got {}", stored);
+        // The 9 checkpoints and the temp dir take a couple of seconds; the
+        // close uses SystemClock, so allow that overhead.
+        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
         assert!(deleted);
     }
 
