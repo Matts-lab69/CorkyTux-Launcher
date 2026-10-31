@@ -87,7 +87,7 @@ pub fn load_closed(dir: &Path) -> Vec<ClosedRecord> {
 
 /// Atomic write (0600): a temp file in the same directory, then rename.
 pub fn save_closed(dir: &Path, records: &[ClosedRecord]) -> Result<(), String> {
-    ensure_dir(dir)?;
+    ensure_dir(dir).map_err(|e| e.to_string())?;
     let list: Vec<serde_json::Value> = records
         .iter()
         .map(|r| {

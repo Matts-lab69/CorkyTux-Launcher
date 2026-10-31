@@ -381,14 +381,13 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                     dlg.add_response("quit", "Quit");
                     dlg.set_response_appearance("quit", adw::ResponseAppearance::Destructive);
                     dlg.set_default_response(Some("background"));
-                    let remember = gtk::CheckButton::with_label("Remember my choice");
-                    dlg.set_extra_child(Some(&remember));
+                    let remember_btn = gtk::CheckButton::with_label("Remember my choice");
+                    dlg.set_extra_child(Some(&remember_btn));
                     let win_c = win_for_dialog.clone();
                     let state_d = state_c.clone();
+                    let remember_c = remember_btn.clone();
                     dlg.connect_response(move |dlg, resp| {
-                        let remember = dlg.extra_child().and_then(|w| w.downcast::<gtk::CheckButton>().ok())
-                            .map(|c| c.is_active())
-                            .unwrap_or(false);
+                        let remember = remember_c.is_active();
                         match resp {
                             "background" => {
                                 if remember {
