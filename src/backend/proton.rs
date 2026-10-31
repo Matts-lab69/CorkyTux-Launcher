@@ -285,6 +285,9 @@ pub(crate) struct ParkedSession {
     kind: ParkedKind,
     start: std::time::Instant,
     child: Option<std::process::Child>,
+    /// Pid of an adopted session (no local child) so its ledger survives
+    /// parking, promotion and stop.
+    adopted_pid: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -2328,6 +2331,8 @@ impl ProtonManager {
         };
         let start = self.imp().session_start.borrow().unwrap_or_else(std::time::Instant::now);
         let child = self.imp().running_child.borrow_mut().take();
+        let adopted_pid = self.imp().session_pid.get();
+        self.imp().session_pid.set(None);
         let mut parked = self.imp().parked.borrow_mut();
         parked.retain(|p| p.name != name);
         parked.push(ParkedSession {
@@ -2335,6 +2340,7 @@ impl ProtonManager {
             kind,
             start,
             child,
+            adopted_pid,
         });
     }
 
@@ -2439,15 +2445,13 @@ impl ProtonManager {
         let elapsed = std::time::Instant::now()
             .duration_since(entry.start)
             .as_secs();
-        let outcome = if let Some(mut c) = entry.child.take() {
-            let pid = c.id();
+        let child_pid = entry.child.as_ref().map(|c| c.id());
+        if let Some(mut c) = entry.child.take() {
             let _ = c.kill();
-            // Same decision as a normal close: the ledger credits the
-            // active part, the caller only covers what the ledger missed.
-            self.ledger_finish_pid(pid)
-        } else {
-            // Adopted parked session (no local child): no ledger.
-            super::session_ledger::FinishOutcome::NoLedger
+        }
+        let outcome = match super::session_ledger::resolve_close_pid(child_pid, entry.adopted_pid) {
+            Some(pid) => self.ledger_finish_pid(pid),
+            None => super::session_ledger::FinishOutcome::NoLedger,
         };
         let secs = super::session_ledger::close_credit(outcome, elapsed);
         Some((entry.name, secs))
@@ -2481,6 +2485,7 @@ impl ProtonManager {
         let child = entry.child.take();
         *self.imp().session_game.borrow_mut() = entry.name.clone();
         *self.imp().session_start.borrow_mut() = Some(entry.start);
+        self.imp().session_pid.set(entry.adopted_pid);
         self.imp().game_running.set(true);
         match &entry.kind {
             ParkedKind::AppImage { .. } => {
@@ -4612,6 +4617,112 @@ mod tests {
         // close uses SystemClock, so allow that overhead.
         assert!((600..=605).contains(&stored), "credited once, got {}", stored);
         assert!(deleted);
+    }
+
+    #[test]
+    fn adopted_parked_stop_credits_once() {
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("pm-park-stop");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::env::set_var("HOME", &base);
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600)
+            .unwrap();
+        *pm.imp().session_game.borrow_mut() = "Game".to_string();
+        *pm.imp().session_start.borrow_mut() =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(600));
+        pm.imp().session_pid.set(Some(pid));
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+
+        pm.park_current();
+        let stored_pid = pm.imp().parked.borrow()[0].adopted_pid;
+        let (_, secs) = pm.stop_parked("Game").unwrap();
+        let cfg = crate::backend::config::ConfigManager::new();
+        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert_eq!(stored_pid, Some(pid));
+        assert_eq!(secs, 0);
+        assert!((600..=601).contains(&stored), "credited once, got {}", stored);
+        assert!(deleted);
+    }
+
+    #[test]
+    fn adopted_parked_promote_closes_once() {
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("pm-park-promote");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::env::set_var("HOME", &base);
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600)
+            .unwrap();
+        let pattern = std::env::current_exe().unwrap().to_string_lossy().to_string();
+        *pm.imp().parked.borrow_mut() = vec![ParkedSession {
+            name: "Game".to_string(),
+            kind: ParkedKind::Emu { pattern },
+            start: std::time::Instant::now() - std::time::Duration::from_secs(600),
+            child: None,
+            adopted_pid: Some(pid),
+        }];
+
+        assert!(pm.promote_parked());
+        let restored = pm.imp().session_pid.get();
+        pm.imp().session_appimage.set(true);
+        let (_, secs) = pm.stop_game().unwrap();
+        let cfg = crate::backend::config::ConfigManager::new();
+        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert_eq!(restored, Some(pid));
+        assert_eq!(secs, 0);
+        assert!((600..=601).contains(&stored), "credited once, got {}", stored);
+        assert!(deleted);
+    }
+
+    #[test]
+    fn parked_with_local_child_is_unchanged() {
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("pm-park-child");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::env::set_var("HOME", &base);
+
+        let pm = ProtonManager::new();
+        let child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        *pm.imp().parked.borrow_mut() = vec![ParkedSession {
+            name: "Game".to_string(),
+            kind: ParkedKind::Emu { pattern: String::new() },
+            start: std::time::Instant::now() - std::time::Duration::from_secs(10),
+            child: Some(child),
+            adopted_pid: None,
+        }];
+        let (_, secs) = pm.stop_parked("Game").unwrap();
+        let cfg = crate::backend::config::ConfigManager::new();
+        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let _ = std::fs::remove_dir_all(&base);
+        assert!((10..=11).contains(&secs), "secs {}", secs);
+        assert!((10..=11).contains(&stored), "stored {}", stored);
     }
 
     #[test]
