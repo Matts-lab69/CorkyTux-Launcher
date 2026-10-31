@@ -259,7 +259,13 @@ impl ConfigManager {
     }
 
     fn setup_directories(&self) {
-        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let home = match dirs::home_dir() {
+            Some(h) => h,
+            None => {
+                eprintln!("[CorkyTux] HOME is empty or unset; cannot locate config/data dirs");
+                return;
+            }
+        };
         let config_dir = home.join(".config").join("CorkyTux");
         let data_dir = home.join(".local").join("share").join("CorkyTux");
         fs::create_dir_all(&config_dir).ok();
@@ -276,7 +282,7 @@ impl ConfigManager {
                 return PathBuf::from(format!("/home/{}", sudo_user));
             }
         }
-        dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
+        dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
     }
 
     pub fn config_dir(&self) -> PathBuf {
