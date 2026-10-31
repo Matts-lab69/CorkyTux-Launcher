@@ -524,7 +524,7 @@ impl RecentModel {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_steam_game, steam_compat_path};
+    use super::{is_steam_game, steam_compat_path, GameModel};
 
     #[test]
     fn steam_game_covers_source_and_id() {
