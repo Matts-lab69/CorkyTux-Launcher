@@ -2130,14 +2130,27 @@ impl ProtonManager {
     }
 
     fn ledger_finish(&self) {
-        let Some(dir) = Self::ledger_dir() else { return };
         let pid = match self.imp().running_child.borrow().as_ref() {
             Some(c) => c.id(),
             None => return,
         };
+        self.ledger_finish_pid(pid);
+    }
+
+    /// Final checkpoint for an explicit pid (foreground close and parked
+    /// close share this path). `ended_at` is recorded first, so a failed
+    /// credit leaves the tail for recovery.
+    fn ledger_finish_pid(&self, pid: u32) {
+        let Some(dir) = Self::ledger_dir() else { return };
         let clock = super::session_ledger::SystemClock;
+        if let Err(e) = super::session_ledger::mark_ended(&dir, pid, {
+            use super::session_ledger::Clock;
+            clock.now()
+        }) {
+            eprintln!("[session] cannot record ended_at: {}", e);
+        }
         if let Err(e) = super::session_ledger::finish(&dir, pid, &clock, &mut |g, d| Self::ledger_credit(g, d)) {
-            eprintln!("[session] final checkpoint failed: {}", e);
+            eprintln!("[session] final checkpoint failed (kept for recovery): {}", e);
         }
     }
 
@@ -2378,12 +2391,20 @@ impl ProtonManager {
                 }
             }
         }
+        let mut secs = 0;
         if let Some(mut c) = entry.child.take() {
+            let pid = c.id();
             let _ = c.kill();
+            // The ledger already credited the active part; credit only the
+            // remaining delta and delete it, exactly like a normal close.
+            self.ledger_finish_pid(pid);
+        } else {
+            // Adopted parked session (no local child): no ledger, bank the
+            // full parked duration through the caller.
+            secs = std::time::Instant::now()
+                .duration_since(entry.start)
+                .as_secs();
         }
-        let secs = std::time::Instant::now()
-            .duration_since(entry.start)
-            .as_secs();
         Some((entry.name, secs))
     }
 

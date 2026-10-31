@@ -24,6 +24,9 @@ pub struct SessionLedger {
     pub pid_starttime: u64,
     pub started_at: u64,
     pub credited_until: u64,
+    /// Set right before the final checkpoint. If the credit fails, recovery
+    /// uses it to credit the missed tail.
+    pub ended_at: Option<u64>,
 }
 
 pub trait Clock {
@@ -58,6 +61,7 @@ impl SessionLedger {
             pid_starttime,
             started_at: now,
             credited_until: now,
+            ended_at: None,
         }
     }
 
@@ -69,6 +73,7 @@ impl SessionLedger {
             "pid_starttime": self.pid_starttime,
             "started_at": self.started_at,
             "credited_until": self.credited_until,
+            "ended_at": self.ended_at,
         })
         .to_string()
     }
@@ -85,6 +90,7 @@ impl SessionLedger {
             pid_starttime: v.get("pid_starttime")?.as_u64()?,
             started_at: v.get("started_at")?.as_u64()?,
             credited_until: v.get("credited_until")?.as_u64()?,
+            ended_at: v.get("ended_at").and_then(|x| x.as_u64()),
         })
     }
 }
@@ -141,6 +147,16 @@ pub fn remove(dir: &Path, pid: u32) {
 pub fn move_bad(dir: &Path, path: &Path) {
     let bad = path.with_extension("json.bad");
     let _ = fs::rename(path, bad);
+}
+
+/// Record the end time before the final checkpoint, without the lock, so a
+/// failed credit still leaves the tail for recovery.
+pub fn mark_ended(dir: &Path, pid: u32, now: u64) -> Result<(), String> {
+    let Some(mut ledger) = load(dir, pid) else {
+        return Ok(());
+    };
+    ledger.ended_at = Some(now);
+    save(dir, &ledger)
 }
 
 /// Credit one checkpoint: compute the delta, credit it, then move
@@ -212,9 +228,16 @@ pub fn recover<C: Clock>(
             );
             continue;
         }
-        // The last checkpoint already credited up to `credited_until`. Do
-        // not invent the crash gap, and do not credit again (idempotent).
-        let _ = credit;
+        // If the close recorded `ended_at` but the final credit failed (busy
+        // lock), credit the tail up to `ended_at`. Without `ended_at`, the
+        // last checkpoint already credited up to `credited_until`; credit
+        // nothing beyond it.
+        if let Some(ended) = ledger.ended_at {
+            let d = delta(ledger.credited_until, ended);
+            if d > 0 {
+                credit(&ledger.game_name, d)?;
+            }
+        }
         remove(dir, ledger.pid);
         handled += 1;
     }
@@ -449,6 +472,67 @@ mod tests {
         let r = finish(&dir, 42, &clock, &mut |_g, _d| Err("busy".to_string()));
         assert!(r.is_err());
         assert!(load(&dir, 42).is_some());
+    }
+
+    #[test]
+    fn parked_session_credits_exact_duration() {
+        // Active 10 min (checkpoints every 60 s), parked 5 min, then close.
+        let dir = tmp("ledger-parked");
+        let clock = FakeClock(Rc::new(RefCell::new(0)));
+        let mut c = Creditor::new();
+        save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
+        for t in (60..=600).step_by(60) {
+            *clock.0.borrow_mut() = t;
+            checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        }
+        *clock.0.borrow_mut() = 900;
+        mark_ended(&dir, 42, 900).unwrap();
+        finish(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        assert_eq!(c.total, 900);
+        assert!(load(&dir, 42).is_none());
+    }
+
+    #[test]
+    fn close_with_flock_failure_leaves_ended_at() {
+        let dir = tmp("ledger-ended");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
+        *clock.0.borrow_mut() = 1060;
+        mark_ended(&dir, 42, 1060).unwrap();
+        let r = finish(&dir, 42, &clock, &mut |_g, _d| Err("busy".to_string()));
+        assert!(r.is_err());
+        let l = load(&dir, 42).unwrap();
+        assert_eq!(l.ended_at, Some(1060));
+    }
+
+    #[test]
+    fn recovery_credits_tail_up_to_ended_at() {
+        let dir = tmp("ledger-tail");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
+        *clock.0.borrow_mut() = 1060;
+        checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        mark_ended(&dir, 42, 1200).unwrap();
+        let n = recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d)).unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(c.total, 200); // 60 from the checkpoint + 140 from ended_at
+        assert!(load(&dir, 42).is_none());
+    }
+
+    #[test]
+    fn recovery_with_ended_at_twice_is_idempotent() {
+        let dir = tmp("ledger-tail-twice");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
+        *clock.0.borrow_mut() = 1060;
+        checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        mark_ended(&dir, 42, 1200).unwrap();
+        recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d)).unwrap();
+        let after = c.total;
+        recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d)).unwrap();
+        assert_eq!(c.total, after);
     }
 }
 
