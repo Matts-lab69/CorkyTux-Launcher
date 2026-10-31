@@ -5157,7 +5157,6 @@ mod tests {
     }
 
     #[test]
-    fn scan_budget_table() {    #[test]
     fn scan_budget_table() {
         assert!(scan_budget_left(0, 3_000));
         assert!(scan_budget_left(2_999, 3_000));
