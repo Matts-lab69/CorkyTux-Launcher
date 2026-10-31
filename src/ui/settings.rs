@@ -1479,6 +1479,7 @@ pub fn show_settings_modal(
         row
     };
 
+    misc_inner.append(&misc_switch("controllerSupport", "Controller support", true, true, state));
     misc_inner.append(&misc_switch("gamesUsesWined3d", "Use wined3d instead of DXVK", false, true, state));
     misc_inner.append(&misc_switch("gamesUsesWayland", "Prefer Wayland driver", false, true, state));
     misc_inner.append(&misc_switch("gamesUsesSteamRuntime", "Use Steam Runtime for Proton games", true, true, state));

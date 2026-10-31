@@ -153,7 +153,11 @@ fn spawn_thread(tx: async_channel::Sender<GamepadMessage>) {
 
 /// Wires the pad to the window. Best effort: without a controller or without
 /// permissions the feature quietly does nothing.
-pub fn start(window: &adw::ApplicationWindow) {
+pub fn start(
+    window: &adw::ApplicationWindow,
+    help: &gtk::Label,
+    toasts: &adw::ToastOverlay,
+) {
     let (tx, rx) = async_channel::unbounded::<GamepadMessage>();
     spawn_thread(tx);
     let state = std::rc::Rc::new(std::cell::RefCell::new(NavState::default()));
@@ -161,8 +165,10 @@ pub fn start(window: &adw::ApplicationWindow) {
     let motion = gtk::EventControllerMotion::new();
     {
         let w = window.clone();
+        let help_c = help.clone();
         motion.connect_motion(move |_, _, _| {
             w.remove_css_class("gamepad-mode");
+            help_c.set_visible(false);
         });
     }
     window.add_controller(motion);
@@ -170,14 +176,18 @@ pub fn start(window: &adw::ApplicationWindow) {
     let keys = gtk::EventControllerKey::new();
     {
         let w = window.clone();
+        let help_c = help.clone();
         keys.connect_key_pressed(move |_, _, _, _| {
             w.remove_css_class("gamepad-mode");
+            help_c.set_visible(false);
             glib::Propagation::Proceed
         });
     }
     window.add_controller(keys);
 
     let win = window.clone();
+    let help_c = help.clone();
+    let toasts_c = toasts.clone();
     glib::timeout_add_local(Duration::from_millis(16), move || {
         let setting = crate::backend::config::ConfigManager::new()
             .launcher_value("controllerSupport")
@@ -192,6 +202,7 @@ pub fn start(window: &adw::ApplicationWindow) {
             match msg {
                 GamepadMessage::Input(input) => {
                     win.add_css_class("gamepad-mode");
+                    help_c.set_visible(true);
                     let mut st = state.borrow_mut();
                     if let Some(action) = gamepad_nav::map_event(input, &mut st, now_ms()) {
                         drop(st);
@@ -199,9 +210,13 @@ pub fn start(window: &adw::ApplicationWindow) {
                     }
                 }
                 GamepadMessage::Connected(name) => {
+                    let family = gamepad_nav::detect_family(&name);
+                    help_c.set_text(Some(gamepad_nav::help_text(family)));
+                    toasts_c.add_toast(adw::Toast::new(&format!("Controller connected: {}", name)));
                     eprintln!("[gamepad] connected: {}", name);
                 }
                 GamepadMessage::Disconnected(name) => {
+                    toasts_c.add_toast(adw::Toast::new(&format!("Controller disconnected: {}", name)));
                     eprintln!("[gamepad] disconnected: {}", name);
                 }
             }

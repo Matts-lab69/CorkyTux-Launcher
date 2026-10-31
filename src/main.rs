@@ -982,7 +982,16 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     // (handled inside DetailsPanel)
 
     main_box.append(&body);
-    window.set_content(Some(&main_box));
+    // Gamepad help bar: hidden until a pad moves the focus.
+    let gamepad_help = gtk::Label::new(None);
+    gamepad_help.add_css_class("gamepad-help");
+    gamepad_help.set_halign(gtk::Align::Fill);
+    gamepad_help.set_xalign(0.0);
+    gamepad_help.set_visible(false);
+    main_box.append(&gamepad_help);
+    let toast_overlay = adw::ToastOverlay::new();
+    toast_overlay.set_child(Some(&main_box));
+    window.set_content(Some(&toast_overlay));
 
     // Session poller (C++ onGameFinished parity): bank play time when the
     // child exits on its own, and keep the Play/Stop label in sync.
@@ -1068,7 +1077,7 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     refresh_warn_buttons(&state);
 
     // Gamepad navigation (D3: ignored unless this window is active).
-    ui::gamepad::start(&window);
+    ui::gamepad::start(&window, &gamepad_help, &toast_overlay);
 
     window
 }

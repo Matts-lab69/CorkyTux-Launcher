@@ -144,6 +144,17 @@ pub fn detect_family(name: &str) -> PadFamily {
     PadFamily::Generic
 }
 
+/// Bottom help bar text for the pad family. Only glyphs the family prints
+/// are used; the physical South button always confirms.
+pub fn help_text(family: PadFamily) -> &'static str {
+    match family {
+        PadFamily::PlayStation => "✕ Select   ○ Back   □ Context   △ Quick   L1/R1 Tabs   Options Menu",
+        PadFamily::Xbox => "A Select   B Back   X Context   Y Quick   LB/RB Tabs   Menu Menu",
+        PadFamily::Nintendo => "B Select   A Back   Y Context   X Quick   L/R Tabs   + Menu",
+        PadFamily::Generic => "South Select   East Back   West Context   North Quick   LB/RB Tabs   Start Menu",
+    }
+}
+
 /// D3: the pad is ignored unless the window is active, visible and the
 /// feature is on.
 pub fn should_handle(window_active: bool, window_visible: bool, setting: bool) -> bool {
@@ -363,6 +374,15 @@ mod tests {
         assert!(!accept_pad(physical, true));
         assert!(accept_pad(physical, false));
         assert!(accept_pad(other, false));
+    }
+
+    #[test]
+    fn help_bar_per_family() {
+        assert!(help_text(PadFamily::PlayStation).contains("✕ Select"));
+        assert!(help_text(PadFamily::Xbox).contains("A Select"));
+        assert!(help_text(PadFamily::Nintendo).contains("B Select"));
+        assert!(help_text(PadFamily::Generic).contains("South Select"));
+        assert!(help_text(PadFamily::Xbox).contains("Y Quick"));
     }
 
 }
