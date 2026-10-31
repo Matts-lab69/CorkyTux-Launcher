@@ -387,27 +387,6 @@ mod tests {
         assert_eq!(dm, 0o700);
         assert_eq!(fm, 0o600);
     }
-}
-
-/// Field 22 of `/proc/<pid>/stat` (start time in clock ticks).
-pub fn pid_starttime(pid: u32) -> Option<u64> {
-    let stat = fs::read_to_string(format!("/proc/{}/stat", pid)).ok()?;
-    let rp = stat.rfind(')')?;
-    let rest: Vec<&str> = stat[rp + 1..].split_whitespace().collect();
-    if rest.len() < 20 {
-        return None;
-    }
-    rest[19].parse::<u64>().ok()
-}
-
-#[cfg(test)]
-mod extra_tests {
-    #[test]
-    fn delta_clamps_to_a_day() {
-        assert_eq!(super::delta(0, super::MAX_DELTA_SECS + 5), super::MAX_DELTA_SECS);
-        assert_eq!(super::delta(10, 5), 0);
-        assert_eq!(super::delta(10, 70), 60);
-    }
 
     #[test]
     fn integration_begin_three_checkpoints_and_close() {
@@ -464,5 +443,26 @@ mod extra_tests {
             Ok(())
         }).unwrap();
         assert_eq!(existing, 5060);
+    }
+}
+
+/// Field 22 of `/proc/<pid>/stat` (start time in clock ticks).
+pub fn pid_starttime(pid: u32) -> Option<u64> {
+    let stat = fs::read_to_string(format!("/proc/{}/stat", pid)).ok()?;
+    let rp = stat.rfind(')')?;
+    let rest: Vec<&str> = stat[rp + 1..].split_whitespace().collect();
+    if rest.len() < 20 {
+        return None;
+    }
+    rest[19].parse::<u64>().ok()
+}
+
+#[cfg(test)]
+mod extra_tests {
+    #[test]
+    fn delta_clamps_to_a_day() {
+        assert_eq!(super::delta(0, super::MAX_DELTA_SECS + 5), super::MAX_DELTA_SECS);
+        assert_eq!(super::delta(10, 5), 0);
+        assert_eq!(super::delta(10, 70), 60);
     }
 }
