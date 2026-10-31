@@ -2276,14 +2276,37 @@ impl ProtonManager {
     /// Called when parking and when launching, so dead entries never pile
     /// up behind a live one and a relaunched app never doubles its entry.
     fn purge_dead(&self) {
-        let mut parked = self.imp().parked.borrow_mut();
-        let mut i = 0;
-        while i < parked.len() {
-            if self.parked_alive(&mut parked[i]) {
-                i += 1;
-            } else {
-                parked.remove(i);
+        let mut dead = Vec::new();
+        {
+            let mut parked = self.imp().parked.borrow_mut();
+            let mut i = 0;
+            while i < parked.len() {
+                if self.parked_alive(&mut parked[i]) {
+                    i += 1;
+                } else {
+                    dead.push(parked.remove(i));
+                }
             }
+        }
+        for entry in dead {
+            self.credit_parked_entry(&entry);
+        }
+    }
+
+    /// A parked session that dies on its own still banks its time: the
+    /// ledger when it has one, the caller-equivalent credit otherwise.
+    fn credit_parked_entry(&self, entry: &ParkedSession) {
+        let elapsed = std::time::Instant::now()
+            .duration_since(entry.start)
+            .as_secs();
+        let child_pid = entry.child.as_ref().map(|c| c.id());
+        let outcome = match super::session_ledger::resolve_close_pid(child_pid, entry.adopted_pid) {
+            Some(pid) => self.ledger_finish_pid(pid),
+            None => super::session_ledger::FinishOutcome::NoLedger,
+        };
+        let secs = super::session_ledger::close_credit(outcome, elapsed);
+        if secs > 0 && !entry.name.is_empty() {
+            let _ = super::ConfigManager::new().credit_time_spent(&entry.name, secs);
         }
     }
 
@@ -2463,6 +2486,8 @@ impl ProtonManager {
     /// is lost (banking them would need the game model, which lives in the
     /// UI layer). Called when the foreground session closes.
     fn promote_parked(&self) -> bool {
+        // Bank and drop dead entries before promoting a live one.
+        self.purge_dead();
         let mut parked = self.imp().parked.borrow_mut();
         let idx = {
             let mut found = None;
@@ -4708,6 +4733,44 @@ mod tests {
     }
 
     #[test]
+    fn adopted_parked_dies_alone_credits_parked_time() {
+        let base = std::env::temp_dir().join("pm-park-dies");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+
+        let pm = ProtonManager::new();
+        let pid = 999_999u32;
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        let start = now - 900;
+        let mut ledger =
+            crate::backend::session_ledger::SessionLedger::with_start("Game", pid, 7, start);
+        // 10 min active already credited, 5 min parked not yet.
+        ledger.credited_until = now - 300;
+        crate::backend::session_ledger::save(&dir, &ledger).unwrap();
+        let _ = crate::backend::config::ConfigManager::new().credit_time_spent("Game", 600);
+
+        *pm.imp().parked.borrow_mut() = vec![ParkedSession {
+            name: "Game".to_string(),
+            kind: ParkedKind::AppImage { exe: String::new() },
+            start: std::time::Instant::now() - std::time::Duration::from_secs(900),
+            child: None,
+            adopted_pid: Some(pid),
+        }];
+        pm.purge_dead();
+        let cfg = crate::backend::config::ConfigManager::new();
+        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
+        let _ = std::fs::remove_dir_all(&base);
+        assert!((900..=901).contains(&stored), "credited once, got {}", stored);
+        assert!(deleted);
+    }
+
+    #[test]
     fn parked_with_local_child_is_unchanged() {
         let pm = ProtonManager::new();
         let child = std::process::Command::new("true").spawn().unwrap();
@@ -4720,7 +4783,19 @@ mod tests {
         }];
         // stop_parked returns the elapsed time; the UI caller credits it.
         let (_, secs) = pm.stop_parked("Game").unwrap();
+        let base = std::env::temp_dir().join("pm-park-child-time");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+        let _ = crate::backend::config::ConfigManager::new().credit_time_spent("Game", secs);
+        let cfg = crate::backend::config::ConfigManager::new();
+        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let deleted = crate::backend::session_ledger::load(&dir, std::process::id()).is_none();
+        let _ = std::fs::remove_dir_all(&base);
         assert!((10..=11).contains(&secs), "secs {}", secs);
+        assert!((10..=11).contains(&stored), "stored {}", stored);
+        assert!(deleted);
     }
 
     #[test]
