@@ -1670,6 +1670,7 @@ mod tests {
     #[test]
     fn scan_steam_covers_flatpak_steam() {
         let _g = crate::test_env::lock();
+        let _g = crate::test_env::lock();
         let base = std::env::temp_dir().join("flatpak-steam-test");
         let _ = std::fs::remove_dir_all(&base);
         let steamapps = base.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps");
