@@ -289,8 +289,26 @@ impl GameModel {
         self.imp().games.borrow().iter().find(|g| g.name == name).cloned()
     }
 
-    pub fn add_game(&self, entry: GameEntry) {
+    pub fn add_game(&self, mut entry: GameEntry) {
         let config = super::ConfigManager::new();
+        // Re-adding or editing an existing game must not wipe the time the
+        // session accounting already banked. A caller that has no playtime
+        // (manual add, re-import of the same name) passes 0; keep the stored
+        // value instead. A real import passes its own non-zero playtime.
+        if entry.time_spent == 0 {
+            if let Some(existing) = config.game_value(&entry.name, "TimeSpent")
+                .and_then(|v| v.parse::<u64>().ok())
+            {
+                entry.time_spent = existing;
+            }
+        }
+        if entry.last_played == 0 {
+            if let Some(existing) = config.game_value(&entry.name, "LastPlayed")
+                .and_then(|v| v.parse::<u64>().ok())
+            {
+                entry.last_played = existing;
+            }
+        }
         for (key, value) in entry.to_section() {
             config.set_game_value(&entry.name, &key, &value);
         }
