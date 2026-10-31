@@ -2118,16 +2118,15 @@ impl ProtonManager {
                 None => return,
             }
         };
-        let Some(start) = super::session_ledger::pid_starttime(pid) else { return };
-        // A reused pid must not inherit a previous session's tombstone.
-        super::session_ledger::remove_closed(&dir, pid);
+        let start = super::session_ledger::pid_starttime(pid);
         let now = {
             use super::session_ledger::Clock;
             super::session_ledger::SystemClock.now()
         };
-        let ledger = super::session_ledger::SessionLedger::new(game_name, pid, start, now);
-        if let Err(e) = super::session_ledger::save(&dir, &ledger) {
-            eprintln!("[session] cannot save ledger: {}", e);
+        match super::session_ledger::begin_ledger(&dir, game_name, pid, start, now) {
+            Ok(None) => eprintln!("[session] cannot read starttime for pid {}", pid),
+            Ok(Some(_)) => {}
+            Err(e) => eprintln!("[session] cannot save ledger: {}", e),
         }
     }
 
