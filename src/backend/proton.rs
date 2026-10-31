@@ -4709,12 +4709,6 @@ mod tests {
 
     #[test]
     fn parked_with_local_child_is_unchanged() {
-        let _g = crate::test_env::lock();
-        let base = std::env::temp_dir().join("pm-park-child");
-        let _ = std::fs::remove_dir_all(&base);
-        std::fs::create_dir_all(&base).unwrap();
-        std::env::set_var("HOME", &base);
-
         let pm = ProtonManager::new();
         let child = std::process::Command::new("true").spawn().unwrap();
         *pm.imp().parked.borrow_mut() = vec![ParkedSession {
@@ -4724,12 +4718,9 @@ mod tests {
             child: Some(child),
             adopted_pid: None,
         }];
+        // stop_parked returns the elapsed time; the UI caller credits it.
         let (_, secs) = pm.stop_parked("Game").unwrap();
-        let cfg = crate::backend::config::ConfigManager::new();
-        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
-        let _ = std::fs::remove_dir_all(&base);
         assert!((10..=11).contains(&secs), "secs {}", secs);
-        assert!((10..=11).contains(&stored), "stored {}", stored);
     }
 
     #[test]
