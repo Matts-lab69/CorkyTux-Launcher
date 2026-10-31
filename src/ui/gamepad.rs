@@ -242,7 +242,7 @@ fn close_top_modal(window: &adw::ApplicationWindow) {
     };
     let window: &gtk::Window = window.upcast_ref();
     for w in app.windows() {
-        if w.is_visible() && w.is_modal() && w != window {
+        if w.is_visible() && w.is_modal() && w != *window {
             w.close();
             return;
         }
