@@ -2119,6 +2119,8 @@ impl ProtonManager {
             }
         };
         let Some(start) = super::session_ledger::pid_starttime(pid) else { return };
+        // A reused pid must not inherit a previous session's tombstone.
+        super::session_ledger::remove_closed(&dir, pid);
         let now = {
             use super::session_ledger::Clock;
             super::session_ledger::SystemClock.now()
