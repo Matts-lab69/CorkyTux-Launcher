@@ -4684,10 +4684,9 @@ mod tests {
         };
         crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600)
             .unwrap();
-        let pattern = std::env::current_exe().unwrap().to_string_lossy().to_string();
         *pm.imp().parked.borrow_mut() = vec![ParkedSession {
             name: "Game".to_string(),
-            kind: ParkedKind::Emu { pattern },
+            kind: ParkedKind::Emu { pattern: String::new() },
             start: std::time::Instant::now() - std::time::Duration::from_secs(600),
             child: None,
             adopted_pid: Some(pid),
@@ -4717,7 +4716,7 @@ mod tests {
         std::env::set_var("HOME", &base);
 
         let pm = ProtonManager::new();
-        let child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let child = std::process::Command::new("true").spawn().unwrap();
         *pm.imp().parked.borrow_mut() = vec![ParkedSession {
             name: "Game".to_string(),
             kind: ParkedKind::Emu { pattern: String::new() },
