@@ -825,7 +825,7 @@ pub fn columns_for_width(width_sp: i32) -> u32 {
         return 1;
     }
     let columns = (width_sp + GAP) / (CARD + GAP);
-    columns.clamp(1, 6) as u32
+    columns.clamp(1, 10) as u32
 }
 
 #[cfg(test)]
@@ -932,8 +932,9 @@ mod tests {
         assert_eq!(columns_for_width(474), 3);
         assert_eq!(columns_for_width(640), 4);
         assert_eq!(columns_for_width(800), 5);
-        assert_eq!(columns_for_width(1280), 6);
-        assert_eq!(columns_for_width(3840), 6);
+        assert_eq!(columns_for_width(1280), 8);
+        assert_eq!(columns_for_width(1920), 10);
+        assert_eq!(columns_for_width(3840), 10);
     }
 
 }
