@@ -815,6 +815,19 @@ pub fn source_link(state: &crate::AppState, label: &str, url: Option<String>, to
     l
 }
 
+/// FlowBox columns that fit `width_sp` with 150 px cards and 8 px gaps.
+/// The FlowBox already wraps; setting the per-line cap from the real width
+/// keeps the last row from stretching over the whole viewport.
+pub fn columns_for_width(width_sp: i32) -> u32 {
+    const CARD: i32 = 150;
+    const GAP: i32 = 8;
+    if width_sp <= 0 {
+        return 1;
+    }
+    let columns = (width_sp + GAP) / (CARD + GAP);
+    columns.clamp(1, 6) as u32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -910,4 +923,17 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn columns_for_width_table() {
+        assert_eq!(columns_for_width(0), 1);
+        assert_eq!(columns_for_width(-10), 1);
+        assert_eq!(columns_for_width(200), 1);
+        assert_eq!(columns_for_width(316), 2);
+        assert_eq!(columns_for_width(474), 3);
+        assert_eq!(columns_for_width(640), 4);
+        assert_eq!(columns_for_width(800), 5);
+        assert_eq!(columns_for_width(1280), 6);
+        assert_eq!(columns_for_width(3840), 6);
+    }
+
 }

@@ -910,7 +910,14 @@ impl StoresView {
             gog_sort_dd = None;
         }
         let flow = gtk::FlowBox::new();
-        flow.set_max_children_per_line(10);
+        // Cards are fixed width: cap the columns at what fits the viewport.
+        flow.set_max_children_per_line(crate::ui::helpers::columns_for_width(1200));
+        flow.connect_notify_local(Some("width"), move |flow, _| {
+            let columns = crate::ui::helpers::columns_for_width(flow.width());
+            if flow.max_children_per_line() != columns {
+                flow.set_max_children_per_line(columns);
+            }
+        });
         flow.set_min_children_per_line(1);
         flow.set_selection_mode(gtk::SelectionMode::None);
         flow.set_row_spacing(8);
