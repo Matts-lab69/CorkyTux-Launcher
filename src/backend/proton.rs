@@ -1978,6 +1978,7 @@ impl ProtonManager {
 
     pub fn stop_game(&self) -> Result<(String, u64), String> {
         let mut child = self.imp().running_child.borrow_mut().take();
+        let ledger_pid = child.as_ref().map(|c| c.id());
         if child.is_none() && self.imp().session_game.borrow().is_empty() {
             return Ok((String::new(), 0));
         }
@@ -2060,6 +2061,10 @@ impl ProtonManager {
             }
         }
         self.imp().game_running.set(false);
+        let outcome = match ledger_pid {
+            Some(pid) => self.ledger_finish_pid(pid),
+            None => super::session_ledger::FinishOutcome::NoLedger,
+        };
         let secs = self
             .imp()
             .session_start
@@ -2067,6 +2072,7 @@ impl ProtonManager {
             .take()
             .map(|t| t.elapsed().as_secs())
             .unwrap_or(0);
+        let secs = super::session_ledger::close_credit(outcome, secs);
         let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
         *self.imp().session_prefix.borrow_mut() = String::new();
         *self.imp().session_proton_dir.borrow_mut() = String::new();
@@ -2087,6 +2093,87 @@ impl ProtonManager {
         self.imp().session_game.borrow().clone()
     }
 
+    fn ledger_dir() -> Option<std::path::PathBuf> {
+        let home = std::env::var("HOME").ok().filter(|h| !h.is_empty())?;
+        Some(super::session_ledger::sessions_dir(std::path::Path::new(&home)))
+    }
+
+    fn ledger_credit(game: &str, delta: u64) -> Result<(), String> {
+        super::ConfigManager::new().credit_time_spent(game, delta)
+    }
+
+    fn ledger_begin(&self, game_name: &str) {
+        let Some(dir) = Self::ledger_dir() else { return };
+        let pid = {
+            let slot = self.imp().running_child.borrow();
+            match slot.as_ref() {
+                Some(c) => c.id(),
+                None => return,
+            }
+        };
+        let Some(start) = super::session_ledger::pid_starttime(pid) else { return };
+        let now = {
+            use super::session_ledger::Clock;
+            super::session_ledger::SystemClock.now()
+        };
+        let ledger = super::session_ledger::SessionLedger::new(game_name, pid, start, now);
+        if let Err(e) = super::session_ledger::save(&dir, &ledger) {
+            eprintln!("[session] cannot save ledger: {}", e);
+        }
+    }
+
+    pub fn ledger_checkpoint(&self) {
+        let Some(dir) = Self::ledger_dir() else { return };
+        let pid = match self.imp().running_child.borrow().as_ref() {
+            Some(c) => c.id(),
+            None => return,
+        };
+        let clock = super::session_ledger::SystemClock;
+        if let Err(e) = super::session_ledger::checkpoint(&dir, pid, &clock, &mut |g, d| Self::ledger_credit(g, d)) {
+            eprintln!("[session] checkpoint failed: {}", e);
+        }
+    }
+
+    /// Reports whether a ledger existed for this pid: `NoLedger` means the
+    /// caller must credit the elapsed time itself (adopted session, RPG,
+    /// or a failed `ledger_begin`). `Credited`/`KeptForRecovery` mean it
+    /// was already banked or is left for recovery.
+    fn ledger_finish(&self) -> super::session_ledger::FinishOutcome {
+        let pid = match self.imp().running_child.borrow().as_ref() {
+            Some(c) => c.id(),
+            None => return super::session_ledger::FinishOutcome::NoLedger,
+        };
+        self.ledger_finish_pid(pid)
+    }
+
+    /// Final checkpoint for an explicit pid (foreground close and parked
+    /// close share this path). `ended_at` is recorded first, so a failed
+    /// credit leaves the tail for recovery.
+    fn ledger_finish_pid(&self, pid: u32) -> super::session_ledger::FinishOutcome {
+        let Some(dir) = Self::ledger_dir() else {
+            return super::session_ledger::FinishOutcome::NoLedger;
+        };
+        let clock = super::session_ledger::SystemClock;
+        let outcome = super::session_ledger::finish_outcome(&dir, pid, &clock, &mut |g, d| {
+            Self::ledger_credit(g, d)
+        });
+        if outcome == super::session_ledger::FinishOutcome::KeptForRecovery {
+            eprintln!("[session] final checkpoint failed (kept for recovery)");
+        }
+        outcome
+    }
+
+    pub fn ledger_recover(&self) {
+        let Some(dir) = Self::ledger_dir() else { return };
+        let clock = super::session_ledger::SystemClock;
+        let alive = |pid: u32, st: u64| super::session_ledger::pid_alive_with_starttime(pid, st);
+        match super::session_ledger::recover(&dir, &clock, &alive, &mut |g, d| Self::ledger_credit(g, d)) {
+            Ok(n) if n > 0 => eprintln!("[session] recovered {} stale ledger(s)", n),
+            Err(e) => eprintln!("[session] recovery failed: {}", e),
+            _ => {}
+        }
+    }
+
     fn begin_session(&self, game_name: &str) {
         *self.imp().session_game.borrow_mut() = game_name.to_string();
         *self.imp().session_start.borrow_mut() = Some(std::time::Instant::now());
@@ -2097,6 +2184,7 @@ impl ProtonManager {
         self.imp().rpg_seen_running.set(false);
         self.imp().last_rpg_exit.set(None);
         *self.imp().session_watch.borrow_mut() = String::new();
+        self.ledger_begin(game_name);
     }
 
     /// Is this game section a Wine game? Same split `run_game` dispatches on:
@@ -2312,12 +2400,20 @@ impl ProtonManager {
                 }
             }
         }
-        if let Some(mut c) = entry.child.take() {
-            let _ = c.kill();
-        }
-        let secs = std::time::Instant::now()
+        let elapsed = std::time::Instant::now()
             .duration_since(entry.start)
             .as_secs();
+        let outcome = if let Some(mut c) = entry.child.take() {
+            let pid = c.id();
+            let _ = c.kill();
+            // Same decision as a normal close: the ledger credits the
+            // active part, the caller only covers what the ledger missed.
+            self.ledger_finish_pid(pid)
+        } else {
+            // Adopted parked session (no local child): no ledger.
+            super::session_ledger::FinishOutcome::NoLedger
+        };
+        let secs = super::session_ledger::close_credit(outcome, elapsed);
         Some((entry.name, secs))
     }
 
@@ -2461,6 +2557,7 @@ impl ProtonManager {
         self.imp().rpg_seen_running.set(false);
         self.imp().game_running.set(false);
         self.imp().session_rpg.set(false);
+        let outcome = self.ledger_finish();
         let secs = self
             .imp()
             .session_start
@@ -2468,6 +2565,7 @@ impl ProtonManager {
             .take()
             .map(|t| t.elapsed().as_secs())
             .unwrap_or(0);
+        let secs = super::session_ledger::close_credit(outcome, secs);
         let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
         *self.imp().session_prefix.borrow_mut() = String::new();
         *self.imp().session_proton_dir.borrow_mut() = String::new();
@@ -2563,10 +2661,15 @@ impl ProtonManager {
                 }
             }
         };
+        let ledger_pid = self.imp().running_child.borrow().as_ref().map(|c| c.id());
         *self.imp().running_child.borrow_mut() = None;
         self.imp().game_running.set(false);
         let was_appimage = self.imp().session_appimage.get();
         self.imp().session_appimage.set(false);
+        let outcome = match ledger_pid {
+            Some(pid) => self.ledger_finish_pid(pid),
+            None => super::session_ledger::FinishOutcome::NoLedger,
+        };
         let secs = self
             .imp()
             .session_start
@@ -2574,6 +2677,7 @@ impl ProtonManager {
             .take()
             .map(|t| t.elapsed().as_secs())
             .unwrap_or(0);
+        let secs = super::session_ledger::close_credit(outcome, secs);
         let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
         *self.imp().session_prefix.borrow_mut() = String::new();
         *self.imp().session_proton_dir.borrow_mut() = String::new();
