@@ -369,24 +369,86 @@ fn launch_allowed(new_is_wine: bool, cur_running: bool, cur_is_wine: bool) -> bo
     true
 }
 
-/// Process lookup used by the adoption scan. Production uses pgrep; tests
-/// inject a fixed answer so no real process is needed.
+/// One process as the adoption filter needs it: argv, comm and the
+/// /proc/<pid>/exe link.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct GameProcess {
+    pub args: Vec<String>,
+    pub comm: String,
+    pub exe: String,
+}
+
+/// Process lookup used by the adoption scan. Production reads /proc and
+/// pgrep; tests inject fixed answers so no real process is needed.
 pub(crate) trait SessionScanner {
-    fn appimage_pid(&self, exe: &str) -> Option<u32>;
-    fn watch_pid(&self, pattern: &str) -> Option<u32>;
+    fn appimage_pids(&self, exe: &str) -> Vec<u32>;
+    fn watch_pids(&self, pattern: &str) -> Vec<u32>;
+    fn process(&self, pid: u32) -> Option<GameProcess>;
 }
 
 /// Production scanner: pgrep over the same patterns the launcher uses.
 pub(crate) struct PgrepScanner;
 
 impl SessionScanner for PgrepScanner {
-    fn appimage_pid(&self, exe: &str) -> Option<u32> {
-        ProtonManager::appimage_tree_pid(exe)
+    fn appimage_pids(&self, exe: &str) -> Vec<u32> {
+        ProtonManager::appimage_tree_pids(exe)
     }
 
-    fn watch_pid(&self, pattern: &str) -> Option<u32> {
-        ProtonManager::watch_pid(pattern)
+    fn watch_pids(&self, pattern: &str) -> Vec<u32> {
+        ProtonManager::watch_pids(pattern)
     }
+
+    fn process(&self, pid: u32) -> Option<GameProcess> {
+        ProtonManager::read_game_process(pid)
+    }
+}
+
+/// Editors, pagers, shells and interpreters: they carry a game path as an
+/// argument but must never start a session.
+const NOT_A_GAME_RUNNER: &[&str] = &[
+    "vi", "vim", "nvim", "nano", "emacs", "kate", "gedit", "code", "less", "more", "most", "tail",
+    "head", "cat", "grep", "rg", "sed", "awk", "sort", "file", "strings", "xxd", "hexdump",
+    "objdump", "sh", "bash", "zsh", "fish", "dash", "python", "python3", "perl", "ruby", "node",
+    "xdg-open",
+];
+
+fn process_basename(s: &str) -> &str {
+    s.rsplit('/').next().unwrap_or(s)
+}
+
+/// Does this process belong to `game_exe`? AppImage and native games carry
+/// their path as argv[0]; Wine/Proton and emulators take it as an argument
+/// and their own exe is the runner. A cmdline alone cannot tell
+/// `wine64 game.exe` from `tail -f game.exe`, so the exe/comm decides.
+pub(crate) fn matches_game_process(
+    args: &[String],
+    comm: &str,
+    exe_link: &str,
+    game_exe: &str,
+) -> bool {
+    let game = game_exe.trim();
+    if game.is_empty() {
+        return false;
+    }
+    // The process is the game itself (AppImage path, native binary).
+    if exe_link == game || args.first().map(|a| a.as_str()) == Some(game) {
+        return true;
+    }
+    // AppImage payload: the mounted binary lives under the temporary mount,
+    // never at the .AppImage path.
+    if !exe_link.is_empty() && exe_link.starts_with("/tmp/.mount_") {
+        return true;
+    }
+    // Wine/Proton or an emulator: the game path is an argument, argv[0] is
+    // the runner. Editors, pagers, shells and interpreters are refused.
+    if !args.iter().skip(1).any(|a| a == game) {
+        return false;
+    }
+    let name = process_basename(comm);
+    let exe_name = process_basename(exe_link);
+    !NOT_A_GAME_RUNNER
+        .iter()
+        .any(|denied| name == *denied || exe_name == *denied)
 }
 
 /// Ticks between adoption scans (2 s each): 5 ticks = 10 s.
@@ -2745,7 +2807,11 @@ impl ProtonManager {
             let executor = get("executor");
             let source = get("source");
             if executor == "appimage-launcher" || source.eq_ignore_ascii_case("appimage") {
-                if let Some(pid) = scan.appimage_pid(&exe) {
+                let game = Self::appimage_expand(&exe);
+                for pid in scan.appimage_pids(&exe) {
+                    if !self.candidate_passes(scan, pid, &game) {
+                        continue;
+                    }
                     let start = super::session_ledger::process_start_unix(pid);
                     if !should_adopt(pid, start, self.last_closed(&name)) {
                         continue;
@@ -2755,9 +2821,12 @@ impl ProtonManager {
                 }
                 continue;
             }
+            let pattern = Self::appimage_ere_escape(&exe);
             if !executor.is_empty() {
-                let pattern = Self::appimage_ere_escape(&exe);
-                if let Some(pid) = scan.watch_pid(&pattern) {
+                for pid in scan.watch_pids(&pattern) {
+                    if !self.candidate_passes(scan, pid, &exe) {
+                        continue;
+                    }
                     let start = super::session_ledger::process_start_unix(pid);
                     if !should_adopt(pid, start, self.last_closed(&name)) {
                         continue;
@@ -2767,8 +2836,10 @@ impl ProtonManager {
                 }
                 continue;
             }
-            let pattern = Self::appimage_ere_escape(&exe);
-            if let Some(pid) = scan.watch_pid(&pattern) {
+            for pid in scan.watch_pids(&pattern) {
+                if !self.candidate_passes(scan, pid, &exe) {
+                    continue;
+                }
                 let prefix = self.real_prefix_for(&name).display().to_string();
                 let proton_dir = config
                     .game_value(&name, "Proton")
@@ -2785,6 +2856,17 @@ impl ProtonManager {
         }
         false
     }
+
+    /// Reads /proc and applies the game filter. `false` also means the
+    /// candidate could not be read: never adopt a process we cannot inspect.
+    fn candidate_passes(&self, scan: &dyn SessionScanner, pid: u32, game_exe: &str) -> bool {
+        let Some(proc) = scan.process(pid) else {
+            eprintln!("[session] cannot read /proc/{}; not adopting", pid);
+            return false;
+        };
+        matches_game_process(&proc.args, &proc.comm, &proc.exe, game_exe)
+    }
+
 
     /// C++ onGameFinished parity: call periodically; returns (game, seconds)
     /// once when the running child exits so time can be banked.
@@ -3181,19 +3263,28 @@ impl ProtonManager {
         out
     }
 
+    /// Pids whose command line matches, with a hard 2 s cap: this runs on
+    /// the GTK thread, so a stuck pgrep must not freeze the UI. On timeout or
+    /// error it logs and returns nothing.
     fn appimage_pids(pattern: &str) -> Vec<String> {
         let mut out = Vec::new();
-        if let Ok(res) = Command::new(Self::tool_path("pgrep"))
-            .arg("-f")
-            .arg(pattern)
-            .output()
-        {
-            if res.status.success() {
-                for line in String::from_utf8_lossy(&res.stdout).lines() {
-                    if let Some(pid) = line.split_whitespace().next() {
-                        if !pid.is_empty() && pid.chars().all(|c| c.is_ascii_digit()) {
-                            out.push(pid.to_string());
-                        }
+        let mut cmd = Command::new(Self::tool_path("pgrep"));
+        cmd.arg("-f").arg(pattern);
+        let res = match super::plugin_process::output_with_timeout(
+            &mut cmd,
+            std::time::Duration::from_secs(2),
+        ) {
+            Ok(res) => res,
+            Err(e) => {
+                eprintln!("[session] pgrep failed: {} (treated as no result)", e);
+                return out;
+            }
+        };
+        if res.success {
+            for line in res.stdout.lines() {
+                if let Some(pid) = line.split_whitespace().next() {
+                    if !pid.is_empty() && pid.chars().all(|c| c.is_ascii_digit()) {
+                        out.push(pid.to_string());
                     }
                 }
             }
@@ -3201,32 +3292,57 @@ impl ProtonManager {
         out
     }
 
-    /// First live pid of the AppImage: the .AppImage path itself or any
-    /// process under its mount point.
-    fn appimage_tree_pid(exe: &str) -> Option<u32> {
-        let expanded = Self::appimage_expand(exe);
-        if expanded.trim().is_empty() {
-            return None;
-        }
-        let pat = format!("^{}( |$)", Self::appimage_ere_escape(&expanded));
-        if let Some(pid) = Self::appimage_pids(&pat).first().and_then(|s| s.parse().ok()) {
-            return Some(pid);
-        }
-        for mp in Self::appimage_mounts(&expanded) {
-            let pat = format!("^{}/", Self::appimage_ere_escape(&mp));
-            if let Some(pid) = Self::appimage_pids(&pat).first().and_then(|s| s.parse().ok()) {
-                return Some(pid);
-            }
-        }
-        None
+    fn parse_pids(lines: Vec<String>) -> Vec<u32> {
+        lines.iter().filter_map(|s| s.parse().ok()).collect()
     }
 
-    /// First pid whose command line matches `pattern`.
-    fn watch_pid(pattern: &str) -> Option<u32> {
-        if pattern.trim().is_empty() {
-            return None;
+    /// Every live pid of the AppImage: the .AppImage path itself and any
+    /// process under its mount point. Not just the first: the filter has to
+    /// skip false positives.
+    fn appimage_tree_pids(exe: &str) -> Vec<u32> {
+        let expanded = Self::appimage_expand(exe);
+        if expanded.trim().is_empty() {
+            return Vec::new();
         }
-        Self::appimage_pids(pattern).first().and_then(|s| s.parse().ok())
+        let mut out = Self::parse_pids(Self::appimage_pids(&format!(
+            "^{}( |$)",
+            Self::appimage_ere_escape(&expanded)
+        )));
+        for mp in Self::appimage_mounts(&expanded) {
+            out.extend(Self::parse_pids(Self::appimage_pids(&format!(
+                "^{}/",
+                Self::appimage_ere_escape(&mp)
+            ))));
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// Every pid whose command line matches `pattern`.
+    fn watch_pids(pattern: &str) -> Vec<u32> {
+        if pattern.trim().is_empty() {
+            return Vec::new();
+        }
+        Self::parse_pids(Self::appimage_pids(pattern))
+    }
+
+    /// argv, comm and exe link of a pid. None when /proc cannot be read.
+    fn read_game_process(pid: u32) -> Option<GameProcess> {
+        let cmdline = std::fs::read(format!("/proc/{}/cmdline", pid)).ok()?;
+        let args: Vec<String> = cmdline
+            .split(|b| *b == 0)
+            .filter(|part| !part.is_empty())
+            .map(|part| String::from_utf8_lossy(part).to_string())
+            .collect();
+        let comm = std::fs::read_to_string(format!("/proc/{}/comm", pid))
+            .ok()?
+            .trim()
+            .to_string();
+        let exe = std::fs::read_link(format!("/proc/{}/exe", pid))
+            .map(|path| path.display().to_string())
+            .unwrap_or_default();
+        Some(GameProcess { args, comm, exe })
     }
 
     fn appimage_tree_alive(exe: &str) -> bool {
@@ -4190,8 +4306,8 @@ fn which(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        launch_allowed, should_adopt, should_scan, steam_readiness, ParkedKind, ParkedSession,
-        ProtonManager, SessionScanner, SteamReadiness,
+        launch_allowed, matches_game_process, should_adopt, should_scan, steam_readiness,
+        ParkedKind, ParkedSession, ProtonManager, SessionScanner, SteamReadiness,
     };
     use glib::subclass::prelude::*;
     use std::fs;
@@ -4419,27 +4535,60 @@ mod tests {
         assert!(pm.stop_parked("Doom").is_none());
     }
 
+    /// One pid whose /proc looks like the AppImage in `adopt_game`.
     struct FixedPid(u32);
 
     impl SessionScanner for FixedPid {
-        fn appimage_pid(&self, _exe: &str) -> Option<u32> {
-            Some(self.0)
+        fn appimage_pids(&self, _exe: &str) -> Vec<u32> {
+            vec![self.0]
         }
 
-        fn watch_pid(&self, _pattern: &str) -> Option<u32> {
-            Some(self.0)
+        fn watch_pids(&self, _pattern: &str) -> Vec<u32> {
+            vec![self.0]
+        }
+
+        fn process(&self, _pid: u32) -> Option<super::GameProcess> {
+            Some(super::GameProcess {
+                args: vec!["/nonexistent/AdoptScanGame.AppImage".to_string()],
+                comm: "AdoptScanGame".to_string(),
+                exe: "/nonexistent/AdoptScanGame.AppImage".to_string(),
+            })
         }
     }
 
     struct NoPid;
 
     impl SessionScanner for NoPid {
-        fn appimage_pid(&self, _exe: &str) -> Option<u32> {
-            None
+        fn appimage_pids(&self, _exe: &str) -> Vec<u32> {
+            Vec::new()
         }
 
-        fn watch_pid(&self, _pattern: &str) -> Option<u32> {
+        fn watch_pids(&self, _pattern: &str) -> Vec<u32> {
+            Vec::new()
+        }
+
+        fn process(&self, _pid: u32) -> Option<super::GameProcess> {
             None
+        }
+    }
+
+    /// Canned pgrep order: the editor first, the real process second.
+    struct TwoPids(Vec<(u32, super::GameProcess)>);
+
+    impl SessionScanner for TwoPids {
+        fn appimage_pids(&self, _exe: &str) -> Vec<u32> {
+            self.0.iter().map(|(pid, _)| *pid).collect()
+        }
+
+        fn watch_pids(&self, _pattern: &str) -> Vec<u32> {
+            self.0.iter().map(|(pid, _)| *pid).collect()
+        }
+
+        fn process(&self, pid: u32) -> Option<super::GameProcess> {
+            self.0
+                .iter()
+                .find(|(candidate, _)| *candidate == pid)
+                .map(|(_, proc)| proc.clone())
         }
     }
 
@@ -4650,6 +4799,171 @@ mod tests {
         let ledger = crate::backend::session_ledger::load(&dir, pid).unwrap();
         let _ = std::fs::remove_dir_all(&base);
         assert_eq!(ledger.started_at, real_start);
+    }
+
+    fn game_process(args: &[&str], comm: &str, exe: &str) -> super::GameProcess {
+        super::GameProcess {
+            args: args.iter().map(|a| a.to_string()).collect(),
+            comm: comm.to_string(),
+            exe: exe.to_string(),
+        }
+    }
+
+    fn adopt_wine_game(name: &str) {
+        let cfg = crate::backend::config::ConfigManager::new();
+        cfg.set_game_value(name, "executable", "/games/Game.exe");
+    }
+
+    #[test]
+    fn matches_game_process_table() {
+        let game = "/games/Game.exe";
+        let editor = game_process(&["vim", game], "vim", "/usr/bin/vim");
+        assert!(!matches_game_process(&editor.args, &editor.comm, &editor.exe, game));
+        let pager = game_process(&["less", game], "less", "/usr/bin/less");
+        assert!(!matches_game_process(&pager.args, &pager.comm, &pager.exe, game));
+        let follow = game_process(&["tail", "-f", game], "tail", "/usr/bin/tail");
+        assert!(!matches_game_process(&follow.args, &follow.comm, &follow.exe, game));
+        let shell = game_process(&["bash", "-c", "wine /games/Game.exe"], "bash", "/bin/bash");
+        assert!(!matches_game_process(&shell.args, &shell.comm, &shell.exe, game));
+        let wine = game_process(&["wine64", game], "wine64", "/usr/lib/wine/wine64");
+        assert!(matches_game_process(&wine.args, &wine.comm, &wine.exe, game));
+        let proton = game_process(
+            &["proton", "waitforexitandrun", game],
+            "proton",
+            "/opt/Proton/proton",
+        );
+        assert!(matches_game_process(&proton.args, &proton.comm, &proton.exe, game));
+        // Proton as a python script: its interpreter is refused, the scan
+        // adopts the wine child instead.
+        let python_proton = game_process(
+            &["python3", "/opt/Proton/proton", "waitforexitandrun", game],
+            "python3",
+            "/usr/bin/python3",
+        );
+        assert!(!matches_game_process(
+            &python_proton.args,
+            &python_proton.comm,
+            &python_proton.exe,
+            game,
+        ));
+        let appimage = game_process(
+            &["/games/Game.AppImage", "--foo"],
+            "Game.AppImage",
+            "/games/Game.AppImage",
+        );
+        assert!(matches_game_process(
+            &appimage.args,
+            &appimage.comm,
+            &appimage.exe,
+            "/games/Game.AppImage",
+        ));
+        let payload = game_process(
+            &["/tmp/.mount_GameX/usr/bin/game"],
+            "game",
+            "/tmp/.mount_GameX/usr/bin/game",
+        );
+        assert!(matches_game_process(
+            &payload.args,
+            &payload.comm,
+            &payload.exe,
+            "/games/Game.AppImage",
+        ));
+        let emulator = game_process(
+            &["/usr/bin/ryujinx", "/roms/game.nsp"],
+            "ryujinx",
+            "/usr/bin/ryujinx",
+        );
+        assert!(matches_game_process(
+            &emulator.args,
+            &emulator.comm,
+            &emulator.exe,
+            "/roms/game.nsp",
+        ));
+        let setsid = game_process(
+            &["setsid", "--wait", "/games/Game.AppImage"],
+            "setsid",
+            "/usr/bin/setsid",
+        );
+        assert!(matches_game_process(
+            &setsid.args,
+            &setsid.comm,
+            &setsid.exe,
+            "/games/Game.AppImage",
+        ));
+        let unrelated = game_process(&["firefox", "https://example.com"], "firefox", "/usr/bin/firefox");
+        assert!(!matches_game_process(
+            &unrelated.args,
+            &unrelated.comm,
+            &unrelated.exe,
+            game,
+        ));
+        assert!(!matches_game_process(&wine.args, &wine.comm, &wine.exe, "  "));
+    }
+
+    #[test]
+    fn scan_skips_an_editor_and_adopts_the_next_pid() {
+        let base = std::env::temp_dir().join("pm-adopt-skip");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+        adopt_wine_game("AdoptSkipGame");
+
+        let pm = ProtonManager::new();
+        let cfg = crate::backend::config::ConfigManager::new();
+        let scan = TwoPids(vec![
+            (
+                1_001,
+                game_process(&["vim", "/games/Game.exe"], "vim", "/usr/bin/vim"),
+            ),
+            (
+                1_002,
+                game_process(
+                    &["wine64", "/games/Game.exe"],
+                    "wine64",
+                    "/usr/lib/wine/wine64",
+                ),
+            ),
+        ]);
+        assert!(pm.detect_running_sessions_with(&scan, &cfg));
+        assert_eq!(pm.imp().session_pid.get(), Some(1_002));
+        assert_eq!(pm.session_game_name(), "AdoptSkipGame");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn scan_without_proc_access_does_not_adopt() {
+        let base = std::env::temp_dir().join("pm-adopt-noproc");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+        adopt_wine_game("AdoptNoProcGame");
+
+        let pm = ProtonManager::new();
+        let cfg = crate::backend::config::ConfigManager::new();
+        let scan = NoPid;
+        let unreadable = PmOnlyPid(1_003);
+        // The pid list exists but /proc cannot be read: never adopt.
+        assert!(!pm.detect_running_sessions_with(&unreadable, &cfg));
+        assert!(!pm.is_game_running());
+        // And an empty list adopts nothing either.
+        assert!(!pm.detect_running_sessions_with(&scan, &cfg));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    struct PmOnlyPid(u32);
+
+    impl SessionScanner for PmOnlyPid {
+        fn appimage_pids(&self, _exe: &str) -> Vec<u32> {
+            vec![self.0]
+        }
+
+        fn watch_pids(&self, _pattern: &str) -> Vec<u32> {
+            vec![self.0]
+        }
+
+        fn process(&self, _pid: u32) -> Option<super::GameProcess> {
+            None
+        }
     }
 
     #[test]
