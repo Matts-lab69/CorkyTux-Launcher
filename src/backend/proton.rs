@@ -3475,7 +3475,7 @@ impl ProtonManager {
         root_pid: u32,
         root_starttime: u64,
         mounts: &[String],
-        procs: &[super::proc_tree::ProcInfo],
+        procs: &[crate::backend::proc_tree::ProcInfo],
     ) -> bool {
         let tree = |mount: &str| super::proc_tree::SessionTree {
             root_pid,
@@ -5017,8 +5017,8 @@ mod tests {
         cfg.set_game_value(name, "executable", "/games/Game.exe");
     }
 
-    fn tree_proc(pid: u32, ppid: u32, starttime: u64, exe: &str) -> super::proc_tree::ProcInfo {
-        super::proc_tree::ProcInfo {
+    fn tree_proc(pid: u32, ppid: u32, starttime: u64, exe: &str) -> crate::backend::proc_tree::ProcInfo {
+        crate::backend::proc_tree::ProcInfo {
             pid,
             ppid,
             starttime,
