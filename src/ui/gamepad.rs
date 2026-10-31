@@ -8,7 +8,10 @@ use std::time::Duration;
 
 use gtk::prelude::*;
 
-use super::gamepad_nav::{self, Dir, NavAction, NavState, PadButton, PadInput};
+use super::gamepad_nav::{
+    self, Dir, NavAction, NavState, PadButton, PadInfo, PadInput, PadMapping, PadStamp,
+    DEDUPE_WINDOW_MS, STEAM_VENDOR,
+};
 
 pub enum GamepadMessage {
     Input(PadInput),
@@ -57,38 +60,90 @@ fn spawn_thread(tx: async_channel::Sender<GamepadMessage>) {
             };
             let mut sticks: std::collections::HashMap<gilrs::GamepadId, (f32, f32)> =
                 std::collections::HashMap::new();
+            let mut pads: std::collections::HashMap<gilrs::GamepadId, (PadInfo, bool)> =
+                std::collections::HashMap::new();
+            let mut recent: Vec<PadStamp> = Vec::new();
             loop {
                 while let Some(ev) = gilrs.next_event() {
                     let name = gilrs.gamepad(ev.id).name().to_string();
                     match ev.event {
                         gilrs::EventType::Connected => {
-                            let _ = tx.send_blocking(GamepadMessage::Connected(name));
+                            let gp = gilrs.gamepad(ev.id);
+                            let info = PadInfo {
+                                vendor: gp.vendor_id(),
+                                product: gp.product_id(),
+                                mapping: match gp.mapping_source() {
+                                    gilrs::MappingSource::SdlMappings => PadMapping::Sdl,
+                                    gilrs::MappingSource::Driver => PadMapping::Driver,
+                                    _ => PadMapping::None,
+                                },
+                            };
+                            let usable = gamepad_nav::is_gamepad(info);
+                            pads.insert(ev.id, (info, usable));
+                            if usable {
+                                let _ = tx.send_blocking(GamepadMessage::Connected(name));
+                            } else {
+                                eprintln!("[gamepad] ignored non-gamepad device: {}", name);
+                            }
+                            continue;
                         }
                         gilrs::EventType::Disconnected => {
                             sticks.remove(&ev.id);
+                            pads.remove(&ev.id);
                             let _ = tx.send_blocking(GamepadMessage::Disconnected(name));
+                            continue;
                         }
-                        gilrs::EventType::ButtonPressed(b, _) => {
-                            if let Some(input) = button_input(b, true) {
-                                let _ = tx.send_blocking(GamepadMessage::Input(input));
-                            }
-                        }
-                        gilrs::EventType::ButtonReleased(b, _) => {
-                            if let Some(input) = button_input(b, false) {
-                                let _ = tx.send_blocking(GamepadMessage::Input(input));
-                            }
-                        }
+                        _ => {}
+                    }
+                    let Some((info, usable)) = pads.get(&ev.id).copied() else {
+                        continue;
+                    };
+                    if !usable {
+                        continue;
+                    }
+                    let valve_connected = pads
+                        .values()
+                        .any(|(p, ok)| *ok && p.vendor == Some(STEAM_VENDOR));
+                    if !gamepad_nav::accept_pad(info, valve_connected) {
+                        continue;
+                    }
+                    let at_ms = ev
+                        .time
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0);
+                    let stamp = PadStamp {
+                        vendor: info.vendor,
+                        at_ms,
+                    };
+                    if !gamepad_nav::dedupe(stamp, &recent, DEDUPE_WINDOW_MS) {
+                        continue;
+                    }
+                    recent.push(stamp);
+                    recent.retain(|s| at_ms.saturating_sub(s.at_ms) <= 200);
+                    let input = match ev.event {
+                        gilrs::EventType::ButtonPressed(b, _) => button_input(b, true),
+                        gilrs::EventType::ButtonReleased(b, _) => button_input(b, false),
                         gilrs::EventType::AxisChanged(axis, value, _) => {
                             let entry = sticks.entry(ev.id).or_insert((0.0, 0.0));
                             match axis {
-                                gilrs::Axis::LeftStickX => entry.0 = value,
-                                gilrs::Axis::LeftStickY => entry.1 = value,
-                                _ => continue,
+                                gilrs::Axis::LeftStickX => {
+                                    entry.0 = value;
+                                    let (x, y) = *entry;
+                                    Some(PadInput::Stick { x, y })
+                                }
+                                gilrs::Axis::LeftStickY => {
+                                    entry.1 = value;
+                                    let (x, y) = *entry;
+                                    Some(PadInput::Stick { x, y })
+                                }
+                                _ => None,
                             }
-                            let (x, y) = *entry;
-                            let _ = tx.send_blocking(GamepadMessage::Input(PadInput::Stick { x, y }));
                         }
-                        _ => {}
+                        _ => None,
+                    };
+                    if let Some(input) = input {
+                        let _ = tx.send_blocking(GamepadMessage::Input(input));
                     }
                 }
                 std::thread::sleep(Duration::from_millis(8));
@@ -186,6 +241,10 @@ fn apply_action(window: &adw::ApplicationWindow, action: NavAction) {
                 entry.grab_focus();
             }
         }
+        // North on an installed card would launch it and on a missing one
+        // would install it, but the card only exposes its own click: tracked
+        // in its issue for a dedicated play/install action.
+        NavAction::QuickAction => {}
         NavAction::Context | NavAction::Menu => {}
     }
 }

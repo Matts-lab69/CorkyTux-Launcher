@@ -20,6 +20,7 @@ pub enum NavAction {
     Search,
     Context,
     Menu,
+    QuickAction,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,6 +55,67 @@ pub const DEADZONE: f32 = 0.5;
 pub const FIRST_REPEAT_MS: u64 = 400;
 /// Following repeat delay.
 pub const REPEAT_MS: u64 = 120;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PadMapping {
+    Sdl,
+    Driver,
+    None,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PadInfo {
+    pub vendor: Option<u16>,
+    pub product: Option<u16>,
+    pub mapping: PadMapping,
+}
+
+/// Valve: the Steam Input virtual pad.
+pub const STEAM_VENDOR: u16 = 0x28de;
+/// Logitech G29 driving wheel: never a gamepad.
+pub const G29_VENDOR: u16 = 0x046d;
+pub const G29_PRODUCT: u16 = 0xc24f;
+/// Two pads masked by Steam Input report the same press within this window.
+pub const DEDUPE_WINDOW_MS: u64 = 10;
+
+/// Only devices mapped as a gamepad drive navigation. Wheels, flight sticks
+/// and pedals have no SDL mapping (or are the G29) and are refused.
+pub fn is_gamepad(info: PadInfo) -> bool {
+    if info.vendor == Some(G29_VENDOR) && info.product == Some(G29_PRODUCT) {
+        return false;
+    }
+    !matches!(info.mapping, PadMapping::None)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PadStamp {
+    pub vendor: Option<u16>,
+    pub at_ms: u64,
+}
+
+/// Steam Input exposes a virtual pad with vendor 0x28de and the physical pad
+/// produces the same press a few ms apart. Keep the virtual one and drop the
+/// duplicate, so one press is one action.
+pub fn dedupe(event: PadStamp, recent: &[PadStamp], window_ms: u64) -> bool {
+    if event.vendor == Some(STEAM_VENDOR) {
+        return true;
+    }
+    !recent.iter().any(|r| {
+        r.vendor == Some(STEAM_VENDOR) && event.at_ms.abs_diff(r.at_ms) <= window_ms
+    })
+}
+
+/// While a Steam virtual pad is connected it represents every physical pad:
+/// only its events count.
+pub fn accept_pad(info: PadInfo, valve_connected: bool) -> bool {
+    if !is_gamepad(info) {
+        return false;
+    }
+    if valve_connected && info.vendor != Some(STEAM_VENDOR) {
+        return false;
+    }
+    true
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PadFamily {
@@ -132,7 +194,7 @@ pub fn map_event(input: PadInput, state: &mut NavState, now_ms: u64) -> Option<N
                 PadButton::South => NavAction::Activate,
                 PadButton::East => NavAction::Back,
                 PadButton::West => NavAction::Context,
-                PadButton::North => NavAction::Menu,
+                PadButton::North => NavAction::QuickAction,
                 PadButton::Lb => NavAction::TabPrev,
                 PadButton::Rb => NavAction::TabNext,
                 PadButton::Select => NavAction::Search,
@@ -220,7 +282,7 @@ mod tests {
             (PadButton::South, NavAction::Activate),
             (PadButton::East, NavAction::Back),
             (PadButton::West, NavAction::Context),
-            (PadButton::North, NavAction::Menu),
+            (PadButton::North, NavAction::QuickAction),
             (PadButton::Lb, NavAction::TabPrev),
             (PadButton::Rb, NavAction::TabNext),
             (PadButton::Select, NavAction::Search),
@@ -260,4 +322,47 @@ mod tests {
         assert!(!should_handle(true, false, true));
         assert!(!should_handle(true, true, false));
     }
+    #[test]
+    fn only_mapped_gamepads_are_accepted() {
+        let ds = PadInfo { vendor: Some(0x054c), product: Some(0x0ce6), mapping: PadMapping::Sdl };
+        let stick = PadInfo { vendor: Some(0x044f), product: Some(0xb10a), mapping: PadMapping::None };
+        let g29 = PadInfo { vendor: Some(G29_VENDOR), product: Some(G29_PRODUCT), mapping: PadMapping::Sdl };
+        let driver = PadInfo { vendor: Some(0x1234), product: Some(0x0001), mapping: PadMapping::Driver };
+        assert!(is_gamepad(ds));
+        assert!(is_gamepad(driver));
+        assert!(!is_gamepad(stick));
+        assert!(!is_gamepad(g29));
+        let pads = [ds, stick, g29, driver];
+        let accepted: Vec<bool> = pads.iter().map(|p| is_gamepad(*p)).collect();
+        assert_eq!(accepted, vec![true, false, false, true]);
+    }
+
+    #[test]
+    fn steam_input_duplicates_are_dropped() {
+        let valve = PadStamp { vendor: Some(STEAM_VENDOR), at_ms: 1_000 };
+        let physical = PadStamp { vendor: Some(0x054c), at_ms: 1_005 };
+        assert!(dedupe(valve, &[], DEDUPE_WINDOW_MS));
+        assert!(!dedupe(physical, &[valve], DEDUPE_WINDOW_MS));
+        // Outside the window it is a real second press.
+        let later = PadStamp { vendor: Some(0x054c), at_ms: 1_050 };
+        assert!(dedupe(later, &[valve], DEDUPE_WINDOW_MS));
+        // Two real pads, no Valve: both valid.
+        let pad_a = PadStamp { vendor: Some(0x054c), at_ms: 2_000 };
+        let pad_b = PadStamp { vendor: Some(0x045e), at_ms: 2_004 };
+        assert!(dedupe(pad_b, &[pad_a], DEDUPE_WINDOW_MS));
+        // A lone Valve pad is valid.
+        assert!(dedupe(PadStamp { vendor: Some(STEAM_VENDOR), at_ms: 3_000 }, &[], DEDUPE_WINDOW_MS));
+    }
+
+    #[test]
+    fn valve_pad_masks_the_physical_one_while_connected() {
+        let valve = PadInfo { vendor: Some(STEAM_VENDOR), product: Some(0x1205), mapping: PadMapping::Sdl };
+        let physical = PadInfo { vendor: Some(0x054c), product: Some(0x0ce6), mapping: PadMapping::Sdl };
+        let other = PadInfo { vendor: Some(0x045e), product: Some(0x0b13), mapping: PadMapping::Sdl };
+        assert!(accept_pad(valve, true));
+        assert!(!accept_pad(physical, true));
+        assert!(accept_pad(physical, false));
+        assert!(accept_pad(other, false));
+    }
+
 }
