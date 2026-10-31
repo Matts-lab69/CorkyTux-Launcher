@@ -289,25 +289,31 @@ impl GameModel {
         self.imp().games.borrow().iter().find(|g| g.name == name).cloned()
     }
 
+    /// Keep the larger banked playtime when a game is re-added or imported.
+    pub fn merge_time_spent(existing: u64, incoming: u64) -> u64 {
+        existing.max(incoming)
+    }
+
+    /// Keep the more recent LastPlayed when a game is re-added or imported.
+    pub fn merge_last_played(existing: u64, incoming: u64) -> u64 {
+        existing.max(incoming)
+    }
+
     pub fn add_game(&self, mut entry: GameEntry) {
         let config = super::ConfigManager::new();
-        // Re-adding or editing an existing game must not wipe the time the
-        // session accounting already banked. A caller that has no playtime
-        // (manual add, re-import of the same name) passes 0; keep the stored
-        // value instead. A real import passes its own non-zero playtime.
-        if entry.time_spent == 0 {
-            if let Some(existing) = config.game_value(&entry.name, "TimeSpent")
-                .and_then(|v| v.parse::<u64>().ok())
-            {
-                entry.time_spent = existing;
-            }
+        // Re-adding or importing an existing game must not wipe the time the
+        // session accounting already banked. Keep the larger TimeSpent (the
+        // import may bring less than CorkyTux already counted) and the more
+        // recent LastPlayed.
+        if let Some(existing) = config.game_value(&entry.name, "TimeSpent")
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            entry.time_spent = Self::merge_time_spent(existing, entry.time_spent);
         }
-        if entry.last_played == 0 {
-            if let Some(existing) = config.game_value(&entry.name, "LastPlayed")
-                .and_then(|v| v.parse::<u64>().ok())
-            {
-                entry.last_played = existing;
-            }
+        if let Some(existing) = config.game_value(&entry.name, "LastPlayed")
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            entry.last_played = Self::merge_last_played(existing, entry.last_played);
         }
         for (key, value) in entry.to_section() {
             config.set_game_value(&entry.name, &key, &value);
@@ -555,5 +561,21 @@ mod tests {
             None
         );
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn merge_time_spent_keeps_the_larger_value() {
+        assert_eq!(GameModel::merge_time_spent(0, 0), 0);
+        assert_eq!(GameModel::merge_time_spent(0, 500), 500);
+        assert_eq!(GameModel::merge_time_spent(13953, 0), 13953);
+        assert_eq!(GameModel::merge_time_spent(13953, 3600), 13953);
+        assert_eq!(GameModel::merge_time_spent(13953, 36000), 36000);
+    }
+
+    #[test]
+    fn merge_last_played_keeps_the_newest() {
+        assert_eq!(GameModel::merge_last_played(0, 100), 100);
+        assert_eq!(GameModel::merge_last_played(200, 100), 200);
+        assert_eq!(GameModel::merge_last_played(100, 200), 200);
     }
 }
