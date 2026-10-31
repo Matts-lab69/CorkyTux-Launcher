@@ -155,6 +155,10 @@ pub fn ensure_dir(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+pub fn closed_path(dir: &Path, pid: u32) -> PathBuf {
+    dir.join(format!("{}.closed", pid))
+}
+
 pub fn ledger_path(dir: &Path, pid: u32) -> PathBuf {
     dir.join(format!("{}.json", pid))
 }
@@ -204,6 +208,31 @@ pub fn mark_ended(dir: &Path, pid: u32, now: u64) -> Result<(), String> {
     save(dir, &ledger)
 }
 
+struct LedgerLock(std::fs::File);
+
+impl Drop for LedgerLock {
+    fn drop(&mut self) {
+        use std::os::unix::io::AsRawFd;
+        unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN); }
+    }
+}
+
+fn lock_ledger(dir: &Path) -> Result<LedgerLock, String> {
+    use std::os::unix::io::AsRawFd;
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(dir.join("ledger.lock"))
+        .map_err(|e| format!("cannot open ledger.lock: {}", e))?;
+    for _ in 0..5 {
+        if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+            return Ok(LedgerLock(lock));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    Err("session ledger is locked; retry on the next tick".into())
+}
+
 /// Credit one checkpoint: compute the delta, credit it, then move
 /// `credited_until`. `credit` returns Ok only when the write landed.
 pub fn checkpoint<C: Clock>(
@@ -212,6 +241,9 @@ pub fn checkpoint<C: Clock>(
     clock: &C,
     credit: &mut dyn FnMut(&str, u64) -> Result<(), String>,
 ) -> Result<u64, String> {
+    // Serialize the ledger read-modify-write across processes (headless
+    // --play and the GUI can checkpoint the same session).
+    let _lock = lock_ledger(dir)?;
     let Some(mut ledger) = load(dir, pid) else {
         return Ok(0);
     };
@@ -242,6 +274,9 @@ pub fn finish<C: Clock>(
     credit: &mut dyn FnMut(&str, u64) -> Result<(), String>,
 ) -> Result<u64, String> {
     let d = checkpoint(dir, pid, clock, credit)?;
+    // Tombstone: a second process that reaches the close for this pid must
+    // return Credited (0) instead of NoLedger (full duration).
+    let _ = std::fs::write(closed_path(dir, pid), clock.now().to_string());
     remove(dir, pid);
     Ok(d)
 }
@@ -251,6 +286,29 @@ pub fn finish<C: Clock>(
 pub enum AdoptLedger {
     Resumed,
     Created,
+}
+
+/// Start the ledger for a normal session. The tombstone is cleared before
+/// the starttime can fail, so a reused pid never inherits it.
+pub fn begin_ledger(
+    dir: &Path,
+    game: &str,
+    pid: u32,
+    starttime: Option<u64>,
+    now: u64,
+) -> Result<Option<SessionLedger>, String> {
+    remove_closed(dir, pid);
+    let Some(tick) = starttime else {
+        return Ok(None);
+    };
+    let ledger = SessionLedger::with_start(game, pid, tick, now);
+    save(dir, &ledger)?;
+    Ok(Some(ledger))
+}
+
+/// Drop a stale tombstone so a reused pid starts clean.
+pub fn remove_closed(dir: &Path, pid: u32) {
+    let _ = std::fs::remove_file(closed_path(dir, pid));
 }
 
 /// Create or resume the ledger for an adopted session. Same pid and
@@ -263,6 +321,8 @@ pub fn adopt_ledger(
     pid_starttime: u64,
     start_unix: u64,
 ) -> Result<AdoptLedger, String> {
+    // A reused pid must not inherit the previous session's tombstone.
+    remove_closed(dir, pid);
     if let Some(existing) = load(dir, pid) {
         if existing.pid_starttime == pid_starttime {
             return Ok(AdoptLedger::Resumed);
@@ -283,6 +343,11 @@ pub fn finish_outcome<C: Clock>(
 ) -> FinishOutcome {
     let path = ledger_path(dir, pid);
     if !path.exists() {
+        // A tombstone means another process already closed this session;
+        // do not credit the full duration again.
+        if closed_path(dir, pid).exists() {
+            return FinishOutcome::Credited;
+        }
         return FinishOutcome::NoLedger;
     }
     if load(dir, pid).is_none() {
@@ -297,6 +362,22 @@ pub fn finish_outcome<C: Clock>(
     match finish(dir, pid, clock, credit) {
         Ok(_) => FinishOutcome::Credited,
         Err(_) => FinishOutcome::KeptForRecovery,
+    }
+}
+
+/// Decision for one turn of the headless `--play` loop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeadlessTick {
+    pub checkpoint: bool,
+    pub close: bool,
+}
+
+/// Pure: checkpoint every 30 ticks (60 s at 2 s per tick) and close when the
+/// session has finished.
+pub fn headless_tick(tick_count: u32, finished: bool) -> HeadlessTick {
+    HeadlessTick {
+        checkpoint: tick_count > 0 && tick_count % 30 == 0,
+        close: finished,
     }
 }
 
@@ -344,11 +425,50 @@ pub fn recover<C: Clock>(
         if let Some(ended) = ledger.ended_at {
             let d = delta(ledger.credited_until, ended);
             if d > 0 {
-                credit(&ledger.game_name, d)?;
+                // One busy or failing ledger must not stop the others: skip
+                // it, log, keep it on disk for the next pass.
+                let _lock = match lock_ledger(dir) {
+                    Ok(l) => l,
+                    Err(e) => {
+                        eprintln!(
+                            "[session] recovery of {} skipped, ledger kept: {}",
+                            ledger.game_name, e
+                        );
+                        continue;
+                    }
+                };
+                if let Err(e) = credit(&ledger.game_name, d) {
+                    eprintln!(
+                        "[session] recovery credit for {} failed, ledger kept: {}",
+                        ledger.game_name, e
+                    );
+                    continue;
+                }
             }
         }
         remove(dir, ledger.pid);
         handled += 1;
+    }
+    // Sweep tombstones older than 24 h so they do not grow forever.
+    if let Ok(entries) = fs::read_dir(dir) {
+        let cutoff = std::time::SystemTime::now()
+            .checked_sub(std::time::Duration::from_secs(24 * 3600));
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("closed") {
+                continue;
+            }
+            let old = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .zip(cutoff)
+                .map(|(m, c)| m < c)
+                .unwrap_or(false);
+            if old {
+                let _ = fs::remove_file(path);
+            }
+        }
     }
     Ok(handled)
 }
@@ -853,6 +973,200 @@ mod tests {
         assert_eq!(resolve_close_pid(Some(7), Some(9)), Some(7));
         assert_eq!(resolve_close_pid(None, Some(9)), Some(9));
         assert_eq!(resolve_close_pid(None, None), None);
+    }
+
+    #[test]
+    fn headless_tick_checkpoints_every_30() {
+        assert!(!headless_tick(0, false).checkpoint);
+        assert!(!headless_tick(29, false).checkpoint);
+        assert!(headless_tick(30, false).checkpoint);
+        assert!(!headless_tick(31, false).checkpoint);
+        assert!(headless_tick(30, true).close);
+    }
+
+    #[test]
+    fn interleaved_checkpoints_do_not_duplicate() {
+        let dir = tmp("ledger-interleave");
+        let a = FakeClock(Rc::new(RefCell::new(1000)));
+        let b = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        adopt_ledger(&dir, "Game", 42, 7, 1000).unwrap();
+        *a.0.borrow_mut() = 1060;
+        *b.0.borrow_mut() = 1060;
+        checkpoint(&dir, 42, &a, &mut |g, d| c.credit(g, d)).unwrap();
+        // The second "process" at the same wall time must credit 0.
+        assert_eq!(checkpoint(&dir, 42, &b, &mut |g, d| c.credit(g, d)).unwrap(), 0);
+        *b.0.borrow_mut() = 1120;
+        assert_eq!(checkpoint(&dir, 42, &b, &mut |g, d| c.credit(g, d)).unwrap(), 60);
+        assert_eq!(c.total, 120);
+    }
+
+    #[test]
+    fn double_finish_does_not_credit_twice() {
+        let dir = tmp("ledger-double-finish");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        adopt_ledger(&dir, "Game", 42, 7, 1000).unwrap();
+        *clock.0.borrow_mut() = 1600;
+        finish(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        let first = c.total;
+        let out = finish_outcome(&dir, 42, &clock, &mut |g, d| c.credit(g, d));
+        assert_eq!(out, FinishOutcome::Credited);
+        assert_eq!(c.total, first);
+        assert_eq!(close_credit(out, 600), 0);
+    }
+
+    #[test]
+    fn headless_close_credits_once() {
+        let dir = tmp("ledger-headless");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        adopt_ledger(&dir, "Game", 42, 7, 1000).unwrap();
+        *clock.0.borrow_mut() = 1600;
+        finish(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        assert_eq!(c.total, 600);
+        assert_eq!(close_credit(FinishOutcome::Credited, 600), 0);
+    }
+
+    #[test]
+    fn headless_without_a_ledger_credits_once() {
+        let dir = tmp("ledger-headless-none");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        let out = finish_outcome(&dir, 42, &clock, &mut |g, d| c.credit(g, d));
+        assert_eq!(out, FinishOutcome::NoLedger);
+        assert_eq!(close_credit(out, 600), 600);
+        assert_eq!(c.total, 0);
+    }
+
+    #[test]
+    fn checkpoint_busy_lock_returns_error_without_credit() {
+        use std::os::unix::io::AsRawFd;
+        let dir = tmp("ledger-busy");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        save(&dir, &SessionLedger::new("Game", 42, 7, 1000)).unwrap();
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(dir.join("ledger.lock"))
+            .unwrap();
+        let rc = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) };
+        assert_eq!(rc, 0);
+        *clock.0.borrow_mut() = 1060;
+        let out = checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d));
+        assert!(out.is_err());
+        assert_eq!(c.total, 0);
+        assert_eq!(load(&dir, 42).unwrap().credited_until, 1000);
+        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN); }
+    }
+
+    #[test]
+    fn reused_pid_with_old_tombstone_and_no_ledger_is_no_ledger() {
+        let dir = tmp("ledger-reuse-tomb");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        ensure_dir(&dir).unwrap();
+        std::fs::write(closed_path(&dir, 42), "1000").unwrap();
+        // begin_ledger clears the stale tombstone before the starttime read
+        // fails, so the reused pid does not inherit it.
+        let began = begin_ledger(&dir, "Game", 42, None, 1000).unwrap();
+        assert!(began.is_none());
+        assert!(!closed_path(&dir, 42).exists());
+        let out = finish_outcome(&dir, 42, &clock, &mut |g, d| c.credit(g, d));
+        assert_eq!(out, FinishOutcome::NoLedger);
+        assert_eq!(close_credit(out, 600), 600);
+        assert_eq!(c.total, 0);
+    }
+
+    #[test]
+    fn recover_busy_lock_does_not_credit() {
+        use std::os::unix::io::AsRawFd;
+        let dir = tmp("ledger-recover-busy");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        save(&dir, &SessionLedger::new("Game", 42, 7, 1000)).unwrap();
+        *clock.0.borrow_mut() = 1060;
+        mark_ended(&dir, 42, 1200).unwrap();
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(dir.join("ledger.lock"))
+            .unwrap();
+        assert_eq!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) }, 0);
+        // The pass succeeds and skips this ledger instead of aborting.
+        let out = recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d));
+        assert_eq!(out.unwrap(), 0);
+        assert_eq!(c.total, 0);
+        assert!(load(&dir, 42).is_some());
+        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN); }
+    }
+
+    #[test]
+    fn recover_skips_busy_ledger_and_keeps_it() {
+        use std::os::unix::io::AsRawFd;
+        let dir = tmp("ledger-recover-two");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        // Two ended ledgers in the same directory share one ledger.lock.
+        save(&dir, &SessionLedger::new("Game", 42, 7, 1000)).unwrap();
+        save(&dir, &SessionLedger::new("Other", 43, 8, 1000)).unwrap();
+        mark_ended(&dir, 42, 1200).unwrap();
+        mark_ended(&dir, 43, 1200).unwrap();
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(dir.join("ledger.lock"))
+            .unwrap();
+        assert_eq!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) }, 0);
+        // Busy lock: recover does not abort, it skips and keeps both.
+        let out = recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d));
+        assert_eq!(out.unwrap(), 0);
+        assert_eq!(c.total, 0);
+        assert!(load(&dir, 42).is_some());
+        assert!(load(&dir, 43).is_some());
+        // Released: the next pass finishes both, once each.
+        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN); }
+        let out = recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d));
+        assert_eq!(out.unwrap(), 2);
+        assert_eq!(c.total, 400);
+        assert!(load(&dir, 42).is_none());
+        assert!(load(&dir, 43).is_none());
+    }
+
+    #[test]
+    fn recover_credit_error_keeps_that_ledger() {
+        let dir = tmp("ledger-recover-credit-fail");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut calls = 0u32;
+        save(&dir, &SessionLedger::new("Game", 42, 7, 1000)).unwrap();
+        mark_ended(&dir, 42, 1200).unwrap();
+        let out = recover(&dir, &clock, &|_, _| false, &mut |_, _| {
+            calls += 1;
+            Err("disk full".to_string())
+        });
+        assert_eq!(out.unwrap(), 0);
+        assert_eq!(calls, 1);
+        assert!(load(&dir, 42).is_some());
+    }
+
+    #[test]
+    fn recover_sweeps_old_tombstones() {
+        use std::time::{Duration, SystemTime};
+        let dir = tmp("ledger-sweep");
+        ensure_dir(&dir).unwrap();
+        let path = closed_path(&dir, 42);
+        std::fs::write(&path, "1").unwrap();
+        let f = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        f.set_times(
+            std::fs::FileTimes::new()
+                .set_modified(SystemTime::now() - Duration::from_secs(25 * 3600)),
+        )
+        .unwrap();
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d)).unwrap();
+        assert!(!path.exists());
     }
 }
 
