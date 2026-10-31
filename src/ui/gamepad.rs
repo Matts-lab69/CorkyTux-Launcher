@@ -211,7 +211,7 @@ pub fn start(
                 }
                 GamepadMessage::Connected(name) => {
                     let family = gamepad_nav::detect_family(&name);
-                    help_c.set_text(Some(gamepad_nav::help_text(family)));
+                    help_c.set_text(gamepad_nav::help_text(family));
                     toasts_c.add_toast(adw::Toast::new(&format!("Controller connected: {}", name)));
                     eprintln!("[gamepad] connected: {}", name);
                 }
