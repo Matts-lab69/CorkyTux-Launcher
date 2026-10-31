@@ -444,6 +444,17 @@ mod tests {
         }).unwrap();
         assert_eq!(existing, 5060);
     }
+
+    #[test]
+    fn close_with_flock_failure_keeps_ledger() {
+        let dir = tmp("ledger-flock");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
+        *clock.0.borrow_mut() = 1060;
+        let r = finish(&dir, 42, &clock, &mut |_g, _d| Err("busy".to_string()));
+        assert!(r.is_err());
+        assert!(load(&dir, 42).is_some());
+    }
 }
 
 /// Field 22 of `/proc/<pid>/stat` (start time in clock ticks).
