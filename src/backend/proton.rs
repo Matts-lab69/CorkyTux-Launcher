@@ -2472,6 +2472,17 @@ impl ProtonManager {
             Some(pid) => self.ledger_finish_pid(pid),
             None => super::session_ledger::FinishOutcome::NoLedger,
         };
+        // The reaper feeds the adoption guard too: a process left over from
+        // this parked session must not be adopted and banked again.
+        let closed_at = {
+            use super::session_ledger::Clock;
+            super::session_ledger::SystemClock.now()
+        };
+        self.note_closed(
+            &entry.name,
+            super::session_ledger::resolve_close_pid(child_pid, entry.adopted_pid),
+            Some(closed_at.saturating_sub(elapsed)),
+        );
         // NoLedger: the caller credits the whole duration, capped like a
         // checkpoint so a stale entry cannot bank weeks at once. Credited:
         // the ledger already moved the time to Games.ini; close_credit is 0
@@ -4791,6 +4802,65 @@ mod tests {
         assert!((600..=605).contains(&stored), "credited once, got {}", stored);
         assert!(deleted, "ledger removed after the close");
         assert!(!pm.is_game_running());
+    }
+
+    #[test]
+    fn reaped_parked_session_is_not_readopted() {
+        let base = std::env::temp_dir().join("pm-reap-readopt");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+        adopt_game("AdoptScanGame");
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let cfg = crate::backend::config::ConfigManager::new();
+        let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let mut ledger = crate::backend::session_ledger::SessionLedger::with_start(
+            "AdoptScanGame",
+            pid,
+            tick,
+            now - 60,
+        );
+        ledger.credited_until = now - 30;
+        crate::backend::session_ledger::save(&dir, &ledger).unwrap();
+        *pm.imp().parked.borrow_mut() = vec![ParkedSession {
+            name: "AdoptScanGame".to_string(),
+            kind: ParkedKind::AppImage {
+                exe: "/nonexistent/AdoptScanGame.AppImage".to_string(),
+            },
+            start: std::time::Instant::now() - std::time::Duration::from_secs(60),
+            child: None,
+            adopted_pid: Some(pid),
+        }];
+
+        // The reaper credits the 30 s left in the ledger and records the
+        // close for the adoption guard.
+        let credited = pm.purge_dead();
+        assert_eq!(credited, vec!["AdoptScanGame".to_string()]);
+        let stored: u64 = cfg
+            .game_value("AdoptScanGame", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        assert!((30..=35).contains(&stored), "credited once, got {}", stored);
+        assert!(crate::backend::session_ledger::load(&dir, pid).is_none());
+
+        // The process that outlives the parked session is the same pid and
+        // start: the scan must not adopt it again.
+        assert!(!pm.detect_running_sessions_with(&FixedPid(pid), &cfg));
+        assert!(!pm.is_game_running());
+        assert!(crate::backend::session_ledger::load(&dir, pid).is_none());
+        let after: u64 = cfg
+            .game_value("AdoptScanGame", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let _ = std::fs::remove_dir_all(&base);
+        assert_eq!(after, stored, "no second credit");
     }
 
     #[test]
