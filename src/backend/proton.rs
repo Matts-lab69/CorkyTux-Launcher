@@ -4172,6 +4172,7 @@ mod tests {
             },
             start: std::time::Instant::now(),
             child: None,
+            adopted_pid: None,
         });
         assert!(!pm.promote_parked());
         assert!(!pm.imp().game_running.get());
@@ -4203,6 +4204,7 @@ mod tests {
             kind: ParkedKind::AppImage { exe: String::new() },
             start: std::time::Instant::now(),
             child: None,
+            adopted_pid: None,
         });
         let err = pm.run_game("Doom").unwrap_err();
         assert_eq!(err, "Doom is already running");
@@ -4223,6 +4225,7 @@ mod tests {
             },
             start: std::time::Instant::now(),
             child: None,
+            adopted_pid: None,
         });
         let first = pm.stop_parked("Doom");
         assert!(first.is_some());
@@ -4246,12 +4249,14 @@ mod tests {
             },
             start: std::time::Instant::now(),
             child: None,
+            adopted_pid: None,
         });
         pm.imp().parked.borrow_mut().push(ParkedSession {
             name: "Live".to_string(),
             kind: ParkedKind::AppImage { exe: String::new() },
             start: std::time::Instant::now(),
             child: None,
+            adopted_pid: None,
         });
         pm.purge_dead();
         let names: Vec<String> = pm
@@ -4280,6 +4285,7 @@ mod tests {
             },
             start: std::time::Instant::now(),
             child: None,
+            adopted_pid: None,
         });
         pm.purge_dead();
         assert!(pm.imp().parked.borrow().is_empty());
@@ -4383,6 +4389,7 @@ mod tests {
             kind: ParkedKind::AppImage { exe: String::new() },
             start: std::time::Instant::now(),
             child: None,
+            adopted_pid: None,
         });
         let (game, _secs) = pm.close_rpg_session(Some(0));
         assert_eq!(game, "Epifania");
@@ -4413,6 +4420,7 @@ mod tests {
                 kind,
                 start: std::time::Instant::now(),
                 child: None,
+                adopted_pid: None,
             });
         }
         pm.purge_dead();
