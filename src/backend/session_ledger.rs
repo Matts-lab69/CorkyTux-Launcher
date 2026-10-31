@@ -425,8 +425,25 @@ pub fn recover<C: Clock>(
         if let Some(ended) = ledger.ended_at {
             let d = delta(ledger.credited_until, ended);
             if d > 0 {
-                let _lock = lock_ledger(dir)?;
-                credit(&ledger.game_name, d)?;
+                // One busy or failing ledger must not stop the others: skip
+                // it, log, keep it on disk for the next pass.
+                let _lock = match lock_ledger(dir) {
+                    Ok(l) => l,
+                    Err(e) => {
+                        eprintln!(
+                            "[session] recovery of {} skipped, ledger kept: {}",
+                            ledger.game_name, e
+                        );
+                        continue;
+                    }
+                };
+                if let Err(e) = credit(&ledger.game_name, d) {
+                    eprintln!(
+                        "[session] recovery credit for {} failed, ledger kept: {}",
+                        ledger.game_name, e
+                    );
+                    continue;
+                }
             }
         }
         remove(dir, ledger.pid);
@@ -1082,6 +1099,54 @@ mod tests {
         assert_eq!(c.total, 0);
         assert!(load(&dir, 42).is_some());
         unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN); }
+    }
+
+    #[test]
+    fn recover_skips_busy_ledger_and_keeps_it() {
+        use std::os::unix::io::AsRawFd;
+        let dir = tmp("ledger-recover-two");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        // Two ended ledgers in the same directory share one ledger.lock.
+        save(&dir, &SessionLedger::new("Game", 42, 7, 1000)).unwrap();
+        save(&dir, &SessionLedger::new("Other", 43, 8, 1000)).unwrap();
+        mark_ended(&dir, 42, 1200).unwrap();
+        mark_ended(&dir, 43, 1200).unwrap();
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(dir.join("ledger.lock"))
+            .unwrap();
+        assert_eq!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) }, 0);
+        // Busy lock: recover does not abort, it skips and keeps both.
+        let out = recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d));
+        assert_eq!(out.unwrap(), 0);
+        assert_eq!(c.total, 0);
+        assert!(load(&dir, 42).is_some());
+        assert!(load(&dir, 43).is_some());
+        // Released: the next pass finishes both, once each.
+        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN); }
+        let out = recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d));
+        assert_eq!(out.unwrap(), 2);
+        assert_eq!(c.total, 400);
+        assert!(load(&dir, 42).is_none());
+        assert!(load(&dir, 43).is_none());
+    }
+
+    #[test]
+    fn recover_credit_error_keeps_that_ledger() {
+        let dir = tmp("ledger-recover-credit-fail");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut calls = 0u32;
+        save(&dir, &SessionLedger::new("Game", 42, 7, 1000)).unwrap();
+        mark_ended(&dir, 42, 1200).unwrap();
+        let out = recover(&dir, &clock, &|_, _| false, &mut |_, _| {
+            calls += 1;
+            Err("disk full".to_string())
+        });
+        assert_eq!(out.unwrap(), 0);
+        assert_eq!(calls, 1);
+        assert!(load(&dir, 42).is_some());
     }
 
     #[test]
