@@ -61,13 +61,13 @@ pub struct ClosedRecord {
     pub closed_at: u64,
 }
 
-pub fn closed_path(dir: &Path) -> PathBuf {
+pub fn closed_json_path(dir: &Path) -> PathBuf {
     dir.join("closed.json")
 }
 
 /// Reads the records. A corrupt file is ignored (empty list), never a panic.
 pub fn load_closed(dir: &Path) -> Vec<ClosedRecord> {
-    let Ok(text) = fs::read_to_string(closed_path(dir)) else {
+    let Ok(text) = fs::read_to_string(closed_json_path(dir)) else {
         return Vec::new();
     };
     let Ok(list) = serde_json::from_str::<Vec<serde_json::Value>>(&text) else {
@@ -106,7 +106,7 @@ pub fn save_closed(dir: &Path, records: &[ClosedRecord]) -> Result<(), String> {
         use std::os::unix::fs::PermissionsExt;
         let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
     }
-    fs::rename(&tmp, closed_path(dir)).map_err(|e| e.to_string())
+    fs::rename(&tmp, closed_json_path(dir)).map_err(|e| e.to_string())
 }
 
 pub fn record_closed(dir: &Path, pid: u32, starttime: u64, closed_at: u64) -> Result<(), String> {
@@ -523,7 +523,7 @@ mod closed_tests {
     #[test]
     fn corrupt_closed_file_is_ignored() {
         let dir = tmp("corrupt");
-        fs::write(closed_path(&dir), "not json at all").unwrap();
+        fs::write(closed_json_path(&dir), "not json at all").unwrap();
         assert!(load_closed(&dir).is_empty());
         record_closed(&dir, 7, 8, 9).unwrap();
         assert_eq!(load_closed(&dir).len(), 1);
