@@ -4756,7 +4756,7 @@ mod tests {
 
         *pm.imp().parked.borrow_mut() = vec![ParkedSession {
             name: "Game".to_string(),
-            kind: ParkedKind::AppImage { exe: String::new() },
+            kind: ParkedKind::AppImage { exe: "/nonexistent/App.AppImage".to_string() },
             start: std::time::Instant::now() - std::time::Duration::from_secs(900),
             child: None,
             adopted_pid: Some(pid),
@@ -4772,6 +4772,10 @@ mod tests {
 
     #[test]
     fn parked_with_local_child_is_unchanged() {
+        let base = std::env::temp_dir().join("pm-park-child-time");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
         let pm = ProtonManager::new();
         let child = std::process::Command::new("true").spawn().unwrap();
         *pm.imp().parked.borrow_mut() = vec![ParkedSession {
@@ -4783,10 +4787,6 @@ mod tests {
         }];
         // stop_parked returns the elapsed time; the UI caller credits it.
         let (_, secs) = pm.stop_parked("Game").unwrap();
-        let base = std::env::temp_dir().join("pm-park-child-time");
-        let _ = std::fs::remove_dir_all(&base);
-        std::fs::create_dir_all(&base).unwrap();
-        let _home = crate::test_env::HomeGuard::set(&base);
         let _ = crate::backend::config::ConfigManager::new().credit_time_spent("Game", secs);
         let cfg = crate::backend::config::ConfigManager::new();
         let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
