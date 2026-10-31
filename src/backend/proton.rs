@@ -5035,6 +5035,69 @@ mod tests {
     }
 
     #[test]
+    fn quit_closes_foreground_parked_and_adopted_once() {
+        let base = std::env::temp_dir().join("pm-quit-all");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+        adopt_game("AdoptScanGame");
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
+        let mut helper = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let parked_pid = helper.id();
+        let parked_tick = crate::backend::session_ledger::pid_starttime(parked_pid).unwrap();
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let mut fg = crate::backend::session_ledger::SessionLedger::with_start(
+            "AdoptScanGame",
+            pid,
+            tick,
+            now - 600,
+        );
+        fg.credited_until = now - 600;
+        crate::backend::session_ledger::save(&dir, &fg).unwrap();
+        let mut parked = crate::backend::session_ledger::SessionLedger::with_start(
+            "ParkedGame",
+            parked_pid,
+            parked_tick,
+            now - 300,
+        );
+        parked.credited_until = now - 300;
+        crate::backend::session_ledger::save(&dir, &parked).unwrap();
+        *pm.imp().session_game.borrow_mut() = "AdoptScanGame".to_string();
+        *pm.imp().session_start.borrow_mut() =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(600));
+        pm.imp().session_pid.set(Some(pid));
+        pm.imp().game_running.set(true);
+        *pm.imp().parked.borrow_mut() = vec![ParkedSession {
+            name: "ParkedGame".to_string(),
+            kind: ParkedKind::AppImage {
+                exe: "/nonexistent/ParkedGame.AppImage".to_string(),
+            },
+            start: std::time::Instant::now() - std::time::Duration::from_secs(300),
+            child: Some(helper),
+            adopted_pid: None,
+        }];
+
+        pm.quit_close_all();
+
+        let records = crate::backend::session_ledger::load_closed(&dir);
+        let gone = crate::backend::session_ledger::load(&dir, pid).is_none()
+            && crate::backend::session_ledger::load(&dir, parked_pid).is_none();
+        unsafe {
+            libc::kill(parked_pid as i32, libc::SIGKILL);
+        }
+        let _ = std::fs::remove_dir_all(&base);
+        assert!(gone, "both ledgers closed");
+        assert_eq!(records.len(), 2, "one record per closed session");
+    }
+
+    #[test]
     fn should_adopt_table() {
         let closed = (42u32, 1_000u64, 1_600u64);
         // No close recorded: adopt.

@@ -302,6 +302,14 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
     })
 }
 
+/// The one way out: bank every live session (D2) and stop the loop.
+fn quit_app(state: &AppState, window: &adw::ApplicationWindow) {
+    state.proton.quit_close_all();
+    if let Some(app) = window.application() {
+        app.quit();
+    }
+}
+
 fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWindow {
     let state = AppState::new();
     helpers::apply_theme_css(&state.theme);
@@ -368,8 +376,8 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                     glib::Propagation::Stop
                 }
                 ui::tray::CloseAction::Quit => {
-                    state_c.proton.quit_close_all();
-                    glib::Propagation::Proceed
+                    quit_app(&state_c, win);
+                    glib::Propagation::Stop
                 }
                 ui::tray::CloseAction::Ask => {
                     let dlg = adw::MessageDialog::new(
@@ -399,10 +407,7 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                                 if remember {
                                     state_d.config.set_launcher_value("closeToTrayChoice", "quit");
                                 }
-                                state_d.proton.quit_close_all();
-                                if let Some(app) = win_c.application() {
-                                    app.quit();
-                                }
+                                quit_app(&state_d, &win_c);
                             }
                             _ => {}
                         }
@@ -423,10 +428,7 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                 match msg {
                     ui::tray::TrayMsg::Show => window_c.present(),
                     ui::tray::TrayMsg::Quit => {
-                        state_t.proton.quit_close_all();
-                        if let Some(app) = window_c.application() {
-                            app.quit();
-                        }
+                        quit_app(&state_t, &window_c);
                         break;
                     }
                 }
@@ -1259,8 +1261,21 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     // after library/path changes and after a Store refresh) + focus hook.
     refresh_warn_buttons(&state);
 
+    // SIGTERM/SIGINT take the same exit path, so a logout or a Ctrl+C also
+    // banks the sessions instead of leaving a live ledger behind.
+    for signum in [libc::SIGTERM, libc::SIGINT] {
+        let state_s = state.clone();
+        let win_s = window.clone();
+        glib::unix_signal_add_local(signum, move || {
+            quit_app(&state_s, &win_s);
+            glib::ControlFlow::Break
+        });
+    }
+
     // --background: stay in the tray. Without a tray the window must show,
-    // never leave the app invisible and unreachable.
+    // never leave the app invisible and unreachable. A hidden window is still
+    // a window for GtkApplication (it exits when the last one is closed), so
+    // no app.hold() is needed while it is hidden.
     if !background || !tray_ok {
         window.present();
     }
