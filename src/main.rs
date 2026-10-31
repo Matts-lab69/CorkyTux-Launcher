@@ -312,6 +312,12 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     title_box.append(&corky_icon);
     title_box.append(&gtk::Label::new(Some("CorkyTux")));
     header.set_title_widget(Some(&title_box));
+    // Narrow windows: the sidebar collapses and this button brings it back.
+    let sidebar_toggle = gtk::Button::from_icon_name("open-menu-symbolic");
+    sidebar_toggle.add_css_class("flat");
+    sidebar_toggle.set_tooltip_text(Some("Show or hide the sidebar"));
+    sidebar_toggle.set_visible(false);
+    header.pack_start(&sidebar_toggle);
     main_box.append(&header);
 
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -485,6 +491,21 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     sidebar.widget.set_hexpand(false);
     sidebar.widget.set_halign(gtk::Align::Start);
     body.append(&sidebar.widget);
+    {
+        let sidebar_widget = sidebar.widget.clone();
+        let toggle = sidebar_toggle.clone();
+        toggle.connect_clicked(move |_| {
+            sidebar_widget.set_visible(!sidebar_widget.is_visible());
+        });
+        if let Ok(cond) = adw::BreakpointCondition::parse("max-width: 700px") {
+            let bp = adw::Breakpoint::new(cond);
+            let hidden = gtk::glib::Value::from(false);
+            let shown = gtk::glib::Value::from(true);
+            bp.add_setter(&sidebar.widget, "visible", Some(&hidden));
+            bp.add_setter(&sidebar_toggle, "visible", Some(&shown));
+            window.add_breakpoint(bp);
+        }
+    }
 
     // Build center
     let center = ui::center::build_center(&state, &details_ref);
