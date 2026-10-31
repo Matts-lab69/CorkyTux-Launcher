@@ -157,11 +157,16 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
             && state_clone.proton.session_game_name() == name
         {
             return match state_clone.proton.stop_game() {
-                Ok((game, _secs)) => {
+                Ok((game, secs)) => {
                     if !game.is_empty() {
-                        // The ledger's final checkpoint already credited the
-                        // remaining delta; only refresh the in-memory value.
-                        state_clone.game_model.reload_time_spent(&game);
+                        // secs > 0: the ledger did not handle it (adopted
+                        // session); credit it here. secs == 0: the ledger
+                        // already credited, only reload the model.
+                        if secs > 0 {
+                            state_clone.game_model.increment_time_spent(&game, secs);
+                        } else {
+                            state_clone.game_model.reload_time_spent(&game);
+                        }
                         state_clone.game_model.touch_last_played(&game);
                         state_clone.recent_model.refresh(30);
                     }
@@ -1000,9 +1005,12 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
             if ledger_tick.get() % 30 == 0 {
                 state_c.proton.ledger_checkpoint();
             }
-            if let Some((game, _secs)) = state_c.proton.check_finished() {
-                // The ledger's final checkpoint credited the remaining delta.
-                state_c.game_model.reload_time_spent(&game);
+            if let Some((game, secs)) = state_c.proton.check_finished() {
+                if secs > 0 {
+                    state_c.game_model.increment_time_spent(&game, secs);
+                } else {
+                    state_c.game_model.reload_time_spent(&game);
+                }
                 state_c.game_model.touch_last_played(&game);
                 state_c.recent_model.refresh(30);
                 if let Some(ref ch) = *ch_c.borrow() {

@@ -52,6 +52,18 @@ pub fn delta(credited_until: u64, now: u64) -> u64 {
     (now - credited_until).min(MAX_DELTA_SECS)
 }
 
+/// Decide who credits a close. The ledger returns true when it handled the
+/// session (foreground with a ledger); then the caller must not credit again
+/// and uses 0 to mean "only reload". An adopted session has no ledger and
+/// returns the full elapsed time for the caller to credit.
+pub fn close_credit(ledger_handled: bool, elapsed_secs: u64) -> u64 {
+    if ledger_handled {
+        0
+    } else {
+        elapsed_secs
+    }
+}
+
 impl SessionLedger {
     pub fn new(game_name: &str, pid: u32, pid_starttime: u64, now: u64) -> Self {
         Self {
@@ -221,7 +233,10 @@ pub fn recover<C: Clock>(
             move_bad(dir, &path);
             continue;
         };
-        if alive(ledger.pid, ledger.pid_starttime) {
+        // `ended_at` means the close started: finish it even if the pid is
+        // still visible (the wrapper may outlive the record). Only a live
+        // session without `ended_at` is left for adoption.
+        if ledger.ended_at.is_none() && alive(ledger.pid, ledger.pid_starttime) {
             eprintln!(
                 "[session] live session left for adoption: {} (pid {})",
                 ledger.game_name, ledger.pid
@@ -533,6 +548,36 @@ mod tests {
         let after = c.total;
         recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d)).unwrap();
         assert_eq!(c.total, after);
+    }
+
+    #[test]
+    fn adopted_session_credits_full_duration_once() {
+        // An adopted session has no ledger; the caller credits the whole
+        // elapsed time exactly once.
+        assert_eq!(close_credit(false, 600), 600);
+    }
+
+    #[test]
+    fn ledger_session_does_not_credit_twice() {
+        // A foreground session with a ledger: the close returns 0, so the
+        // caller reloads instead of crediting the full duration again.
+        assert_eq!(close_credit(true, 600), 0);
+    }
+
+    #[test]
+    fn recovery_with_ended_at_and_alive_pid_finishes() {
+        let dir = tmp("ledger-ended-alive");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
+        *clock.0.borrow_mut() = 1060;
+        checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        mark_ended(&dir, 42, 1200).unwrap();
+        // The pid is still visible, but ended_at means the close started.
+        let n = recover(&dir, &clock, &|pid, st| pid == 42 && st == 7, &mut |g, d| c.credit(g, d)).unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(c.total, 200);
+        assert!(load(&dir, 42).is_none());
     }
 }
 
