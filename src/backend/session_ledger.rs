@@ -49,11 +49,6 @@ pub fn delta(credited_until: u64, now: u64) -> u64 {
     (now - credited_until).min(MAX_DELTA_SECS)
 }
 
-/// Same policy as `GameModel::merge_time_spent` (#74): never lower a value.
-pub fn merge_time_spent(existing: u64, incoming: u64) -> u64 {
-    existing.max(incoming)
-}
-
 impl SessionLedger {
     pub fn new(game_name: &str, pid: u32, pid_starttime: u64, now: u64) -> Self {
         Self {
@@ -261,7 +256,7 @@ mod tests {
             Self { total: 0, calls: Vec::new() }
         }
         fn credit(&mut self, game: &str, d: u64) -> Result<(), String> {
-            self.total = merge_time_spent(self.total, self.total + d);
+            self.total = crate::backend::game_model::GameModel::merge_time_spent(self.total, self.total + d);
             self.calls.push((game.to_string(), d));
             Ok(())
         }
@@ -369,7 +364,7 @@ mod tests {
         save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
         *clock.0.borrow_mut() = 1060;
         checkpoint(&dir, 42, &clock, &mut |_g, d| {
-            existing = merge_time_spent(existing, existing.saturating_add(d));
+            existing = crate::backend::game_model::GameModel::merge_time_spent(existing, existing.saturating_add(d));
             Ok(())
         }).unwrap();
         assert_eq!(existing, 5060);
@@ -439,7 +434,7 @@ mod tests {
         save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
         *clock.0.borrow_mut() = 1060;
         finish(&dir, 42, &clock, &mut |_g, d| {
-            existing = merge_time_spent(existing, existing.saturating_add(d));
+            existing = crate::backend::game_model::GameModel::merge_time_spent(existing, existing.saturating_add(d));
             Ok(())
         }).unwrap();
         assert_eq!(existing, 5060);
