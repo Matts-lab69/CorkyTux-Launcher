@@ -227,8 +227,17 @@ pub fn finish_outcome<C: Clock>(
     clock: &C,
     credit: &mut dyn FnMut(&str, u64) -> Result<(), String>,
 ) -> FinishOutcome {
-    if load(dir, pid).is_none() {
+    let path = ledger_path(dir, pid);
+    if !path.exists() {
         return FinishOutcome::NoLedger;
+    }
+    if load(dir, pid).is_none() {
+        // The file exists but cannot be parsed. Do not return NoLedger: the
+        // caller would credit the full duration again on top of the
+        // checkpoints already banked. Move it aside and report KeptForRecovery
+        // so the caller returns 0.
+        move_bad(dir, &path);
+        return FinishOutcome::KeptForRecovery;
     }
     let _ = mark_ended(dir, pid, clock.now());
     match finish(dir, pid, clock, credit) {
@@ -650,6 +659,21 @@ mod tests {
         assert_eq!(n, 1);
         assert_eq!(c.total, 200);
         assert!(load(&dir, 42).is_none());
+    }
+
+    #[test]
+    fn finish_outcome_corrupt_ledger_does_not_credit_again() {
+        let dir = tmp("ledger-outcome-corrupt");
+        ensure_dir(&dir).unwrap();
+        fs::write(ledger_path(&dir, 42), "{not json").unwrap();
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        let out = finish_outcome(&dir, 42, &clock, &mut |g, d| c.credit(g, d));
+        assert_eq!(out, FinishOutcome::KeptForRecovery);
+        assert_eq!(c.total, 0);
+        assert_eq!(close_credit(out, 600), 0);
+        assert!(!ledger_path(&dir, 42).exists());
+        assert!(dir.join("42.json.bad").exists());
     }
 }
 
