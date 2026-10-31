@@ -5122,6 +5122,42 @@ mod tests {
     }
 
     #[test]
+    fn wine_child_with_a_windows_path_keeps_the_launcher_as_the_candidate() {
+        let game = "/games/Game.exe";
+        let none: &[String] = &[];
+        // The wine child only sees the Windows path: the POSIX path is absent,
+        // so it is not a candidate (translating Z:\ needs the prefix).
+        let child = game_process(
+            &["wine64", "Z:\\games\\Game.exe", "-dx11"],
+            "wine64",
+            "/usr/lib/wine/wine64",
+        );
+        assert!(!matches_game_process(
+            &child.args,
+            &child.comm,
+            &child.exe,
+            game,
+            "",
+            none,
+        ));
+        // The launcher process carries the POSIX path and is the one adopted.
+        let launcher = game_process(
+            &["proton", "waitforexitandrun", game],
+            "proton",
+            "/opt/Proton/proton",
+        );
+        assert!(matches_game_process(
+            &launcher.args,
+            &launcher.comm,
+            &launcher.exe,
+            game,
+            "",
+            none,
+        ));
+    }
+
+    #[test]
+    fn scan_budget_table() {    #[test]
     fn scan_budget_table() {
         assert!(scan_budget_left(0, 3_000));
         assert!(scan_budget_left(2_999, 3_000));
