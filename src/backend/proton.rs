@@ -5608,8 +5608,9 @@ mod tests {
         let _home = crate::test_env::HomeGuard::set(&base);
 
         let pm = ProtonManager::new();
-        let pid = std::process::id();
-        let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
+        // Dead pid: with the proc_tree root the session must be gone.
+        let pid = 0u32;
+        let tick = 7u64;
         let dir = crate::backend::session_ledger::sessions_dir(&base);
         let now = {
             use crate::backend::session_ledger::Clock;
