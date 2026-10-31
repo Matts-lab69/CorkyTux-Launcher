@@ -1850,7 +1850,30 @@ fn main() {
         if !name.is_empty() {
             let proton = ProtonManager::new();
             match proton.run_game(name) {
-                Ok(()) => std::process::exit(0),
+                Ok(()) => {
+                    // Headless: keep the process alive so the ledger gets
+                    // checkpoints and the close banks the time.
+                    let mut ticks: u32 = 0;
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        ticks = ticks.saturating_add(1);
+                        let finished = proton.check_finished();
+                        let action = crate::backend::session_ledger::headless_tick(
+                            ticks,
+                            finished.is_some(),
+                        );
+                        if action.checkpoint {
+                            proton.ledger_checkpoint();
+                        }
+                        if let Some((game, secs)) = finished {
+                            if secs > 0 && !game.is_empty() {
+                                let cfg = crate::backend::config::ConfigManager::new();
+                                let _ = cfg.credit_time_spent(&game, secs);
+                            }
+                            std::process::exit(0);
+                        }
+                    }
+                }
                 Err(e) => {
                     eprintln!("[CorkyTux] Failed to launch {}: {}", name, e);
                     std::process::exit(1);

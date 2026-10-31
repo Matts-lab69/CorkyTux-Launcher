@@ -155,6 +155,10 @@ pub fn ensure_dir(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+pub fn closed_path(dir: &Path, pid: u32) -> PathBuf {
+    dir.join(format!("{}.closed", pid))
+}
+
 pub fn ledger_path(dir: &Path, pid: u32) -> PathBuf {
     dir.join(format!("{}.json", pid))
 }
@@ -212,6 +216,30 @@ pub fn checkpoint<C: Clock>(
     clock: &C,
     credit: &mut dyn FnMut(&str, u64) -> Result<(), String>,
 ) -> Result<u64, String> {
+    // Serialize the ledger read-modify-write across processes (headless
+    // --play and the GUI can checkpoint the same session).
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(dir.join("ledger.lock"));
+    let locked = lock
+        .as_ref()
+        .map(|f| {
+            use std::os::unix::io::AsRawFd;
+            unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) } == 0
+        })
+        .unwrap_or(false);
+    let _guard = lock.as_ref().map(|f| {
+        use std::os::unix::io::AsRawFd;
+        struct Unlock(std::os::unix::io::RawFd);
+        impl Drop for Unlock {
+            fn drop(&mut self) {
+                unsafe { libc::flock(self.0, libc::LOCK_UN); }
+            }
+        }
+        Unlock(f.as_raw_fd())
+    });
+    let _ = locked;
     let Some(mut ledger) = load(dir, pid) else {
         return Ok(0);
     };
@@ -242,6 +270,9 @@ pub fn finish<C: Clock>(
     credit: &mut dyn FnMut(&str, u64) -> Result<(), String>,
 ) -> Result<u64, String> {
     let d = checkpoint(dir, pid, clock, credit)?;
+    // Tombstone: a second process that reaches the close for this pid must
+    // return Credited (0) instead of NoLedger (full duration).
+    let _ = std::fs::write(closed_path(dir, pid), clock.now().to_string());
     remove(dir, pid);
     Ok(d)
 }
@@ -283,6 +314,11 @@ pub fn finish_outcome<C: Clock>(
 ) -> FinishOutcome {
     let path = ledger_path(dir, pid);
     if !path.exists() {
+        // A tombstone means another process already closed this session;
+        // do not credit the full duration again.
+        if closed_path(dir, pid).exists() {
+            return FinishOutcome::Credited;
+        }
         return FinishOutcome::NoLedger;
     }
     if load(dir, pid).is_none() {
@@ -297,6 +333,22 @@ pub fn finish_outcome<C: Clock>(
     match finish(dir, pid, clock, credit) {
         Ok(_) => FinishOutcome::Credited,
         Err(_) => FinishOutcome::KeptForRecovery,
+    }
+}
+
+/// Decision for one turn of the headless `--play` loop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeadlessTick {
+    pub checkpoint: bool,
+    pub close: bool,
+}
+
+/// Pure: checkpoint every 30 ticks (60 s at 2 s per tick) and close when the
+/// session has finished.
+pub fn headless_tick(tick_count: u32, finished: bool) -> HeadlessTick {
+    HeadlessTick {
+        checkpoint: tick_count > 0 && tick_count % 30 == 0,
+        close: finished,
     }
 }
 
@@ -853,6 +905,70 @@ mod tests {
         assert_eq!(resolve_close_pid(Some(7), Some(9)), Some(7));
         assert_eq!(resolve_close_pid(None, Some(9)), Some(9));
         assert_eq!(resolve_close_pid(None, None), None);
+    }
+
+    #[test]
+    fn headless_tick_checkpoints_every_30() {
+        assert!(!headless_tick(0, false).checkpoint);
+        assert!(!headless_tick(29, false).checkpoint);
+        assert!(headless_tick(30, false).checkpoint);
+        assert!(!headless_tick(31, false).checkpoint);
+        assert!(headless_tick(30, true).close);
+    }
+
+    #[test]
+    fn interleaved_checkpoints_do_not_duplicate() {
+        let dir = tmp("ledger-interleave");
+        let a = FakeClock(Rc::new(RefCell::new(1000)));
+        let b = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        adopt_ledger(&dir, "Game", 42, 7, 1000).unwrap();
+        *a.0.borrow_mut() = 1060;
+        *b.0.borrow_mut() = 1060;
+        checkpoint(&dir, 42, &a, &mut |g, d| c.credit(g, d)).unwrap();
+        // The second "process" at the same wall time must credit 0.
+        assert_eq!(checkpoint(&dir, 42, &b, &mut |g, d| c.credit(g, d)).unwrap(), 0);
+        *b.0.borrow_mut() = 1120;
+        assert_eq!(checkpoint(&dir, 42, &b, &mut |g, d| c.credit(g, d)).unwrap(), 60);
+        assert_eq!(c.total, 120);
+    }
+
+    #[test]
+    fn double_finish_does_not_credit_twice() {
+        let dir = tmp("ledger-double-finish");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        adopt_ledger(&dir, "Game", 42, 7, 1000).unwrap();
+        *clock.0.borrow_mut() = 1600;
+        finish(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        let first = c.total;
+        let out = finish_outcome(&dir, 42, &clock, &mut |g, d| c.credit(g, d));
+        assert_eq!(out, FinishOutcome::Credited);
+        assert_eq!(c.total, first);
+        assert_eq!(close_credit(out, 600), 0);
+    }
+
+    #[test]
+    fn headless_close_credits_once() {
+        let dir = tmp("ledger-headless");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        adopt_ledger(&dir, "Game", 42, 7, 1000).unwrap();
+        *clock.0.borrow_mut() = 1600;
+        finish(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        assert_eq!(c.total, 600);
+        assert_eq!(close_credit(FinishOutcome::Credited, 600), 0);
+    }
+
+    #[test]
+    fn headless_without_a_ledger_credits_once() {
+        let dir = tmp("ledger-headless-none");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        let out = finish_outcome(&dir, 42, &clock, &mut |g, d| c.credit(g, d));
+        assert_eq!(out, FinishOutcome::NoLedger);
+        assert_eq!(close_credit(out, 600), 600);
+        assert_eq!(c.total, 0);
     }
 }
 
