@@ -2001,6 +2001,8 @@ impl ProtonManager {
             }
             self.imp().game_running.set(false);
             self.imp().session_rpg.set(false);
+            let outcome = self.finish_with(None);
+            self.imp().session_pid.set(None);
             let secs = self
                 .imp()
                 .session_start
@@ -2008,6 +2010,7 @@ impl ProtonManager {
                 .take()
                 .map(|t| t.elapsed().as_secs())
                 .unwrap_or(0);
+            let secs = super::session_ledger::close_credit(outcome, secs);
             let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
             *self.imp().session_prefix.borrow_mut() = String::new();
             *self.imp().session_proton_dir.borrow_mut() = String::new();
@@ -4417,7 +4420,6 @@ mod tests {
         let base = std::env::temp_dir().join("pm-adopt-close");
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&base).unwrap();
-        let prev_home = std::env::var("HOME").ok();
         std::env::set_var("HOME", &base);
 
         let pm = ProtonManager::new();
@@ -4430,6 +4432,16 @@ mod tests {
         };
         crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600)
             .unwrap();
+        // One controlled checkpoint at half the session: 300 s banked, the
+        // close must add only the remaining ~300 s.
+        struct Fixed(u64);
+        impl crate::backend::session_ledger::Clock for Fixed {
+            fn now(&self) -> u64 { self.0 }
+        }
+        crate::backend::session_ledger::checkpoint(&dir, pid, &Fixed(now - 300), &mut |g, d| {
+            crate::backend::config::ConfigManager::new().credit_time_spent(g, d)
+        })
+        .unwrap();
         *pm.imp().session_game.borrow_mut() = "Game".to_string();
         *pm.imp().session_start.borrow_mut() =
             Some(std::time::Instant::now() - std::time::Duration::from_secs(600));
@@ -4445,16 +4457,84 @@ mod tests {
             .unwrap_or(0);
         let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
 
-        match prev_home {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
-        }
         let _ = std::fs::remove_dir_all(&base);
 
         assert_eq!(secs, 0, "the ledger must handle the adopted close");
-        assert_eq!(stored, 600, "credited exactly once");
+        // Wall time can cross one second between the setup and the close;
+        // 300 s came from the fixed checkpoint, the rest from the close.
+        assert!((600..=601).contains(&stored), "credited once, got {}", stored);
         assert!(deleted, "ledger removed after the close");
     }
+
+    #[test]
+    fn adopted_session_closes_once_via_stop_game() {
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("pm-adopt-stop");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::env::set_var("HOME", &base);
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600)
+            .unwrap();
+        struct Fixed(u64);
+        impl crate::backend::session_ledger::Clock for Fixed {
+            fn now(&self) -> u64 { self.0 }
+        }
+        crate::backend::session_ledger::checkpoint(&dir, pid, &Fixed(now - 300), &mut |g, d| {
+            crate::backend::config::ConfigManager::new().credit_time_spent(g, d)
+        })
+        .unwrap();
+        *pm.imp().session_game.borrow_mut() = "Game".to_string();
+        *pm.imp().session_start.borrow_mut() =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(600));
+        pm.imp().session_pid.set(Some(pid));
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+
+        let (_, secs) = pm.stop_game().unwrap();
+        let cfg = crate::backend::config::ConfigManager::new();
+        let stored: u64 = cfg
+            .game_value("Game", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
+
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert_eq!(secs, 0);
+        assert!((600..=601).contains(&stored), "credited once, got {}", stored);
+        assert!(deleted);
+    }
+
+    #[test]
+    fn rpg_stop_clears_session_pid() {
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("pm-rpg-stop");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::env::set_var("HOME", &base);
+
+        let pm = ProtonManager::new();
+        *pm.imp().session_game.borrow_mut() = "Game".to_string();
+        pm.imp().session_rpg.set(true);
+        pm.imp().session_pid.set(Some(42));
+        pm.imp().game_running.set(true);
+        *pm.imp().session_start.borrow_mut() = Some(std::time::Instant::now());
+
+        let _ = pm.stop_game();
+        let cleared = pm.imp().session_pid.get().is_none();
+        let _ = std::fs::remove_dir_all(&base);
+        assert!(cleared, "RPG stop must clear the adopted pid");
+    }
+
 }
 
 #[cfg(test)]
