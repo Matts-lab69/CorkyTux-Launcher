@@ -2493,7 +2493,28 @@ impl ProtonManager {
                 let exe = super::ConfigManager::new()
                     .game_value(&game, "Executable")
                     .unwrap_or_default();
-                if Self::appimage_tree_alive(&exe) {
+                // Track the mounted AppImage by /proc instead of matching the
+                // .AppImage path with pgrep -f (which never sees the mount).
+                let mounts = Self::appimage_mounts(&Self::appimage_expand(&exe));
+                let procs = <super::proc_tree::RealProc as super::proc_tree::ProcSource>::list(
+                    &super::proc_tree::RealProc,
+                );
+                let root_pid = self
+                    .imp()
+                    .running_child
+                    .borrow()
+                    .as_ref()
+                    .map(|c| c.id())
+                    .unwrap_or(0);
+                let alive = mounts.iter().any(|m| {
+                    let t = super::proc_tree::SessionTree {
+                        root_pid,
+                        root_starttime: 0,
+                        mount: m.clone(),
+                    };
+                    t.alive(&procs)
+                });
+                if alive {
                     if code.is_some() {
                         *self.imp().running_child.borrow_mut() = None;
                     }
