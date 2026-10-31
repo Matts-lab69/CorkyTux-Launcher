@@ -4515,6 +4515,102 @@ mod tests {
     }
 
     #[test]
+    fn adopted_600s_nine_checkpoints_check_finished() {
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("pm-adopt-9cp-check");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::env::set_var("HOME", &base);
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        let start = now - 600;
+        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, start).unwrap();
+        struct Fixed(u64);
+        impl crate::backend::session_ledger::Clock for Fixed {
+            fn now(&self) -> u64 { self.0 }
+        }
+        for i in 1..=9u64 {
+            crate::backend::session_ledger::checkpoint(
+                &dir, pid, &Fixed(start + i * 60), &mut |g, d| {
+                    crate::backend::config::ConfigManager::new().credit_time_spent(g, d)
+                },
+            )
+            .unwrap();
+        }
+        *pm.imp().session_game.borrow_mut() = "Game".to_string();
+        *pm.imp().session_start.borrow_mut() =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(600));
+        pm.imp().session_pid.set(Some(pid));
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+
+        let secs = pm.check_finished().map(|(_, s)| s).unwrap_or(0);
+        let cfg = crate::backend::config::ConfigManager::new();
+        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert_eq!(secs, 0);
+        assert!((600..=601).contains(&stored), "credited once, got {}", stored);
+        assert!(deleted);
+    }
+
+    #[test]
+    fn adopted_600s_nine_checkpoints_stop_game() {
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("pm-adopt-9cp-stop");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::env::set_var("HOME", &base);
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        let start = now - 600;
+        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, start).unwrap();
+        struct Fixed(u64);
+        impl crate::backend::session_ledger::Clock for Fixed {
+            fn now(&self) -> u64 { self.0 }
+        }
+        for i in 1..=9u64 {
+            crate::backend::session_ledger::checkpoint(
+                &dir, pid, &Fixed(start + i * 60), &mut |g, d| {
+                    crate::backend::config::ConfigManager::new().credit_time_spent(g, d)
+                },
+            )
+            .unwrap();
+        }
+        *pm.imp().session_game.borrow_mut() = "Game".to_string();
+        *pm.imp().session_start.borrow_mut() =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(600));
+        pm.imp().session_pid.set(Some(pid));
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+
+        let (_, secs) = pm.stop_game().unwrap();
+        let cfg = crate::backend::config::ConfigManager::new();
+        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert_eq!(secs, 0);
+        assert!((600..=601).contains(&stored), "credited once, got {}", stored);
+        assert!(deleted);
+    }
+
+    #[test]
     fn rpg_stop_clears_session_pid() {
         let _g = crate::test_env::lock();
         let base = std::env::temp_dir().join("pm-rpg-stop");
