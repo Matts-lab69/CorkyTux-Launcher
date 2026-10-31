@@ -1211,7 +1211,7 @@ impl ProtonManager {
         let new_is_wine = Self::section_is_wine(&game_preview);
         // Dead parked entries go first: a relaunched app starts clean, and
         // the deny below only ever sees live entries.
-        self.purge_dead();
+        let _ = self.purge_dead();
         if self.is_game_running() {
             // Same game, already here: relaunching would stack a second
             // instance (foreground plus parked entry). Deny with its name.
@@ -2313,6 +2313,10 @@ impl ProtonManager {
             Some(pid) => self.ledger_finish_pid(pid),
             None => super::session_ledger::FinishOutcome::NoLedger,
         };
+        // NoLedger: the caller credits the whole duration, capped like a
+        // checkpoint so a stale entry cannot bank weeks at once. Credited:
+        // the ledger already moved the time to Games.ini; close_credit is 0
+        // but the row still needs a reload.
         let mut secs = super::session_ledger::close_credit(outcome, elapsed);
         let cap = super::session_ledger::MAX_DELTA_SECS;
         if secs > cap {
@@ -2322,12 +2326,19 @@ impl ProtonManager {
             );
             secs = cap;
         }
-        if secs > 0
-            && !entry.name.is_empty()
-            && super::ConfigManager::new()
-                .credit_time_spent(&entry.name, secs)
-                .is_ok()
-        {
+        if entry.name.is_empty() {
+            return None;
+        }
+        if secs > 0 {
+            return match super::ConfigManager::new().credit_time_spent(&entry.name, secs) {
+                Ok(()) => Some(entry.name.clone()),
+                Err(e) => {
+                    eprintln!("[session] cannot credit parked {}: {}", entry.name, e);
+                    None
+                }
+            };
+        }
+        if outcome == super::session_ledger::FinishOutcome::Credited {
             return Some(entry.name.clone());
         }
         None
@@ -2338,7 +2349,7 @@ impl ProtonManager {
     /// the session has no game name. Adopted sessions (no local child) park
     /// with `child: None` and are re-checked by pattern at promotion time.
     fn park_current(&self) {
-        self.purge_dead();
+        let _ = self.purge_dead();
         if !self.is_game_running() {
             return;
         }
@@ -2510,7 +2521,7 @@ impl ProtonManager {
     /// the foreground session closes.
     fn promote_parked(&self) -> bool {
         // Bank and drop dead entries before promoting a live one.
-        self.purge_dead();
+        let _ = self.purge_dead();
         let mut parked = self.imp().parked.borrow_mut();
         let idx = {
             let mut found = None;
