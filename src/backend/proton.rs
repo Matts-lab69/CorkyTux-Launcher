@@ -1981,7 +1981,10 @@ impl ProtonManager {
 
     pub fn stop_game(&self) -> Result<(String, u64), String> {
         let mut child = self.imp().running_child.borrow_mut().take();
-        let ledger_pid = child.as_ref().map(|c| c.id());
+        let ledger_pid = super::session_ledger::resolve_close_pid(
+            child.as_ref().map(|c| c.id()),
+            self.imp().session_pid.get(),
+        );
         if child.is_none() && self.imp().session_game.borrow().is_empty() {
             return Ok((String::new(), 0));
         }
@@ -2064,10 +2067,7 @@ impl ProtonManager {
             }
         }
         self.imp().game_running.set(false);
-        let outcome = match ledger_pid {
-            Some(pid) => self.ledger_finish_pid(pid),
-            None => super::session_ledger::FinishOutcome::NoLedger,
-        };
+        let outcome = self.finish_with(ledger_pid);
         self.imp().session_pid.set(None);
         let secs = self
             .imp()
@@ -2167,15 +2167,15 @@ impl ProtonManager {
         }
     }
 
-    /// Reports whether a ledger existed for this pid: `NoLedger` means the
-    /// caller must credit the elapsed time itself (adopted session, RPG,
-    /// or a failed `ledger_begin`). `Credited`/`KeptForRecovery` mean it
-    /// was already banked or is left for recovery.
-    fn ledger_finish(&self) -> super::session_ledger::FinishOutcome {
-        let Some(pid) = self.session_pid() else {
-            return super::session_ledger::FinishOutcome::NoLedger;
-        };
-        self.ledger_finish_pid(pid)
+    /// Close the ledger for `child_pid` (normal session) or the adopted pid
+    /// when there is no child. Shared by stop_game, check_finished and
+    /// close_rpg_session.
+    fn finish_with(&self, child_pid: Option<u32>) -> super::session_ledger::FinishOutcome {
+        let pid = super::session_ledger::resolve_close_pid(child_pid, self.imp().session_pid.get());
+        match pid {
+            Some(pid) => self.ledger_finish_pid(pid),
+            None => super::session_ledger::FinishOutcome::NoLedger,
+        }
     }
 
     /// Final checkpoint for an explicit pid (foreground close and parked
@@ -2612,7 +2612,7 @@ impl ProtonManager {
         self.imp().rpg_seen_running.set(false);
         self.imp().game_running.set(false);
         self.imp().session_rpg.set(false);
-        let outcome = self.ledger_finish();
+        let outcome = self.finish_with(None);
         self.imp().session_pid.set(None);
         let secs = self
             .imp()
@@ -2717,15 +2717,15 @@ impl ProtonManager {
                 }
             }
         };
-        let ledger_pid = self.imp().running_child.borrow().as_ref().map(|c| c.id());
+        let ledger_pid = super::session_ledger::resolve_close_pid(
+            self.imp().running_child.borrow().as_ref().map(|c| c.id()),
+            self.imp().session_pid.get(),
+        );
         *self.imp().running_child.borrow_mut() = None;
         self.imp().game_running.set(false);
         let was_appimage = self.imp().session_appimage.get();
         self.imp().session_appimage.set(false);
-        let outcome = match ledger_pid {
-            Some(pid) => self.ledger_finish_pid(pid),
-            None => super::session_ledger::FinishOutcome::NoLedger,
-        };
+        let outcome = self.finish_with(ledger_pid);
         self.imp().session_pid.set(None);
         let secs = self
             .imp()
@@ -4579,5 +4579,50 @@ mod arch_tests {
         assert!(!ProtonManager::is_foreign_arch("proton-x86_64"));
         assert!(!ProtonManager::is_foreign_arch("proton-i686"));
         assert!(!ProtonManager::is_foreign_arch("proton-i386"));
+    }
+
+    #[test]
+    fn adopted_session_closes_once_via_check_finished() {
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("pm-adopt-close");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let prev_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &base);
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600)
+            .unwrap();
+        *pm.imp().session_game.borrow_mut() = "Game".to_string();
+        *pm.imp().session_start.borrow_mut() =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(600));
+        pm.imp().session_pid.set(Some(pid));
+        pm.imp().game_running.set(true);
+        pm.imp().session_appimage.set(true);
+
+        let secs = pm.check_finished().map(|(_, s)| s).unwrap_or(0);
+        let cfg = crate::backend::config::ConfigManager::new();
+        let stored: u64 = cfg
+            .game_value("Game", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
+
+        match prev_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert_eq!(secs, 0, "the ledger must handle the adopted close");
+        assert_eq!(stored, 600, "credited exactly once");
+        assert!(deleted, "ledger removed after the close");
     }
 }

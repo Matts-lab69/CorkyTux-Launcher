@@ -52,6 +52,12 @@ pub fn delta(credited_until: u64, now: u64) -> u64 {
     (now - credited_until).min(MAX_DELTA_SECS)
 }
 
+/// Pid to use when closing: the child pid when there is one, otherwise the
+/// adopted pid. Pure, so the three close paths share the same decision.
+pub fn resolve_close_pid(child_pid: Option<u32>, adopted_pid: Option<u32>) -> Option<u32> {
+    child_pid.or(adopted_pid)
+}
+
 /// Decide who credits a close. The ledger returns true when it handled the
 /// session (foreground with a ledger); then the caller must not credit again
 /// and uses 0 to mean "only reload". An adopted session has no ledger and
@@ -840,6 +846,13 @@ mod tests {
         recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d)).unwrap();
         assert_eq!(c.total, before);
         assert!(load(&dir, 42).is_none());
+    }
+
+    #[test]
+    fn resolve_close_pid_prefers_child_then_adopted() {
+        assert_eq!(resolve_close_pid(Some(7), Some(9)), Some(7));
+        assert_eq!(resolve_close_pid(None, Some(9)), Some(9));
+        assert_eq!(resolve_close_pid(None, None), None);
     }
 }
 
