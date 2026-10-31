@@ -3654,7 +3654,6 @@ fi
     /// machine has installed.
     #[test]
     fn precheck_detecta_borrado_externo_y_dispara_modal() {
-        let _g = crate::test_env::lock();
         use std::os::unix::fs::PermissionsExt;
 
         // Process env is shared by all test threads: hold the lock for the
