@@ -931,10 +931,6 @@ pub fn format_playtime(secs: u64) -> String {
 }
 
 
-#[cfg(test)]
-mod tests {
-    use super::format_playtime;
-
     #[test]
     fn format_playtime_cases() {
         assert_eq!(format_playtime(0), "<1 min");
@@ -947,4 +943,4 @@ mod tests {
         assert_eq!(format_playtime(36000), "10 h");
         assert_eq!(format_playtime(360000), "100 h");
     }
-}
+
