@@ -1067,6 +1067,9 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     // after library/path changes and after a Store refresh) + focus hook.
     refresh_warn_buttons(&state);
 
+    // Gamepad navigation (D3: ignored unless this window is active).
+    ui::gamepad::start(&window);
+
     window
 }
 

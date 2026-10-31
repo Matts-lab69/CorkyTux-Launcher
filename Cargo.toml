@@ -26,6 +26,9 @@ libc = "0.2"
 # segundo modo de fallo sobre una descarga de 188 MB, y aqui el binario tiene
 # que funcionar o el login no funciona.
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# Gamepad support (SDL_GameControllerDB mappings, hotplug). Apache-2.0/MIT.
+# On Linux it needs libudev; CI installs libudev-dev.
+gilrs = "=0.11.2"
 
 
 [profile.release]
