@@ -2099,8 +2099,13 @@ impl ProtonManager {
 
     fn ledger_begin(&self, game_name: &str) {
         let Some(dir) = Self::ledger_dir() else { return };
-        let Some(child) = self.imp().running_child.borrow().as_ref() else { return };
-        let pid = child.id();
+        let pid = {
+            let slot = self.imp().running_child.borrow();
+            match slot.as_ref() {
+                Some(c) => c.id(),
+                None => return,
+            }
+        };
         let Some(start) = super::session_ledger::pid_starttime(pid) else { return };
         let now = {
             use super::session_ledger::Clock;
