@@ -226,7 +226,8 @@ pub fn checkpoint<C: Clock>(
         .as_ref()
         .map(|f| {
             use std::os::unix::io::AsRawFd;
-            unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) } == 0
+            let rc = unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) };
+            rc == 0
         })
         .unwrap_or(false);
     let _guard = lock.as_ref().map(|f| {
