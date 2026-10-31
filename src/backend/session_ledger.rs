@@ -56,11 +56,24 @@ pub fn delta(credited_until: u64, now: u64) -> u64 {
 /// session (foreground with a ledger); then the caller must not credit again
 /// and uses 0 to mean "only reload". An adopted session has no ledger and
 /// returns the full elapsed time for the caller to credit.
-pub fn close_credit(ledger_handled: bool, elapsed_secs: u64) -> u64 {
-    if ledger_handled {
-        0
-    } else {
-        elapsed_secs
+/// Outcome of closing a session's ledger.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FinishOutcome {
+    /// No ledger file for this pid (begin failed or adopted session).
+    NoLedger,
+    /// The final checkpoint credited and the file was deleted.
+    Credited,
+    /// The flock failed; the file stays with `ended_at` for recovery.
+    KeptForRecovery,
+}
+
+/// Decide who credits a close. Only `NoLedger` means the caller must credit
+/// the full elapsed time; `Credited` and `KeptForRecovery` already banked it
+/// (or left it for recovery), so the caller returns 0.
+pub fn close_credit(outcome: FinishOutcome, elapsed_secs: u64) -> u64 {
+    match outcome {
+        FinishOutcome::NoLedger => elapsed_secs,
+        FinishOutcome::Credited | FinishOutcome::KeptForRecovery => 0,
     }
 }
 
@@ -204,6 +217,24 @@ pub fn finish<C: Clock>(
     let d = checkpoint(dir, pid, clock, credit)?;
     remove(dir, pid);
     Ok(d)
+}
+
+/// Close a ledger and report what happened. This is the single decision
+/// point the three close paths use.
+pub fn finish_outcome<C: Clock>(
+    dir: &Path,
+    pid: u32,
+    clock: &C,
+    credit: &mut dyn FnMut(&str, u64) -> Result<(), String>,
+) -> FinishOutcome {
+    if load(dir, pid).is_none() {
+        return FinishOutcome::NoLedger;
+    }
+    let _ = mark_ended(dir, pid, clock.now());
+    match finish(dir, pid, clock, credit) {
+        Ok(_) => FinishOutcome::Credited,
+        Err(_) => FinishOutcome::KeptForRecovery,
+    }
 }
 
 /// Recovery at startup. `alive` reports whether the recorded pid is still
@@ -551,17 +582,58 @@ mod tests {
     }
 
     #[test]
-    fn adopted_session_credits_full_duration_once() {
-        // An adopted session has no ledger; the caller credits the whole
-        // elapsed time exactly once.
-        assert_eq!(close_credit(false, 600), 600);
+    fn no_ledger_outcome_credits_full_duration_once() {
+        // ledger_begin failed or the session was adopted: no file, so the
+        // caller credits the whole elapsed time exactly once.
+        assert_eq!(close_credit(FinishOutcome::NoLedger, 600), 600);
     }
 
     #[test]
-    fn ledger_session_does_not_credit_twice() {
-        // A foreground session with a ledger: the close returns 0, so the
-        // caller reloads instead of crediting the full duration again.
-        assert_eq!(close_credit(true, 600), 0);
+    fn credited_outcome_credits_zero() {
+        // The ledger credited and deleted: the caller must not credit again.
+        assert_eq!(close_credit(FinishOutcome::Credited, 600), 0);
+    }
+
+    #[test]
+    fn kept_for_recovery_outcome_credits_zero() {
+        // The flock failed; the ledger stays for recovery, so the caller
+        // must not credit now.
+        assert_eq!(close_credit(FinishOutcome::KeptForRecovery, 600), 0);
+    }
+
+    #[test]
+    fn finish_outcome_reports_no_ledger_without_a_file() {
+        let dir = tmp("ledger-outcome-none");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        let out = finish_outcome(&dir, 42, &clock, &mut |g, d| c.credit(g, d));
+        assert_eq!(out, FinishOutcome::NoLedger);
+        assert_eq!(c.total, 0);
+    }
+
+    #[test]
+    fn finish_outcome_reports_credited() {
+        let dir = tmp("ledger-outcome-credited");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
+        *clock.0.borrow_mut() = 1060;
+        let out = finish_outcome(&dir, 42, &clock, &mut |g, d| c.credit(g, d));
+        assert_eq!(out, FinishOutcome::Credited);
+        assert_eq!(c.total, 60);
+        assert!(load(&dir, 42).is_none());
+    }
+
+    #[test]
+    fn finish_outcome_reports_kept_for_recovery() {
+        let dir = tmp("ledger-outcome-kept");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
+        *clock.0.borrow_mut() = 1060;
+        let out = finish_outcome(&dir, 42, &clock, &mut |_g, _d| Err("busy".to_string()));
+        assert_eq!(out, FinishOutcome::KeptForRecovery);
+        let l = load(&dir, 42).unwrap();
+        assert_eq!(l.ended_at, Some(1060));
     }
 
     #[test]

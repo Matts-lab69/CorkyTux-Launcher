@@ -2061,12 +2061,9 @@ impl ProtonManager {
             }
         }
         self.imp().game_running.set(false);
-        let handled = match ledger_pid {
-            Some(pid) => {
-                self.ledger_finish_pid(pid);
-                true
-            }
-            None => false,
+        let outcome = match ledger_pid {
+            Some(pid) => self.ledger_finish_pid(pid),
+            None => super::session_ledger::FinishOutcome::NoLedger,
         };
         let secs = self
             .imp()
@@ -2075,7 +2072,7 @@ impl ProtonManager {
             .take()
             .map(|t| t.elapsed().as_secs())
             .unwrap_or(0);
-        let secs = super::session_ledger::close_credit(handled, secs);
+        let secs = super::session_ledger::close_credit(outcome, secs);
         let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
         *self.imp().session_prefix.borrow_mut() = String::new();
         *self.imp().session_proton_dir.borrow_mut() = String::new();
@@ -2137,33 +2134,33 @@ impl ProtonManager {
         }
     }
 
-    /// Returns true when the ledger handled the session (a child pid was
-    /// available and its final checkpoint ran). False means the caller must
-    /// credit the elapsed time itself (adopted session, RPG).
-    fn ledger_finish(&self) -> bool {
+    /// Reports whether a ledger existed for this pid: `NoLedger` means the
+    /// caller must credit the elapsed time itself (adopted session, RPG,
+    /// or a failed `ledger_begin`). `Credited`/`KeptForRecovery` mean it
+    /// was already banked or is left for recovery.
+    fn ledger_finish(&self) -> super::session_ledger::FinishOutcome {
         let pid = match self.imp().running_child.borrow().as_ref() {
             Some(c) => c.id(),
-            None => return false,
+            None => return super::session_ledger::FinishOutcome::NoLedger,
         };
-        self.ledger_finish_pid(pid);
-        true
+        self.ledger_finish_pid(pid)
     }
 
     /// Final checkpoint for an explicit pid (foreground close and parked
     /// close share this path). `ended_at` is recorded first, so a failed
     /// credit leaves the tail for recovery.
-    fn ledger_finish_pid(&self, pid: u32) {
-        let Some(dir) = Self::ledger_dir() else { return };
+    fn ledger_finish_pid(&self, pid: u32) -> super::session_ledger::FinishOutcome {
+        let Some(dir) = Self::ledger_dir() else {
+            return super::session_ledger::FinishOutcome::NoLedger;
+        };
         let clock = super::session_ledger::SystemClock;
-        if let Err(e) = super::session_ledger::mark_ended(&dir, pid, {
-            use super::session_ledger::Clock;
-            clock.now()
-        }) {
-            eprintln!("[session] cannot record ended_at: {}", e);
+        let outcome = super::session_ledger::finish_outcome(&dir, pid, &clock, &mut |g, d| {
+            Self::ledger_credit(g, d)
+        });
+        if outcome == super::session_ledger::FinishOutcome::KeptForRecovery {
+            eprintln!("[session] final checkpoint failed (kept for recovery)");
         }
-        if let Err(e) = super::session_ledger::finish(&dir, pid, &clock, &mut |g, d| Self::ledger_credit(g, d)) {
-            eprintln!("[session] final checkpoint failed (kept for recovery): {}", e);
-        }
+        outcome
     }
 
     pub fn ledger_recover(&self) {
@@ -2403,20 +2400,20 @@ impl ProtonManager {
                 }
             }
         }
-        let mut secs = 0;
-        if let Some(mut c) = entry.child.take() {
+        let elapsed = std::time::Instant::now()
+            .duration_since(entry.start)
+            .as_secs();
+        let outcome = if let Some(mut c) = entry.child.take() {
             let pid = c.id();
             let _ = c.kill();
-            // The ledger already credited the active part; credit only the
-            // remaining delta and delete it, exactly like a normal close.
-            self.ledger_finish_pid(pid);
+            // Same decision as a normal close: the ledger credits the
+            // active part, the caller only covers what the ledger missed.
+            self.ledger_finish_pid(pid)
         } else {
-            // Adopted parked session (no local child): no ledger, bank the
-            // full parked duration through the caller.
-            secs = std::time::Instant::now()
-                .duration_since(entry.start)
-                .as_secs();
-        }
+            // Adopted parked session (no local child): no ledger.
+            super::session_ledger::FinishOutcome::NoLedger
+        };
+        let secs = super::session_ledger::close_credit(outcome, elapsed);
         Some((entry.name, secs))
     }
 
@@ -2560,7 +2557,7 @@ impl ProtonManager {
         self.imp().rpg_seen_running.set(false);
         self.imp().game_running.set(false);
         self.imp().session_rpg.set(false);
-        let handled = self.ledger_finish();
+        let outcome = self.ledger_finish();
         let secs = self
             .imp()
             .session_start
@@ -2568,7 +2565,7 @@ impl ProtonManager {
             .take()
             .map(|t| t.elapsed().as_secs())
             .unwrap_or(0);
-        let secs = super::session_ledger::close_credit(handled, secs);
+        let secs = super::session_ledger::close_credit(outcome, secs);
         let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
         *self.imp().session_prefix.borrow_mut() = String::new();
         *self.imp().session_proton_dir.borrow_mut() = String::new();
@@ -2669,12 +2666,9 @@ impl ProtonManager {
         self.imp().game_running.set(false);
         let was_appimage = self.imp().session_appimage.get();
         self.imp().session_appimage.set(false);
-        let handled = match ledger_pid {
-            Some(pid) => {
-                self.ledger_finish_pid(pid);
-                true
-            }
-            None => false,
+        let outcome = match ledger_pid {
+            Some(pid) => self.ledger_finish_pid(pid),
+            None => super::session_ledger::FinishOutcome::NoLedger,
         };
         let secs = self
             .imp()
@@ -2683,7 +2677,7 @@ impl ProtonManager {
             .take()
             .map(|t| t.elapsed().as_secs())
             .unwrap_or(0);
-        let secs = super::session_ledger::close_credit(handled, secs);
+        let secs = super::session_ledger::close_credit(outcome, secs);
         let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
         *self.imp().session_prefix.borrow_mut() = String::new();
         *self.imp().session_proton_dir.borrow_mut() = String::new();
