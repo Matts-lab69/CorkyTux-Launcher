@@ -90,6 +90,20 @@ impl SessionLedger {
         }
     }
 
+    /// Ledger for an adopted session: the clock starts at the real process
+    /// start, not at adoption time.
+    pub fn with_start(game_name: &str, pid: u32, pid_starttime: u64, started_at: u64) -> Self {
+        Self {
+            schema_version: SCHEMA_VERSION,
+            game_name: game_name.to_string(),
+            pid,
+            pid_starttime,
+            started_at,
+            credited_until: started_at,
+            ended_at: None,
+        }
+    }
+
     pub fn to_json(&self) -> String {
         serde_json::json!({
             "schema_version": self.schema_version,
@@ -196,7 +210,14 @@ pub fn checkpoint<C: Clock>(
         return Ok(0);
     };
     let now = clock.now();
+    let raw = now.saturating_sub(ledger.credited_until);
     let d = delta(ledger.credited_until, now);
+    if raw > MAX_DELTA_SECS {
+        eprintln!(
+            "[session] checkpoint for {} clamped from {} to {} s",
+            ledger.game_name, raw, d
+        );
+    }
     if d > 0 {
         credit(&ledger.game_name, d)?;
         ledger.credited_until = now;
@@ -217,6 +238,33 @@ pub fn finish<C: Clock>(
     let d = checkpoint(dir, pid, clock, credit)?;
     remove(dir, pid);
     Ok(d)
+}
+
+/// Result of building the ledger for an adopted session.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AdoptLedger {
+    Resumed,
+    Created,
+}
+
+/// Create or resume the ledger for an adopted session. Same pid and
+/// starttime: resume and keep `credited_until`. Different starttime (pid
+/// reused): drop the old ledger and create a new one.
+pub fn adopt_ledger(
+    dir: &Path,
+    game: &str,
+    pid: u32,
+    pid_starttime: u64,
+    start_unix: u64,
+) -> Result<AdoptLedger, String> {
+    if let Some(existing) = load(dir, pid) {
+        if existing.pid_starttime == pid_starttime {
+            return Ok(AdoptLedger::Resumed);
+        }
+        remove(dir, pid);
+    }
+    save(dir, &SessionLedger::with_start(game, pid, pid_starttime, start_unix))?;
+    Ok(AdoptLedger::Created)
 }
 
 /// Close a ledger and report what happened. This is the single decision
@@ -297,6 +345,44 @@ pub fn recover<C: Clock>(
         handled += 1;
     }
     Ok(handled)
+}
+
+/// Convert `/proc/<pid>/stat` starttime (clock ticks since boot) to a Unix
+/// timestamp. Pure; `None` when the inputs are invalid.
+pub fn starttime_to_unix(starttime_ticks: u64, boot_time_unix: u64, clk_tck: u64) -> Option<u64> {
+    if clk_tck == 0 {
+        return None;
+    }
+    Some(boot_time_unix + starttime_ticks / clk_tck)
+}
+
+/// Boot time in Unix seconds from `/proc/stat` (`btime`). None if absent.
+pub fn boot_time_unix() -> Option<u64> {
+    let stat = fs::read_to_string("/proc/stat").ok()?;
+    for line in stat.lines() {
+        if let Some(rest) = line.strip_prefix("btime ") {
+            return rest.trim().parse::<u64>().ok();
+        }
+    }
+    None
+}
+
+/// `_SC_CLK_TCK` via libc. None when sysconf fails.
+pub fn clk_tck() -> Option<u64> {
+    let v = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    if v > 0 {
+        Some(v as u64)
+    } else {
+        None
+    }
+}
+
+/// Real Unix start time of `pid`, from `/proc` plus boot time.
+pub fn process_start_unix(pid: u32) -> Option<u64> {
+    let ticks = pid_starttime(pid)?;
+    let boot = boot_time_unix()?;
+    let tck = clk_tck()?;
+    starttime_to_unix(ticks, boot, tck)
 }
 
 /// Read field 22 of `/proc/<pid>/stat` and compare it with the ledger.
@@ -674,6 +760,86 @@ mod tests {
         assert_eq!(close_credit(out, 600), 0);
         assert!(!ledger_path(&dir, 42).exists());
         assert!(dir.join("42.json.bad").exists());
+    }
+
+    #[test]
+    fn starttime_to_unix_known_values() {
+        assert_eq!(starttime_to_unix(500, 1000, 100), Some(1005));
+        assert_eq!(starttime_to_unix(0, 1000, 100), Some(1000));
+        assert_eq!(starttime_to_unix(500, 1000, 0), None);
+    }
+
+    #[test]
+    fn adopt_ledger_creates_with_real_start() {
+        let dir = tmp("adopt-create");
+        let out = adopt_ledger(&dir, "Game", 42, 7, 1234).unwrap();
+        assert_eq!(out, AdoptLedger::Created);
+        let l = load(&dir, 42).unwrap();
+        assert_eq!(l.started_at, 1234);
+        assert_eq!(l.credited_until, 1234);
+        assert_eq!(l.pid_starttime, 7);
+    }
+
+    #[test]
+    fn adopt_ledger_resumes_live_ledger() {
+        let dir = tmp("adopt-resume");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        adopt_ledger(&dir, "Game", 42, 7, 1000).unwrap();
+        *clock.0.borrow_mut() = 1060;
+        checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        let out = adopt_ledger(&dir, "Game", 42, 7, 1000).unwrap();
+        assert_eq!(out, AdoptLedger::Resumed);
+        assert_eq!(load(&dir, 42).unwrap().credited_until, 1060);
+    }
+
+    #[test]
+    fn adopt_ledger_reused_pid_starts_fresh() {
+        let dir = tmp("adopt-reuse");
+        adopt_ledger(&dir, "Game", 42, 7, 1000).unwrap();
+        let out = adopt_ledger(&dir, "Game", 42, 99, 2000).unwrap();
+        assert_eq!(out, AdoptLedger::Created);
+        let l = load(&dir, 42).unwrap();
+        assert_eq!(l.pid_starttime, 99);
+        assert_eq!(l.started_at, 2000);
+    }
+
+    #[test]
+    fn first_checkpoint_clamps_to_24h() {
+        let dir = tmp("adopt-clamp");
+        let clock = FakeClock(Rc::new(RefCell::new(0)));
+        let mut c = Creditor::new();
+        adopt_ledger(&dir, "Game", 42, 7, 0).unwrap();
+        *clock.0.borrow_mut() = MAX_DELTA_SECS + 3600;
+        checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        assert_eq!(c.total, MAX_DELTA_SECS);
+    }
+
+    #[test]
+    fn adopted_10min_closes_once() {
+        let dir = tmp("adopt-10min");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        adopt_ledger(&dir, "Game", 42, 7, 1000).unwrap();
+        *clock.0.borrow_mut() = 1600;
+        checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        finish(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        assert_eq!(c.total, 600);
+        assert_eq!(close_credit(FinishOutcome::Credited, 600), 0);
+    }
+
+    #[test]
+    fn adopted_crash_recovery_does_not_double() {
+        let dir = tmp("adopt-crash");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        adopt_ledger(&dir, "Game", 42, 7, 1000).unwrap();
+        *clock.0.borrow_mut() = 1600;
+        checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        let before = c.total;
+        recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d)).unwrap();
+        assert_eq!(c.total, before);
+        assert!(load(&dir, 42).is_none());
     }
 }
 

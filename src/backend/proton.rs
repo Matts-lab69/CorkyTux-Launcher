@@ -242,6 +242,9 @@ mod imp {
         /// Read by the log view; banking always uses elapsed time.
         pub last_rpg_exit: Cell<Option<i32>>,
         pub session_watch: RefCell<String>,
+        /// Pid of the current session when it has no `running_child`
+        /// (adopted session). Used by the ledger checkpoint and close.
+        pub session_pid: Cell<Option<u32>>,
         /// Non-Wine sessions parked while another game runs in the foreground
         /// slot. Only AppImage/RPG/emulator sessions ever park here; Wine is
         /// never parked (a live Wine session denies every launch instead).
@@ -2065,6 +2068,7 @@ impl ProtonManager {
             Some(pid) => self.ledger_finish_pid(pid),
             None => super::session_ledger::FinishOutcome::NoLedger,
         };
+        self.imp().session_pid.set(None);
         let secs = self
             .imp()
             .session_start
@@ -2122,12 +2126,41 @@ impl ProtonManager {
         }
     }
 
+    /// Create or resume the ledger for an adopted session. A live ledger
+    /// with the same pid and starttime is resumed (its `credited_until` is
+    /// kept); a reused pid drops the old ledger first.
+    fn ledger_adopt(&self, game_name: &str, pid: u32, start_unix: Option<u64>) {
+        let Some(dir) = Self::ledger_dir() else { return };
+        let Some(tick) = super::session_ledger::pid_starttime(pid) else {
+            eprintln!("[session] cannot read starttime for adopted pid {}", pid);
+            return;
+        };
+        let now = {
+            use super::session_ledger::Clock;
+            super::session_ledger::SystemClock.now()
+        };
+        let started = start_unix.unwrap_or(now);
+        match super::session_ledger::adopt_ledger(&dir, game_name, pid, tick, started) {
+            Ok(super::session_ledger::AdoptLedger::Resumed) => {
+                eprintln!("[session] resumed ledger for {} (pid {})", game_name, pid);
+            }
+            Ok(super::session_ledger::AdoptLedger::Created) => {}
+            Err(e) => eprintln!("[session] cannot save adopted ledger: {}", e),
+        }
+    }
+
+    fn session_pid(&self) -> Option<u32> {
+        self.imp()
+            .running_child
+            .borrow()
+            .as_ref()
+            .map(|c| c.id())
+            .or_else(|| self.imp().session_pid.get())
+    }
+
     pub fn ledger_checkpoint(&self) {
         let Some(dir) = Self::ledger_dir() else { return };
-        let pid = match self.imp().running_child.borrow().as_ref() {
-            Some(c) => c.id(),
-            None => return,
-        };
+        let Some(pid) = self.session_pid() else { return; };
         let clock = super::session_ledger::SystemClock;
         if let Err(e) = super::session_ledger::checkpoint(&dir, pid, &clock, &mut |g, d| Self::ledger_credit(g, d)) {
             eprintln!("[session] checkpoint failed: {}", e);
@@ -2139,9 +2172,8 @@ impl ProtonManager {
     /// or a failed `ledger_begin`). `Credited`/`KeptForRecovery` mean it
     /// was already banked or is left for recovery.
     fn ledger_finish(&self) -> super::session_ledger::FinishOutcome {
-        let pid = match self.imp().running_child.borrow().as_ref() {
-            Some(c) => c.id(),
-            None => return super::session_ledger::FinishOutcome::NoLedger,
+        let Some(pid) = self.session_pid() else {
+            return super::session_ledger::FinishOutcome::NoLedger;
         };
         self.ledger_finish_pid(pid)
     }
@@ -2184,6 +2216,7 @@ impl ProtonManager {
         self.imp().rpg_seen_running.set(false);
         self.imp().last_rpg_exit.set(None);
         *self.imp().session_watch.borrow_mut() = String::new();
+        self.imp().session_pid.set(None);
         self.ledger_begin(game_name);
     }
 
@@ -2490,15 +2523,34 @@ impl ProtonManager {
         proton_dir: &str,
         appimage: bool,
         watch: &str,
+        pid: u32,
+        start_unix: Option<u64>,
     ) {
         *self.imp().session_game.borrow_mut() = game_name.to_string();
-        *self.imp().session_start.borrow_mut() = Some(std::time::Instant::now());
+        let now = {
+            use super::session_ledger::Clock;
+            super::session_ledger::SystemClock.now()
+        };
+        let started = start_unix.unwrap_or(now);
+        if start_unix.is_none() {
+            eprintln!(
+                "[session] adopted {} without a real start time; using now",
+                game_name
+            );
+        }
+        let elapsed = now.saturating_sub(started);
+        let start = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(elapsed))
+            .unwrap_or_else(std::time::Instant::now);
+        *self.imp().session_start.borrow_mut() = Some(start);
+        self.imp().session_pid.set(Some(pid));
         self.imp().game_running.set(true);
         *self.imp().session_prefix.borrow_mut() = prefix.to_string();
         *self.imp().session_proton_dir.borrow_mut() = proton_dir.to_string();
         self.imp().session_appimage.set(appimage);
         *self.imp().session_watch.borrow_mut() = watch.to_string();
-        eprintln!("[session] adopted already-running game: {}", game_name);
+        self.ledger_adopt(game_name, pid, start_unix);
+        eprintln!("[session] adopted already-running game: {} (pid {})", game_name, pid);
     }
 
     pub(crate) fn detect_running_sessions(&self) {
@@ -2516,29 +2568,32 @@ impl ProtonManager {
             let executor = get("executor");
             let source = get("source");
             if executor == "appimage-launcher" || source.eq_ignore_ascii_case("appimage") {
-                if Self::appimage_tree_alive(&exe) {
-                    self.adopt_session(&name, "", "", true, "");
+                if let Some(pid) = Self::appimage_tree_pid(&exe) {
+                    let start = super::session_ledger::process_start_unix(pid);
+                    self.adopt_session(&name, "", "", true, "", pid, start);
                     return;
                 }
                 continue;
             }
             if !executor.is_empty() {
                 let pattern = Self::appimage_ere_escape(&exe);
-                if Self::watch_alive(&pattern) {
-                    self.adopt_session(&name, "", "", false, &pattern);
+                if let Some(pid) = Self::watch_pid(&pattern) {
+                    let start = super::session_ledger::process_start_unix(pid);
+                    self.adopt_session(&name, "", "", false, &pattern, pid, start);
                     return;
                 }
                 continue;
             }
             let pattern = Self::appimage_ere_escape(&exe);
-            if Self::watch_alive(&pattern) {
+            if let Some(pid) = Self::watch_pid(&pattern) {
                 let prefix = self.real_prefix_for(&name).display().to_string();
                 let proton_dir = config
                     .game_value(&name, "Proton")
                     .and_then(|w| self.resolve_proton(&w).ok())
                     .map(|(_, p)| p.display().to_string())
                     .unwrap_or_default();
-                self.adopt_session(&name, &prefix, &proton_dir, false, &pattern);
+                let start = super::session_ledger::process_start_unix(pid);
+                self.adopt_session(&name, &prefix, &proton_dir, false, &pattern, pid, start);
                 return;
             }
         }
@@ -2558,6 +2613,7 @@ impl ProtonManager {
         self.imp().game_running.set(false);
         self.imp().session_rpg.set(false);
         let outcome = self.ledger_finish();
+        self.imp().session_pid.set(None);
         let secs = self
             .imp()
             .session_start
@@ -2670,6 +2726,7 @@ impl ProtonManager {
             Some(pid) => self.ledger_finish_pid(pid),
             None => super::session_ledger::FinishOutcome::NoLedger,
         };
+        self.imp().session_pid.set(None);
         let secs = self
             .imp()
             .session_start
@@ -2953,6 +3010,34 @@ impl ProtonManager {
             }
         }
         out
+    }
+
+    /// First live pid of the AppImage: the .AppImage path itself or any
+    /// process under its mount point.
+    fn appimage_tree_pid(exe: &str) -> Option<u32> {
+        let expanded = Self::appimage_expand(exe);
+        if expanded.trim().is_empty() {
+            return None;
+        }
+        let pat = format!("^{}( |$)", Self::appimage_ere_escape(&expanded));
+        if let Some(pid) = Self::appimage_pids(&pat).first().and_then(|s| s.parse().ok()) {
+            return Some(pid);
+        }
+        for mp in Self::appimage_mounts(&expanded) {
+            let pat = format!("^{}/", Self::appimage_ere_escape(&mp));
+            if let Some(pid) = Self::appimage_pids(&pat).first().and_then(|s| s.parse().ok()) {
+                return Some(pid);
+            }
+        }
+        None
+    }
+
+    /// First pid whose command line matches `pattern`.
+    fn watch_pid(pattern: &str) -> Option<u32> {
+        if pattern.trim().is_empty() {
+            return None;
+        }
+        Self::appimage_pids(pattern).first().and_then(|s| s.parse().ok())
     }
 
     fn appimage_tree_alive(exe: &str) -> bool {

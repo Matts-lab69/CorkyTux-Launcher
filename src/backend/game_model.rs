@@ -534,7 +534,7 @@ impl RecentModel {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_steam_game, steam_compat_path, GameModel};
+    use super::{is_steam_game, steam_compat_path, GameEntry, GameModel};
 
     #[test]
     fn steam_game_covers_source_and_id() {
@@ -587,5 +587,27 @@ mod tests {
         assert_eq!(GameModel::merge_last_played(0, 100), 100);
         assert_eq!(GameModel::merge_last_played(200, 100), 200);
         assert_eq!(GameModel::merge_last_played(100, 200), 200);
+    }
+
+    #[test]
+    fn add_game_does_not_lower_time_spent_from_memory() {
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("gm-add-game-time");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let prev_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &base);
+        let cfg = super::super::ConfigManager::new();
+        cfg.set_game_value("Game", "TimeSpent", "500");
+        let model = GameModel::new();
+        model.add_game(GameEntry {
+            name: "Game".into(),
+            time_spent: 100,
+            ..Default::default()
+        });
+        let after: u64 = cfg.game_value("Game", "TimeSpent").unwrap().parse().unwrap();
+        match prev_home { Some(v) => std::env::set_var("HOME", v), None => std::env::remove_var("HOME") }
+        let _ = std::fs::remove_dir_all(&base);
+        assert_eq!(after, 500);
     }
 }
