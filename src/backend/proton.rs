@@ -249,6 +249,9 @@ mod imp {
         /// slot. Only AppImage/RPG/emulator sessions ever park here; Wine is
         /// never parked (a live Wine session denies every launch instead).
         pub(crate) parked: RefCell<Vec<ParkedSession>>,
+        /// Last closed session per game: (pid, process start, close time).
+        /// The adoption scan skips a process left over from that session.
+        pub(crate) last_closed: RefCell<std::collections::HashMap<String, (u32, u64, u64)>>,
     }
 
     #[glib::object_subclass]
@@ -395,6 +398,29 @@ pub(crate) fn should_scan(tick: u32, game_running: bool, last_scan_tick: u32) ->
     !game_running
         && tick > last_scan_tick
         && tick.saturating_sub(last_scan_tick) >= ADOPT_SCAN_TICKS
+}
+
+/// Should the scan adopt this process? `last_closed` is
+/// (pid, process start, close time) for the game's previous session.
+/// False when it is the process just closed (same pid and start) or when it
+/// started before that close: a leftover of the session already banked.
+/// A relaunch that started after the close is adopted immediately.
+pub(crate) fn should_adopt(
+    candidate_pid: u32,
+    candidate_start_unix: Option<u64>,
+    last_closed: Option<(u32, u64, u64)>,
+) -> bool {
+    let Some((closed_pid, closed_start, closed_at)) = last_closed else {
+        return true;
+    };
+    let Some(start) = candidate_start_unix else {
+        return true;
+    };
+    if candidate_pid == closed_pid && start == closed_start {
+        return false;
+    }
+    // One second of slack: /proc start times are whole seconds.
+    !(start + 1 < closed_at)
 }
 
 impl ProtonManager {
@@ -2037,6 +2063,7 @@ impl ProtonManager {
             self.imp().session_rpg.set(false);
             let outcome = self.finish_with(None);
             self.imp().session_pid.set(None);
+            self.note_closed(&game, None, None);
             let secs = self
                 .imp()
                 .session_start
@@ -2115,6 +2142,7 @@ impl ProtonManager {
             .unwrap_or(0);
         let secs = super::session_ledger::close_credit(outcome, secs);
         let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
+        self.note_closed(&game, ledger_pid, None);
         *self.imp().session_prefix.borrow_mut() = String::new();
         *self.imp().session_proton_dir.borrow_mut() = String::new();
         self.imp().session_appimage.set(false);
@@ -2513,6 +2541,7 @@ impl ProtonManager {
         };
         let mut entry = parked.remove(idx);
         drop(parked);
+        let closed_pid = entry.child.as_ref().map(|c| c.id());
         if alive {
             match &entry.kind {
                 ParkedKind::AppImage { exe } => Self::stop_appimage_tree(exe),
@@ -2542,6 +2571,7 @@ impl ProtonManager {
             None => super::session_ledger::FinishOutcome::NoLedger,
         };
         let secs = super::session_ledger::close_credit(outcome, elapsed);
+        self.note_closed(&entry.name, closed_pid, None);
         Some((entry.name, secs))
     }
 
@@ -2651,6 +2681,42 @@ impl ProtonManager {
         eprintln!("[session] adopted already-running game: {} (pid {})", game_name, pid);
     }
 
+    /// Records the session that just closed. Single write point for the
+    /// adoption guard: every close path calls it with the game name and the
+    /// pid when there is one.
+    fn note_closed(&self, game: &str, pid: Option<u32>, session_start_unix: Option<u64>) {
+        if game.is_empty() {
+            return;
+        }
+        let start = pid
+            .and_then(super::session_ledger::process_start_unix)
+            .or(session_start_unix)
+            .unwrap_or_else(|| {
+                let elapsed = self
+                    .imp()
+                    .session_start
+                    .borrow()
+                    .map(|t| t.elapsed().as_secs())
+                    .unwrap_or(0);
+                use super::session_ledger::Clock;
+                super::session_ledger::SystemClock
+                    .now()
+                    .saturating_sub(elapsed)
+            });
+        let closed_at = {
+            use super::session_ledger::Clock;
+            super::session_ledger::SystemClock.now()
+        };
+        self.imp()
+            .last_closed
+            .borrow_mut()
+            .insert(game.to_string(), (pid.unwrap_or(0), start, closed_at));
+    }
+
+    fn last_closed(&self, game: &str) -> Option<(u32, u64, u64)> {
+        self.imp().last_closed.borrow().get(game).copied()
+    }
+
     /// Runs the adoption scan once. Returns true when a session was adopted,
     /// so the poller can refresh the Play/Stop state.
     pub(crate) fn detect_running_sessions(&self) -> bool {
@@ -2681,6 +2747,9 @@ impl ProtonManager {
             if executor == "appimage-launcher" || source.eq_ignore_ascii_case("appimage") {
                 if let Some(pid) = scan.appimage_pid(&exe) {
                     let start = super::session_ledger::process_start_unix(pid);
+                    if !should_adopt(pid, start, self.last_closed(&name)) {
+                        continue;
+                    }
                     self.adopt_session(&name, "", "", true, "", pid, start);
                     return true;
                 }
@@ -2690,6 +2759,9 @@ impl ProtonManager {
                 let pattern = Self::appimage_ere_escape(&exe);
                 if let Some(pid) = scan.watch_pid(&pattern) {
                     let start = super::session_ledger::process_start_unix(pid);
+                    if !should_adopt(pid, start, self.last_closed(&name)) {
+                        continue;
+                    }
                     self.adopt_session(&name, "", "", false, &pattern, pid, start);
                     return true;
                 }
@@ -2704,6 +2776,9 @@ impl ProtonManager {
                     .map(|(_, p)| p.display().to_string())
                     .unwrap_or_default();
                 let start = super::session_ledger::process_start_unix(pid);
+                if !should_adopt(pid, start, self.last_closed(&name)) {
+                    continue;
+                }
                 self.adopt_session(&name, &prefix, &proton_dir, false, &pattern, pid, start);
                 return true;
             }
@@ -2735,6 +2810,7 @@ impl ProtonManager {
             .unwrap_or(0);
         let secs = super::session_ledger::close_credit(outcome, secs);
         let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
+        self.note_closed(&game, None, None);
         *self.imp().session_prefix.borrow_mut() = String::new();
         *self.imp().session_proton_dir.borrow_mut() = String::new();
         *self.imp().session_watch.borrow_mut() = String::new();
@@ -2848,6 +2924,7 @@ impl ProtonManager {
             .unwrap_or(0);
         let secs = super::session_ledger::close_credit(outcome, secs);
         let game = std::mem::take(&mut *self.imp().session_game.borrow_mut());
+        self.note_closed(&game, ledger_pid, None);
         *self.imp().session_prefix.borrow_mut() = String::new();
         *self.imp().session_proton_dir.borrow_mut() = String::new();
         if was_appimage && !game.is_empty() {
@@ -4113,7 +4190,7 @@ fn which(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        launch_allowed, should_scan, steam_readiness, ParkedKind, ParkedSession,
+        launch_allowed, should_adopt, should_scan, steam_readiness, ParkedKind, ParkedSession,
         ProtonManager, SessionScanner, SteamReadiness,
     };
     use glib::subclass::prelude::*;
@@ -4470,6 +4547,109 @@ mod tests {
         assert!((600..=605).contains(&stored), "credited once, got {}", stored);
         assert!(deleted, "ledger removed after the close");
         assert!(!pm.is_game_running());
+    }
+
+    #[test]
+    fn should_adopt_table() {
+        let closed = (42u32, 1_000u64, 1_600u64);
+        // No close recorded: adopt.
+        assert!(should_adopt(42, Some(1000), None));
+        // Same pid and start: the process of the session just closed.
+        assert!(!should_adopt(42, Some(1000), Some(closed)));
+        // Same pid, later start: a relaunch inside the same pid.
+        assert!(should_adopt(42, Some(1700), Some(closed)));
+        // Different pid, started before the close: leftover of the session.
+        assert!(!should_adopt(43, Some(1500), Some(closed)));
+        // Different pid, one second before the close: same-second tolerance.
+        assert!(should_adopt(43, Some(1599), Some(closed)));
+        // Different pid, five seconds after the close: a new session.
+        assert!(should_adopt(43, Some(1605), Some(closed)));
+        // Unknown start: fail open.
+        assert!(should_adopt(43, None, Some(closed)));
+    }
+
+    #[test]
+    fn stop_then_residual_same_pid_is_not_readopted() {
+        let base = std::env::temp_dir().join("pm-adopt-guard-stop");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+        adopt_game("AdoptScanGame");
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let cfg = crate::backend::config::ConfigManager::new();
+        assert!(pm.detect_running_sessions_with(&FixedPid(pid), &cfg));
+
+        // Simulate a 600 s session, then stop it by hand.
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        let mut ledger = crate::backend::session_ledger::load(&dir, pid).unwrap();
+        let real_start = ledger.started_at;
+        ledger.credited_until = now - 600;
+        crate::backend::session_ledger::save(&dir, &ledger).unwrap();
+        *pm.imp().session_start.borrow_mut() =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(600));
+
+        let (game, secs) = pm.stop_game().unwrap();
+        assert_eq!(game, "AdoptScanGame");
+        assert_eq!(secs, 0, "the ledger must handle the adopted close");
+        let stored: u64 = cfg
+            .game_value("AdoptScanGame", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
+
+        // The process that survives the stop is the same pid and start: the
+        // guard must refuse it, so nothing is adopted and nothing is banked.
+        assert!(!pm.detect_running_sessions_with(&FixedPid(pid), &cfg));
+        assert!(!pm.is_game_running());
+        assert!(crate::backend::session_ledger::load(&dir, pid).is_none());
+        let after: u64 = cfg
+            .game_value("AdoptScanGame", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let closed = pm.imp().last_closed.borrow().get("AdoptScanGame").copied();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert_eq!(after, stored, "no second credit");
+        let (closed_pid, closed_start, _) = closed.unwrap();
+        assert_eq!(closed_pid, pid);
+        assert_eq!(closed_start, real_start);
+    }
+
+    #[test]
+    fn relaunch_after_the_close_is_adopted() {
+        let base = std::env::temp_dir().join("pm-adopt-guard-relaunch");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+        adopt_game("AdoptScanGame");
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let real_start = crate::backend::session_ledger::process_start_unix(pid).unwrap();
+        let cfg = crate::backend::config::ConfigManager::new();
+        // Previous session closed 5 s before this process started.
+        pm.imp().last_closed.borrow_mut().insert(
+            "AdoptScanGame".to_string(),
+            (
+                pid + 1,
+                real_start.saturating_sub(600),
+                real_start.saturating_sub(5),
+            ),
+        );
+
+        assert!(pm.detect_running_sessions_with(&FixedPid(pid), &cfg));
+        assert!(pm.is_game_running());
+        assert_eq!(pm.session_game_name(), "AdoptScanGame");
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let ledger = crate::backend::session_ledger::load(&dir, pid).unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+        assert_eq!(ledger.started_at, real_start);
     }
 
     #[test]
