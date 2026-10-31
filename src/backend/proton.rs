@@ -2271,10 +2271,13 @@ impl ProtonManager {
         }
     }
 
-    /// Drops definitively-dead parked entries (their partial time is never
-    /// banked, same as before). Fail open: anything I cannot verify stays.
-    /// Called when parking and when launching, so dead entries never pile
-    /// up behind a live one and a relaunched app never doubles its entry.
+    /// Drops definitively-dead parked entries and banks the time of each one
+    /// (ledger first, then the caller-equivalent credit). Fail open: anything
+    /// I cannot verify stays. Called when parking and when launching, so dead
+    /// entries never pile up behind a live one and a relaunched app never
+    /// doubles its entry. Not in the 2 s poller: a dead entry is banked at the
+    /// next launch, park or foreground close, so the UI row can lag until its
+    /// next reload (the file is already up to date).
     fn purge_dead(&self) {
         let mut dead = Vec::new();
         {
@@ -2482,9 +2485,9 @@ impl ProtonManager {
 
     /// Promotes the first still-live parked session back into the foreground
     /// slot, keeping its original `start` so its clock (and banked time)
-    /// survive the round trip. Dead entries are dropped: their partial time
-    /// is lost (banking them would need the game model, which lives in the
-    /// UI layer). Called when the foreground session closes.
+    /// survive the round trip. Dead entries go through `purge_dead` first, so
+    /// their time is banked before the live one takes the slot. Called when
+    /// the foreground session closes.
     fn promote_parked(&self) -> bool {
         // Bank and drop dead entries before promoting a live one.
         self.purge_dead();
