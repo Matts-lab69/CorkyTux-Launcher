@@ -470,6 +470,34 @@ impl ConfigManager {
         self.save_games_ini();
     }
 
+    /// Credit `delta` seconds to `TimeSpent` under an exclusive lock on
+    /// `Games.ini.lock`, then write atomically. Never lowers the stored value
+    /// (the max() policy from #74).
+    pub fn credit_time_spent(&self, game: &str, delta: u64) -> Result<(), String> {
+        if delta == 0 {
+            return Ok(());
+        }
+        use std::os::unix::io::AsRawFd;
+        let lock_path = self.games_ini_path().with_file_name("Games.ini.lock");
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&lock_path)
+            .map_err(|e| format!("cannot open Games.ini.lock: {}", e))?;
+        let rc = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) };
+        if rc != 0 {
+            return Err("cannot lock Games.ini".into());
+        }
+        let current: u64 = self
+            .game_value(game, "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let next = current.saturating_add(delta);
+        self.set_game_value(game, "TimeSpent", &next.to_string());
+        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN); }
+        Ok(())
+    }
+
     pub fn remove_game(&self, game: &str) {
         self.imp().games_ini.borrow_mut().remove_section(game);
         self.save_games_ini();
