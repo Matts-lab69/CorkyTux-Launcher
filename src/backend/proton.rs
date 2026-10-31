@@ -4416,11 +4416,10 @@ mod tests {
 
     #[test]
     fn adopted_session_closes_once_via_check_finished() {
-        let _g = crate::test_env::lock();
         let base = std::env::temp_dir().join("pm-adopt-close");
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&base).unwrap();
-        std::env::set_var("HOME", &base);
+        let _home = crate::test_env::HomeGuard::set(&base);
 
         let pm = ProtonManager::new();
         let pid = std::process::id();
@@ -4468,11 +4467,10 @@ mod tests {
 
     #[test]
     fn adopted_session_closes_once_via_stop_game() {
-        let _g = crate::test_env::lock();
         let base = std::env::temp_dir().join("pm-adopt-stop");
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&base).unwrap();
-        std::env::set_var("HOME", &base);
+        let _home = crate::test_env::HomeGuard::set(&base);
 
         let pm = ProtonManager::new();
         let pid = std::process::id();
@@ -4516,11 +4514,10 @@ mod tests {
 
     #[test]
     fn adopted_600s_nine_checkpoints_check_finished() {
-        let _g = crate::test_env::lock();
         let base = std::env::temp_dir().join("pm-adopt-9cp-check");
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&base).unwrap();
-        std::env::set_var("HOME", &base);
+        let _home = crate::test_env::HomeGuard::set(&base);
 
         let pm = ProtonManager::new();
         let pid = std::process::id();
@@ -4564,11 +4561,10 @@ mod tests {
 
     #[test]
     fn adopted_600s_nine_checkpoints_stop_game() {
-        let _g = crate::test_env::lock();
         let base = std::env::temp_dir().join("pm-adopt-9cp-stop");
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&base).unwrap();
-        std::env::set_var("HOME", &base);
+        let _home = crate::test_env::HomeGuard::set(&base);
 
         let pm = ProtonManager::new();
         let pid = std::process::id();
@@ -4612,11 +4608,10 @@ mod tests {
 
     #[test]
     fn rpg_stop_clears_session_pid() {
-        let _g = crate::test_env::lock();
         let base = std::env::temp_dir().join("pm-rpg-stop");
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&base).unwrap();
-        std::env::set_var("HOME", &base);
+        let _home = crate::test_env::HomeGuard::set(&base);
 
         let pm = ProtonManager::new();
         *pm.imp().session_game.borrow_mut() = "Game".to_string();

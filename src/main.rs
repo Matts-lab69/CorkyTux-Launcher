@@ -28,6 +28,19 @@ pub(crate) mod test_env {
         }
     }
 
+    /// Locks env and sets HOME for a test, restoring it on drop (panic-safe).
+    pub(crate) struct HomeGuard {
+        _guard: EnvGuard,
+    }
+
+    impl HomeGuard {
+        pub(crate) fn set(path: &std::path::Path) -> Self {
+            let guard = lock();
+            std::env::set_var("HOME", path);
+            Self { _guard: guard }
+        }
+    }
+
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             match &self.saved_home {
