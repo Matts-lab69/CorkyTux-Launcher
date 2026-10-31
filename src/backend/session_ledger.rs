@@ -1029,6 +1029,7 @@ mod tests {
         let dir = tmp("ledger-reuse-tomb");
         let clock = FakeClock(Rc::new(RefCell::new(1000)));
         let mut c = Creditor::new();
+        ensure_dir(&dir).unwrap();
         std::fs::write(closed_path(&dir, 42), "1000").unwrap();
         // A new session for the same pid clears the stale tombstone.
         remove_closed(&dir, 42);
