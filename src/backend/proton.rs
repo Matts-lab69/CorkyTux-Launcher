@@ -363,6 +363,37 @@ fn launch_allowed(new_is_wine: bool, cur_running: bool, cur_is_wine: bool) -> bo
     true
 }
 
+/// Process lookup used by the adoption scan. Production uses pgrep; tests
+/// inject a fixed answer so no real process is needed.
+pub(crate) trait SessionScanner {
+    fn appimage_pid(&self, exe: &str) -> Option<u32>;
+    fn watch_pid(&self, pattern: &str) -> Option<u32>;
+}
+
+/// Production scanner: pgrep over the same patterns the launcher uses.
+pub(crate) struct PgrepScanner;
+
+impl SessionScanner for PgrepScanner {
+    fn appimage_pid(&self, exe: &str) -> Option<u32> {
+        ProtonManager::appimage_tree_pid(exe)
+    }
+
+    fn watch_pid(&self, pattern: &str) -> Option<u32> {
+        ProtonManager::watch_pid(pattern)
+    }
+}
+
+/// Ticks between adoption scans (2 s each): 5 ticks = 10 s.
+pub(crate) const ADOPT_SCAN_TICKS: u32 = 5;
+
+/// Pure gate for the periodic scan: no foreground session, one scan per
+/// interval, never twice on the same tick.
+pub(crate) fn should_scan(tick: u32, game_running: bool, last_scan_tick: u32) -> bool {
+    !game_running
+        && tick > last_scan_tick
+        && tick.saturating_sub(last_scan_tick) >= ADOPT_SCAN_TICKS
+}
+
 impl ProtonManager {
     pub fn new() -> Self {
         glib::Object::new()
@@ -2556,11 +2587,24 @@ impl ProtonManager {
         eprintln!("[session] adopted already-running game: {} (pid {})", game_name, pid);
     }
 
-    pub(crate) fn detect_running_sessions(&self) {
+    /// Runs the adoption scan once. Returns true when a session was adopted,
+    /// so the poller can refresh the Play/Stop state.
+    pub(crate) fn detect_running_sessions(&self) -> bool {
+        self.detect_running_sessions_with(&PgrepScanner, &super::ConfigManager::new())
+    }
+
+    /// Adoption scan with an injectable process lookup and config, so tests
+    /// never depend on real processes or the shared thread-local config.
+    /// Stops at the first match: one adopted session fills the foreground
+    /// slot, later games wait for the next scan after it closes.
+    pub(crate) fn detect_running_sessions_with(
+        &self,
+        scan: &dyn SessionScanner,
+        config: &super::ConfigManager,
+    ) -> bool {
         if self.imp().game_running.get() {
-            return;
+            return false;
         }
-        let config = super::ConfigManager::new();
         for name in config.game_names() {
             let sec = config.game_section(&name);
             let get = |k: &str| sec.get(k).cloned().unwrap_or_default();
@@ -2571,24 +2615,24 @@ impl ProtonManager {
             let executor = get("executor");
             let source = get("source");
             if executor == "appimage-launcher" || source.eq_ignore_ascii_case("appimage") {
-                if let Some(pid) = Self::appimage_tree_pid(&exe) {
+                if let Some(pid) = scan.appimage_pid(&exe) {
                     let start = super::session_ledger::process_start_unix(pid);
                     self.adopt_session(&name, "", "", true, "", pid, start);
-                    return;
+                    return true;
                 }
                 continue;
             }
             if !executor.is_empty() {
                 let pattern = Self::appimage_ere_escape(&exe);
-                if let Some(pid) = Self::watch_pid(&pattern) {
+                if let Some(pid) = scan.watch_pid(&pattern) {
                     let start = super::session_ledger::process_start_unix(pid);
                     self.adopt_session(&name, "", "", false, &pattern, pid, start);
-                    return;
+                    return true;
                 }
                 continue;
             }
             let pattern = Self::appimage_ere_escape(&exe);
-            if let Some(pid) = Self::watch_pid(&pattern) {
+            if let Some(pid) = scan.watch_pid(&pattern) {
                 let prefix = self.real_prefix_for(&name).display().to_string();
                 let proton_dir = config
                     .game_value(&name, "Proton")
@@ -2597,9 +2641,10 @@ impl ProtonManager {
                     .unwrap_or_default();
                 let start = super::session_ledger::process_start_unix(pid);
                 self.adopt_session(&name, &prefix, &proton_dir, false, &pattern, pid, start);
-                return;
+                return true;
             }
         }
+        false
     }
 
     /// C++ onGameFinished parity: call periodically; returns (game, seconds)
@@ -4004,8 +4049,8 @@ fn which(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        launch_allowed, steam_readiness, ParkedKind, ParkedSession, ProtonManager,
-        SteamReadiness,
+        launch_allowed, should_scan, steam_readiness, ParkedKind, ParkedSession,
+        ProtonManager, SessionScanner, SteamReadiness,
     };
     use glib::subclass::prelude::*;
     use std::fs;
@@ -4231,6 +4276,136 @@ mod tests {
     }
 
     #[test]
+    struct FixedPid(u32);
+
+    impl SessionScanner for FixedPid {
+        fn appimage_pid(&self, _exe: &str) -> Option<u32> {
+            Some(self.0)
+        }
+
+        fn watch_pid(&self, _pattern: &str) -> Option<u32> {
+            Some(self.0)
+        }
+    }
+
+    struct NoPid;
+
+    impl SessionScanner for NoPid {
+        fn appimage_pid(&self, _exe: &str) -> Option<u32> {
+            None
+        }
+
+        fn watch_pid(&self, _pattern: &str) -> Option<u32> {
+            None
+        }
+    }
+
+    fn adopt_game(name: &str) {
+        let cfg = crate::backend::config::ConfigManager::new();
+        cfg.set_game_value(name, "source", "appimage");
+        cfg.set_game_value(name, "executable", "/nonexistent/AdoptScanGame.AppImage");
+    }
+
+    #[test]
+    fn should_scan_waits_for_foreground_and_interval() {
+        assert!(!should_scan(5, true, 0), "no scan with a live session");
+        assert!(!should_scan(4, false, 0), "four ticks is under the interval");
+        assert!(should_scan(5, false, 0));
+        assert!(!should_scan(5, false, 5), "never twice on the same tick");
+        assert!(!should_scan(9, false, 5));
+        assert!(should_scan(10, false, 5));
+        assert!(!should_scan(3, false, 7), "a rewind never scans");
+    }
+
+    #[test]
+    fn periodic_scan_adopts_a_pid_once() {
+        let base = std::env::temp_dir().join("pm-adopt-scan");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+        adopt_game("AdoptScanGame");
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let real_start = crate::backend::session_ledger::process_start_unix(pid).unwrap();
+        let cfg = crate::backend::config::ConfigManager::new();
+
+        assert!(pm.detect_running_sessions_with(&FixedPid(pid), &cfg));
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let ledger = crate::backend::session_ledger::load(&dir, pid).unwrap();
+        assert_eq!(ledger.game_name, "AdoptScanGame");
+        assert_eq!(ledger.started_at, real_start);
+        assert!(pm.is_game_running());
+        assert_eq!(pm.session_game_name(), "AdoptScanGame");
+
+        // Second scan: the foreground slot is taken, so nothing is re-adopted.
+        assert!(!pm.detect_running_sessions_with(&FixedPid(pid), &cfg));
+        let again = crate::backend::session_ledger::load(&dir, pid).unwrap();
+        assert_eq!(again.started_at, real_start);
+        let files = std::fs::read_dir(&dir).unwrap().count();
+        assert_eq!(files, 1, "one ledger for the adopted session");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn periodic_scan_without_a_match_adopts_nothing() {
+        let base = std::env::temp_dir().join("pm-adopt-none");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+        adopt_game("AdoptScanGame");
+
+        let pm = ProtonManager::new();
+        let cfg = crate::backend::config::ConfigManager::new();
+        assert!(!pm.detect_running_sessions_with(&NoPid, &cfg));
+        assert!(!pm.is_game_running());
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let files = std::fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0);
+        assert_eq!(files, 0, "no ledger without an adopted session");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn periodic_scan_adopts_and_closes_once() {
+        let base = std::env::temp_dir().join("pm-adopt-scan-close");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let _home = crate::test_env::HomeGuard::set(&base);
+        adopt_game("AdoptScanGame");
+
+        let pm = ProtonManager::new();
+        let pid = std::process::id();
+        let cfg = crate::backend::config::ConfigManager::new();
+        assert!(pm.detect_running_sessions_with(&FixedPid(pid), &cfg));
+
+        // The scan adopted the real start; simulate a 600 s session by moving
+        // the whole window back, then close it through the poller path.
+        let dir = crate::backend::session_ledger::sessions_dir(&base);
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        let mut ledger = crate::backend::session_ledger::load(&dir, pid).unwrap();
+        ledger.started_at = now - 600;
+        ledger.credited_until = now - 600;
+        crate::backend::session_ledger::save(&dir, &ledger).unwrap();
+        *pm.imp().session_start.borrow_mut() =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(600));
+
+        let secs = pm.check_finished().map(|(_, s)| s).unwrap_or(0);
+        let stored: u64 = cfg
+            .game_value("AdoptScanGame", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert_eq!(secs, 0, "the ledger must handle the adopted close");
+        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
+        assert!(deleted, "ledger removed after the close");
+        assert!(!pm.is_game_running());
+    }
+
     fn purge_dead_drops_dead_keeps_live() {
         // (1) Dead entry + parking another: the dead one is gone.
         let pm = ProtonManager::new();
