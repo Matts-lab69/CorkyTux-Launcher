@@ -4342,7 +4342,6 @@ mod tests {
         assert!(pm.stop_parked("Doom").is_none());
     }
 
-    #[test]
     struct FixedPid(u32);
 
     impl SessionScanner for FixedPid {
@@ -4473,6 +4472,7 @@ mod tests {
         assert!(!pm.is_game_running());
     }
 
+    #[test]
     fn purge_dead_drops_dead_keeps_live() {
         // (1) Dead entry + parking another: the dead one is gone.
         let pm = ProtonManager::new();
