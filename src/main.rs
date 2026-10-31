@@ -53,6 +53,26 @@ pub(crate) mod test_env {
             }
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::HomeGuard;
+
+        #[test]
+        fn home_guard_restores_on_panic() {
+            let prev = std::env::var("HOME").ok();
+            let dir = std::env::temp_dir().join("home-guard-panic");
+            let _ = std::fs::create_dir_all(&dir);
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _home = HomeGuard::set(&dir);
+                assert_eq!(std::env::var("HOME").ok().as_deref(), dir.to_str());
+                panic!("boom");
+            }));
+            assert!(r.is_err());
+            assert_eq!(std::env::var("HOME").ok(), prev);
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
 }
 
 use std::cell::RefCell;
