@@ -484,9 +484,20 @@ impl ConfigManager {
             .write(true)
             .open(&lock_path)
             .map_err(|e| format!("cannot open Games.ini.lock: {}", e))?;
-        let rc = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) };
-        if rc != 0 {
-            return Err("cannot lock Games.ini".into());
+        // Non-blocking lock with a short retry: this runs on the GTK main
+        // thread, so a blocking flock could freeze the UI. A busy lock is
+        // retried by the caller on the next tick.
+        let mut locked = false;
+        for _ in 0..5 {
+            let rc = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+            if rc == 0 {
+                locked = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        if !locked {
+            return Err("Games.ini is locked; retry on the next tick".into());
         }
         let current: u64 = self
             .game_value(game, "TimeSpent")

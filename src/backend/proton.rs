@@ -2135,8 +2135,9 @@ impl ProtonManager {
             Some(c) => c.id(),
             None => return,
         };
-        if let Err(e) = super::session_ledger::finish(&dir, pid) {
-            eprintln!("[session] cannot clear ledger: {}", e);
+        let clock = super::session_ledger::SystemClock;
+        if let Err(e) = super::session_ledger::finish(&dir, pid, &clock, &mut |g, d| Self::ledger_credit(g, d)) {
+            eprintln!("[session] final checkpoint failed: {}", e);
         }
     }
 

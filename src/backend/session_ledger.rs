@@ -169,13 +169,18 @@ pub fn checkpoint<C: Clock>(
     Ok(d)
 }
 
-/// Delete the ledger on a clean close. The existing launcher path already
-/// banks the full session time (`increment_time_spent(secs)`), so crediting
-/// here as well would double count. The periodic checkpoint is the crash
-/// safety net; the clean-close bank stays where it is (Tarea 5 moves it).
-pub fn finish(dir: &Path, pid: u32) -> Result<(), String> {
+/// Final checkpoint on a clean close: credit only the remaining delta
+/// (`now - credited_until`), then delete the ledger. The caller must not
+/// credit the full session duration again.
+pub fn finish<C: Clock>(
+    dir: &Path,
+    pid: u32,
+    clock: &C,
+    credit: &mut dyn FnMut(&str, u64) -> Result<(), String>,
+) -> Result<u64, String> {
+    let d = checkpoint(dir, pid, clock, credit)?;
     remove(dir, pid);
-    Ok(())
+    Ok(d)
 }
 
 /// Recovery at startup. `alive` reports whether the recorded pid is still
@@ -402,5 +407,62 @@ mod extra_tests {
         assert_eq!(super::delta(0, super::MAX_DELTA_SECS + 5), super::MAX_DELTA_SECS);
         assert_eq!(super::delta(10, 5), 0);
         assert_eq!(super::delta(10, 70), 60);
+    }
+
+    #[test]
+    fn integration_begin_three_checkpoints_and_close() {
+        let dir = tmp("ledger-int");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
+        for t in [1060, 1120, 1180] {
+            *clock.0.borrow_mut() = t;
+            checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        }
+        *clock.0.borrow_mut() = 1200;
+        finish(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        assert_eq!(c.total, 200);
+        assert!(load(&dir, 42).is_none());
+    }
+
+    #[test]
+    fn close_without_checkpoints_credits_full_session() {
+        let dir = tmp("ledger-short");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
+        *clock.0.borrow_mut() = 1059;
+        finish(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        assert_eq!(c.total, 59);
+        assert!(load(&dir, 42).is_none());
+    }
+
+    #[test]
+    fn close_after_recovery_does_not_double() {
+        let dir = tmp("ledger-recover-close");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut c = Creditor::new();
+        save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
+        *clock.0.borrow_mut() = 1060;
+        checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d)).unwrap();
+        let before = c.total;
+        finish(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
+        assert_eq!(c.total, before);
+        assert!(load(&dir, 42).is_none());
+    }
+
+    #[test]
+    fn close_with_higher_existing_value_does_not_lower() {
+        let dir = tmp("ledger-higher");
+        let clock = FakeClock(Rc::new(RefCell::new(1000)));
+        let mut existing = 5000u64;
+        save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
+        *clock.0.borrow_mut() = 1060;
+        finish(&dir, 42, &clock, &mut |_g, d| {
+            existing = merge_time_spent(existing, existing.saturating_add(d));
+            Ok(())
+        }).unwrap();
+        assert_eq!(existing, 5060);
     }
 }
