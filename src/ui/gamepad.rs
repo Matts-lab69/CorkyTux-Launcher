@@ -166,25 +166,31 @@ pub fn start(
 
     let motion = gtk::EventControllerMotion::new();
     {
+        // GTK synthesizes a motion event whenever the layout changes under a
+        // still pointer, and showing the help bar does exactly that. Only a
+        // real pointer movement may drop the pad ring.
+        let last = std::rc::Rc::new(std::cell::Cell::new(None::<(f64, f64)>));
         let w = window.clone();
         let help_c = help.clone();
-        motion.connect_motion(move |_, _, _| {
-            w.remove_css_class("gamepad-mode");
-            help_c.set_visible(false);
+        motion.connect_motion(move |_, x, y| {
+            let moved = last
+                .get()
+                .map(|(lx, ly)| (x - lx).abs() > 3.0 || (y - ly).abs() > 3.0)
+                .unwrap_or(true);
+            last.set(Some((x, y)));
+            if moved {
+                w.remove_css_class("gamepad-mode");
+                help_c.set_visible(false);
+            }
         });
     }
     window.add_controller(motion);
 
+    // Keys do not clear the pad ring: controllers that emulate a keyboard
+    // would otherwise remove it on the same press that set it. A real mouse
+    // movement is the signal that the user switched input.
     let keys = gtk::EventControllerKey::new();
-    {
-        let w = window.clone();
-        let help_c = help.clone();
-        keys.connect_key_pressed(move |_, _, _, _| {
-            w.remove_css_class("gamepad-mode");
-            help_c.set_visible(false);
-            glib::Propagation::Proceed
-        });
-    }
+    keys.connect_key_pressed(move |_, _, _, _| glib::Propagation::Proceed);
     window.add_controller(keys);
 
     let win = window.clone();
@@ -196,7 +202,15 @@ pub fn start(
             .launcher_value("controllerSupport")
             .map(|v| v != "0")
             .unwrap_or(true);
-        if !gamepad_nav::should_handle(win.is_active(), win.is_visible(), setting) {
+        // The pad must work in the window that actually has the focus: a
+        // dialog presented as its own toplevel makes the main window
+        // inactive, and gating on it dropped every event.
+        let target: gtk::Window = win
+            .application()
+            .and_then(|app| app.active_window())
+            .map(|w| w.upcast())
+            .unwrap_or_else(|| win.clone().upcast());
+        if !gamepad_nav::should_handle(target.is_active(), target.is_visible(), setting) {
             // D3: discard while a game has the focus, so nothing queues up.
             while rx.try_recv().is_ok() {}
             return glib::ControlFlow::Continue;
@@ -204,7 +218,7 @@ pub fn start(
         while let Ok(msg) = rx.try_recv() {
             match msg {
                 GamepadMessage::Input(input) => {
-                    win.add_css_class("gamepad-mode");
+                    target.add_css_class("gamepad-mode");
                     help_c.set_visible(true);
                     let mut st = state.borrow_mut();
                     if let Some(action) = gamepad_nav::map_event(input, &mut st, now_ms()) {
@@ -212,7 +226,7 @@ pub fn start(
                         if action == NavAction::QuickAction {
                             quick_c();
                         } else {
-                            apply_action(&win, action);
+                            apply_action(&target, action);
                         }
                     }
                 }
@@ -232,7 +246,7 @@ pub fn start(
     });
 }
 
-fn apply_action(window: &adw::ApplicationWindow, action: NavAction) {
+fn apply_action(window: &gtk::Window, action: NavAction) {
     match action {
         NavAction::Move(dir) => {
             let direction = match dir {
@@ -253,10 +267,10 @@ fn apply_action(window: &adw::ApplicationWindow, action: NavAction) {
         }
         NavAction::Back => close_top_modal(window),
         NavAction::TabPrev => {
-            window.child_focus(gtk::DirectionType::Left);
+            window.child_focus(gtk::DirectionType::TabBackward);
         }
         NavAction::TabNext => {
-            window.child_focus(gtk::DirectionType::Right);
+            window.child_focus(gtk::DirectionType::TabForward);
         }
         NavAction::Search => {
             if let Some(entry) = find_search(window.upcast_ref()) {
@@ -275,7 +289,14 @@ fn apply_action(window: &adw::ApplicationWindow, action: NavAction) {
 /// focus target. FlowBoxChild and ListBoxRow have their own activate signal.
 fn activate(widget: &gtk::Widget) {
     if let Some(child) = widget.downcast_ref::<gtk::FlowBoxChild>() {
-        child.emit_activate();
+        // Library cards put the click handler on the inner game-card button;
+        // the flow box only focuses the wrapper, so activating the wrapper
+        // did nothing there.
+        if let Some(card) = find_game_card(child.upcast_ref()) {
+            card.activate();
+        } else {
+            child.emit_activate();
+        }
         return;
     }
     if let Some(row) = widget.downcast_ref::<gtk::ListBoxRow>() {
@@ -317,17 +338,42 @@ fn ensure_visible(widget: &gtk::Widget) {
     }
 }
 
-fn close_top_modal(window: &adw::ApplicationWindow) {
-    let Some(app) = window.application() else {
-        return;
-    };
-    let window: &gtk::Window = window.upcast_ref();
-    for w in app.windows() {
-        if w.is_visible() && w.is_modal() && w != *window {
+fn close_top_modal(window: &gtk::Window) {
+    // Embedded AdwDialogs are not toplevels and never appear in
+    // `application().windows()`; this is the only handle on them.
+    if let Some(app_win) = window.downcast_ref::<adw::ApplicationWindow>() {
+        use adw::prelude::{AdwApplicationWindowExt, AdwDialogExt};
+        if let Some(dialog) = app_win.visible_dialog() {
+            dialog.close();
+            return;
+        }
+    }
+    for widget in gtk::Window::list_toplevels() {
+        let Some(w) = widget.downcast_ref::<gtk::Window>() else {
+            continue;
+        };
+        if w.is_visible() && w.is_modal() && !w.eq(window) {
             w.close();
             return;
         }
     }
+}
+
+/// The inner button that owns the click of a library card.
+fn find_game_card(root: &gtk::Widget) -> Option<gtk::Button> {
+    if let Some(button) = root.downcast_ref::<gtk::Button>() {
+        if button.has_css_class("game-card") {
+            return Some(button.clone());
+        }
+    }
+    let mut child = root.first_child();
+    while let Some(c) = child {
+        if let Some(found) = find_game_card(&c) {
+            return Some(found);
+        }
+        child = c.next_sibling();
+    }
+    None
 }
 
 fn find_search(root: &gtk::Widget) -> Option<gtk::SearchEntry> {
