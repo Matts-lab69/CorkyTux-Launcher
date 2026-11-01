@@ -70,12 +70,19 @@ pub struct PadInfo {
     pub mapping: PadMapping,
 }
 
-/// Valve: the Steam Input virtual pad.
+/// Valve vendor id (Steam Deck, Steam Controller and the virtual pad).
 pub const STEAM_VENDOR: u16 = 0x28de;
+/// The virtual pad Steam Input exposes: SDL calls it "Steam Virtual Gamepad"
+/// (`src/joystick/usb_ids.h`, `USB_PRODUCT_STEAM_VIRTUAL_GAMEPAD 0x11ff`, and
+/// `controller_list.h` maps 28de:11ff to it). The Steam Deck builtin is
+/// 28de:1205 and must NOT be treated as the virtual pad.
+pub const STEAM_VIRTUAL_PRODUCT: u16 = 0x11ff;
 /// Logitech G29 driving wheel: never a gamepad.
 pub const G29_VENDOR: u16 = 0x046d;
 pub const G29_PRODUCT: u16 = 0xc24f;
 /// Two pads masked by Steam Input report the same press within this window.
+/// Provisional: measured on no hardware yet; revisit after the calibration
+/// dump (see the P4 evidence command).
 pub const DEDUPE_WINDOW_MS: u64 = 10;
 
 /// Only devices mapped as a gamepad drive navigation. Wheels, flight sticks
@@ -90,28 +97,36 @@ pub fn is_gamepad(info: PadInfo) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PadStamp {
     pub vendor: Option<u16>,
+    pub product: Option<u16>,
     pub at_ms: u64,
+}
+
+/// 28de:11ff, the Steam Input virtual pad (not the Deck's builtin 28de:1205).
+pub fn is_steam_virtual(info: PadInfo) -> bool {
+    info.vendor == Some(STEAM_VENDOR) && info.product == Some(STEAM_VIRTUAL_PRODUCT)
 }
 
 /// Steam Input exposes a virtual pad with vendor 0x28de and the physical pad
 /// produces the same press a few ms apart. Keep the virtual one and drop the
 /// duplicate, so one press is one action.
 pub fn dedupe(event: PadStamp, recent: &[PadStamp], window_ms: u64) -> bool {
-    if event.vendor == Some(STEAM_VENDOR) {
+    if event.vendor == Some(STEAM_VENDOR) && event.product == Some(STEAM_VIRTUAL_PRODUCT) {
         return true;
     }
     !recent.iter().any(|r| {
-        r.vendor == Some(STEAM_VENDOR) && event.at_ms.abs_diff(r.at_ms) <= window_ms
+        r.vendor == Some(STEAM_VENDOR)
+            && r.product == Some(STEAM_VIRTUAL_PRODUCT)
+            && event.at_ms.abs_diff(r.at_ms) <= window_ms
     })
 }
 
 /// While a Steam virtual pad is connected it represents every physical pad:
 /// only its events count.
-pub fn accept_pad(info: PadInfo, valve_connected: bool) -> bool {
+pub fn accept_pad(info: PadInfo, steam_virtual_connected: bool) -> bool {
     if !is_gamepad(info) {
         return false;
     }
-    if valve_connected && info.vendor != Some(STEAM_VENDOR) {
+    if steam_virtual_connected && !is_steam_virtual(info) {
         return false;
     }
     true
@@ -339,29 +354,81 @@ mod tests {
 
     #[test]
     fn steam_input_duplicates_are_dropped() {
-        let valve = PadStamp { vendor: Some(STEAM_VENDOR), at_ms: 1_000 };
-        let physical = PadStamp { vendor: Some(0x054c), at_ms: 1_005 };
-        assert!(dedupe(valve, &[], DEDUPE_WINDOW_MS));
-        assert!(!dedupe(physical, &[valve], DEDUPE_WINDOW_MS));
+        let virtual_pad = PadStamp {
+            vendor: Some(STEAM_VENDOR),
+            product: Some(STEAM_VIRTUAL_PRODUCT),
+            at_ms: 1_000,
+        };
+        let physical = PadStamp {
+            vendor: Some(0x054c),
+            product: Some(0x0ce6),
+            at_ms: 1_005,
+        };
+        assert!(dedupe(virtual_pad, &[], DEDUPE_WINDOW_MS));
+        assert!(!dedupe(physical, &[virtual_pad], DEDUPE_WINDOW_MS));
         // Outside the window it is a real second press.
-        let later = PadStamp { vendor: Some(0x054c), at_ms: 1_050 };
-        assert!(dedupe(later, &[valve], DEDUPE_WINDOW_MS));
-        // Two real pads, no Valve: both valid.
-        let pad_a = PadStamp { vendor: Some(0x054c), at_ms: 2_000 };
-        let pad_b = PadStamp { vendor: Some(0x045e), at_ms: 2_004 };
+        let later = PadStamp {
+            vendor: Some(0x054c),
+            product: Some(0x0ce6),
+            at_ms: 1_050,
+        };
+        assert!(dedupe(later, &[virtual_pad], DEDUPE_WINDOW_MS));
+        // Two real pads, no virtual one: both valid.
+        let pad_a = PadStamp {
+            vendor: Some(0x054c),
+            product: Some(0x0ce6),
+            at_ms: 2_000,
+        };
+        let pad_b = PadStamp {
+            vendor: Some(0x045e),
+            product: Some(0x0b13),
+            at_ms: 2_004,
+        };
         assert!(dedupe(pad_b, &[pad_a], DEDUPE_WINDOW_MS));
-        // A lone Valve pad is valid.
-        assert!(dedupe(PadStamp { vendor: Some(STEAM_VENDOR), at_ms: 3_000 }, &[], DEDUPE_WINDOW_MS));
+        // A Steam Deck builtin (28de:1205) is physical, not virtual.
+        let deck = PadStamp {
+            vendor: Some(STEAM_VENDOR),
+            product: Some(0x1205),
+            at_ms: 3_000,
+        };
+        assert!(!dedupe(deck, &[virtual_pad], DEDUPE_WINDOW_MS));
+        // A lone virtual pad is valid.
+        assert!(dedupe(
+            PadStamp { vendor: Some(STEAM_VENDOR), product: Some(STEAM_VIRTUAL_PRODUCT), at_ms: 3_000 },
+            &[],
+            DEDUPE_WINDOW_MS
+        ));
     }
 
     #[test]
-    fn valve_pad_masks_the_physical_one_while_connected() {
-        let valve = PadInfo { vendor: Some(STEAM_VENDOR), product: Some(0x1205), mapping: PadMapping::Sdl };
-        let physical = PadInfo { vendor: Some(0x054c), product: Some(0x0ce6), mapping: PadMapping::Sdl };
-        let other = PadInfo { vendor: Some(0x045e), product: Some(0x0b13), mapping: PadMapping::Sdl };
-        assert!(accept_pad(valve, true));
+    fn steam_virtual_pad_masks_but_the_deck_does_not() {
+        let virtual_pad = PadInfo {
+            vendor: Some(STEAM_VENDOR),
+            product: Some(STEAM_VIRTUAL_PRODUCT),
+            mapping: PadMapping::Sdl,
+        };
+        let deck = PadInfo {
+            vendor: Some(STEAM_VENDOR),
+            product: Some(0x1205),
+            mapping: PadMapping::Sdl,
+        };
+        let physical = PadInfo {
+            vendor: Some(0x054c),
+            product: Some(0x0ce6),
+            mapping: PadMapping::Sdl,
+        };
+        let other = PadInfo {
+            vendor: Some(0x045e),
+            product: Some(0x0b13),
+            mapping: PadMapping::Sdl,
+        };
+        assert!(accept_pad(virtual_pad, true));
         assert!(!accept_pad(physical, true));
         assert!(accept_pad(physical, false));
+        // A Steam Deck's builtin pad is physical: it must not mask another pad.
+        assert!(accept_pad(deck, false));
+        assert!(accept_pad(physical, false));
+        // Two non-Valve pads coexist.
         assert!(accept_pad(other, false));
     }
 
