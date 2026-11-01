@@ -378,6 +378,29 @@ plugins/<name>/                 separate repo (CorkyTux-Plugins): plugin binary 
 
 ---
 
+## Gamepad
+
+Any controller with an SDL gamepad mapping works: DualShock 4, DualSense,
+Xbox (including the newer Bluetooth pads), Switch Pro and most 8BitDo pads.
+Wheels, flight sticks and devices without an SDL mapping are ignored.
+
+- Linux needs read access to `/dev/input/event*`. On most distributions the
+  user in the `input` group is enough; a udev rule can grant it to a single
+  vendor:
+
+  ```
+  SUBSYSTEM=="input", ATTRS{idVendor}=="054c", MODE="0660", GROUP="input"
+  ```
+
+- `SDL_GAMECONTROLLERCONFIG` is honored: export a mapping line for a pad that
+  SDL does not know and it will be used instead of the built-in database.
+- With Steam running, Steam Input exposes a virtual pad. CorkyTux keeps the
+  virtual pad and drops the physical duplicate, so one press is one action.
+- There is no on-screen keyboard yet, so search fields and paths cannot be
+  typed with a controller (#88).
+
+---
+
 ## License
 
 AGPL-3.0 — see [LICENSE](LICENSE).
