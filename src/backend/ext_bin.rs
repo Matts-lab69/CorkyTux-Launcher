@@ -7,6 +7,24 @@
 
 use std::path::{Path, PathBuf};
 
+/// First executable `name` in `dirs` (pure; no process environment).
+pub fn find_in_path_in(dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
+    if name.trim().is_empty() {
+        return None;
+    }
+    if name.contains('/') {
+        let path = PathBuf::from(name);
+        return is_executable(&path).then_some(path);
+    }
+    for dir in dirs {
+        let candidate = dir.join(name);
+        if is_executable(&candidate) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 /// First executable `name` in PATH (or the given path when it has a slash).
 pub fn find_in_path(name: &str) -> Option<PathBuf> {
     if name.trim().is_empty() {
@@ -17,13 +35,8 @@ pub fn find_in_path(name: &str) -> Option<PathBuf> {
         return is_executable(&path).then_some(path);
     }
     let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        let candidate = dir.join(name);
-        if is_executable(&candidate) {
-            return Some(candidate);
-        }
-    }
-    None
+    let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
+    find_in_path_in(&dirs, name)
 }
 
 fn is_executable(path: &Path) -> bool {
@@ -250,27 +263,14 @@ mod tests {
         std::fs::create_dir_all(&good).unwrap();
         let plain = good.join("tool");
         std::fs::write(&plain, "#!/bin/sh\n").unwrap();
-        let old_path = std::env::var_os("PATH");
-        std::env::set_var(
-            "PATH",
-            format!(
-                "{}:{}:{}",
-                base.join("missing").display(),
-                good.display(),
-                empty.display()
-            ),
-        );
+        let dirs = vec![base.join("missing"), good.clone(), empty.clone()];
         // Not executable yet: not found.
-        assert_eq!(find_in_path("tool"), None);
+        assert_eq!(find_in_path_in(&dirs, "tool"), None);
         let mut perms = std::fs::metadata(&plain).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&plain, perms).unwrap();
-        assert_eq!(find_in_path("tool"), Some(plain.clone()));
-        assert_eq!(find_in_path("absent"), None);
-        match old_path {
-            Some(v) => std::env::set_var("PATH", v),
-            None => std::env::remove_var("PATH"),
-        }
+        assert_eq!(find_in_path_in(&dirs, "tool"), Some(plain.clone()));
+        assert_eq!(find_in_path_in(&dirs, "absent"), None);
         let _ = std::fs::remove_dir_all(&base);
     }
     #[test]
