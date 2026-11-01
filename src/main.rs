@@ -1100,8 +1100,7 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                 app.windows().iter().any(|w| w.is_visible() && w != main)
             })
             .unwrap_or(false);
-        let focus_outside = quick_window
-            .focus()
+        let focus_outside = gtk::prelude::GtkWindowExt::focus(&quick_window)
             .map(|f| !f.is_ancestor(&quick_body))
             .unwrap_or(false);
         let dialog_open = other_window || focus_outside;
