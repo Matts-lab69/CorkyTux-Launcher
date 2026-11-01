@@ -52,6 +52,98 @@ pub fn delta(credited_until: u64, now: u64) -> u64 {
     (now - credited_until).min(MAX_DELTA_SECS)
 }
 
+/// One session closed by an explicit Quit. The next start adopts the game
+/// starting at "now" instead of crediting the time the launcher was closed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClosedRecord {
+    pub pid: u32,
+    pub starttime: u64,
+    pub closed_at: u64,
+}
+
+pub fn closed_json_path(dir: &Path) -> PathBuf {
+    dir.join("closed.json")
+}
+
+/// Reads the records. A corrupt file is ignored (empty list), never a panic.
+pub fn load_closed(dir: &Path) -> Vec<ClosedRecord> {
+    let Ok(text) = fs::read_to_string(closed_json_path(dir)) else {
+        return Vec::new();
+    };
+    let Ok(list) = serde_json::from_str::<Vec<serde_json::Value>>(&text) else {
+        eprintln!("[session] closed.json is corrupt; ignoring it");
+        return Vec::new();
+    };
+    list.iter()
+        .filter_map(|v| {
+            Some(ClosedRecord {
+                pid: v.get("pid")?.as_u64()? as u32,
+                starttime: v.get("starttime")?.as_u64()?,
+                closed_at: v.get("closed_at")?.as_u64()?,
+            })
+        })
+        .collect()
+}
+
+/// Atomic write (0600): a temp file in the same directory, then rename.
+pub fn save_closed(dir: &Path, records: &[ClosedRecord]) -> Result<(), String> {
+    ensure_dir(dir).map_err(|e| e.to_string())?;
+    let list: Vec<serde_json::Value> = records
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "pid": r.pid,
+                "starttime": r.starttime,
+                "closed_at": r.closed_at,
+            })
+        })
+        .collect();
+    let text = serde_json::to_string(&list).map_err(|e| e.to_string())?;
+    let tmp = dir.join("closed.json.tmp");
+    fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600));
+    }
+    fs::rename(&tmp, closed_json_path(dir)).map_err(|e| e.to_string())
+}
+
+pub fn record_closed(dir: &Path, pid: u32, starttime: u64, closed_at: u64) -> Result<(), String> {
+    let mut records = load_closed(dir);
+    records.retain(|r| !(r.pid == pid && r.starttime == starttime));
+    records.push(ClosedRecord {
+        pid,
+        starttime,
+        closed_at,
+    });
+    save_closed(dir, &records)
+}
+
+/// Removes and returns the record for this pid and start time.
+pub fn take_closed(dir: &Path, pid: u32, starttime: u64) -> Option<ClosedRecord> {
+    let mut records = load_closed(dir);
+    let found = records
+        .iter()
+        .position(|r| r.pid == pid && r.starttime == starttime)?;
+    let record = records.remove(found);
+    let _ = save_closed(dir, &records);
+    Some(record)
+}
+
+/// Drops records older than 24 h or whose pid is gone.
+pub fn prune_closed(dir: &Path, now: u64) {
+    let records = load_closed(dir);
+    let kept: Vec<ClosedRecord> = records
+        .into_iter()
+        .filter(|r| {
+            now.saturating_sub(r.closed_at) < MAX_DELTA_SECS
+                && pid_starttime(r.pid) == Some(r.starttime)
+        })
+        .collect();
+    let _ = save_closed(dir, &kept);
+}
+
 /// Pid to use when closing: the child pid when there is one, otherwise the
 /// adopted pid. Pure, so the three close paths share the same decision.
 pub fn resolve_close_pid(child_pid: Option<u32>, adopted_pid: Option<u32>) -> Option<u32> {
@@ -522,6 +614,55 @@ pub fn pid_alive_with_starttime(pid: u32, starttime: u64) -> bool {
         return false;
     }
     rest[19].parse::<u64>().map(|s| s == starttime).unwrap_or(false)
+}
+
+#[cfg(test)]
+mod closed_tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("corky-closed-{}", tag));
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::create_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn closed_roundtrip_and_take() {
+        let dir = tmp("roundtrip");
+        record_closed(&dir, 42, 700, 1_000).unwrap();
+        record_closed(&dir, 43, 800, 1_010).unwrap();
+        let records = load_closed(&dir);
+        assert_eq!(records.len(), 2);
+        let taken = take_closed(&dir, 42, 700).unwrap();
+        assert_eq!(taken.closed_at, 1_000);
+        assert_eq!(load_closed(&dir).len(), 1);
+        assert!(take_closed(&dir, 42, 700).is_none());
+    }
+
+    #[test]
+    fn corrupt_closed_file_is_ignored() {
+        let dir = tmp("corrupt");
+        fs::write(closed_json_path(&dir), "not json at all").unwrap();
+        assert!(load_closed(&dir).is_empty());
+        record_closed(&dir, 7, 8, 9).unwrap();
+        assert_eq!(load_closed(&dir).len(), 1);
+    }
+
+    #[test]
+    fn prune_drops_dead_pids_and_old_records() {
+        let dir = tmp("prune");
+        let alive = std::process::id();
+        let tick = pid_starttime(alive).unwrap();
+        record_closed(&dir, alive, tick, 1_000).unwrap();
+        record_closed(&dir, 999_999, 1, 1_000).unwrap();
+        prune_closed(&dir, 1_100);
+        let records = load_closed(&dir);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].pid, alive);
+        prune_closed(&dir, 1_000 + MAX_DELTA_SECS + 1);
+        assert!(load_closed(&dir).is_empty());
+    }
 }
 
 #[cfg(test)]
