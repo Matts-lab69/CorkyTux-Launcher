@@ -62,10 +62,42 @@ pub(crate) mod test_env {
 
     #[test]
     fn nested_guards_do_not_deadlock() {
+        // Three levels, the shape update_dialog uses (HOME, XDG_DATA_HOME,
+        // XDG_CONFIG_HOME): the second and third `lock()` must not block.
         let outer = lock();
-        let inner = lock();
-        drop(inner);
+        let second = lock();
+        let third = lock();
+        std::env::set_var("CORKYTUX_TEST_SECRET", "still-here");
+        drop(third);
+        drop(second);
+        assert_eq!(
+            std::env::var("CORKYTUX_TEST_SECRET").ok().as_deref(),
+            Some("still-here")
+        );
         drop(outer);
+    }
+
+    #[test]
+    fn the_lock_excludes_another_thread() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let held = lock();
+        let (tx, rx) = mpsc::channel();
+        let spawned = std::thread::spawn(move || {
+            let _inner = lock();
+            let _ = tx.send(());
+        });
+        assert!(
+            rx.recv_timeout(Duration::from_millis(200)).is_err(),
+            "a second thread entered while the lock was held"
+        );
+        drop(held);
+        assert!(
+            rx.recv_timeout(Duration::from_secs(10)).is_ok(),
+            "the second thread never got the lock after the drop"
+        );
+        spawned.join().unwrap();
     }
 
     impl Drop for EnvGuard {
