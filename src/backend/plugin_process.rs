@@ -912,19 +912,21 @@ mod tests {
         let pidfile = dir.join("child.pid");
         let script = dir.join("fake-plugin");
         {
-            use std::os::unix::fs::PermissionsExt;
+            // Run the script through sh instead of exec'ing it: a fresh file
+            // that another thread forks over while it is still open for write
+            // makes exec fail with ETXTBSY. A unique temp path does not help,
+            // because the inherited descriptor is a timing race, not a name
+            // collision. sh reads it, so exec never touches the file.
             let body = format!(
                 "#!/bin/sh\ncat > {}\nsleep 30 &\necho $! > {}\nsleep 30\n",
                 stdin_file.display(),
                 pidfile.display()
             );
             std::fs::write(&script, body).unwrap();
-            let mut perms = std::fs::metadata(&script).unwrap().permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&script, perms).unwrap();
         }
 
-        let mut cmd = Command::new(&script);
+        let mut cmd = Command::new("sh");
+        cmd.arg(&script);
         cmd.args(["scan", "/tmp"]);
         apply_plugin_env(&mut cmd);
         let scope = kill_scope_for(&["scan", "/tmp"]);
