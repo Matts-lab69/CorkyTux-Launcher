@@ -910,7 +910,17 @@ impl StoresView {
             gog_sort_dd = None;
         }
         let flow = gtk::FlowBox::new();
+        // GtkWidget has no "width" property (only width-request), so a
+        // notify::width handler would never fire. A tick callback compares
+        // the real allocation instead: one integer compare per frame.
         flow.set_max_children_per_line(10);
+        flow.add_tick_callback(|flow, _| {
+            let columns = crate::ui::helpers::columns_for_width(flow.width());
+            if flow.max_children_per_line() != columns {
+                flow.set_max_children_per_line(columns);
+            }
+            gtk::glib::ControlFlow::Continue
+        });
         flow.set_min_children_per_line(1);
         flow.set_selection_mode(gtk::SelectionMode::None);
         flow.set_row_spacing(8);
