@@ -391,8 +391,15 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     // here: GTK4 asserts on the display-singleton icon theme.)
     if let Some(display) = gtk::gdk::Display::default() {
         let it = gtk::IconTheme::for_display(&display);
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-        let mut paths = vec![std::path::PathBuf::from(home).join(".local/share/corkytux/assets/icons")];
+        let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()));
+        let exe = std::env::current_exe().unwrap_or_default();
+        let xdg: Vec<std::path::PathBuf> = std::env::var("XDG_DATA_DIRS")
+            .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string())
+            .split(':')
+            .filter(|s| !s.is_empty())
+            .map(std::path::PathBuf::from)
+            .collect();
+        let mut paths = ui::icons::icon_search_paths(&exe, &home, &xdg);
         paths.extend(it.search_path());
         let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
         it.set_search_path(&refs);
