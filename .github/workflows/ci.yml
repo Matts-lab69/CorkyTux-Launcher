@@ -42,6 +42,12 @@ jobs:
             libadwaita-1-dev \
             libglib2.0-dev
 
+      - name: shellcheck the release scripts
+        # Blocking only on errors (SC1xxx); style notes stay as a log.
+        run: |
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck --severity=error release/install.sh release/build-release.sh
+
       - name: Check GTK versions
         run: |
           set -euo pipefail

@@ -59,9 +59,10 @@ fi
 
 # ─── Binary ──────────────────────────────────────────────────────
 # Locate prebuilt ELF binary next to this script.
+elf() { [[ "$(head -c4 "$1" 2>/dev/null)" == $'\x7fELF' ]]; }
 APP=""
 for candidate in "${SCRIPT_DIR}/corkytux" "${SCRIPT_DIR}/release/corkytux"; do
-  if [[ -f "$candidate" ]] && file "$candidate" | grep -q 'ELF'; then
+  if [[ -f "$candidate" ]] && elf "$candidate"; then
     APP="$candidate"
     break
   fi
@@ -78,8 +79,7 @@ log "Binary found: $(basename "$APP") ($(du -h "$APP" | cut -f1))"
 if [[ -d "${HOME}/Games" ]]; then
   info "Games folder: ${HOME}/Games (already there, left untouched)"
 else
-  mkdir -p "${HOME}/Games"
-  log "Games folder: ${HOME}/Games (created)"
+  info "Games folder: ${HOME}/Games does not exist (create it if you import games there)"
 fi
 
 # Keep 3 most recent backups of installed binary.
@@ -111,11 +111,16 @@ info "Detected: ${DISTRO_ID} (${DISTRO_LIKE})"
 
 # ─── Check GTK4/libadwaita runtime ───────────────────────────────
 GTK_LIBS=( libgtk-4.so.1 libadwaita-1.so.0 libpango-1.0.so.0 libcairo.so.2 libgdk_pixbuf-2.0.so.0 libglib-2.0.so.0 )
+LIB_DIRS=( /usr/lib64 /usr/lib /usr/local/lib "/usr/lib/$(uname -m)-linux-gnu" )
+# NixOS keeps glibc and GTK in the store, not in /usr.
+if [[ -d /nix/store ]]; then
+  LIB_DIRS+=( /nix/store/*-glibc-*/lib /nix/store/*-gtk4-*/lib )
+fi
 missing_libs=()
 for lib in "${GTK_LIBS[@]}"; do
   if ! ldconfig -p 2>/dev/null | grep -q "$lib"; then
     found=false
-    for path in /usr/lib64 /usr/lib /usr/lib/x86_64-linux-gnu /usr/local/lib; do
+    for path in "${LIB_DIRS[@]}"; do
       [[ -f "${path}/${lib}" ]] && { found=true; break; }
     done
     $found || missing_libs+=("$lib")
@@ -150,7 +155,7 @@ if command -v python3 &>/dev/null; then
   pymissing=()
   python3 -c "import requests" 2>/dev/null || pymissing+=("requests")
   if [[ ${#pymissing[@]} -gt 0 ]]; then
-    warn "Missing python modules: ${pymissing[*]} (pip install --user ${pymissing[*]} minecraft_launcher_lib psutil)"
+    warn "Missing python modules: ${pymissing[*]} (python3 -m pip install --user ${pymissing[*]} minecraft_launcher_lib psutil, or use your distro package)"
   else
     log "python3 requests OK"
   fi
@@ -169,7 +174,7 @@ svg_ok=false
 if ldconfig -p 2>/dev/null | grep -q "librsvg-2.so"; then
   svg_ok=true
 else
-  for path in /usr/lib64 /usr/lib /usr/lib/x86_64-linux-gnu /usr/local/lib; do
+  for path in "${LIB_DIRS[@]}"; do
     [[ -f "${path}/librsvg-2.so.2" ]] && { svg_ok=true; break; }
   done
 fi
@@ -219,7 +224,7 @@ log "Symlink: ${BIN_DIR}/corkytux"
 # Honor CORKYTUX_LOGIN_HELPER override for tests.
 HELPER=""
 for candidate in "${SCRIPT_DIR}/webdriver_login" "${SCRIPT_DIR}/release/webdriver_login"; do
-  if [[ -f "$candidate" ]] && file "$candidate" | grep -q 'ELF'; then
+  if [[ -f "$candidate" ]] && elf "$candidate"; then
     HELPER="$candidate"
     break
   fi
@@ -263,8 +268,8 @@ cat > "${DESKTOP_DIR}/corkytux.desktop" <<DESKTOP
 Version=1.0
 Name=CorkyTux
 Comment=Linux game launcher
-Exec=${INSTALL_DIR}/corkytux
-Icon=${ICON_DIR}/corkytux.png
+Exec="${INSTALL_DIR}/corkytux"
+Icon="${ICON_DIR}/corkytux.png"
 Terminal=false
 Type=Application
 Categories=Game;
@@ -281,8 +286,7 @@ fi
 
 if ! echo "$PATH" | tr ':' '\n' | grep -qxF "$BIN_DIR"; then
   echo ""
-  warn "Add to ~/.bashrc / ~/.zshrc:"
-  echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+  warn "Add ${BIN_DIR} to PATH (bash/zsh: export PATH=\"${BIN_DIR}:\$PATH\"; fish: fish_add_path ${BIN_DIR})"
 fi
 
 echo ""
