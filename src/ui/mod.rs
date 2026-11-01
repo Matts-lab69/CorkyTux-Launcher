@@ -5,6 +5,8 @@ pub mod deps_modal;
 pub mod sidebar;
 pub mod details_panel;
 pub mod game_card;
+#[path = "policies/svg.rs"]
+pub mod svg_assets;
 pub mod add_game;
 pub mod remove_modal;
 pub mod settings;
