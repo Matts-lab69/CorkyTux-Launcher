@@ -289,8 +289,32 @@ impl GameModel {
         self.imp().games.borrow().iter().find(|g| g.name == name).cloned()
     }
 
-    pub fn add_game(&self, entry: GameEntry) {
+    /// Keep the larger banked playtime when a game is re-added or imported.
+    pub fn merge_time_spent(existing: u64, incoming: u64) -> u64 {
+        existing.max(incoming)
+    }
+
+    /// Keep the more recent LastPlayed when a game is re-added or imported.
+    pub fn merge_last_played(existing: u64, incoming: u64) -> u64 {
+        existing.max(incoming)
+    }
+
+    pub fn add_game(&self, mut entry: GameEntry) {
         let config = super::ConfigManager::new();
+        // Re-adding or importing an existing game must not wipe the time the
+        // session accounting already banked. Keep the larger TimeSpent (the
+        // import may bring less than CorkyTux already counted) and the more
+        // recent LastPlayed.
+        if let Some(existing) = config.game_value(&entry.name, "TimeSpent")
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            entry.time_spent = Self::merge_time_spent(existing, entry.time_spent);
+        }
+        if let Some(existing) = config.game_value(&entry.name, "LastPlayed")
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            entry.last_played = Self::merge_last_played(existing, entry.last_played);
+        }
         for (key, value) in entry.to_section() {
             config.set_game_value(&entry.name, &key, &value);
         }
@@ -377,17 +401,27 @@ impl GameModel {
         }
     }
 
+    /// Bank `seconds` through the shared flock + max() path. Used by paths
+    /// that are not covered by the session ledger (parked sessions, RPG).
     pub fn increment_time_spent(&self, name: &str, seconds: u64) {
+        let config = super::ConfigManager::new();
+        if let Err(e) = config.credit_time_spent(name, seconds) {
+            eprintln!("[session] cannot credit TimeSpent for {}: {}", name, e);
+        }
+        self.reload_time_spent(name);
+    }
+
+    /// Refresh the in-memory value after the ledger (or another path) wrote
+    /// TimeSpent. Does not write again.
+    pub fn reload_time_spent(&self, name: &str) {
         let config = super::ConfigManager::new();
         let current: u64 = config
             .game_value(name, "TimeSpent")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
-        let new_time = current + seconds;
-        config.set_game_value(name, "TimeSpent", &new_time.to_string());
         let mut games = self.imp().games.borrow_mut();
         if let Some(g) = games.iter_mut().find(|g| g.name == name) {
-            g.time_spent = new_time;
+            g.time_spent = current;
         }
     }
 
@@ -500,7 +534,7 @@ impl RecentModel {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_steam_game, steam_compat_path};
+    use super::{is_steam_game, steam_compat_path, GameEntry, GameModel};
 
     #[test]
     fn steam_game_covers_source_and_id() {
@@ -537,5 +571,43 @@ mod tests {
             None
         );
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn merge_time_spent_keeps_the_larger_value() {
+        assert_eq!(GameModel::merge_time_spent(0, 0), 0);
+        assert_eq!(GameModel::merge_time_spent(0, 500), 500);
+        assert_eq!(GameModel::merge_time_spent(13953, 0), 13953);
+        assert_eq!(GameModel::merge_time_spent(13953, 3600), 13953);
+        assert_eq!(GameModel::merge_time_spent(13953, 36000), 36000);
+    }
+
+    #[test]
+    fn merge_last_played_keeps_the_newest() {
+        assert_eq!(GameModel::merge_last_played(0, 100), 100);
+        assert_eq!(GameModel::merge_last_played(200, 100), 200);
+        assert_eq!(GameModel::merge_last_played(100, 200), 200);
+    }
+
+    #[test]
+    fn add_game_does_not_lower_time_spent_from_memory() {
+        let _g = crate::test_env::lock();
+        let base = std::env::temp_dir().join("gm-add-game-time");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let prev_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &base);
+        let cfg = super::super::ConfigManager::new();
+        cfg.set_game_value("Game", "TimeSpent", "500");
+        let model = GameModel::new();
+        model.add_game(GameEntry {
+            name: "Game".into(),
+            time_spent: 100,
+            ..Default::default()
+        });
+        let after: u64 = cfg.game_value("Game", "TimeSpent").unwrap().parse().unwrap();
+        match prev_home { Some(v) => std::env::set_var("HOME", v), None => std::env::remove_var("HOME") }
+        let _ = std::fs::remove_dir_all(&base);
+        assert_eq!(after, 500);
     }
 }
