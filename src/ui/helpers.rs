@@ -949,16 +949,14 @@ mod tests {
         let src_assets = base.join("repo/assets/icons");
         std::fs::create_dir_all(&src_assets).unwrap();
         std::fs::create_dir_all(&home).unwrap();
+        // The binary's own directory must exist for `..` to resolve.
+        std::fs::create_dir_all(base.join("repo/target/release")).unwrap();
         let xdg = vec![base.join("xdg1"), base.join("xdg2")];
         let paths = icon_search_paths(&exe, &home, &xdg);
         assert_eq!(paths[0], home.join(".local/share/corkytux/assets/icons"));
         assert!(paths.contains(&base.join("xdg1/corkytux/assets/icons")));
         assert!(paths.contains(&base.join("xdg2/corkytux/assets/icons")));
-        assert!(
-            paths.iter().any(|p| p.ends_with(std::path::Path::new("repo/assets/icons"))),
-            "no source-tree path in {:?}",
-            paths
-        );
+        assert!(paths.contains(&src_assets), "missing {:?} in {:?}", src_assets, paths);
         // No duplicates and no missing-relative entries.
         let mut unique = paths.clone();
         unique.sort();
