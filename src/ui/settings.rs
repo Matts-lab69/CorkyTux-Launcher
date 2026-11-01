@@ -1659,7 +1659,7 @@ pub fn show_settings_modal(
                     inner.append(&row);
                     if !p.description.is_empty() {
                         let desc = gtk::Label::new(None);
-                        desc.set_markup(&crate::ui::helpers::markdown_to_pango(&p.description));
+                        desc.set_markup(&crate::ui::markdown::markdown_to_pango(&p.description));
                         desc.set_halign(gtk::Align::Start);
                         
                         desc.set_wrap(true);
@@ -1689,7 +1689,7 @@ pub fn show_settings_modal(
                     col.append(&name_lbl);
                     if !p.description.is_empty() {
                         let desc = gtk::Label::new(None);
-                        desc.set_markup(&crate::ui::helpers::markdown_to_pango(&p.description));
+                        desc.set_markup(&crate::ui::markdown::markdown_to_pango(&p.description));
                         desc.set_halign(gtk::Align::Start);
                         
                         desc.set_wrap(true);

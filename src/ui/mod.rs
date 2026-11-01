@@ -12,6 +12,8 @@ pub mod warnings;
 pub mod proton_modal;
 pub mod game_settings;
 pub mod apps_settings;
+#[path = "policies/markdown.rs"]
+pub mod markdown;
 pub mod mcx_theme;
 pub mod minecraft_view;
 pub mod stores_view;
