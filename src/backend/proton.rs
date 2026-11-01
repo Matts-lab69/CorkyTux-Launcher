@@ -3035,15 +3035,11 @@ impl ProtonManager {
                     .borrow()
                     .as_ref()
                     .map(|c| c.id())
+                    .or_else(|| self.imp().session_pid.get())
                     .unwrap_or(0);
-                let alive = mounts.iter().any(|m| {
-                    let t = super::proc_tree::SessionTree {
-                        root_pid,
-                        root_starttime: 0,
-                        mount: m.clone(),
-                    };
-                    t.alive(&procs)
-                });
+                let root_starttime =
+                    super::session_ledger::pid_starttime(root_pid).unwrap_or(0);
+                let alive = Self::tree_alive(root_pid, root_starttime, &mounts, &procs);
                 if alive {
                     if code.is_some() {
                         *self.imp().running_child.borrow_mut() = None;
@@ -3470,6 +3466,29 @@ impl ProtonManager {
             .map(|path| path.display().to_string())
             .unwrap_or_default();
         Some(GameProcess { args, comm, exe })
+    }
+
+    /// A session tree is alive when its root (launched child or adopted pid)
+    /// is still there with the same start time, or when any process under one
+    /// of the AppImage mounts is. An adopted session has no `running_child`,
+    /// so its `session_pid` is the root instead of pid 0.
+    fn tree_alive(
+        root_pid: u32,
+        root_starttime: u64,
+        mounts: &[String],
+        procs: &[crate::backend::proc_tree::ProcInfo],
+    ) -> bool {
+        let tree = |mount: &str| super::proc_tree::SessionTree {
+            root_pid,
+            root_starttime,
+            mount: mount.to_string(),
+        };
+        // Without a readable start time the pid is not a trustworthy root
+        // (it may already be reused); the mounts still decide.
+        if root_pid != 0 && root_starttime != 0 && tree("").alive(procs) {
+            return true;
+        }
+        mounts.iter().any(|mount| tree(mount).alive(procs))
     }
 
     fn appimage_tree_alive(exe: &str) -> bool {
@@ -4798,17 +4817,20 @@ mod tests {
         let cfg = crate::backend::config::ConfigManager::new();
         assert!(pm.detect_running_sessions_with(&FixedPid(pid), &cfg));
 
-        // The scan adopted the real start; simulate a 600 s session by moving
-        // the whole window back, then close it through the poller path.
+        // The proc_tree root keeps an adopted session alive while its pid
+        // lives, so move the ledger to a dead pid (0) to simulate the exit.
         let dir = crate::backend::session_ledger::sessions_dir(&base);
         let now = {
             use crate::backend::session_ledger::Clock;
             crate::backend::session_ledger::SystemClock.now()
         };
         let mut ledger = crate::backend::session_ledger::load(&dir, pid).unwrap();
+        ledger.pid = 0;
         ledger.started_at = now - 600;
         ledger.credited_until = now - 600;
         crate::backend::session_ledger::save(&dir, &ledger).unwrap();
+        crate::backend::session_ledger::remove(&dir, pid);
+        pm.imp().session_pid.set(Some(0));
         *pm.imp().session_start.borrow_mut() =
             Some(std::time::Instant::now() - std::time::Duration::from_secs(600));
 
@@ -4817,7 +4839,7 @@ mod tests {
             .game_value("AdoptScanGame", "TimeSpent")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
-        let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
+        let deleted = crate::backend::session_ledger::load(&dir, 0).is_none();
         let _ = std::fs::remove_dir_all(&base);
 
         assert_eq!(secs, 0, "the ledger must handle the adopted close");
@@ -4999,6 +5021,34 @@ mod tests {
     fn adopt_wine_game(name: &str) {
         let cfg = crate::backend::config::ConfigManager::new();
         cfg.set_game_value(name, "executable", "/games/Game.exe");
+    }
+
+    fn tree_proc(pid: u32, ppid: u32, starttime: u64, exe: &str) -> crate::backend::proc_tree::ProcInfo {
+        crate::backend::proc_tree::ProcInfo {
+            pid,
+            ppid,
+            starttime,
+            exe: exe.to_string(),
+            cmdline: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn adopted_appimage_tree_lives_by_pid_without_mounts() {
+        // Adopted AppImage: no running_child, so session_pid is the root.
+        let procs = vec![tree_proc(42, 1, 100, "/opt/game/game")];
+        assert!(ProtonManager::tree_alive(42, 100, &[], &procs));
+        // Dead pid: the tree is empty and the session closes.
+        assert!(!ProtonManager::tree_alive(42, 100, &[], &[]));
+        // A reused pid with another start time is not this session.
+        assert!(!ProtonManager::tree_alive(42, 999, &[], &procs));
+        // An unreadable start time is not a trustworthy root either.
+        assert!(!ProtonManager::tree_alive(42, 0, &[], &procs));
+        // The mount still covers a payload whose root went away.
+        let mounts = vec!["/tmp/.mount_GameX".to_string()];
+        let payload = vec![tree_proc(77, 1, 500, "/tmp/.mount_GameX/usr/bin/game")];
+        assert!(ProtonManager::tree_alive(42, 100, &mounts, &payload));
+        assert!(!ProtonManager::tree_alive(42, 100, &mounts, &[]));
     }
 
     #[test]
@@ -5491,8 +5541,9 @@ mod tests {
         let _home = crate::test_env::HomeGuard::set(&base);
 
         let pm = ProtonManager::new();
-        let pid = std::process::id();
-        let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
+        // Dead pid: with the proc_tree root the session must be gone.
+        let pid = 0u32;
+        let tick = 7u64;
         let dir = crate::backend::session_ledger::sessions_dir(&base);
         let now = {
             use crate::backend::session_ledger::Clock;
@@ -5593,8 +5644,9 @@ mod tests {
         let _home = crate::test_env::HomeGuard::set(&base);
 
         let pm = ProtonManager::new();
-        let pid = std::process::id();
-        let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
+        // Dead pid: with the proc_tree root the session must be gone.
+        let pid = 0u32;
+        let tick = 7u64;
         let dir = crate::backend::session_ledger::sessions_dir(&base);
         let now = {
             use crate::backend::session_ledger::Clock;
