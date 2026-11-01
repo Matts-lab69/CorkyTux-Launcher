@@ -620,6 +620,17 @@ impl IntegrationManager {
         Self::extract_exe_icon_static(exe_path, game_name)
     }
 
+    /// Pure: icon extraction needs icoextract and ffmpeg. Missing either one
+    /// means the generic icon is used and the user must be told once.
+    pub fn icon_tools_missing(has_icoextract: bool, has_ffmpeg: bool) -> bool {
+        !(has_icoextract && has_ffmpeg)
+    }
+
+    /// true the first time it is called; false afterwards.
+    pub fn warn_once(flag: &std::sync::atomic::AtomicBool) -> bool {
+        !flag.swap(true, std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn extract_exe_icon_static(exe_path: &str, game_name: &str) -> Option<String> {
         if !exe_path.to_lowercase().ends_with(".exe") {
             return None;
@@ -634,10 +645,17 @@ impl IntegrationManager {
         if cached_icon_valid(&dest) {
             return Some(dest.display().to_string());
         }
-        for tool in ["icoextract", "ffmpeg"] {
-            if !tool_available(tool) {
-                return None;
+        let has_icoextract = tool_available("icoextract");
+        let has_ffmpeg = tool_available("ffmpeg");
+        if Self::icon_tools_missing(has_icoextract, has_ffmpeg) {
+            static WARNED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if Self::warn_once(&WARNED) {
+                eprintln!(
+                    "[icons] Icon extraction needs icoextract or ffmpeg; the generic icon is used"
+                );
             }
+            return None;
         }
         let tmp = std::env::temp_dir().join(format!(
             "corkytux-icon-{}-{}",
@@ -1686,4 +1704,16 @@ mod tests {
         assert!(res.iter().any(|e| e.name == "FlatpakGame"),
                 "Flatpak Steam game not found: {:?}", res);
     }
+    #[test]
+    fn icon_tools_policy_and_warn_once() {
+        assert!(IntegrationManager::icon_tools_missing(false, false));
+        assert!(IntegrationManager::icon_tools_missing(true, false));
+        assert!(IntegrationManager::icon_tools_missing(false, true));
+        assert!(!IntegrationManager::icon_tools_missing(true, true));
+        let flag = std::sync::atomic::AtomicBool::new(false);
+        assert!(IntegrationManager::warn_once(&flag));
+        assert!(!IntegrationManager::warn_once(&flag));
+        assert!(!IntegrationManager::warn_once(&flag));
+    }
+
 }
