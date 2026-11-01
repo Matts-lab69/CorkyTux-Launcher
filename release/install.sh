@@ -12,6 +12,7 @@ APP_VERSION="${APP_VERSION:-dev}"
 INSTALL_DIR="${HOME}/.local/share/corkytux"
 BIN_DIR="${HOME}/.local/bin"
 ICON_DIR="${HOME}/.local/share/icons"
+ICON_THEME_DIR="${ICON_DIR}/hicolor"
 DESKTOP_DIR="${HOME}/.local/share/applications"
 DOCS_URL="https://github.com/Matts-lab69/CorkyTux-Launcher/blob/main/docs/BUILD.md"
 
@@ -244,12 +245,19 @@ find "${INSTALL_DIR}/assets" -type f -exec chmod 0644 {} + 2>/dev/null || true
 find "${INSTALL_DIR}/assets" -type d -exec chmod 0755 {} + 2>/dev/null || true
 log "Assets: ${INSTALL_DIR}/assets ($(ls "$ASSETS" | wc -l) files)"
 
-if [[ -f "${SCRIPT_DIR}/corkytux.png" ]]; then
-  install -m 0644 "${SCRIPT_DIR}/corkytux.png" "${ICON_DIR}/corkytux.png"
-  log "Icon installed"
-elif [[ -f "${SCRIPT_DIR}/release/corkytux.png" ]]; then
-  install -m 0644 "${SCRIPT_DIR}/release/corkytux.png" "${ICON_DIR}/corkytux.png"
-  log "Icon installed"
+# The desktop entry names the icon `corkytux`; the file has to live inside a
+# theme directory, or the menu and the window list fall back to the generic
+# missing-image glyph. hicolor is the theme every desktop inherits.
+ICON_SRC=""
+for candidate in "${SCRIPT_DIR}/corkytux.png" "${SCRIPT_DIR}/release/corkytux.png"; do
+  if [[ -f "$candidate" ]]; then ICON_SRC="$candidate"; break; fi
+done
+if [[ -n "$ICON_SRC" ]]; then
+  install -d "${ICON_THEME_DIR}/128x128/apps"
+  install -m 0644 "$ICON_SRC" "${ICON_THEME_DIR}/128x128/apps/corkytux.png"
+  # Older entries pointed at this absolute path; keep it working.
+  install -m 0644 "$ICON_SRC" "${ICON_DIR}/corkytux.png"
+  log "Icon installed: ${ICON_THEME_DIR}/128x128/apps/corkytux.png"
 else
   warn "corkytux.png not found, skipping icon"
 fi
@@ -269,7 +277,7 @@ Version=1.0
 Name=CorkyTux
 Comment=Linux game launcher
 Exec="${INSTALL_DIR}/corkytux"
-Icon="${ICON_DIR}/corkytux.png"
+Icon=corkytux
 Terminal=false
 Type=Application
 Categories=Game;
@@ -281,7 +289,7 @@ if command -v update-desktop-database &>/dev/null; then
   update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 fi
 if command -v gtk-update-icon-cache &>/dev/null; then
-  gtk-update-icon-cache -f -t "$ICON_DIR" 2>/dev/null || true
+  gtk-update-icon-cache -f -t "$ICON_THEME_DIR" 2>/dev/null || true
 fi
 
 if ! echo "$PATH" | tr ':' '\n' | grep -qxF "$BIN_DIR"; then
