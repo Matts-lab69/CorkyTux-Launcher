@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var("HOME").ok().map(PathBuf::from)
+    std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(PathBuf::from)
 }
 
 /// Data roots where Lutris keeps games, covers and icons.
