@@ -1566,8 +1566,20 @@ impl MinecraftView {
         lib_page.append(&lib_status);
 
         let flow = gtk::FlowBox::new();
-        flow.set_max_children_per_line(20);
-        flow.set_min_children_per_line(1);
+        flow.set_max_children_per_line(6);
+        flow.set_min_children_per_line(2);
+        // A widget has no "width" property, so notify::width never fires; a
+        // tick callback reads the real allocation instead.
+        flow.add_tick_callback(|flow, _| {
+            let cols = crate::ui::layout::grid_columns(flow.width());
+            if flow.max_children_per_line() != cols {
+                flow.set_max_children_per_line(cols);
+            }
+            if flow.min_children_per_line() != cols {
+                flow.set_min_children_per_line(cols);
+            }
+            gtk::glib::ControlFlow::Continue
+        });
         flow.set_selection_mode(gtk::SelectionMode::None);
         flow.set_row_spacing(12);
         flow.set_column_spacing(12);
@@ -2490,6 +2502,7 @@ impl MinecraftView {
         for inst in &list {
             let tile = gtk::FlowBoxChild::new();
             tile.set_width_request((self.cfg("McTileSize").parse().unwrap_or(64) + if compact { 110 } else { 134 }).max(158));
+            tile.set_hexpand(true);
             let inner = gtk::Box::new(gtk::Orientation::Vertical, if compact { 4 } else { 6 });
             let pad = if compact { 8 } else { 12 };
             inner.set_margin_top(pad);
@@ -2885,7 +2898,7 @@ impl MinecraftView {
         list.set_margin_bottom(8);
         list.set_margin_start(8);
         list.set_margin_end(8);
-        list.set_size_request(260, -1);
+        list.set_hexpand(true);
         let (cur_aid, cur_name) = self.selected_account();
         let accounts = self.data.borrow().accounts.clone();
         if accounts.is_empty() {

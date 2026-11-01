@@ -22,6 +22,12 @@ pub enum DetailsMode {
     Substitutive,
 }
 
+/// Instance-grid columns: the shared flow policy clamped to 2..=6 so the
+/// Minecraft grid never shows a single giant tile or more than six.
+pub fn grid_columns(width: i32) -> u32 {
+    columns_for_width(width).clamp(2, 6)
+}
+
 /// Pure layout policy for the details panel. Under 900 px the panel replaces
 /// the library (with the panel's close button as "back"); from 900 to 1399 it
 /// floats over it; from 1400 it sits beside it.
@@ -40,7 +46,15 @@ pub fn layout_mode(width: i32, panel_open: bool) -> DetailsMode {
 
 #[cfg(test)]
 mod tests {
-    use super::{columns_for_width, layout_mode, DetailsMode};
+    use super::{columns_for_width, grid_columns, layout_mode, DetailsMode};
+
+    #[test]
+    fn grid_columns_stay_between_two_and_six() {
+        assert_eq!(grid_columns(0), 2);
+        assert_eq!(grid_columns(320), 2);
+        assert_eq!(grid_columns(900), 5);
+        assert_eq!(grid_columns(1920), 6);
+    }
 
     #[test]
     fn columns_for_width_table() {
