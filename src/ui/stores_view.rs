@@ -917,11 +917,12 @@ impl StoresView {
         flow.set_min_children_per_line(1);
         flow.add_tick_callback(|flow, _| {
             let columns = crate::ui::layout::columns_for_width(flow.width());
+            // Only the upper bound follows the window. Forcing the same
+            // value as the minimum makes the flow wider than the page when a
+            // tile is bigger than the 150 px the policy assumes, and the last
+            // column is clipped instead of wrapped.
             if flow.max_children_per_line() != columns {
                 flow.set_max_children_per_line(columns);
-            }
-            if flow.min_children_per_line() != columns {
-                flow.set_min_children_per_line(columns);
             }
             gtk::glib::ControlFlow::Continue
         });
