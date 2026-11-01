@@ -1,0 +1,68 @@
+name: flake-check
+
+on:
+  push:
+    branches: [tmp/flake-check]
+
+permissions:
+  contents: read
+
+jobs:
+  flake:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libgtk-4-dev libadwaita-1-dev \
+            libglib2.0-dev libudev-dev
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Build the test binaries once
+        run: cargo test --release --locked --no-run --message-format=json > /tmp/artifacts.json
+
+      - name: Locate the lib test binary
+        run: |
+          python3 - <<'PY'
+          import json
+          exe = ""
+          for line in open("/tmp/artifacts.json"):
+              try:
+                  doc = json.loads(line)
+              except ValueError:
+                  continue
+              if doc.get("reason") != "compiler-artifact" or not doc.get("profile", {}).get("test"):
+                  continue
+              exe = doc.get("executable") or ""
+          assert exe, "no test executable found"
+          open("/tmp/testbin", "w").write(exe)
+          print("test binary:", exe)
+          PY
+
+      - name: timeout tests x200 under load
+        run: |
+          BIN="$(cat /tmp/testbin)"
+          for i in 1 2; do (while :; do :; done) & done
+          f=0
+          for i in $(seq 1 200); do
+            "$BIN" --test-threads=4 timeout the_stdin_arrives run_timeout_keeps > /tmp/t.log 2>&1 || { f=$((f+1)); tail -30 /tmp/t.log; }
+          done
+          echo "timeout_failures=$f/200"
+
+      - name: whole suite x20 under load
+        run: |
+          BIN="$(cat /tmp/testbin)"
+          f=0
+          for i in $(seq 1 20); do
+            "$BIN" --test-threads=4 > /tmp/s.log 2>&1 || { f=$((f+1)); grep -E 'FAILED|panicked' /tmp/s.log; }
+          done
+          echo "suite_failures=$f/20"
