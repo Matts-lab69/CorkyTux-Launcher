@@ -447,6 +447,61 @@ fn http_client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| format!("HTTP client failed: {}", e))
 }
 
+/// Bearer header for the GitHub API when a token is configured.
+pub fn auth_header(token: Option<&str>) -> Option<String> {
+    token
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("Bearer {}", t))
+}
+
+fn auth_token() -> Option<String> {
+    if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+        if !token.trim().is_empty() {
+            return Some(token);
+        }
+    }
+    super::ConfigManager::new()
+        .launcher_value("githubToken")
+        .filter(|t| !t.trim().is_empty())
+}
+
+/// "HH:MM" of an epoch in UTC (the X-RateLimit-Reset value).
+pub fn hhmm_utc(epoch: u64) -> String {
+    let secs = epoch % 86_400;
+    format!("{:02}:{:02}", secs / 3_600, (secs % 3_600) / 60)
+}
+
+/// Message for a 403. With the reset header it says when the limit lifts.
+pub fn rate_limit_message(reset: Option<u64>) -> String {
+    match reset {
+        Some(ts) => format!(
+            "GitHub API rate limit reached (403); resets at {} UTC",
+            hhmm_utc(ts)
+        ),
+        None => "GitHub API rate limit reached (403). Try again later.".to_string(),
+    }
+}
+
+fn etag_cache_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var("HOME").ok().filter(|h| !h.is_empty())?;
+    Some(std::path::PathBuf::from(home).join(".cache/CorkyTux/github-latest.etag"))
+}
+
+pub fn read_cached_etag(path: &std::path::Path) -> Option<String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+pub fn write_cached_etag(path: &std::path::Path, etag: &str) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, etag);
+}
+
 /// GET with manual redirect handling. Redirect limits and destination
 /// hosts are selected by the caller; no Authorization header is set.
 fn get_guarded(
@@ -487,6 +542,11 @@ fn get_guarded(
         if redirects_followed == 0 {
             if let Some(tag) = etag {
                 req = req.header("If-None-Match", tag);
+            }
+            if current.starts_with("https://api.github.com/") {
+                if let Some(header) = auth_header(auth_token().as_deref()) {
+                    req = req.header("AUTHORIZATION", header);
+                }
             }
         }
         let resp = match req.send() {
@@ -612,10 +672,13 @@ pub const MAX_API_BODY: u64 = 1024 * 1024;
 
 pub fn api_get_latest(etag: Option<&str>) -> Result<ApiOutcome, String> {
     let client = http_client()?;
+    let cache = etag_cache_path();
+    let cached = cache.as_deref().and_then(read_cached_etag);
+    let effective = etag.map(str::to_string).or(cached);
     let resp = get_guarded(
         &client,
         &api_latest_url(),
-        etag,
+        effective.as_deref(),
         API_HOSTS,
         MAX_REDIRECTS,
     )?;
@@ -627,10 +690,20 @@ pub fn api_get_latest(etag: Option<&str>) -> Result<ApiOutcome, String> {
                 .get("etag")
                 .and_then(|h| h.to_str().ok())
                 .map(|s| s.to_string());
+            if let (Some(path), Some(tag)) = (&cache, &tag) {
+                write_cached_etag(path, tag);
+            }
             let body = read_capped(resp, MAX_API_BODY)?;
             Ok(ApiOutcome::Fresh(body, tag))
         }
-        403 => Err("GitHub API rate limit reached (403). Try again later.".into()),
+        403 => {
+            let reset = resp
+                .headers()
+                .get("x-ratelimit-reset")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok());
+            Err(rate_limit_message(reset))
+        }
         s => Err(format!("release check failed: HTTP {}", s)),
     }
 }
@@ -4251,4 +4324,33 @@ mod tests {
         assert!(should_auto_check(true, Some(0), 6 * 3600));
         assert!(!should_auto_check(true, Some(1000), 1000 + 6 * 3600 - 1));
     }
+    #[test]
+    fn auth_header_policy() {
+        assert_eq!(auth_header(None), None);
+        assert_eq!(auth_header(Some("  ")), None);
+        assert_eq!(auth_header(Some("abc")), Some("Bearer abc".to_string()));
+        assert_eq!(auth_header(Some(" abc ")), Some("Bearer abc".to_string()));
+    }
+
+    #[test]
+    fn rate_limit_message_with_reset() {
+        assert_eq!(hhmm_utc(0), "00:00");
+        assert_eq!(hhmm_utc(3_661), "01:01");
+        assert_eq!(hhmm_utc(86_399), "23:59");
+        assert!(rate_limit_message(Some(3_661)).contains("01:01 UTC"));
+        assert!(rate_limit_message(None).contains("403"));
+        assert!(!rate_limit_message(None).contains("UTC"));
+    }
+
+    #[test]
+    fn etag_cache_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("corky-etag-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("nested/github.etag");
+        assert_eq!(read_cached_etag(&path), None);
+        write_cached_etag(&path, "W/\"abc\"");
+        assert_eq!(read_cached_etag(&path), Some("W/\"abc\"".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
 }
