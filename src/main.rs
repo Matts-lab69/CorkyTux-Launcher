@@ -8,21 +8,40 @@ mod ui;
 /// is a separate binary (own process), so it needs nothing from here.
 #[cfg(test)]
 pub(crate) mod test_env {
+    use std::cell::RefCell;
     use std::sync::{Mutex, MutexGuard};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    struct State {
+        depth: u32,
+        held: Option<MutexGuard<'static, ()>>,
+    }
+
+    thread_local! {
+        static STATE: RefCell<State> = const {
+            RefCell::new(State { depth: 0, held: None })
+        };
+    }
+
     pub(crate) struct EnvGuard {
-        _lock: MutexGuard<'static, ()>,
         saved_home: Option<String>,
         saved_helper: Option<String>,
     }
 
-    /// Locks process env and snapshots HOME + CORKYTUX_LOGIN_HELPER.
+    /// Reentrant per thread: a test that takes several guards (one per env
+    /// var) used to deadlock on the second `lock()`, because `std::sync::Mutex`
+    /// is not recursive. The mutex is taken once at depth 0 and released when
+    /// the outermost guard drops.
     pub(crate) fn lock() -> EnvGuard {
-        let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        STATE.with(|s| {
+            let mut st = s.borrow_mut();
+            if st.depth == 0 {
+                st.held = Some(ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner()));
+            }
+            st.depth += 1;
+        });
         EnvGuard {
-            _lock: lock,
             saved_home: std::env::var("HOME").ok(),
             saved_helper: std::env::var("CORKYTUX_LOGIN_HELPER").ok(),
         }
@@ -41,6 +60,46 @@ pub(crate) mod test_env {
         }
     }
 
+    #[test]
+    fn nested_guards_do_not_deadlock() {
+        // Three levels, the shape update_dialog uses (HOME, XDG_DATA_HOME,
+        // XDG_CONFIG_HOME): the second and third `lock()` must not block.
+        let outer = lock();
+        let second = lock();
+        let third = lock();
+        std::env::set_var("CORKYTUX_TEST_SECRET", "still-here");
+        drop(third);
+        drop(second);
+        assert_eq!(
+            std::env::var("CORKYTUX_TEST_SECRET").ok().as_deref(),
+            Some("still-here")
+        );
+        drop(outer);
+    }
+
+    #[test]
+    fn the_lock_excludes_another_thread() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let held = lock();
+        let (tx, rx) = mpsc::channel();
+        let spawned = std::thread::spawn(move || {
+            let _inner = lock();
+            let _ = tx.send(());
+        });
+        assert!(
+            rx.recv_timeout(Duration::from_millis(200)).is_err(),
+            "a second thread entered while the lock was held"
+        );
+        drop(held);
+        assert!(
+            rx.recv_timeout(Duration::from_secs(10)).is_ok(),
+            "the second thread never got the lock after the drop"
+        );
+        spawned.join().unwrap();
+    }
+
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             match &self.saved_home {
@@ -51,6 +110,13 @@ pub(crate) mod test_env {
                 Some(v) => std::env::set_var("CORKYTUX_LOGIN_HELPER", v),
                 None => std::env::remove_var("CORKYTUX_LOGIN_HELPER"),
             }
+            STATE.with(|s| {
+                let mut st = s.borrow_mut();
+                st.depth = st.depth.saturating_sub(1);
+                if st.depth == 0 {
+                    st.held = None;
+                }
+            });
         }
     }
 
