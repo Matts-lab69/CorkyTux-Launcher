@@ -43,7 +43,6 @@ pub fn layout_mode(width: i32, panel_open: bool) -> DetailsMode {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::{columns_for_width, grid_columns, layout_mode, DetailsMode};
