@@ -780,6 +780,7 @@ mod tests {
 
     #[test]
     fn plugin_environment_is_cleared_before_spawn() {
+        let _env = crate::test_env::lock();
         std::env::set_var("CORKYTUX_TEST_SECRET", "leak");
         let mut cmd = Command::new(program("sh"));
         cmd.arg("-c")
