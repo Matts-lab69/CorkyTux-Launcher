@@ -2,6 +2,7 @@
 name = "corkytux"
 version = "3.2.0"
 edition = "2021"
+license-file = "LICENSE"
 
 [dependencies]
 gtk = { package = "gtk4", version = "0.9", features = ["v4_12"] }
