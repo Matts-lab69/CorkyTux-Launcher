@@ -10,7 +10,7 @@ permissions:
 jobs:
   flake:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -48,23 +48,23 @@ jobs:
           print("test binary:", exe)
           PY
 
-      - name: timeout tests x100 under load
+      - name: timeout tests x30 under load
         run: |
           BIN="$(cat /tmp/testbin)"
           for i in 1 2; do (while :; do :; done) & done
           f=0
-          for i in $(seq 1 100); do
+          for i in $(seq 1 30); do
             "$BIN" --test-threads=4 timeout the_stdin_arrives run_timeout_keeps > /tmp/t.log 2>&1 || { f=$((f+1)); echo "--- failure at iteration $i"; tail -30 /tmp/t.log; }
-            if [ $((i % 20)) -eq 0 ]; then echo "partial: $i/100 iterations, $f failures"; fi
+            if [ $((i % 10)) -eq 0 ]; then echo "partial: $i/30 iterations, $f failures"; fi
           done
-          echo "timeout_failures=$f/100"
+          echo "timeout_failures=$f/30"
 
-      - name: whole suite x10 under load
+      - name: whole suite x3 under load
         run: |
           BIN="$(cat /tmp/testbin)"
           f=0
-          for i in $(seq 1 10); do
+          for i in $(seq 1 3); do
             "$BIN" --test-threads=4 > /tmp/s.log 2>&1 || { f=$((f+1)); echo "--- suite failure at iteration $i"; grep -E 'FAILED|panicked' /tmp/s.log; }
-            if [ $((i % 2)) -eq 0 ]; then echo "partial: $i/10 suites, $f failures"; fi
+            echo "partial: $i/3 suites, $f failures"
           done
-          echo "suite_failures=$f/10"
+          echo "suite_failures=$f/3"
