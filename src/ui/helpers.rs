@@ -942,6 +942,8 @@ mod tests {
     #[test]
     fn icon_search_paths_cover_install_xdg_and_source_tree() {
         let base = std::env::temp_dir().join("corky-icon-paths");
+        std::fs::create_dir_all(&base).unwrap();
+        let base = base.canonicalize().unwrap();
         let home = base.join("home");
         let exe = base.join("repo/target/release/corkytux");
         let src_assets = base.join("repo/assets/icons");
