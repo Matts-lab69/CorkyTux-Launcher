@@ -769,7 +769,7 @@ pub fn icon_search_paths(
         push(dir.join("corkytux/assets/icons"));
     }
     if let Some(parent) = exe.parent() {
-        for up in [parent.to_path_buf(), parent.join("..")] {
+        for up in [parent.to_path_buf(), parent.join(".."), parent.join("../..")] {
             let candidate = up.join("assets/icons");
             if candidate.is_dir() {
                 push(candidate.canonicalize().unwrap_or(candidate));
