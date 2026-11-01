@@ -60,9 +60,7 @@ fn tool_available(tool: &str) -> bool {
     if let Some(v) = cache.lock().map(|c| c.get(tool).copied()).ok().flatten() {
         return v;
     }
-    let ok = Command::new("which").arg(tool).output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    let ok = super::ext_bin::find_in_path(tool).is_some();
     if let Ok(mut c) = cache.lock() {
         c.insert(tool.to_string(), ok);
     }

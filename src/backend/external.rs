@@ -977,13 +977,8 @@ impl MinecraftManager {
         for c in ["java", "/usr/bin/java", "/opt/java/bin/java"] {
             let p = PathBuf::from(c);
             if c == "java" {
-                if let Ok(which) = std::process::Command::new("which").arg("java").output() {
-                    if which.status.success() {
-                        let s = String::from_utf8_lossy(&which.stdout).trim().to_string();
-                        if !s.is_empty() {
-                            out.push(PathBuf::from(s));
-                        }
-                    }
+                if let Some(java) = super::ext_bin::find_in_path("java") {
+                    out.push(java);
                 }
             } else if p.exists() {
                 out.push(p);

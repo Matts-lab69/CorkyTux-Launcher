@@ -600,9 +600,9 @@ impl ProtonManager {
         }
         // wineserver running in this prefix? Don't touch live registries.
         let lock = real_prefix.join("wineserver.lock");
-        let server_running = std::process::Command::new("sh")
-            .args(["-c", "pgrep -f wineserver >/dev/null 2>&1"])
-            .status().map(|s| s.success()).unwrap_or(false);
+        let server_running = super::ext_bin::any_process(|p| {
+            p.comm == "wineserver" || p.cmdline.iter().any(|a| a.ends_with("wineserver"))
+        });
         if server_running && lock.exists() {
             return false;
         }
@@ -1232,19 +1232,13 @@ impl ProtonManager {
             // Auto-start Steam client so the protocol handler is ready.
             let home = home_dir().unwrap_or_default();
             log_steam_readiness("steam-id-before-start", &home);
-            let steam_command_available = Command::new("which").arg("steam").stdout(Stdio::null()).stderr(Stdio::null()).status()
-                .map(|s| s.success()).unwrap_or(false)
-            ;
+            let steam_command_available = super::ext_bin::find_in_path("steam").is_some();
             steam_debug_log(
                 "steam-command-detected",
                 &format!("route=steam-id available={}", steam_command_available),
             );
             if steam_command_available {
-                let running = Command::new("sh")
-                    .args(["-c", "pidof steam >/dev/null 2>&1"])
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false);
+                let running = super::ext_bin::steam_running();
                 steam_debug_log(
                     "steam-process-detected",
                     &format!("route=steam-id running={}", running),
@@ -1355,19 +1349,13 @@ impl ProtonManager {
         if steam_overlay || !steam_id.trim().is_empty() {
             let home = home_dir().unwrap_or_default();
             log_steam_readiness("proton-before-start", &home);
-            let steam_command_available = Command::new("which").arg("steam").stdout(Stdio::null()).stderr(Stdio::null()).status()
-                .map(|s| s.success()).unwrap_or(false)
-            ;
+            let steam_command_available = super::ext_bin::find_in_path("steam").is_some();
             steam_debug_log(
                 "steam-command-detected",
                 &format!("route=proton available={}", steam_command_available),
             );
             if steam_command_available {
-                let running = Command::new("sh")
-                    .args(["-c", "pidof steam >/dev/null 2>&1"])
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false);
+                let running = super::ext_bin::steam_running();
                 steam_debug_log(
                     "steam-process-detected",
                     &format!("route=proton running={}", running),
@@ -3801,12 +3789,7 @@ fn find_proton_binary(path: &Path) -> Option<PathBuf> {
 }
 
 fn which(name: &str) -> Option<String> {
-    if let Ok(path) = Command::new("which").arg(name).output() {
-        if path.status.success() {
-            return Some(String::from_utf8_lossy(&path.stdout).trim().to_string());
-        }
-    }
-    None
+    super::ext_bin::find_in_path(name).map(|p| p.display().to_string())
 }
 
 #[cfg(test)]
