@@ -170,10 +170,11 @@ pub enum QuickTarget {
 pub fn quick_action_target(
     view: &str,
     dialog_open: bool,
+    focus_in_library: bool,
     selected: bool,
     already_running: bool,
 ) -> QuickTarget {
-    if view == "games" && !dialog_open && selected && !already_running {
+    if view == "games" && !dialog_open && focus_in_library && selected && !already_running {
         QuickTarget::Play
     } else {
         QuickTarget::None
@@ -482,13 +483,18 @@ mod tests {
 
     #[test]
     fn quick_action_policy() {
-        assert_eq!(quick_action_target("games", false, true, false), QuickTarget::Play);
-        assert_eq!(quick_action_target("games", true, true, false), QuickTarget::None);
-        assert_eq!(quick_action_target("games", false, false, false), QuickTarget::None);
-        assert_eq!(quick_action_target("games", false, true, true), QuickTarget::None);
-        assert_eq!(quick_action_target("settings", false, true, false), QuickTarget::None);
-        assert_eq!(quick_action_target("stores", false, true, false), QuickTarget::None);
-        assert_eq!(quick_action_target("minecraft", false, true, false), QuickTarget::None);
+        // Focus on a game card (inside the library stack).
+        assert_eq!(quick_action_target("games", false, true, true, false), QuickTarget::Play);
+        // Focus on the details panel: not the library body.
+        assert_eq!(quick_action_target("games", false, false, true, false), QuickTarget::None);
+        // Focus on the sidebar: also outside the library body.
+        assert_eq!(quick_action_target("games", false, false, true, false), QuickTarget::None);
+        assert_eq!(quick_action_target("games", true, true, true, false), QuickTarget::None);
+        assert_eq!(quick_action_target("games", false, true, false, false), QuickTarget::None);
+        assert_eq!(quick_action_target("games", false, true, true, true), QuickTarget::None);
+        assert_eq!(quick_action_target("settings", false, true, true, false), QuickTarget::None);
+        assert_eq!(quick_action_target("stores", false, true, true, false), QuickTarget::None);
+        assert_eq!(quick_action_target("minecraft", false, true, true, false), QuickTarget::None);
     }
 
 }

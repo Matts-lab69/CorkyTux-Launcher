@@ -1100,12 +1100,19 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
                 app.windows().iter().any(|w| w.is_visible() && w != main)
             })
             .unwrap_or(false);
-        let focus_outside = gtk::prelude::GtkWindowExt::focus(&quick_window)
-            .map(|f| !f.is_ancestor(&quick_body))
+        // The library body is the content stack (the pages), not the sidebar
+        // and not the floating details panel.
+        let focus_in_library = gtk::prelude::GtkWindowExt::focus(&quick_window)
+            .map(|f| f.is_ancestor(&quick_view))
             .unwrap_or(false);
-        let dialog_open = other_window || focus_outside;
-        if ui::gamepad_nav::quick_action_target(&view, dialog_open, selected, running)
-            == ui::gamepad_nav::QuickTarget::Play
+        let dialog_open = other_window;
+        if ui::gamepad_nav::quick_action_target(
+            &view,
+            dialog_open,
+            focus_in_library,
+            selected,
+            running,
+        ) == ui::gamepad_nav::QuickTarget::Play
         {
             quick_details.play_button().activate();
         }
