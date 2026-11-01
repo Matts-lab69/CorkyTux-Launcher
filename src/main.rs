@@ -1315,12 +1315,24 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                 } else {
                     None
                 };
-                if let Ok(mut slot) = playing.lock() {
-                    if *slot != current {
-                        *slot = current;
-                        if let Some(handle) = &tray_handle {
-                            let _ = handle.update(|_| {});
+                // The tray reads `playing` while it builds the menu, and
+                // `update()` blocks until the tray thread has done so. The
+                // guard must be gone before the call, or the UI thread holds
+                // the lock the tray is waiting for and both deadlock.
+                let changed = match playing.lock() {
+                    Ok(mut slot) => {
+                        if *slot == current {
+                            false
+                        } else {
+                            *slot = current;
+                            true
                         }
+                    }
+                    Err(_) => false,
+                };
+                if changed {
+                    if let Some(handle) = &tray_handle {
+                        let _ = handle.update(|_| {});
                     }
                 }
             }
