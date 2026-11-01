@@ -663,24 +663,60 @@ fn stderr_tail(text: &str) -> String {
     lines.join(" | ").chars().take(400).collect()
 }
 
+/// Collapses a burst of plugin events: progress events with the same stage
+/// keep only the last one, and every non-progress event keeps its order.
+/// A 10k-event burst becomes a handful of UI updates.
+pub fn coalesce_events(events: Vec<PluginEvent>) -> Vec<PluginEvent> {
+    let mut slots: Vec<(usize, PluginEvent)> = Vec::new();
+    let mut progress: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (idx, ev) in events.into_iter().enumerate() {
+        if let PluginEvent::Progress { stage, .. } = &ev {
+            let key = stage.clone().unwrap_or_default();
+            if let Some(&slot) = progress.get(&key) {
+                slots[slot] = (idx, ev);
+                continue;
+            }
+            progress.insert(key, slots.len());
+        }
+        slots.push((idx, ev));
+    }
+    // Keep each progress key at its last occurrence, the rest in order.
+    slots.sort_by_key(|(idx, _)| *idx);
+    slots.into_iter().map(|(_, ev)| ev).collect()
+}
+
 pub fn pump_to_idle<F>(rx: mpsc::Receiver<PluginEvent>, mut on_event: F)
 where
     F: FnMut(PluginEvent) -> bool + 'static,
 {
     // 50ms poller, NOT idle_add: a bare idle re-dispatches in a tight
     // loop and pins a CPU core at 100% while a worker runs (e.g. a slow
-    // `legendary list` froze the whole launcher at startup).
-    glib::timeout_add_local(std::time::Duration::from_millis(50), move || match rx.try_recv() {
-        Ok(ev) => {
-            let done = !on_event(ev);
-            if done {
-                glib::ControlFlow::Break
-            } else {
-                glib::ControlFlow::Continue
+    // `legendary list` froze the whole launcher at startup). Each tick
+    // drains every pending event and coalesces progress, so a large burst
+    // does not take minutes of ticks.
+    glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
+        let mut batch = Vec::new();
+        let mut disconnected = false;
+        loop {
+            match rx.try_recv() {
+                Ok(ev) => batch.push(ev),
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(_) => {
+                    disconnected = true;
+                    break;
+                }
             }
         }
-        Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-        Err(_) => glib::ControlFlow::Break,
+        for ev in coalesce_events(batch) {
+            if !on_event(ev) {
+                return glib::ControlFlow::Break;
+            }
+        }
+        if disconnected {
+            glib::ControlFlow::Break
+        } else {
+            glib::ControlFlow::Continue
+        }
     });
 }
 
@@ -694,6 +730,79 @@ where
     glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
         on_msg(rx.try_recv())
     });
+}
+
+
+#[cfg(test)]
+mod event_tests {
+    use super::*;
+
+    fn progress(stage: &str, pct: f64) -> PluginEvent {
+        PluginEvent::Progress {
+            stage: Some(stage.to_string()),
+            percent: Some(pct),
+            extra: serde_json::json!({"type": "progress", "percent": pct, "stage": stage}),
+        }
+    }
+
+    #[test]
+    fn a_big_progress_burst_collapses_to_the_last_one() {
+        let mut events = Vec::new();
+        for i in 0..10_500 {
+            events.push(progress("download", i as f64 / 10_500.0));
+        }
+        events.push(PluginEvent::Done(serde_json::json!({"ok": true})));
+        let out = coalesce_events(events);
+        assert_eq!(out.len(), 2);
+        match &out[0] {
+            PluginEvent::Progress { percent, .. } => {
+                assert!((percent.unwrap() - 10_499.0 / 10_500.0).abs() < 1e-9);
+            }
+            other => panic!("expected progress, got {:?}", other),
+        }
+        assert!(matches!(out[1], PluginEvent::Done(_)));
+    }
+
+    #[test]
+    fn non_progress_events_keep_their_order() {
+        let events = vec![
+            progress("download", 0.1),
+            PluginEvent::Error {
+                message: "warn".to_string(),
+                exit_code: None,
+                code: None,
+            },
+            progress("download", 0.9),
+            PluginEvent::Custom(serde_json::json!({"type": "custom", "n": 1})),
+            progress("install", 0.5),
+            PluginEvent::Done(serde_json::json!({"ok": true})),
+        ];
+        let out = coalesce_events(events);
+        let kinds: Vec<&str> = out
+            .iter()
+            .map(|ev| match ev {
+                PluginEvent::Progress { stage, .. } => stage.as_deref().unwrap_or(""),
+                PluginEvent::Done(_) => "done",
+                PluginEvent::Error { .. } => "error",
+                PluginEvent::Custom(_) => "custom",
+            })
+            .collect();
+        // The download key survives once, at its last position; error and
+        // custom keep their relative order.
+        assert_eq!(kinds, vec!["error", "download", "custom", "install", "done"]);
+    }
+
+    #[test]
+    fn distinct_progress_keys_are_kept() {
+        let out = coalesce_events(vec![
+            progress("download", 0.1),
+            progress("install", 0.2),
+            progress("download", 0.9),
+        ]);
+        assert_eq!(out.len(), 2);
+        assert!(matches!(&out[0], PluginEvent::Progress { stage: Some(s), .. } if s == "install"));
+        assert!(matches!(&out[1], PluginEvent::Progress { stage: Some(s), .. } if s == "download"));
+    }
 }
 
 #[cfg(test)]
