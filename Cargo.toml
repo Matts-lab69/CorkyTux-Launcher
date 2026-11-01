@@ -30,6 +30,11 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # On Linux it needs libudev; CI installs libudev-dev.
 gilrs = "=0.11.2"
 # Playpad events from the input thread to the GTK main loop.
+# System tray (StatusNotifierItem over D-Bus). Unlicense. No tokio: the
+# launcher has no async runtime, so ksni runs with its async-io backend and
+# the blocking API spawns its own thread.
+ksni = { version = "=0.3.6", default-features = false, features = ["blocking", "async-io"] }
+# Trait events from the tray thread to the GTK main loop.
 async-channel = "=2.3.1"
 
 
