@@ -7388,6 +7388,15 @@ fn chrono_date(epoch: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn error_surface_policy() {
+        use super::{error_surface, ErrorSurface};
+        assert_eq!(error_surface(true, true), Some(ErrorSurface::Dialog));
+        assert_eq!(error_surface(true, false), Some(ErrorSurface::Dialog));
+        assert_eq!(error_surface(false, true), Some(ErrorSurface::Toast));
+        assert_eq!(error_surface(false, false), None);
+    }
+
     use super::*;
     use std::fs;
 
