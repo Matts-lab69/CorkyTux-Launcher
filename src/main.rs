@@ -28,6 +28,19 @@ pub(crate) mod test_env {
         }
     }
 
+    /// Locks env and sets HOME for a test, restoring it on drop (panic-safe).
+    pub(crate) struct HomeGuard {
+        _guard: EnvGuard,
+    }
+
+    impl HomeGuard {
+        pub(crate) fn set(path: &std::path::Path) -> Self {
+            let guard = lock();
+            std::env::set_var("HOME", path);
+            Self { _guard: guard }
+        }
+    }
+
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             match &self.saved_home {
@@ -38,6 +51,26 @@ pub(crate) mod test_env {
                 Some(v) => std::env::set_var("CORKYTUX_LOGIN_HELPER", v),
                 None => std::env::remove_var("CORKYTUX_LOGIN_HELPER"),
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::HomeGuard;
+
+        #[test]
+        fn home_guard_restores_on_panic() {
+            let prev = std::env::var("HOME").ok();
+            let dir = std::env::temp_dir().join("home-guard-panic");
+            let _ = std::fs::create_dir_all(&dir);
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _home = HomeGuard::set(&dir);
+                assert_eq!(std::env::var("HOME").ok().as_deref(), dir.to_str());
+                panic!("boom");
+            }));
+            assert!(r.is_err());
+            assert_eq!(std::env::var("HOME").ok(), prev);
+            let _ = std::fs::remove_dir_all(&dir);
         }
     }
 }
@@ -129,6 +162,7 @@ impl AppState {
         let plugins = PluginManager::new();
         let integration = IntegrationManager::new();
         recent_model.refresh(30);
+        proton.ledger_recover();
         proton.detect_running_sessions();
 
         Self {
@@ -158,8 +192,13 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
             return match state_clone.proton.stop_game() {
                 Ok((game, secs)) => {
                     if !game.is_empty() {
+                        // secs > 0: the ledger did not handle it (adopted
+                        // session); credit it here. secs == 0: the ledger
+                        // already credited, only reload the model.
                         if secs > 0 {
                             state_clone.game_model.increment_time_spent(&game, secs);
+                        } else {
+                            state_clone.game_model.reload_time_spent(&game);
                         }
                         state_clone.game_model.touch_last_played(&game);
                         state_clone.recent_model.refresh(30);
@@ -175,6 +214,8 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
             if let Some((game, secs)) = state_clone.proton.stop_parked(&name) {
                 if secs > 0 {
                     state_clone.game_model.increment_time_spent(&game, secs);
+                } else {
+                    state_clone.game_model.reload_time_spent(&game);
                 }
                 state_clone.game_model.touch_last_played(&game);
                 state_clone.recent_model.refresh(30);
@@ -298,6 +339,11 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
             let a = win.allocation();
             state_c.config.set_launcher_value("CkWinW", &a.width().to_string());
             state_c.config.set_launcher_value("CkWinH", &a.height().to_string());
+            // Best-effort final checkpoint. The ledger is not closed: the
+            // session stays live for adoption on the next start.
+            if state_c.proton.is_game_running() {
+                state_c.proton.ledger_checkpoint();
+            }
             glib::Propagation::Proceed
         });
     }
@@ -990,10 +1036,53 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
         let state_c = state.clone();
         let det_c = details_ref.clone();
         let ch_c = center_handle.clone();
+        let ledger_tick = std::cell::Cell::new(0u32);
+        let adopt_tick = std::cell::Cell::new(0u32);
+        let last_adopt_scan = std::cell::Cell::new(0u32);
         glib::timeout_add_local(std::time::Duration::from_secs(2), move || {
+            // Checkpoint the session ledger every 60 s (30 ticks of 2 s).
+            ledger_tick.set(ledger_tick.get() + 1);
+            if ledger_tick.get() % 30 == 0 {
+                state_c.proton.ledger_checkpoint();
+            }
+            // Reap parked sessions every 10 s: each call spawns one pgrep (or
+            // one box-rpg probe) per parked entry, so 2 s would be wasteful.
+            if ledger_tick.get() % 5 == 0 {
+                for name in state_c.proton.purge_dead() {
+                    state_c.game_model.reload_time_spent(&name);
+                    state_c.recent_model.refresh(30);
+                }
+            }
+            // Adopt a session started outside the launcher (desktop entry)
+            // within ~10 s. The gate skips the scan while a session holds the
+            // foreground slot, so pgrep does not run on every tick.
+            adopt_tick.set(adopt_tick.get() + 1);
+            if crate::backend::proton::should_scan(
+                adopt_tick.get(),
+                state_c.proton.is_game_running(),
+                last_adopt_scan.get(),
+            ) {
+                last_adopt_scan.set(adopt_tick.get());
+                if state_c.proton.detect_running_sessions() {
+                    let game = state_c.proton.session_game_name();
+                    if !game.is_empty() {
+                        state_c.game_model.touch_last_played(&game);
+                        state_c.recent_model.refresh(30);
+                    }
+                    if let Some(ref ch) = *ch_c.borrow() {
+                        ch.rebuild(&state_c, &det_c);
+                    }
+                    if let Some(ref d) = *det_c.borrow() {
+                        d.set_game(&game, &state_c.config);
+                        d.set_playing(true, state_c.theme.is_dark());
+                    }
+                }
+            }
             if let Some((game, secs)) = state_c.proton.check_finished() {
                 if secs > 0 {
                     state_c.game_model.increment_time_spent(&game, secs);
+                } else {
+                    state_c.game_model.reload_time_spent(&game);
                 }
                 state_c.game_model.touch_last_played(&game);
                 state_c.recent_model.refresh(30);
@@ -1765,6 +1854,13 @@ pub(crate) fn maybe_autoinstall_proton(state: &AppState, parent: &adw::Applicati
 }
 
 fn main() {
+    // Become the subreaper for game processes: when an AppImage/Electron app
+    // re-execs or self-updates, the orphan is reparented to us instead of
+    // init, so the session tree stays visible. One documented unsafe block.
+    unsafe {
+        libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0);
+    }
+
     // Cap glibc malloc arenas: 20+ threads (GPU pools, workers) otherwise
     // grow many arenas that retain freed heap. 4 is plenty for a mostly
     // main-thread UI app. Must precede GTK init (glibc reads it lazily
