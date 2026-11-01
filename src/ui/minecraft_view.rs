@@ -1537,7 +1537,7 @@ impl MinecraftView {
                 pop.popup();
             });
         }
-        if let Ok(c1100) = adw::BreakpointCondition::parse("max-width: 1100px") {
+        if let Ok(c1100) = adw::BreakpointCondition::parse("max-width: 760px") {
             let bp = adw::Breakpoint::new(c1100);
             let t = gtk::glib::Value::from(true);
             let f = gtk::glib::Value::from(false);
@@ -1545,7 +1545,7 @@ impl MinecraftView {
             bp.add_setter(&sort_cycle, "visible", Some(&t));
             parent.add_breakpoint(bp);
         }
-        if let Ok(c800) = adw::BreakpointCondition::parse("max-width: 800px") {
+        if let Ok(c800) = adw::BreakpointCondition::parse("max-width: 640px") {
             let bp2 = adw::Breakpoint::new(c800);
             let t = gtk::glib::Value::from(true);
             let f = gtk::glib::Value::from(false);
@@ -1565,11 +1565,11 @@ impl MinecraftView {
         // tick callback reads the real allocation instead.
         flow.add_tick_callback(|flow, _| {
             let cols = crate::ui::layout::grid_columns(flow.width());
+            // Only the upper bound follows the window. Setting the minimum
+            // to the same number pins the flow at a width the tiles may not
+            // fit in (198 px each), and the extra columns are clipped.
             if flow.max_children_per_line() != cols {
                 flow.set_max_children_per_line(cols);
-            }
-            if flow.min_children_per_line() != cols {
-                flow.set_min_children_per_line(cols);
             }
             gtk::glib::ControlFlow::Continue
         });
