@@ -318,7 +318,7 @@ fn descargar_de(
 fn ensure_chrome() -> Result<PathBuf, String> {
     ensure_chrome_con(&|pct, hecho| {
         eprintln!(
-            "CHROME:descargando {}% ({:.0} MB)",
+            "CHROME:downloading {}% ({:.0} MB)",
             pct,
             hecho as f64 / 1048576.0
         );
@@ -358,8 +358,8 @@ fn ensure_chrome_con(progreso: &dyn Fn(u8, u64)) -> Result<PathBuf, String> {
 
     let dir = chrome_dir();
     eprintln!(
-        "CHROME:primera vez, descargando Chrome for Testing {} (188 MB, {}). \
-         Tarda unos minutos; se informa cada 10% para que se vea que avanza.",
+        "CHROME:first time, downloading Chrome for Testing {} (188 MB, {}). \
+         Takes a few minutes; progress is reported every 10% so it is visible.",
         CHROME_VERSION, CHROME_LICENSE
     );
 
