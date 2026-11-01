@@ -68,8 +68,6 @@ pub(crate) mod test_env {
         drop(outer);
     }
 
-    }
-
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             match &self.saved_home {
