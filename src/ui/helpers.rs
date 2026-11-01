@@ -849,6 +849,21 @@ pub fn source_link(state: &crate::AppState, label: &str, url: Option<String>, to
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dialog_size_fits_the_parent() {
+        // Unknown parent: the request passes through.
+        assert_eq!(dialog_size(0, 0, 520, 380), (520, 380));
+        // Room enough: unchanged.
+        assert_eq!(dialog_size(1920, 1080, 520, 380), (520, 380));
+        // 90% of the parent wins over the request.
+        assert_eq!(dialog_size(640, 480, 640, 480), (576, 432));
+        assert_eq!(dialog_size(500, 400, 520, 380), (450, 360));
+        // Tiny parent: the cap wins over the minimum.
+        assert_eq!(dialog_size(200, 200, 520, 380), (180, 180));
+        // The usable minimum wins over a small request.
+        assert_eq!(dialog_size(1000, 1000, 200, 150), (320, 240));
+    }
+
     use crate::backend::theme::ThemeManager;
 
     fn hex_luminance(hex: &str) -> f64 {
@@ -942,18 +957,4 @@ mod tests {
         }
     }
 }
-    #[test]
-    fn dialog_size_fits_the_parent() {
-        // Unknown parent: the request passes through.
-        assert_eq!(dialog_size(0, 0, 520, 380), (520, 380));
-        // Room enough: unchanged.
-        assert_eq!(dialog_size(1920, 1080, 520, 380), (520, 380));
-        // 90% of the parent wins over the request.
-        assert_eq!(dialog_size(640, 480, 640, 480), (576, 432));
-        assert_eq!(dialog_size(500, 400, 520, 380), (450, 360));
-        // Tiny parent: the cap wins over the minimum.
-        assert_eq!(dialog_size(200, 200, 520, 380), (180, 180));
-        // The usable minimum wins over a small request.
-        assert_eq!(dialog_size(1000, 1000, 200, 150), (320, 240));
-    }
 
