@@ -6,6 +6,12 @@ cd "$SCRIPT_DIR/.."
 
 VERSION=$(grep -m1 '^version' Cargo.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 ARCH=$(uname -m)
+case "$ARCH" in
+  amd64) ARCH=x86_64 ;;
+  arm64) ARCH=aarch64 ;;
+  x86_64|aarch64) ;;
+  *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
+esac
 TARBALL="corkytux-${VERSION}-linux-${ARCH}.tar.gz"
 
 # Version argument is mandatory and must match Cargo.toml.
