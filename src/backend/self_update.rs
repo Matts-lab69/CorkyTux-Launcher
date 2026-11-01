@@ -455,6 +455,15 @@ pub fn auth_header(token: Option<&str>) -> Option<String> {
         .map(|t| format!("Bearer {}", t))
 }
 
+/// The Authorization header only for the API host, never for a redirect or an
+/// asset host. Pure, so the policy is tested without network.
+pub fn authorization_for(url: &str, token: Option<&str>) -> Option<String> {
+    if !url.starts_with("https://api.github.com/") {
+        return None;
+    }
+    auth_header(token)
+}
+
 fn auth_token() -> Option<String> {
     if let Ok(token) = std::env::var("GITHUB_TOKEN") {
         if !token.trim().is_empty() {
@@ -488,18 +497,39 @@ fn etag_cache_path() -> Option<std::path::PathBuf> {
     Some(std::path::PathBuf::from(home).join(".cache/CorkyTux/github-latest.etag"))
 }
 
+/// A valid ETag starts with W/" or " — anything else is a corrupt cache.
+pub fn parse_etag(text: &str) -> Option<String> {
+    let tag = text.trim();
+    if tag.starts_with("W/\"") || tag.starts_with('"') {
+        Some(tag.to_string())
+    } else {
+        None
+    }
+}
+
 pub fn read_cached_etag(path: &std::path::Path) -> Option<String> {
-    std::fs::read_to_string(path)
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+    parse_etag(&std::fs::read_to_string(path).ok()?)
 }
 
 pub fn write_cached_etag(path: &std::path::Path, etag: &str) {
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+        }
+        let _ = std::fs::write(path, etag);
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        return;
     }
-    let _ = std::fs::write(path, etag);
+    #[cfg(not(unix))]
+    {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(path, etag);
+    }
 }
 
 /// GET with manual redirect handling. Redirect limits and destination
@@ -543,10 +573,8 @@ fn get_guarded(
             if let Some(tag) = etag {
                 req = req.header("If-None-Match", tag);
             }
-            if current.starts_with("https://api.github.com/") {
-                if let Some(header) = auth_header(auth_token().as_deref()) {
-                    req = req.header("AUTHORIZATION", header);
-                }
+            if let Some(header) = authorization_for(&current, auth_token().as_deref()) {
+                req = req.header("AUTHORIZATION", header);
             }
         }
         let resp = match req.send() {
@@ -4324,6 +4352,26 @@ mod tests {
         assert!(should_auto_check(true, Some(0), 6 * 3600));
         assert!(!should_auto_check(true, Some(1000), 1000 + 6 * 3600 - 1));
     }
+    #[test]
+    fn authorization_never_leaves_the_api_host() {
+        assert_eq!(
+            authorization_for("https://api.github.com/repos/x/y", Some("t")),
+            Some("Bearer t".to_string())
+        );
+        assert_eq!(authorization_for("https://github.com/x", Some("t")), None);
+        assert_eq!(authorization_for("https://objects.githubusercontent.com/x", Some("t")), None);
+        assert_eq!(authorization_for("http://api.github.com/x", Some("t")), None);
+        assert_eq!(authorization_for("https://api.github.com/x", None), None);
+    }
+
+    #[test]
+    fn corrupt_etag_is_ignored() {
+        assert_eq!(parse_etag("not-an-etag"), None);
+        assert_eq!(parse_etag("\"abc\""), Some("\"abc\"".to_string()));
+        assert_eq!(parse_etag("W/\"abc\""), Some("W/\"abc\"".to_string()));
+        assert_eq!(parse_etag(""), None);
+    }
+
     #[test]
     fn auth_header_policy() {
         assert_eq!(auth_header(None), None);
