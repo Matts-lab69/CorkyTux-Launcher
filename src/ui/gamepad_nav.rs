@@ -167,8 +167,13 @@ pub enum QuickTarget {
     None,
 }
 
-pub fn quick_action_target(selected: bool, already_running: bool) -> QuickTarget {
-    if selected && !already_running {
+pub fn quick_action_target(
+    view: &str,
+    dialog_open: bool,
+    selected: bool,
+    already_running: bool,
+) -> QuickTarget {
+    if view == "games" && !dialog_open && selected && !already_running {
         QuickTarget::Play
     } else {
         QuickTarget::None
@@ -477,10 +482,13 @@ mod tests {
 
     #[test]
     fn quick_action_policy() {
-        assert_eq!(quick_action_target(true, false), QuickTarget::Play);
-        assert_eq!(quick_action_target(true, true), QuickTarget::None);
-        assert_eq!(quick_action_target(false, false), QuickTarget::None);
-        assert_eq!(quick_action_target(false, true), QuickTarget::None);
+        assert_eq!(quick_action_target("games", false, true, false), QuickTarget::Play);
+        assert_eq!(quick_action_target("games", true, true, false), QuickTarget::None);
+        assert_eq!(quick_action_target("games", false, false, false), QuickTarget::None);
+        assert_eq!(quick_action_target("games", false, true, true), QuickTarget::None);
+        assert_eq!(quick_action_target("settings", false, true, false), QuickTarget::None);
+        assert_eq!(quick_action_target("stores", false, true, false), QuickTarget::None);
+        assert_eq!(quick_action_target("minecraft", false, true, false), QuickTarget::None);
     }
 
 }

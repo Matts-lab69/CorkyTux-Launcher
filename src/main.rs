@@ -1079,12 +1079,33 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     // Gamepad navigation (D3: ignored unless this window is active).
     let quick_details = details.clone();
     let quick_state = state.clone();
+    let quick_view = content_stack.clone();
+    let quick_body = body.clone();
+    let quick_window = window.clone();
     let quick = std::rc::Rc::new(move || {
         let selected_game = quick_state.selected_game.borrow().clone();
         let selected = !selected_game.is_empty();
         let running = quick_state.proton.is_game_running()
             && quick_state.proton.session_game_name() == selected_game;
-        if ui::gamepad_nav::quick_action_target(selected, running)
+        let view = quick_view
+            .visible_child_name()
+            .map(|name| name.to_string())
+            .unwrap_or_default();
+        // A dialog takes the focus out of the library body; any other visible
+        // window is a dialog too.
+        let other_window = quick_window
+            .application()
+            .map(|app| {
+                let main: &gtk::Window = quick_window.upcast_ref();
+                app.windows().iter().any(|w| w.is_visible() && w != main)
+            })
+            .unwrap_or(false);
+        let focus_outside = quick_window
+            .focus()
+            .map(|f| !f.is_ancestor(&quick_body))
+            .unwrap_or(false);
+        let dialog_open = other_window || focus_outside;
+        if ui::gamepad_nav::quick_action_target(&view, dialog_open, selected, running)
             == ui::gamepad_nav::QuickTarget::Play
         {
             quick_details.play_button().activate();
