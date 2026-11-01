@@ -763,9 +763,9 @@ impl ProtonManager {
         }
         // wineserver running in this prefix? Don't touch live registries.
         let lock = real_prefix.join("wineserver.lock");
-        let server_running = std::process::Command::new("sh")
-            .args(["-c", "pgrep -f wineserver >/dev/null 2>&1"])
-            .status().map(|s| s.success()).unwrap_or(false);
+        let server_running = super::ext_bin::any_process(|p| {
+            p.comm == "wineserver" || p.cmdline.iter().any(|a| a.ends_with("wineserver"))
+        });
         if server_running && lock.exists() {
             return false;
         }
@@ -1395,19 +1395,13 @@ impl ProtonManager {
             // Auto-start Steam client so the protocol handler is ready.
             let home = home_dir().unwrap_or_default();
             log_steam_readiness("steam-id-before-start", &home);
-            let steam_command_available = Command::new("which").arg("steam").stdout(Stdio::null()).stderr(Stdio::null()).status()
-                .map(|s| s.success()).unwrap_or(false)
-            ;
+            let steam_command_available = super::ext_bin::find_in_path("steam").is_some();
             steam_debug_log(
                 "steam-command-detected",
                 &format!("route=steam-id available={}", steam_command_available),
             );
             if steam_command_available {
-                let running = Command::new("sh")
-                    .args(["-c", "pidof steam >/dev/null 2>&1"])
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false);
+                let running = super::ext_bin::steam_running();
                 steam_debug_log(
                     "steam-process-detected",
                     &format!("route=steam-id running={}", running),
@@ -1518,19 +1512,13 @@ impl ProtonManager {
         if steam_overlay || !steam_id.trim().is_empty() {
             let home = home_dir().unwrap_or_default();
             log_steam_readiness("proton-before-start", &home);
-            let steam_command_available = Command::new("which").arg("steam").stdout(Stdio::null()).stderr(Stdio::null()).status()
-                .map(|s| s.success()).unwrap_or(false)
-            ;
+            let steam_command_available = super::ext_bin::find_in_path("steam").is_some();
             steam_debug_log(
                 "steam-command-detected",
                 &format!("route=proton available={}", steam_command_available),
             );
             if steam_command_available {
-                let running = Command::new("sh")
-                    .args(["-c", "pidof steam >/dev/null 2>&1"])
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false);
+                let running = super::ext_bin::steam_running();
                 steam_debug_log(
                     "steam-process-detected",
                     &format!("route=proton running={}", running),
@@ -2807,16 +2795,7 @@ impl ProtonManager {
         if pattern.trim().is_empty() {
             return false;
         }
-        if let Ok(out) = Command::new(Self::tool_path("pgrep"))
-            .arg("-f")
-            .arg(pattern)
-            .output()
-        {
-            if out.status.success() && !String::from_utf8_lossy(&out.stdout).trim().is_empty() {
-                return true;
-            }
-        }
-        false
+        !Self::appimage_pids(pattern).is_empty()
     }
 
     pub(crate) fn adopt_session(
@@ -3300,14 +3279,10 @@ impl ProtonManager {
         if !path.is_file() {
             return Err(format!("AppImage not found: {}", expanded));
         }
-        if let Ok(out) = Command::new(Self::tool_path("pgrep"))
-            .arg("-f")
-            .arg(format!("^{}( |$)", Self::appimage_ere_escape(&expanded)))
-            .output()
+        if !Self::appimage_pids(&format!("^{}( |$)", Self::appimage_ere_escape(&expanded)))
+            .is_empty()
         {
-            if out.status.success() && !String::from_utf8_lossy(&out.stdout).trim().is_empty() {
-                return Err("Already running: close the app first, then press Play".into());
-            }
+            return Err("Already running: close the app first, then press Play".into());
         }
         if Self::appimage_tree_alive(&expanded) {
             Self::stop_appimage_tree(&expanded);
@@ -3455,33 +3430,15 @@ impl ProtonManager {
         out
     }
 
-    /// Pids whose command line matches, with a hard 2 s cap: this runs on
-    /// the GTK thread, so a stuck pgrep must not freeze the UI. On timeout or
-    /// error it logs and returns nothing.
+    /// Pids whose command line matches, read from /proc (no pgrep fork).
     fn appimage_pids(pattern: &str) -> Vec<String> {
-        let mut out = Vec::new();
-        let mut cmd = Command::new(Self::tool_path("pgrep"));
-        cmd.arg("-f").arg(pattern);
-        let res = match super::plugin_process::output_with_timeout(
-            &mut cmd,
-            std::time::Duration::from_secs(2),
-        ) {
-            Ok(res) => res,
-            Err(e) => {
-                eprintln!("[session] pgrep failed: {} (treated as no result)", e);
-                return out;
-            }
-        };
-        if res.success {
-            for line in res.stdout.lines() {
-                if let Some(pid) = line.split_whitespace().next() {
-                    if !pid.is_empty() && pid.chars().all(|c| c.is_ascii_digit()) {
-                        out.push(pid.to_string());
-                    }
-                }
-            }
-        }
-        out
+        super::ext_bin::pids_matching(&super::ext_bin::RealProc, |entry| {
+            let cmdline = entry.cmdline.join(" ");
+            super::ext_bin::pgrep_like_match(&cmdline, pattern)
+        })
+        .into_iter()
+        .map(|pid| pid.to_string())
+        .collect()
     }
 
     fn parse_pids(lines: Vec<String>) -> Vec<u32> {
@@ -3565,24 +3522,14 @@ impl ProtonManager {
         if expanded.trim().is_empty() {
             return false;
         }
-        if let Ok(out) = Command::new(Self::tool_path("pgrep"))
-            .arg("-f")
-            .arg(format!("^{}( |$)", Self::appimage_ere_escape(&expanded)))
-            .output()
+        if !Self::appimage_pids(&format!("^{}( |$)", Self::appimage_ere_escape(&expanded)))
+            .is_empty()
         {
-            if out.status.success() && !String::from_utf8_lossy(&out.stdout).trim().is_empty() {
-                return true;
-            }
+            return true;
         }
         for mp in Self::appimage_mounts(&expanded) {
-            if let Ok(out) = Command::new(Self::tool_path("pgrep"))
-                .arg("-f")
-                .arg(format!("^{}/", Self::appimage_ere_escape(&mp)))
-                .output()
-            {
-                if out.status.success() && !String::from_utf8_lossy(&out.stdout).trim().is_empty() {
-                    return true;
-                }
+            if !Self::appimage_pids(&format!("^{}/", Self::appimage_ere_escape(&mp))).is_empty() {
+                return true;
             }
         }
         false
@@ -4510,12 +4457,7 @@ fn find_proton_binary(path: &Path) -> Option<PathBuf> {
 }
 
 fn which(name: &str) -> Option<String> {
-    if let Ok(path) = Command::new("which").arg(name).output() {
-        if path.status.success() {
-            return Some(String::from_utf8_lossy(&path.stdout).trim().to_string());
-        }
-    }
-    None
+    super::ext_bin::find_in_path(name).map(|p| p.display().to_string())
 }
 
 #[cfg(test)]

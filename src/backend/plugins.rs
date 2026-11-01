@@ -1206,15 +1206,7 @@ impl PluginManager {
 }
 
 fn which(name: &str) -> Option<PathBuf> {
-    if let Ok(output) = Command::new("which").arg(name).output() {
-        if output.status.success() {
-            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path_str.is_empty() {
-                return Some(PathBuf::from(path_str));
-            }
-        }
-    }
-    None
+    super::ext_bin::find_in_path(name)
 }
 
 
