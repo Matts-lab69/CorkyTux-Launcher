@@ -8,7 +8,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var("HOME").ok().map(PathBuf::from)
+    std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(PathBuf::from)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
