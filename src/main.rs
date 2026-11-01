@@ -1765,6 +1765,13 @@ pub(crate) fn maybe_autoinstall_proton(state: &AppState, parent: &adw::Applicati
 }
 
 fn main() {
+    // Become the subreaper for game processes: when an AppImage/Electron app
+    // re-execs or self-updates, the orphan is reparented to us instead of
+    // init, so the session tree stays visible. One documented unsafe block.
+    unsafe {
+        libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0);
+    }
+
     // Cap glibc malloc arenas: 20+ threads (GPU pools, workers) otherwise
     // grow many arenas that retain freed heap. 4 is plenty for a mostly
     // main-thread UI app. Must precede GTK init (glibc reads it lazily
