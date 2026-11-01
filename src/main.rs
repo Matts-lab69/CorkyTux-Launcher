@@ -570,6 +570,37 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     details.revealer.set_valign(gtk::Align::Fill);
     content_overlay.add_overlay(&details.revealer);
     body.append(&content_overlay);
+    {
+        // Narrow windows: the details panel replaces the library; closing it
+        // (its X) brings the library back. Wider: it floats as before.
+        let narrow = std::rc::Rc::new(std::cell::Cell::new(false));
+        let revealer = details.revealer.clone();
+        let stack = content_stack.clone();
+        let narrow_c = narrow.clone();
+        revealer.connect_child_revealed_notify(move |rev| {
+            if narrow_c.get() {
+                stack.set_visible(!rev.reveals_child());
+            }
+        });
+        let narrow_bp = narrow.clone();
+        let rev_bp = details.revealer.clone();
+        let stack_bp = content_stack.clone();
+        if let Ok(cond) = adw::BreakpointCondition::parse("max-width: 900px") {
+            let bp = adw::Breakpoint::new(cond);
+            bp.connect_apply(move |_| narrow_bp.set(true));
+            let narrow_un = narrow.clone();
+            let rev_un = rev_bp.clone();
+            let stack_un = stack_bp.clone();
+            bp.connect_unapply(move |_| {
+                narrow_un.set(false);
+                rev_un.set_halign(gtk::Align::End);
+                stack_un.set_visible(true);
+            });
+            let fill = gtk::glib::Value::from(gtk::Align::Fill);
+            bp.add_setter(&rev_bp, "halign", Some(&fill));
+            window.add_breakpoint(bp);
+        }
+    }
 
     // Add game button in header (left side)
     let add_btn = gtk::Button::with_label("+ Add game");
