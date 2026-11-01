@@ -1043,6 +1043,14 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
             if ledger_tick.get() % 30 == 0 {
                 state_c.proton.ledger_checkpoint();
             }
+            // Reap parked sessions every 10 s: each call spawns one pgrep (or
+            // one box-rpg probe) per parked entry, so 2 s would be wasteful.
+            if ledger_tick.get() % 5 == 0 {
+                for name in state_c.proton.purge_dead() {
+                    state_c.game_model.reload_time_spent(&name);
+                    state_c.recent_model.refresh(30);
+                }
+            }
             if let Some((game, secs)) = state_c.proton.check_finished() {
                 if secs > 0 {
                     state_c.game_model.increment_time_spent(&game, secs);
