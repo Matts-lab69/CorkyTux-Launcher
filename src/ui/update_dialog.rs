@@ -670,13 +670,14 @@ mod tests {
         }
     }
 
-    struct EnvVarGuard(&'static str, Option<std::ffi::OsString>);
+    struct EnvVarGuard(&'static str, Option<std::ffi::OsString>, crate::test_env::EnvGuard);
 
     impl EnvVarGuard {
         fn set(key: &'static str, value: &std::path::Path) -> Self {
+            let lock = crate::test_env::lock();
             let previous = std::env::var_os(key);
             std::env::set_var(key, value);
-            Self(key, previous)
+            Self(key, previous, lock)
         }
     }
 

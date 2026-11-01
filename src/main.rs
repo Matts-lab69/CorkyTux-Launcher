@@ -8,24 +8,96 @@ mod ui;
 /// is a separate binary (own process), so it needs nothing from here.
 #[cfg(test)]
 pub(crate) mod test_env {
+    use std::cell::RefCell;
     use std::sync::{Mutex, MutexGuard};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    struct State {
+        depth: u32,
+        held: Option<MutexGuard<'static, ()>>,
+    }
+
+    thread_local! {
+        static STATE: RefCell<State> = const {
+            RefCell::new(State { depth: 0, held: None })
+        };
+    }
+
     pub(crate) struct EnvGuard {
-        _lock: MutexGuard<'static, ()>,
         saved_home: Option<String>,
         saved_helper: Option<String>,
     }
 
-    /// Locks process env and snapshots HOME + CORKYTUX_LOGIN_HELPER.
+    /// Reentrant per thread: a test that takes several guards (one per env
+    /// var) used to deadlock on the second `lock()`, because `std::sync::Mutex`
+    /// is not recursive. The mutex is taken once at depth 0 and released when
+    /// the outermost guard drops.
     pub(crate) fn lock() -> EnvGuard {
-        let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        STATE.with(|s| {
+            let mut st = s.borrow_mut();
+            if st.depth == 0 {
+                st.held = Some(ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner()));
+            }
+            st.depth += 1;
+        });
         EnvGuard {
-            _lock: lock,
             saved_home: std::env::var("HOME").ok(),
             saved_helper: std::env::var("CORKYTUX_LOGIN_HELPER").ok(),
         }
+    }
+
+    /// Locks env and sets HOME for a test, restoring it on drop (panic-safe).
+    pub(crate) struct HomeGuard {
+        _guard: EnvGuard,
+    }
+
+    impl HomeGuard {
+        pub(crate) fn set(path: &std::path::Path) -> Self {
+            let guard = lock();
+            std::env::set_var("HOME", path);
+            Self { _guard: guard }
+        }
+    }
+
+    #[test]
+    fn nested_guards_do_not_deadlock() {
+        // Three levels, the shape update_dialog uses (HOME, XDG_DATA_HOME,
+        // XDG_CONFIG_HOME): the second and third `lock()` must not block.
+        let outer = lock();
+        let second = lock();
+        let third = lock();
+        std::env::set_var("CORKYTUX_TEST_SECRET", "still-here");
+        drop(third);
+        drop(second);
+        assert_eq!(
+            std::env::var("CORKYTUX_TEST_SECRET").ok().as_deref(),
+            Some("still-here")
+        );
+        drop(outer);
+    }
+
+    #[test]
+    fn the_lock_excludes_another_thread() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let held = lock();
+        let (tx, rx) = mpsc::channel();
+        let spawned = std::thread::spawn(move || {
+            let _inner = lock();
+            let _ = tx.send(());
+        });
+        assert!(
+            rx.recv_timeout(Duration::from_millis(200)).is_err(),
+            "a second thread entered while the lock was held"
+        );
+        drop(held);
+        assert!(
+            rx.recv_timeout(Duration::from_secs(10)).is_ok(),
+            "the second thread never got the lock after the drop"
+        );
+        spawned.join().unwrap();
     }
 
     impl Drop for EnvGuard {
@@ -38,6 +110,33 @@ pub(crate) mod test_env {
                 Some(v) => std::env::set_var("CORKYTUX_LOGIN_HELPER", v),
                 None => std::env::remove_var("CORKYTUX_LOGIN_HELPER"),
             }
+            STATE.with(|s| {
+                let mut st = s.borrow_mut();
+                st.depth = st.depth.saturating_sub(1);
+                if st.depth == 0 {
+                    st.held = None;
+                }
+            });
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::HomeGuard;
+
+        #[test]
+        fn home_guard_restores_on_panic() {
+            let prev = std::env::var("HOME").ok();
+            let dir = std::env::temp_dir().join("home-guard-panic");
+            let _ = std::fs::create_dir_all(&dir);
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _home = HomeGuard::set(&dir);
+                assert_eq!(std::env::var("HOME").ok().as_deref(), dir.to_str());
+                panic!("boom");
+            }));
+            assert!(r.is_err());
+            assert_eq!(std::env::var("HOME").ok(), prev);
+            let _ = std::fs::remove_dir_all(&dir);
         }
     }
 }
@@ -129,6 +228,7 @@ impl AppState {
         let plugins = PluginManager::new();
         let integration = IntegrationManager::new();
         recent_model.refresh(30);
+        proton.ledger_recover();
         proton.detect_running_sessions();
 
         Self {
@@ -158,8 +258,13 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
             return match state_clone.proton.stop_game() {
                 Ok((game, secs)) => {
                     if !game.is_empty() {
+                        // secs > 0: the ledger did not handle it (adopted
+                        // session); credit it here. secs == 0: the ledger
+                        // already credited, only reload the model.
                         if secs > 0 {
                             state_clone.game_model.increment_time_spent(&game, secs);
+                        } else {
+                            state_clone.game_model.reload_time_spent(&game);
                         }
                         state_clone.game_model.touch_last_played(&game);
                         state_clone.recent_model.refresh(30);
@@ -175,6 +280,8 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
             if let Some((game, secs)) = state_clone.proton.stop_parked(&name) {
                 if secs > 0 {
                     state_clone.game_model.increment_time_spent(&game, secs);
+                } else {
+                    state_clone.game_model.reload_time_spent(&game);
                 }
                 state_clone.game_model.touch_last_played(&game);
                 state_clone.recent_model.refresh(30);
@@ -298,6 +405,11 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
             let a = win.allocation();
             state_c.config.set_launcher_value("CkWinW", &a.width().to_string());
             state_c.config.set_launcher_value("CkWinH", &a.height().to_string());
+            // Best-effort final checkpoint. The ledger is not closed: the
+            // session stays live for adoption on the next start.
+            if state_c.proton.is_game_running() {
+                state_c.proton.ledger_checkpoint();
+            }
             glib::Propagation::Proceed
         });
     }
@@ -990,10 +1102,18 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
         let state_c = state.clone();
         let det_c = details_ref.clone();
         let ch_c = center_handle.clone();
+        let ledger_tick = std::cell::Cell::new(0u32);
         glib::timeout_add_local(std::time::Duration::from_secs(2), move || {
+            // Checkpoint the session ledger every 60 s (30 ticks of 2 s).
+            ledger_tick.set(ledger_tick.get() + 1);
+            if ledger_tick.get() % 30 == 0 {
+                state_c.proton.ledger_checkpoint();
+            }
             if let Some((game, secs)) = state_c.proton.check_finished() {
                 if secs > 0 {
                     state_c.game_model.increment_time_spent(&game, secs);
+                } else {
+                    state_c.game_model.reload_time_spent(&game);
                 }
                 state_c.game_model.touch_last_played(&game);
                 state_c.recent_model.refresh(30);
