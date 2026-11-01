@@ -69,7 +69,7 @@ pub fn build_center(
     recent_frame.set_halign(gtk::Align::Fill);
     recent_frame.set_valign(gtk::Align::Fill);
     // QML parity: height = max(360, window space) — always full static area
-    recent_frame.set_size_request(-1, 360);
+    recent_frame.set_size_request(-1, 240);
 
     let recent_inner = gtk::Box::new(gtk::Orientation::Vertical, 12);
     recent_inner.set_margin_top(14);
