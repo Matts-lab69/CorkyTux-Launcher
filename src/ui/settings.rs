@@ -2694,9 +2694,10 @@ fn rebuild_emu_rows(
         // "Working…" appears in place and badge/button never shift. Ver DESIGN.md.
         let st = gtk::Label::new(None);
         st.add_css_class("time-label");
-        st.set_width_chars(12);
+        st.set_ellipsize(gtk::pango::EllipsizeMode::End);
         if let Some(s) = emu_status.borrow().get(&emu.name) {
             st.set_text(s);
+            st.set_tooltip_text(Some(s));
         }
         row.append(&st);
         // System rows keep a static warning beside the explicit action: the
@@ -2720,7 +2721,8 @@ fn rebuild_emu_rows(
                 notice.add_css_class("emu-system-notice");
                 notice.set_halign(gtk::Align::Center);
                 notice.set_valign(gtk::Align::Center);
-                notice.set_width_request(140);
+                notice.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                notice.set_tooltip_text(Some("Found in system"));
                 row.append(&notice);
             }
             let btn = if emu.source.is_empty() {
@@ -2753,7 +2755,7 @@ fn rebuild_emu_rows(
             if remove_c {
                 btn.add_css_class("danger-btn");
             }
-            btn.set_width_request(if is_pin { 120 } else { 80 });
+            btn.set_size_request(80, -1);
             let name_c = emu.name.clone();
             // emu.path is the detected binary (shutil.which result for
             // system emulators): pinning passes it straight to corky-link,
