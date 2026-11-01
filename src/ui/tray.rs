@@ -235,6 +235,18 @@ mod tests {
     }
 
     #[test]
+    fn without_a_tray_the_window_always_closes() {
+        for remembered in [None, Some("tray"), Some("quit"), Some("other")] {
+            assert_eq!(
+                should_hide_on_close(false, true, remembered),
+                CloseAction::Quit,
+                "no host means no hide, ever"
+            );
+            assert_eq!(should_hide_on_close(false, false, remembered), CloseAction::Quit);
+        }
+    }
+
+    #[test]
     fn autostart_exec_prefers_appimage() {
         let exe = Path::new("/tmp/.mount_Corky1/usr/bin/corkytux");
         assert_eq!(

@@ -368,7 +368,7 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                 .config
                 .launcher_value("closeToTray")
                 .map(|v| v == "1")
-                .unwrap_or(true);
+                .unwrap_or(false);
             let remembered = state_c.config.launcher_value("closeToTrayChoice");
             match ui::tray::should_hide_on_close(tray_ok, setting, remembered.as_deref()) {
                 ui::tray::CloseAction::Hide => {

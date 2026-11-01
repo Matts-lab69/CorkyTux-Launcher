@@ -1479,7 +1479,7 @@ pub fn show_settings_modal(
         row
     };
 
-    misc_inner.append(&misc_switch("closeToTray", "Close to tray", true, true, state));
+    misc_inner.append(&misc_switch("closeToTray", "Close to tray", false, true, state));
     {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.set_margin_top(4);
