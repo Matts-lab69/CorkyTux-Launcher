@@ -106,6 +106,48 @@ pub fn any_process(predicate: impl Fn(&ProcEntry) -> bool) -> bool {
     find_process(&RealProc, predicate).is_some()
 }
 
+/// pids whose joined command line satisfies the predicate.
+pub fn pids_matching(
+    provider: &dyn ProcProvider,
+    predicate: impl Fn(&ProcEntry) -> bool,
+) -> Vec<u32> {
+    provider
+        .processes()
+        .into_iter()
+        .filter(|p| predicate(p))
+        .map(|p| p.pid)
+        .collect()
+}
+
+/// Undo the backslash escapes `pgrep` patterns use for a literal path.
+fn unescape_ere(pattern: &str) -> String {
+    let mut out = String::with_capacity(pattern.len());
+    let mut chars = pattern.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                out.push(next);
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Matches the three pgrep shapes the launcher builds, over a joined
+/// command line: `^path( |$)`, `^prefix/` and an unanchored literal path.
+pub fn pgrep_like_match(cmdline: &str, pattern: &str) -> bool {
+    let literal = unescape_ere(pattern);
+    if let Some(rest) = literal.strip_prefix('^') {
+        if let Some(base) = rest.strip_suffix("( |$)") {
+            return cmdline == base || cmdline.starts_with(&format!("{} ", base));
+        }
+        return cmdline.starts_with(rest);
+    }
+    cmdline.contains(&literal)
+}
+
 /// Process with this comm (no `pidof`).
 pub fn process_named(comm: &str) -> bool {
     any_process(|p| p.comm == comm)
@@ -231,4 +273,20 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&base);
     }
+    #[test]
+    fn pgrep_shapes_match_like_pgrep() {
+        let path = "/games/Game.AppImage";
+        let exact = ["/games/Game.AppImage", "--foo"];
+        assert!(pgrep_like_match(&exact.join(" "), &format!("^{}( |$)", path)));
+        assert!(pgrep_like_match(path, &format!("^{}( |$)", path)));
+        assert!(!pgrep_like_match(&format!("{}.bak --x", path), &format!("^{}( |$)", path)));
+        assert!(!pgrep_like_match(&format!("{}.bak --x", path), path));
+        assert!(pgrep_like_match("/games/Game.AppImage", path));
+        let mounted = "/tmp/.mount_GameX/usr/bin/game";
+        assert!(pgrep_like_match(mounted, "^/tmp/.mount_GameX/"));
+        assert!(!pgrep_like_match("/tmp/.mount_OtherX/game", "^/tmp/.mount_GameX/"));
+        // A literal with regex metacharacters escaped still matches.
+        assert!(pgrep_like_match("/games/a.b.exe", &"/games/a\\.b\\.exe"));
+    }
+
 }

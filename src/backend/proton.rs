@@ -2363,16 +2363,7 @@ impl ProtonManager {
         if pattern.trim().is_empty() {
             return false;
         }
-        if let Ok(out) = Command::new(Self::tool_path("pgrep"))
-            .arg("-f")
-            .arg(pattern)
-            .output()
-        {
-            if out.status.success() && !String::from_utf8_lossy(&out.stdout).trim().is_empty() {
-                return true;
-            }
-        }
-        false
+        !Self::appimage_pids(pattern).is_empty()
     }
 
     pub(crate) fn adopt_session(
@@ -2664,14 +2655,10 @@ impl ProtonManager {
         if !path.is_file() {
             return Err(format!("AppImage not found: {}", expanded));
         }
-        if let Ok(out) = Command::new(Self::tool_path("pgrep"))
-            .arg("-f")
-            .arg(format!("^{}( |$)", Self::appimage_ere_escape(&expanded)))
-            .output()
+        if !Self::appimage_pids(&format!("^{}( |$)", Self::appimage_ere_escape(&expanded)))
+            .is_empty()
         {
-            if out.status.success() && !String::from_utf8_lossy(&out.stdout).trim().is_empty() {
-                return Err("Already running: close the app first, then press Play".into());
-            }
+            return Err("Already running: close the app first, then press Play".into());
         }
         if Self::appimage_tree_alive(&expanded) {
             Self::stop_appimage_tree(&expanded);
@@ -2820,23 +2807,13 @@ impl ProtonManager {
     }
 
     fn appimage_pids(pattern: &str) -> Vec<String> {
-        let mut out = Vec::new();
-        if let Ok(res) = Command::new(Self::tool_path("pgrep"))
-            .arg("-f")
-            .arg(pattern)
-            .output()
-        {
-            if res.status.success() {
-                for line in String::from_utf8_lossy(&res.stdout).lines() {
-                    if let Some(pid) = line.split_whitespace().next() {
-                        if !pid.is_empty() && pid.chars().all(|c| c.is_ascii_digit()) {
-                            out.push(pid.to_string());
-                        }
-                    }
-                }
-            }
-        }
-        out
+        super::ext_bin::pids_matching(&super::ext_bin::RealProc, |entry| {
+            let cmdline = entry.cmdline.join(" ");
+            super::ext_bin::pgrep_like_match(&cmdline, pattern)
+        })
+        .into_iter()
+        .map(|pid| pid.to_string())
+        .collect()
     }
 
     fn appimage_tree_alive(exe: &str) -> bool {
@@ -2844,24 +2821,14 @@ impl ProtonManager {
         if expanded.trim().is_empty() {
             return false;
         }
-        if let Ok(out) = Command::new(Self::tool_path("pgrep"))
-            .arg("-f")
-            .arg(format!("^{}( |$)", Self::appimage_ere_escape(&expanded)))
-            .output()
+        if !Self::appimage_pids(&format!("^{}( |$)", Self::appimage_ere_escape(&expanded)))
+            .is_empty()
         {
-            if out.status.success() && !String::from_utf8_lossy(&out.stdout).trim().is_empty() {
-                return true;
-            }
+            return true;
         }
         for mp in Self::appimage_mounts(&expanded) {
-            if let Ok(out) = Command::new(Self::tool_path("pgrep"))
-                .arg("-f")
-                .arg(format!("^{}/", Self::appimage_ere_escape(&mp)))
-                .output()
-            {
-                if out.status.success() && !String::from_utf8_lossy(&out.stdout).trim().is_empty() {
-                    return true;
-                }
+            if !Self::appimage_pids(&format!("^{}/", Self::appimage_ere_escape(&mp))).is_empty() {
+                return true;
             }
         }
         false
