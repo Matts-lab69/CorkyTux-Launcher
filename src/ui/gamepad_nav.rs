@@ -412,13 +412,20 @@ mod tests {
             at_ms: 2_004,
         };
         assert!(dedupe(pad_b, &[pad_a], DEDUPE_WINDOW_MS));
-        // A Steam Deck builtin (28de:1205) is physical, not virtual.
+        // A Steam Deck builtin (28de:1205) is physical, not virtual: it is
+        // masked while the virtual pad fires and valid on its own.
         let deck = PadStamp {
+            vendor: Some(STEAM_VENDOR),
+            product: Some(0x1205),
+            at_ms: 1_005,
+        };
+        assert!(!dedupe(deck, &[virtual_pad], DEDUPE_WINDOW_MS));
+        let deck_later = PadStamp {
             vendor: Some(STEAM_VENDOR),
             product: Some(0x1205),
             at_ms: 3_000,
         };
-        assert!(!dedupe(deck, &[virtual_pad], DEDUPE_WINDOW_MS));
+        assert!(dedupe(deck_later, &[virtual_pad], DEDUPE_WINDOW_MS));
         // A lone virtual pad is valid.
         assert!(dedupe(
             PadStamp { vendor: Some(STEAM_VENDOR), product: Some(STEAM_VIRTUAL_PRODUCT), at_ms: 3_000 },
