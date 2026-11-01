@@ -1338,6 +1338,10 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     if !background || !tray_ok {
         window.present();
     }
+
+    // Gamepad navigation (D3: ignored unless this window is active).
+    ui::gamepad::start(&window);
+
     window
 }
 

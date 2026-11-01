@@ -17,4 +17,6 @@ pub mod minecraft_view;
 pub mod stores_view;
 pub mod import_manager;
 pub mod update_dialog;
+pub mod gamepad;
+pub mod gamepad_nav;
 pub mod tray;
