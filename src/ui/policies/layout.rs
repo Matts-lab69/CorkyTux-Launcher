@@ -14,6 +14,7 @@ pub fn columns_for_width(width_sp: i32) -> u32 {
     columns.clamp(1, 10) as u32
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DetailsMode {
     Library,
     Lateral,
