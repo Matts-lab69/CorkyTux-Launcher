@@ -401,17 +401,27 @@ impl GameModel {
         }
     }
 
+    /// Bank `seconds` through the shared flock + max() path. Used by paths
+    /// that are not covered by the session ledger (parked sessions, RPG).
     pub fn increment_time_spent(&self, name: &str, seconds: u64) {
+        let config = super::ConfigManager::new();
+        if let Err(e) = config.credit_time_spent(name, seconds) {
+            eprintln!("[session] cannot credit TimeSpent for {}: {}", name, e);
+        }
+        self.reload_time_spent(name);
+    }
+
+    /// Refresh the in-memory value after the ledger (or another path) wrote
+    /// TimeSpent. Does not write again.
+    pub fn reload_time_spent(&self, name: &str) {
         let config = super::ConfigManager::new();
         let current: u64 = config
             .game_value(name, "TimeSpent")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
-        let new_time = current + seconds;
-        config.set_game_value(name, "TimeSpent", &new_time.to_string());
         let mut games = self.imp().games.borrow_mut();
         if let Some(g) = games.iter_mut().find(|g| g.name == name) {
-            g.time_spent = new_time;
+            g.time_spent = current;
         }
     }
 
