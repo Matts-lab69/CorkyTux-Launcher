@@ -815,8 +815,6 @@ pub fn source_link(state: &crate::AppState, label: &str, url: Option<String>, to
     l
 }
 
-/// How the details panel coexists with the library.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 
 #[cfg(test)]
 mod tests {
