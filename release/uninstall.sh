@@ -6,6 +6,7 @@ DATA_DIR="${HOME}/.local/share/CorkyTux"
 CONFIG_DIR="${HOME}/.config/CorkyTux"
 BIN_DIR="${HOME}/.local/bin"
 ICON_DIR="${HOME}/.local/share/icons"
+ICON_THEME_DIR="${ICON_DIR}/hicolor"
 DESKTOP_DIR="${HOME}/.local/share/applications"
 
 echo ""
@@ -46,9 +47,11 @@ fi
 
 rm_path "${BIN_DIR}/corkytux" "symlink"
 rm_path "${DESKTOP_DIR}/corkytux.desktop" "desktop entry"
-rm_path "${ICON_DIR}/corkytux.png" "icon"
+rm_path "${ICON_THEME_DIR}/128x128/apps/corkytux.png" "icon"
+rm_path "${ICON_DIR}/corkytux.png" "legacy icon"
 
 command -v update-desktop-database &>/dev/null && update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
+command -v gtk-update-icon-cache &>/dev/null && gtk-update-icon-cache -f -t "$ICON_THEME_DIR" 2>/dev/null || true
 
 echo ""
 [[ $removed -gt 0 ]] && echo "=== CorkyTux uninstalled ===" || echo "=== Nothing to remove ==="
