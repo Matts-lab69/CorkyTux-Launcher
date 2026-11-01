@@ -79,6 +79,7 @@ jobs:
             build-essential \
             pkg-config \
             libgtk-4-dev \
+            libudev-dev \
             libadwaita-1-dev \
             libglib2.0-dev
 
