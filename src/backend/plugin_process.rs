@@ -868,6 +868,11 @@ mod tests {
         assert!(err.contains("terminated") || err.contains("limit"), "{}", err);
 
         let pid = wait_for_pid(&pidfile);
+        // SIGKILL delivery is asynchronous; give the kernel a bounded moment.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while process_alive(pid) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         assert!(
             !process_alive(pid),
             "the helper of the plugin must die with the plugin group"
