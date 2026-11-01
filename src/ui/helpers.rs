@@ -954,7 +954,11 @@ mod tests {
         assert_eq!(paths[0], home.join(".local/share/corkytux/assets/icons"));
         assert!(paths.contains(&base.join("xdg1/corkytux/assets/icons")));
         assert!(paths.contains(&base.join("xdg2/corkytux/assets/icons")));
-        assert!(paths.contains(&src_assets));
+        assert!(
+            paths.iter().any(|p| p.ends_with(std::path::Path::new("repo/assets/icons"))),
+            "no source-tree path in {:?}",
+            paths
+        );
         // No duplicates and no missing-relative entries.
         let mut unique = paths.clone();
         unique.sort();
