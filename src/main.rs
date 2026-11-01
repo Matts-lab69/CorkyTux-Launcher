@@ -284,7 +284,7 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
             .filter(|s| !s.is_empty())
             .map(std::path::PathBuf::from)
             .collect();
-        let mut paths = helpers::icon_search_paths(&exe, &home, &xdg);
+        let mut paths = ui::icons::icon_search_paths(&exe, &home, &xdg);
         paths.extend(it.search_path());
         let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
         it.set_search_path(&refs);
