@@ -772,7 +772,7 @@ pub fn icon_search_paths(
         for up in [parent.to_path_buf(), parent.join("..")] {
             let candidate = up.join("assets/icons");
             if candidate.is_dir() {
-                push(candidate);
+                push(candidate.canonicalize().unwrap_or(candidate));
             }
         }
     }
