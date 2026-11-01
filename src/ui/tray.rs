@@ -57,6 +57,12 @@ fn shell_quote(value: &str) -> String {
     format!("\"{}\"", escaped)
 }
 
+/// Dev builds live under `target/`; pointing autostart there is a mistake.
+pub fn is_dev_build_path(path: &Path) -> bool {
+    let text = path.display().to_string();
+    text.contains("/target/debug/") || text.contains("/target/release/")
+}
+
 /// `~/.config/autostart/com.corkytux.CorkyTux.desktop`.
 pub fn autostart_path() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok().filter(|h| !h.is_empty())?;
@@ -82,6 +88,14 @@ pub fn apply_autostart(enabled: bool) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {}", parent.display(), e))?;
     }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    if std::env::var("APPIMAGE").ok().filter(|p| !p.trim().is_empty()).is_none()
+        && is_dev_build_path(&exe)
+    {
+        eprintln!(
+            "[autostart] warning: {} is a development build; the entry will point inside target/",
+            exe.display()
+        );
+    }
     let appimage = std::env::var("APPIMAGE").ok();
     let exec = build_autostart_exec(appimage.as_deref(), &exe);
     let body = format!(
@@ -271,6 +285,20 @@ mod tests {
             build_autostart_exec(Some("/home/me/My \"Apps\"/CorkyTux.AppImage"), exe),
             "\"/home/me/My \\\"Apps\\\"/CorkyTux.AppImage\" --background"
         );
+    }
+
+    #[test]
+    fn dev_build_paths_are_flagged() {
+        assert!(is_dev_build_path(Path::new(
+            "/home/me/CorkyTux/target/debug/corkytux"
+        )));
+        assert!(is_dev_build_path(Path::new(
+            "/home/me/CorkyTux/target/release/corkytux"
+        )));
+        assert!(!is_dev_build_path(Path::new("/usr/bin/corkytux")));
+        assert!(!is_dev_build_path(Path::new(
+            "/home/me/Apps/CorkyTux.AppImage"
+        )));
     }
 
     #[test]
