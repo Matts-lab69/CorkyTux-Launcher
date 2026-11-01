@@ -282,6 +282,12 @@ cd corkytux-*/
 
 ---
 
+## Game icons
+
+Windows `.exe` icons are extracted with `icoextract` and `ffmpeg`. When either
+is missing, CorkyTux keeps the generic cover and logs one warning per run:
+"icon extraction needs icoextract or ffmpeg; the generic icon is used".
+
 ## Self-update
 
 - Opt-in: **Settings > Misc > Check for updates on startup** is off by default. Manual checks are in **Settings > About > Check for launcher updates**. Startup checks run at most once every six hours.
@@ -377,12 +383,6 @@ plugins/<name>/                 separate repo (CorkyTux-Plugins): plugin binary 
   used or inspired by this person's repositories.
 
 ---
-
-## Game icons
-
-Windows `.exe` icons are extracted with `icoextract` and `ffmpeg`. When either
-is missing, CorkyTux keeps the generic cover and logs one warning per run:
-"icon extraction needs icoextract or ffmpeg; the generic icon is used".
 
 ## License
 
