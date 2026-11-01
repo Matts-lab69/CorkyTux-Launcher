@@ -2594,6 +2594,48 @@ mod tests {
         tar_path
     }
 
+    fn raw_entry_typed(name: &str, typeflag: u8, link: Option<&str>, content: &[u8]) -> Vec<u8> {
+        let mut entry = raw_entry(name, link, content);
+        entry[156] = typeflag;
+        // Recompute the checksum after changing the type flag.
+        for b in entry.iter_mut().take(156).skip(148) {
+            *b = b' ';
+        }
+        let sum: u32 = entry[..512].iter().map(|b| *b as u32).sum();
+        let cs = format!("{:06o}\0 ", sum);
+        entry[148..156].copy_from_slice(cs.as_bytes());
+        entry
+    }
+
+    fn typed_tarball(dir: &Path, name: &str, typeflag: u8, link: Option<&str>) -> PathBuf {
+        use std::io::Write;
+        let tar_path = dir.join(name);
+        let f = std::fs::File::create(&tar_path).unwrap();
+        let mut gz = flate2::write::GzEncoder::new(f, flate2::Compression::default());
+        gz.write_all(&raw_entry_typed("pkg/corkytux", typeflag, link, b""))
+            .unwrap();
+        gz.write_all(&[0u8; 1024]).unwrap();
+        gz.finish().unwrap();
+        tar_path
+    }
+
+    #[test]
+    fn hardlinks_and_special_files_are_rejected() {
+        let dir = std::env::temp_dir().join("corky_upd_links");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Hardlink (type '1') pointing outside the staging directory.
+        let hard = typed_tarball(&dir, "hard.tar.gz", b'1', Some("../../etc/passwd"));
+        assert!(extract_tarball(&hard, &dir.join("hardstage")).is_err());
+        // FIFO (type '6'): never materialized.
+        let fifo = typed_tarball(&dir, "fifo.tar.gz", b'6', None);
+        assert!(extract_tarball(&fifo, &dir.join("fifostage")).is_err());
+        // Character device (type '3').
+        let dev = typed_tarball(&dir, "dev.tar.gz", b'3', None);
+        assert!(extract_tarball(&dev, &dir.join("devstage")).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn malicious_tarball_is_rejected() {
         let dir = std::env::temp_dir().join("corky_upd_evil");
