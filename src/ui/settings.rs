@@ -1479,6 +1479,7 @@ pub fn show_settings_modal(
         row
     };
 
+    misc_inner.append(&misc_switch("controllerSupport", "Controller support", true, true, state));
     misc_inner.append(&misc_switch("closeToTray", "Close to tray", false, true, state));
     {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);

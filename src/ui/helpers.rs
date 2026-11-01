@@ -746,7 +746,15 @@ pub(crate) fn main_css_text(theme: &ThemeManager) -> String {
              .import-mode:disabled .import-opt-title {{ color: {text_muted}; }}\
              .import-warn {{ color: {text_main}; font-size: 12px; font-weight: 600; }}\
              tooltip.background {{ background-color: {tab_bar_bg}; border-radius: 8px; border: 1px solid {border}; padding: 12px; }}\
-             tooltip label {{ color: {text_main}; font-size: 13px; }}"
+             tooltip label {{ color: {text_main}; font-size: 13px; }}\
+             .gamepad-mode :focus {{ box-shadow: 0 0 0 2px {accent}; border-radius: 8px; }}\
+             .gamepad-mode .game-card:focus {{ background-color: {hover}; box-shadow: 0 0 0 2px {accent}; }}\
+             .gamepad-mode flowboxchild:focus {{ box-shadow: 0 0 0 2px {accent}; border-radius: 10px; }}\
+             .gamepad-mode flowboxchild:focus .game-card {{ background-color: {hover}; }}\
+             .gamepad-mode row:focus {{ box-shadow: 0 0 0 2px {accent}; border-radius: 8px; }}\
+             popover modelbutton:focus {{ outline: 2px solid {accent}; outline-offset: -2px; }}\
+             .game-card, .game-row, .action-btn {{ transition: background-color 120ms ease-in-out, box-shadow 120ms ease-in-out; }}\
+             .gamepad-help {{ background-color: {panel}; color: {text_main}; border-top: 1px solid {accent}; padding: 6px 12px; font-size: 12px; font-weight: 600; }}"
         )
 }
 

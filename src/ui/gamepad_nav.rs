@@ -159,6 +159,39 @@ pub fn detect_family(name: &str) -> PadFamily {
     PadFamily::Generic
 }
 
+/// What North does on the focused card: play when something is selected and
+/// not already running, nothing otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuickTarget {
+    Play,
+    None,
+}
+
+pub fn quick_action_target(
+    view: &str,
+    dialog_open: bool,
+    focus_in_library: bool,
+    selected: bool,
+    already_running: bool,
+) -> QuickTarget {
+    if view == "games" && !dialog_open && focus_in_library && selected && !already_running {
+        QuickTarget::Play
+    } else {
+        QuickTarget::None
+    }
+}
+
+/// Bottom help bar text for the pad family. Only glyphs the family prints
+/// are used; the physical South button always confirms.
+pub fn help_text(family: PadFamily) -> &'static str {
+    match family {
+        PadFamily::PlayStation => "✕ Select   ○ Back   □ Context   △ Quick   L1/R1 Tabs   Options Menu",
+        PadFamily::Xbox => "A Select   B Back   X Context   Y Quick   LB/RB Tabs   Menu Menu",
+        PadFamily::Nintendo => "B Select   A Back   Y Context   X Quick   L/R Tabs   + Menu",
+        PadFamily::Generic => "South Select   East Back   West Context   North Quick   LB/RB Tabs   Start Menu",
+    }
+}
+
 /// D3: the pad is ignored unless the window is active, visible and the
 /// feature is on.
 pub fn should_handle(window_active: bool, window_visible: bool, setting: bool) -> bool {
@@ -437,6 +470,31 @@ mod tests {
         assert!(accept_pad(physical, false));
         // Two non-Valve pads coexist.
         assert!(accept_pad(other, false));
+    }
+
+    #[test]
+    fn help_bar_per_family() {
+        assert!(help_text(PadFamily::PlayStation).contains("✕ Select"));
+        assert!(help_text(PadFamily::Xbox).contains("A Select"));
+        assert!(help_text(PadFamily::Nintendo).contains("B Select"));
+        assert!(help_text(PadFamily::Generic).contains("South Select"));
+        assert!(help_text(PadFamily::Xbox).contains("Y Quick"));
+    }
+
+    #[test]
+    fn quick_action_policy() {
+        // Focus on a game card (inside the library stack).
+        assert_eq!(quick_action_target("games", false, true, true, false), QuickTarget::Play);
+        // Focus on the details panel: not the library body.
+        assert_eq!(quick_action_target("games", false, false, true, false), QuickTarget::None);
+        // Focus on the sidebar: also outside the library body.
+        assert_eq!(quick_action_target("games", false, false, true, false), QuickTarget::None);
+        assert_eq!(quick_action_target("games", true, true, true, false), QuickTarget::None);
+        assert_eq!(quick_action_target("games", false, true, false, false), QuickTarget::None);
+        assert_eq!(quick_action_target("games", false, true, true, true), QuickTarget::None);
+        assert_eq!(quick_action_target("settings", false, true, true, false), QuickTarget::None);
+        assert_eq!(quick_action_target("stores", false, true, true, false), QuickTarget::None);
+        assert_eq!(quick_action_target("minecraft", false, true, true, false), QuickTarget::None);
     }
 
 }

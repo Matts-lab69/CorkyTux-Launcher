@@ -1124,7 +1124,16 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     // (handled inside DetailsPanel)
 
     main_box.append(&body);
-    window.set_content(Some(&main_box));
+    // Gamepad help bar: hidden until a pad moves the focus.
+    let gamepad_help = gtk::Label::new(None);
+    gamepad_help.add_css_class("gamepad-help");
+    gamepad_help.set_halign(gtk::Align::Fill);
+    gamepad_help.set_xalign(0.0);
+    gamepad_help.set_visible(false);
+    main_box.append(&gamepad_help);
+    let toast_overlay = adw::ToastOverlay::new();
+    toast_overlay.set_child(Some(&main_box));
+    window.set_content(Some(&toast_overlay));
 
     // Session poller (C++ onGameFinished parity): bank play time when the
     // child exits on its own, and keep the Play/Stop label in sync.
@@ -1288,7 +1297,47 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     }
 
     // Gamepad navigation (D3: ignored unless this window is active).
-    ui::gamepad::start(&window);
+    let quick_details = details.clone();
+    let quick_state = state.clone();
+    let quick_view = content_stack.clone();
+    let quick_body = body.clone();
+    let quick_window = window.clone();
+    let quick = std::rc::Rc::new(move || {
+        let selected_game = quick_state.selected_game.borrow().clone();
+        let selected = !selected_game.is_empty();
+        let running = quick_state.proton.is_game_running()
+            && quick_state.proton.session_game_name() == selected_game;
+        let view = quick_view
+            .visible_child_name()
+            .map(|name| name.to_string())
+            .unwrap_or_default();
+        // A dialog takes the focus out of the library body; any other visible
+        // window is a dialog too.
+        let other_window = quick_window
+            .application()
+            .map(|app| {
+                let main: &gtk::Window = quick_window.upcast_ref();
+                app.windows().iter().any(|w| w.is_visible() && w != main)
+            })
+            .unwrap_or(false);
+        // The library body is the content stack (the pages), not the sidebar
+        // and not the floating details panel.
+        let focus_in_library = gtk::prelude::GtkWindowExt::focus(&quick_window)
+            .map(|f| f.is_ancestor(&quick_view))
+            .unwrap_or(false);
+        let dialog_open = other_window;
+        if ui::gamepad_nav::quick_action_target(
+            &view,
+            dialog_open,
+            focus_in_library,
+            selected,
+            running,
+        ) == ui::gamepad_nav::QuickTarget::Play
+        {
+            quick_details.play_button().activate();
+        }
+    });
+    ui::gamepad::start(&window, &gamepad_help, &toast_overlay, quick);
 
     window
 }
