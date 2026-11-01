@@ -1388,6 +1388,24 @@ impl Clone for MinecraftView {
     }
 }
 
+/// Where a modpack error is shown: the progress dialog when it is open, a
+/// toast when only the window is visible, nowhere otherwise. One surface.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ErrorSurface {
+    Dialog,
+    Toast,
+}
+
+pub fn error_surface(dialog_open: bool, window_visible: bool) -> Option<ErrorSurface> {
+    if dialog_open {
+        Some(ErrorSurface::Dialog)
+    } else if window_visible {
+        Some(ErrorSurface::Toast)
+    } else {
+        None
+    }
+}
+
 impl MinecraftView {
     fn cfg(&self, key: &str) -> String {
         self.state.config.launcher_value(key).unwrap_or_default()
@@ -5332,9 +5350,10 @@ impl MinecraftView {
                 crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
                     bar.set_fraction(0.0);
                     bar.set_text(Some("Failed"));
-                    status.set_text(&message);
-                    v.lib_status.set_text(&format!("Modpack failed: {}", message));
-                    v.toast("Modpack failed", &message);
+                    // The progress dialog is open here: report in one place.
+                    if error_surface(true, true) == Some(ErrorSurface::Dialog) {
+                        status.set_text(&message);
+                    }
                     std::fs::remove_dir_all(&staging).ok();
                     false
                 }
@@ -5377,9 +5396,10 @@ impl MinecraftView {
                 crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
                     bar.set_fraction(0.0);
                     bar.set_text(Some("Failed"));
-                    status.set_text(&message);
-                    v.lib_status.set_text(&format!("Modpack failed: {}", message));
-                    v.toast("Modpack failed", &message);
+                    // The progress dialog is open here: report in one place.
+                    if error_surface(true, true) == Some(ErrorSurface::Dialog) {
+                        status.set_text(&message);
+                    }
                     std::fs::remove_dir_all(&staging).ok();
                     false
                 }
