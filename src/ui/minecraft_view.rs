@@ -1853,7 +1853,7 @@ impl MinecraftView {
         logs_view.set_cursor_visible(false);
         logs_view.set_monospace(true);
         logs_view.set_vexpand(true);
-        logs_view.set_size_request(-1, 200);
+        logs_view.set_size_request(-1, 120);
         lg_inner.append(&logs_view);
         let lg_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         lg_row.set_halign(gtk::Align::End);
@@ -3769,7 +3769,8 @@ impl MinecraftView {
         sub.add_css_class("time-label");
         content.append(&sub);
         let scroll = gtk::ScrolledWindow::new();
-        scroll.set_min_content_height(240);
+        scroll.set_propagate_natural_height(true);
+        scroll.set_max_content_height(480);
         scroll.set_margin_start(16);
         scroll.set_margin_end(16);
         let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -3883,7 +3884,8 @@ impl MinecraftView {
         bar.set_margin_end(16);
         content.append(&bar);
         let scroll = gtk::ScrolledWindow::new();
-        scroll.set_min_content_height(180);
+        scroll.set_propagate_natural_height(true);
+        scroll.set_max_content_height(360);
         scroll.set_margin_start(16);
         scroll.set_margin_end(16);
         let results = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -4198,7 +4200,8 @@ impl MinecraftView {
         let pack_results = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let pack_scroll = gtk::ScrolledWindow::new();
         pack_scroll.set_vexpand(true);
-        pack_scroll.set_min_content_height(220);
+        pack_scroll.set_propagate_natural_height(true);
+        pack_scroll.set_max_content_height(440);
         pack_scroll.set_child(Some(&pack_results));
         pack_page.append(&pack_scroll);
         import_page.append(&note("Import a Modrinth .mrpack (or compatible zip) from disk."));
@@ -4918,7 +4921,8 @@ impl MinecraftView {
         let list = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_vexpand(true);
-        scroll.set_min_content_height(300);
+        scroll.set_propagate_natural_height(true);
+        scroll.set_max_content_height(600);
         scroll.set_child(Some(&list));
         body.append(&scroll);
         content.append(&body);
@@ -5118,7 +5122,8 @@ impl MinecraftView {
         let list = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_vexpand(true);
-        scroll.set_min_content_height(300);
+        scroll.set_propagate_natural_height(true);
+        scroll.set_max_content_height(600);
         scroll.set_child(Some(&list));
         body.append(&scroll);
         content.append(&body);
@@ -5773,7 +5778,8 @@ impl MinecraftView {
                 if !body_txt.is_empty() {
                     let scroll = gtk::ScrolledWindow::new();
                     scroll.set_vexpand(true);
-                    scroll.set_min_content_height(160);
+                    scroll.set_propagate_natural_height(true);
+                    scroll.set_max_content_height(320);
                     let tv = gtk::TextView::new();
                     tv.set_editable(false);
                     tv.set_cursor_visible(false);
@@ -6031,7 +6037,8 @@ impl MinecraftView {
         let results = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let res_scroll = gtk::ScrolledWindow::new();
         res_scroll.set_vexpand(true);
-        res_scroll.set_min_content_height(320);
+        res_scroll.set_propagate_natural_height(true);
+        res_scroll.set_max_content_height(640);
         res_scroll.set_child(Some(&results));
         body.append(&res_scroll);
         content.append(&body);

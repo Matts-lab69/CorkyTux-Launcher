@@ -185,7 +185,8 @@ impl LogModal {
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_child(Some(&log_view));
         scroll.set_vexpand(true);
-        scroll.set_min_content_height(300);
+        scroll.set_propagate_natural_height(true);
+        scroll.set_max_content_height(600);
         inner.append(&scroll);
 
         // Buttons
