@@ -10,7 +10,7 @@ use gtk::prelude::*;
 
 use super::gamepad_nav::{
     self, Dir, NavAction, NavState, PadButton, PadInfo, PadInput, PadMapping, PadStamp,
-    DEDUPE_WINDOW_MS, STEAM_VENDOR,
+    DEDUPE_WINDOW_MS,
 };
 
 pub enum GamepadMessage {
@@ -101,10 +101,10 @@ fn spawn_thread(tx: async_channel::Sender<GamepadMessage>) {
                     if !usable {
                         continue;
                     }
-                    let valve_connected = pads
+                    let steam_virtual_connected = pads
                         .values()
-                        .any(|(p, ok)| *ok && p.vendor == Some(STEAM_VENDOR));
-                    if !gamepad_nav::accept_pad(info, valve_connected) {
+                        .any(|(p, ok)| *ok && gamepad_nav::is_steam_virtual(*p));
+                    if !gamepad_nav::accept_pad(info, steam_virtual_connected) {
                         continue;
                     }
                     let at_ms = ev
@@ -114,6 +114,7 @@ fn spawn_thread(tx: async_channel::Sender<GamepadMessage>) {
                         .unwrap_or(0);
                     let stamp = PadStamp {
                         vendor: info.vendor,
+                        product: info.product,
                         at_ms,
                     };
                     if !gamepad_nav::dedupe(stamp, &recent, DEDUPE_WINDOW_MS) {
