@@ -28,6 +28,19 @@ pub(crate) mod test_env {
         }
     }
 
+    /// Locks env and sets HOME for a test, restoring it on drop (panic-safe).
+    pub(crate) struct HomeGuard {
+        _guard: EnvGuard,
+    }
+
+    impl HomeGuard {
+        pub(crate) fn set(path: &std::path::Path) -> Self {
+            let guard = lock();
+            std::env::set_var("HOME", path);
+            Self { _guard: guard }
+        }
+    }
+
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             match &self.saved_home {
@@ -38,6 +51,26 @@ pub(crate) mod test_env {
                 Some(v) => std::env::set_var("CORKYTUX_LOGIN_HELPER", v),
                 None => std::env::remove_var("CORKYTUX_LOGIN_HELPER"),
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::HomeGuard;
+
+        #[test]
+        fn home_guard_restores_on_panic() {
+            let prev = std::env::var("HOME").ok();
+            let dir = std::env::temp_dir().join("home-guard-panic");
+            let _ = std::fs::create_dir_all(&dir);
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _home = HomeGuard::set(&dir);
+                assert_eq!(std::env::var("HOME").ok().as_deref(), dir.to_str());
+                panic!("boom");
+            }));
+            assert!(r.is_err());
+            assert_eq!(std::env::var("HOME").ok(), prev);
+            let _ = std::fs::remove_dir_all(&dir);
         }
     }
 }
@@ -129,6 +162,7 @@ impl AppState {
         let plugins = PluginManager::new();
         let integration = IntegrationManager::new();
         recent_model.refresh(30);
+        proton.ledger_recover();
         proton.detect_running_sessions();
 
         Self {
@@ -158,8 +192,13 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
             return match state_clone.proton.stop_game() {
                 Ok((game, secs)) => {
                     if !game.is_empty() {
+                        // secs > 0: the ledger did not handle it (adopted
+                        // session); credit it here. secs == 0: the ledger
+                        // already credited, only reload the model.
                         if secs > 0 {
                             state_clone.game_model.increment_time_spent(&game, secs);
+                        } else {
+                            state_clone.game_model.reload_time_spent(&game);
                         }
                         state_clone.game_model.touch_last_played(&game);
                         state_clone.recent_model.refresh(30);
@@ -175,6 +214,8 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
             if let Some((game, secs)) = state_clone.proton.stop_parked(&name) {
                 if secs > 0 {
                     state_clone.game_model.increment_time_spent(&game, secs);
+                } else {
+                    state_clone.game_model.reload_time_spent(&game);
                 }
                 state_clone.game_model.touch_last_played(&game);
                 state_clone.recent_model.refresh(30);
@@ -298,6 +339,11 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
             let a = win.allocation();
             state_c.config.set_launcher_value("CkWinW", &a.width().to_string());
             state_c.config.set_launcher_value("CkWinH", &a.height().to_string());
+            // Best-effort final checkpoint. The ledger is not closed: the
+            // session stays live for adoption on the next start.
+            if state_c.proton.is_game_running() {
+                state_c.proton.ledger_checkpoint();
+            }
             glib::Propagation::Proceed
         });
     }
@@ -990,10 +1036,18 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
         let state_c = state.clone();
         let det_c = details_ref.clone();
         let ch_c = center_handle.clone();
+        let ledger_tick = std::cell::Cell::new(0u32);
         glib::timeout_add_local(std::time::Duration::from_secs(2), move || {
+            // Checkpoint the session ledger every 60 s (30 ticks of 2 s).
+            ledger_tick.set(ledger_tick.get() + 1);
+            if ledger_tick.get() % 30 == 0 {
+                state_c.proton.ledger_checkpoint();
+            }
             if let Some((game, secs)) = state_c.proton.check_finished() {
                 if secs > 0 {
                     state_c.game_model.increment_time_spent(&game, secs);
+                } else {
+                    state_c.game_model.reload_time_spent(&game);
                 }
                 state_c.game_model.touch_last_played(&game);
                 state_c.recent_model.refresh(30);
@@ -1796,7 +1850,30 @@ fn main() {
         if !name.is_empty() {
             let proton = ProtonManager::new();
             match proton.run_game(name) {
-                Ok(()) => std::process::exit(0),
+                Ok(()) => {
+                    // Headless: keep the process alive so the ledger gets
+                    // checkpoints and the close banks the time.
+                    let mut ticks: u32 = 0;
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        ticks = ticks.saturating_add(1);
+                        let finished = proton.check_finished();
+                        let action = crate::backend::session_ledger::headless_tick(
+                            ticks,
+                            finished.is_some(),
+                        );
+                        if action.checkpoint {
+                            proton.ledger_checkpoint();
+                        }
+                        if let Some((game, secs)) = finished {
+                            if secs > 0 && !game.is_empty() {
+                                let cfg = crate::backend::config::ConfigManager::new();
+                                let _ = cfg.credit_time_spent(&game, secs);
+                            }
+                            std::process::exit(0);
+                        }
+                    }
+                }
                 Err(e) => {
                     eprintln!("[CorkyTux] Failed to launch {}: {}", name, e);
                     std::process::exit(1);

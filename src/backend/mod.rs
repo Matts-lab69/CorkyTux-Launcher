@@ -12,6 +12,7 @@ pub mod shortcuts;
 pub mod import_move;
 pub mod redact;
 pub mod ext_bin;
+pub mod session_ledger;
 
 pub use config::ConfigManager;
 pub use theme::ThemeManager;
