@@ -56,7 +56,7 @@ impl LogModal {
     pub fn new(theme: &ThemeManager, game_name: &str, parent: &impl IsA<gtk::Widget>) -> Self {
         let dialog = adw::Dialog::new();
         dialog.set_title("Game Log");
-        crate::ui::helpers::fit_dialog(&dialog, 640, 480);
+        crate::ui::dialog::fit_dialog(&dialog, 640, 480);
 
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
         content.add_css_class("modal-bg");

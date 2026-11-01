@@ -15,5 +15,7 @@ pub mod apps_settings;
 pub mod mcx_theme;
 pub mod minecraft_view;
 pub mod stores_view;
+#[path = "policies/dialog.rs"]
+pub mod dialog;
 pub mod import_manager;
 pub mod update_dialog;

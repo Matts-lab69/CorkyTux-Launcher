@@ -64,7 +64,7 @@ impl WarningModal {
         dialog.set_title(kind.title());
         // Explicit minimum size: Adwaita warns when an AdwDialog only has
         // content sizes (AdwDialog does not have a minimum size).
-        crate::ui::helpers::fit_dialog(&dialog, 520, 380);
+        crate::ui::dialog::fit_dialog(&dialog, 520, 380);
 
         // Full-bleed: outer carries .modal-bg to the dialog edges (no
         // gray Adwaita frame), inner holds the padded content.

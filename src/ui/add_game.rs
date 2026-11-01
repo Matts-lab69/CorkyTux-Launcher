@@ -30,7 +30,7 @@ pub fn show_add_game_modal(
 ) {
     let dialog = adw::Dialog::new();
     dialog.set_title("Add Game");
-    crate::ui::helpers::fit_dialog(&dialog, 440, 500);
+    crate::ui::dialog::fit_dialog(&dialog, 440, 500);
 
     let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
     outer.add_css_class("modal-bg");
