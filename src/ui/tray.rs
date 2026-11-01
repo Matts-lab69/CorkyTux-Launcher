@@ -47,6 +47,8 @@ pub fn build_autostart_exec(appimage_env: Option<&str>, current_exe: &Path) -> S
         Some(path) if !path.trim().is_empty() => path.trim(),
         _ => current_exe.to_str().unwrap_or(""),
     };
+    // A replaced binary shows up as "path (deleted)": it is not a valid exec.
+    let program = program.strip_suffix(" (deleted)").unwrap_or(program);
     format!("{} --background", shell_quote(program))
 }
 
@@ -256,6 +258,10 @@ mod tests {
         assert_eq!(
             build_autostart_exec(None, exe),
             "\"/tmp/.mount_Corky1/usr/bin/corkytux\" --background"
+        );
+        assert_eq!(
+            build_autostart_exec(None, Path::new("/opt/corkytux (deleted)")),
+            "\"/opt/corkytux\" --background"
         );
         assert_eq!(
             build_autostart_exec(Some("  "), exe),

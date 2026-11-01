@@ -352,9 +352,13 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         tx: tray_tx,
     });
     let tray_ok = tray_handle.is_some();
+    if tray_ok {
+        watcher_alive.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     {
         let state_c = state.clone();
         let win_for_dialog = window.clone();
+        let watcher_live = watcher_alive.clone();
         window.connect_close_request(move |win| {
             let a = win.allocation();
             state_c.config.set_launcher_value("CkWinW", &a.width().to_string());
@@ -370,7 +374,10 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                 .map(|v| v == "1")
                 .unwrap_or(false);
             let remembered = state_c.config.launcher_value("closeToTrayChoice");
-            match ui::tray::should_hide_on_close(tray_ok, setting, remembered.as_deref()) {
+            // The host can vanish while the window is hidden: then the X
+            // must close, never hide into nothing.
+            let tray_now = tray_ok && watcher_live.load(std::sync::atomic::Ordering::Relaxed);
+            match ui::tray::should_hide_on_close(tray_now, setting, remembered.as_deref()) {
                 ui::tray::CloseAction::Hide => {
                     win.set_visible(false);
                     glib::Propagation::Stop
