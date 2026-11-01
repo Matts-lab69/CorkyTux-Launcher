@@ -915,7 +915,7 @@ impl StoresView {
         // the real allocation instead: one integer compare per frame.
         flow.set_max_children_per_line(10);
         flow.add_tick_callback(|flow, _| {
-            let columns = crate::ui::helpers::columns_for_width(flow.width());
+            let columns = crate::ui::layout::columns_for_width(flow.width());
             if flow.max_children_per_line() != columns {
                 flow.set_max_children_per_line(columns);
             }
