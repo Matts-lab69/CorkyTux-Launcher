@@ -1,3 +1,4 @@
+pub mod proc_tree;
 pub mod config;
 pub mod self_update;
 pub mod theme;
