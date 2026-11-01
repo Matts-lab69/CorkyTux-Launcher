@@ -378,6 +378,12 @@ plugins/<name>/                 separate repo (CorkyTux-Plugins): plugin binary 
 
 ---
 
+## Game icons
+
+Windows `.exe` icons are extracted with `icoextract` and `ffmpeg`. When either
+is missing, CorkyTux keeps the generic cover and logs one warning per run:
+"icon extraction needs icoextract or ffmpeg; the generic icon is used".
+
 ## License
 
 AGPL-3.0 — see [LICENSE](LICENSE).
