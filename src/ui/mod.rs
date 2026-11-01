@@ -19,3 +19,4 @@ pub mod import_manager;
 pub mod update_dialog;
 pub mod gamepad;
 pub mod gamepad_nav;
+pub mod tray;

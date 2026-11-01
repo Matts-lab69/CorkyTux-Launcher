@@ -42,11 +42,19 @@ fn kill_scope_for_owned(args: &[String]) -> KillScope {
 ///
 /// I only call this while the child is still alive (not reaped), so its pid
 /// is still reserved and cannot have been reused: the group is still mine.
+/// A negative pid signals a whole process group; 0 and 1 would mean our own
+/// group and every process, so they are never valid targets.
+fn may_kill_group(pid: u32) -> bool {
+    pid > 1
+}
+
 fn kill_group(pid: u32, sig: libc::c_int) {
     #[cfg(unix)]
     unsafe {
-        // A negative pid means "every process in that group".
-        let _ = libc::kill(-(pid as libc::pid_t), sig);
+        // ESRCH is fine (already gone).
+        if may_kill_group(pid) {
+            let _ = libc::kill(-(pid as libc::pid_t), sig);
+        }
     }
     #[cfg(not(unix))]
     {
@@ -860,6 +868,11 @@ mod tests {
         assert!(err.contains("terminated") || err.contains("limit"), "{}", err);
 
         let pid = wait_for_pid(&pidfile);
+        // SIGKILL delivery is asynchronous; give the kernel a bounded moment.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while process_alive(pid) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         assert!(
             !process_alive(pid),
             "the helper of the plugin must die with the plugin group"
@@ -899,6 +912,14 @@ mod tests {
     /// The two halves together: the stdin arrives complete and closed, and
     /// the timeout takes the whole plugin group down.
     #[cfg(unix)]
+    #[test]
+    fn kill_group_never_targets_pid_zero_or_one() {
+        assert!(!super::may_kill_group(0));
+        assert!(!super::may_kill_group(1));
+        assert!(super::may_kill_group(2));
+        assert!(super::may_kill_group(4_000));
+    }
+
     #[test]
     fn the_stdin_arrives_and_the_timeout_kills_the_group() {
         // The lock keeps the isolation test from breaking the PATH while the
@@ -940,8 +961,15 @@ mod tests {
         let got = std::fs::read_to_string(&stdin_file).unwrap_or_default();
         assert_eq!(got, "s3cret\n", "the payload must arrive whole");
 
-        // The helper of the plugin died with the group.
+        // The helper of the plugin died with the group. SIGKILL delivery is
+        // asynchronous (the task may still be running for a few cycles when
+        // kill returns), so wait for the kernel to switch it instead of
+        // checking once.
         let pid = wait_for_pid(&pidfile);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while process_alive(pid) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         assert!(!process_alive(pid), "the helper must die with the group");
         let _ = std::fs::remove_dir_all(&dir);
     }
