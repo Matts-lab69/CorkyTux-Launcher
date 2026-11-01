@@ -280,7 +280,8 @@ mod tests {
         assert!(pgrep_like_match(&exact.join(" "), &format!("^{}( |$)", path)));
         assert!(pgrep_like_match(path, &format!("^{}( |$)", path)));
         assert!(!pgrep_like_match(&format!("{}.bak --x", path), &format!("^{}( |$)", path)));
-        assert!(!pgrep_like_match(&format!("{}.bak --x", path), path));
+        // Unanchored is a substring match, exactly like `pgrep -f`.
+        assert!(pgrep_like_match(&format!("{}.bak --x", path), path));
         assert!(pgrep_like_match("/games/Game.AppImage", path));
         let mounted = "/tmp/.mount_GameX/usr/bin/game";
         assert!(pgrep_like_match(mounted, "^/tmp/.mount_GameX/"));
