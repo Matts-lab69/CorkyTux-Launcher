@@ -789,10 +789,35 @@ impl MinecraftManager {
     }
 
     pub fn curse_save_key(api_key: &str) -> Result<serde_json::Value, String> {
-        plugin_process::run_single_json(
-            &Self::exe(),
-            &["curse-auth-config", "--api-key", api_key],
-        )
+        // Declarative capability check: read the installed plugin version.
+        // Plugins >= 1.2.0 accept --api-key-stdin (no argv exposure); older
+        // ones only accept --api-key. Fall back to argv for the old ones and
+        // log a warning without the key.
+        let exe = Self::exe();
+        let supports_stdin = exe
+            .parent()
+            .and_then(|p| std::fs::read_to_string(p.join("plugin.json")).ok())
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| v.get("version").and_then(|x| x.as_str()).map(String::from))
+            .map(|v| {
+                let parts: Vec<u32> = v.split('.').filter_map(|x| x.parse().ok()).collect();
+                parts >= vec![1, 2, 0]
+            })
+            .unwrap_or(false);
+
+        if supports_stdin {
+            plugin_process::run_single_json_with_stdin(
+                &exe,
+                &["curse-auth-config", "--api-key-stdin"],
+                api_key,
+            )
+        } else {
+            eprintln!("[CorkyTux] minecraft-launcher plugin is older than 1.2.0;                         saving the CurseForge key via argv. Update the plugin.");
+            plugin_process::run_single_json(
+                &exe,
+                &["curse-auth-config", "--api-key", api_key],
+            )
+        }
     }
 
     pub fn curse_test() -> Result<serde_json::Value, String> {
