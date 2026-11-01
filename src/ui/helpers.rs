@@ -770,8 +770,8 @@ pub fn dialog_size(parent_w: i32, parent_h: i32, want_w: i32, want_h: i32) -> (i
 
 /// Applies `dialog_size` to an AdwDialog against the active window.
 pub fn fit_dialog(dialog: &adw::Dialog, want_w: i32, want_h: i32) {
-    let (parent_w, parent_h) = gtk::Application::default()
-        .and_then(|app| app.active_window())
+    let (parent_w, parent_h) = gtk::Window::list_toplevels()
+        .first()
         .map(|w| (w.width(), w.height()))
         .unwrap_or((0, 0));
     let (w, h) = dialog_size(parent_w, parent_h, want_w, want_h);
@@ -944,7 +944,6 @@ mod tests {
 }
     #[test]
     fn dialog_size_fits_the_parent() {
-        use super::dialog_size;
         // Unknown parent: the request passes through.
         assert_eq!(dialog_size(0, 0, 520, 380), (520, 380));
         // Room enough: unchanged.
