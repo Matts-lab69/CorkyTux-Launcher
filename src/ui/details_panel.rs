@@ -658,6 +658,12 @@ impl DetailsPanel {
         }
     }
 
+    /// The Play/Stop button, so the gamepad QuickAction runs exactly the same
+    /// path as a click on it.
+    pub fn play_button(&self) -> gtk::Button {
+        self.play_button.clone()
+    }
+
     pub fn get_action_button(&self, name: &str) -> Option<gtk::Button> {
         self.action_buttons.borrow().iter()
             .find(|(n, _, _)| n == name)

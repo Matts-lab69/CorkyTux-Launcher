@@ -159,6 +159,22 @@ pub fn detect_family(name: &str) -> PadFamily {
     PadFamily::Generic
 }
 
+/// What North does on the focused card: play when something is selected and
+/// not already running, nothing otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuickTarget {
+    Play,
+    None,
+}
+
+pub fn quick_action_target(selected: bool, already_running: bool) -> QuickTarget {
+    if selected && !already_running {
+        QuickTarget::Play
+    } else {
+        QuickTarget::None
+    }
+}
+
 /// Bottom help bar text for the pad family. Only glyphs the family prints
 /// are used; the physical South button always confirms.
 pub fn help_text(family: PadFamily) -> &'static str {
@@ -450,6 +466,14 @@ mod tests {
         assert!(help_text(PadFamily::Nintendo).contains("B Select"));
         assert!(help_text(PadFamily::Generic).contains("South Select"));
         assert!(help_text(PadFamily::Xbox).contains("Y Quick"));
+    }
+
+    #[test]
+    fn quick_action_policy() {
+        assert_eq!(quick_action_target(true, false), QuickTarget::Play);
+        assert_eq!(quick_action_target(true, true), QuickTarget::None);
+        assert_eq!(quick_action_target(false, false), QuickTarget::None);
+        assert_eq!(quick_action_target(false, true), QuickTarget::None);
     }
 
 }

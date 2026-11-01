@@ -1077,7 +1077,20 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     refresh_warn_buttons(&state);
 
     // Gamepad navigation (D3: ignored unless this window is active).
-    ui::gamepad::start(&window, &gamepad_help, &toast_overlay);
+    let quick_details = details.clone();
+    let quick_state = state.clone();
+    let quick = std::rc::Rc::new(move || {
+        let selected_game = quick_state.selected_game.borrow().clone();
+        let selected = !selected_game.is_empty();
+        let running = quick_state.proton.is_game_running()
+            && quick_state.proton.session_game_name() == selected_game;
+        if ui::gamepad_nav::quick_action_target(selected, running)
+            == ui::gamepad_nav::QuickTarget::Play
+        {
+            quick_details.play_button().activate();
+        }
+    });
+    ui::gamepad::start(&window, &gamepad_help, &toast_overlay, quick);
 
     window
 }

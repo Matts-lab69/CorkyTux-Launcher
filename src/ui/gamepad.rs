@@ -158,6 +158,7 @@ pub fn start(
     window: &adw::ApplicationWindow,
     help: &gtk::Label,
     toasts: &adw::ToastOverlay,
+    quick: std::rc::Rc<dyn Fn()>,
 ) {
     let (tx, rx) = async_channel::unbounded::<GamepadMessage>();
     spawn_thread(tx);
@@ -189,6 +190,7 @@ pub fn start(
     let win = window.clone();
     let help_c = help.clone();
     let toasts_c = toasts.clone();
+    let quick_c = quick.clone();
     glib::timeout_add_local(Duration::from_millis(16), move || {
         let setting = crate::backend::config::ConfigManager::new()
             .launcher_value("controllerSupport")
@@ -207,7 +209,11 @@ pub fn start(
                     let mut st = state.borrow_mut();
                     if let Some(action) = gamepad_nav::map_event(input, &mut st, now_ms()) {
                         drop(st);
-                        apply_action(&win, action);
+                        if action == NavAction::QuickAction {
+                            quick_c();
+                        } else {
+                            apply_action(&win, action);
+                        }
                     }
                 }
                 GamepadMessage::Connected(name) => {
