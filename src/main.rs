@@ -425,9 +425,6 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         tx: tray_tx,
     });
     let tray_ok = tray_handle.is_some();
-    if tray_ok {
-        watcher_alive.store(true, std::sync::atomic::Ordering::Relaxed);
-    }
     {
         let state_c = state.clone();
         let win_for_dialog = window.clone();
@@ -474,14 +471,16 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                     let win_c = win_for_dialog.clone();
                     let state_d = state_c.clone();
                     let remember_c = remember_btn.clone();
+                    let watcher_response = watcher_live.clone();
                     dlg.connect_response(None, move |dlg: &adw::MessageDialog, resp: &str| {
                         let remember = remember_c.is_active();
                         match resp {
                             "background" => {
-                                if remember {
+                                let available = tray_ok && watcher_response.load(std::sync::atomic::Ordering::Relaxed);
+                                if remember && available {
                                     state_d.config.set_launcher_value("closeToTrayChoice", "tray");
                                 }
-                                win_c.set_visible(false);
+                                if available { win_c.set_visible(false); } else { win_c.present(); }
                             }
                             "quit" => {
                                 if remember {
@@ -503,10 +502,18 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         let window_c = window.clone();
         let state_t = state.clone();
         let handle_c = tray_handle.clone();
+        let watcher_live = watcher_alive.clone();
         glib::MainContext::default().spawn_local(async move {
             while let Ok(msg) = tray_rx.recv().await {
                 match msg {
                     ui::tray::TrayMsg::Show => window_c.present(),
+                    ui::tray::TrayMsg::Toggle => {
+                        if ui::tray::show_on_toggle(window_c.is_visible(), watcher_live.load(std::sync::atomic::Ordering::Relaxed)) {
+                            window_c.present();
+                        } else {
+                            window_c.set_visible(false);
+                        }
+                    }
                     ui::tray::TrayMsg::Quit => {
                         quit_app(&state_t, &window_c);
                         break;
@@ -1442,7 +1449,7 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     // never leave the app invisible and unreachable. A hidden window is still
     // a window for GtkApplication (it exits when the last one is closed), so
     // no app.hold() is needed while it is hidden.
-    if !background || !tray_ok {
+    if !background || !tray_ok || !watcher_alive.load(std::sync::atomic::Ordering::Relaxed) {
         window.present();
     }
 
