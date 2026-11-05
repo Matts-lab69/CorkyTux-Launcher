@@ -39,7 +39,7 @@ pub fn install(theme: &ThemeManager) {
         .mcx .mc-tile-name {{ color: {text_main}; font-size: 14px; font-weight: 700; }}\
         .mcx .mc-tile-sub {{ color: {text_sec}; font-size: 11px; }}\
         .mcx .time-label {{ color: {text_sec}; }}\
-        .mcx .frame-title {{ color: {text_sec}; font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; }}\
+        .mcx .frame-title {{ color: {text_sec}; font-size: 11px; font-weight: 800; letter-spacing: 0.8px; }}\
         .mcx .add-btn {{ background-color: {accent}; color: {on_accent}; border: none; border-radius: 10px; font-size: 14px; font-weight: 800; }}\
         .mcx .mcx-bar {{ border: none; background: none; padding: 0; }}\
         .mcx .mcx-bar > button, .mcx .mcx-bar > entry, .mcx .mcx-bar > dropdown, .mcx .mcx-bar > menubutton {{ min-height: 40px; padding-top: 0; padding-bottom: 0; border-radius: 10px; font-size: 14px; }}\

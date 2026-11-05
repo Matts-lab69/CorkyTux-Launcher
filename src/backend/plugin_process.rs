@@ -42,11 +42,19 @@ fn kill_scope_for_owned(args: &[String]) -> KillScope {
 ///
 /// I only call this while the child is still alive (not reaped), so its pid
 /// is still reserved and cannot have been reused: the group is still mine.
+/// A negative pid signals a whole process group; 0 and 1 would mean our own
+/// group and every process, so they are never valid targets.
+fn may_kill_group(pid: u32) -> bool {
+    pid > 1
+}
+
 fn kill_group(pid: u32, sig: libc::c_int) {
     #[cfg(unix)]
     unsafe {
-        // A negative pid means "every process in that group".
-        let _ = libc::kill(-(pid as libc::pid_t), sig);
+        // ESRCH is fine (already gone).
+        if may_kill_group(pid) {
+            let _ = libc::kill(-(pid as libc::pid_t), sig);
+        }
     }
     #[cfg(not(unix))]
     {
@@ -663,24 +671,60 @@ fn stderr_tail(text: &str) -> String {
     lines.join(" | ").chars().take(400).collect()
 }
 
+/// Collapses a burst of plugin events: progress events with the same stage
+/// keep only the last one, and every non-progress event keeps its order.
+/// A 10k-event burst becomes a handful of UI updates.
+pub fn coalesce_events(events: Vec<PluginEvent>) -> Vec<PluginEvent> {
+    let mut slots: Vec<(usize, PluginEvent)> = Vec::new();
+    let mut progress: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (idx, ev) in events.into_iter().enumerate() {
+        if let PluginEvent::Progress { stage, .. } = &ev {
+            let key = stage.clone().unwrap_or_default();
+            if let Some(&slot) = progress.get(&key) {
+                slots[slot] = (idx, ev);
+                continue;
+            }
+            progress.insert(key, slots.len());
+        }
+        slots.push((idx, ev));
+    }
+    // Keep each progress key at its last occurrence, the rest in order.
+    slots.sort_by_key(|(idx, _)| *idx);
+    slots.into_iter().map(|(_, ev)| ev).collect()
+}
+
 pub fn pump_to_idle<F>(rx: mpsc::Receiver<PluginEvent>, mut on_event: F)
 where
     F: FnMut(PluginEvent) -> bool + 'static,
 {
     // 50ms poller, NOT idle_add: a bare idle re-dispatches in a tight
     // loop and pins a CPU core at 100% while a worker runs (e.g. a slow
-    // `legendary list` froze the whole launcher at startup).
-    glib::timeout_add_local(std::time::Duration::from_millis(50), move || match rx.try_recv() {
-        Ok(ev) => {
-            let done = !on_event(ev);
-            if done {
-                glib::ControlFlow::Break
-            } else {
-                glib::ControlFlow::Continue
+    // `legendary list` froze the whole launcher at startup). Each tick
+    // drains every pending event and coalesces progress, so a large burst
+    // does not take minutes of ticks.
+    glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
+        let mut batch = Vec::new();
+        let mut disconnected = false;
+        loop {
+            match rx.try_recv() {
+                Ok(ev) => batch.push(ev),
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(_) => {
+                    disconnected = true;
+                    break;
+                }
             }
         }
-        Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-        Err(_) => glib::ControlFlow::Break,
+        for ev in coalesce_events(batch) {
+            if !on_event(ev) {
+                return glib::ControlFlow::Break;
+            }
+        }
+        if disconnected {
+            glib::ControlFlow::Break
+        } else {
+            glib::ControlFlow::Continue
+        }
     });
 }
 
@@ -694,6 +738,79 @@ where
     glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
         on_msg(rx.try_recv())
     });
+}
+
+
+#[cfg(test)]
+mod event_tests {
+    use super::*;
+
+    fn progress(stage: &str, pct: f64) -> PluginEvent {
+        PluginEvent::Progress {
+            stage: Some(stage.to_string()),
+            percent: Some(pct),
+            extra: serde_json::json!({"type": "progress", "percent": pct, "stage": stage}),
+        }
+    }
+
+    #[test]
+    fn a_big_progress_burst_collapses_to_the_last_one() {
+        let mut events = Vec::new();
+        for i in 0..10_500 {
+            events.push(progress("download", i as f64 / 10_500.0));
+        }
+        events.push(PluginEvent::Done(serde_json::json!({"ok": true})));
+        let out = coalesce_events(events);
+        assert_eq!(out.len(), 2);
+        match &out[0] {
+            PluginEvent::Progress { percent, .. } => {
+                assert!((percent.unwrap() - 10_499.0 / 10_500.0).abs() < 1e-9);
+            }
+            other => panic!("expected progress, got {:?}", other),
+        }
+        assert!(matches!(out[1], PluginEvent::Done(_)));
+    }
+
+    #[test]
+    fn non_progress_events_keep_their_order() {
+        let events = vec![
+            progress("download", 0.1),
+            PluginEvent::Error {
+                message: "warn".to_string(),
+                exit_code: None,
+                code: None,
+            },
+            progress("download", 0.9),
+            PluginEvent::Custom(serde_json::json!({"type": "custom", "n": 1})),
+            progress("install", 0.5),
+            PluginEvent::Done(serde_json::json!({"ok": true})),
+        ];
+        let out = coalesce_events(events);
+        let kinds: Vec<&str> = out
+            .iter()
+            .map(|ev| match ev {
+                PluginEvent::Progress { stage, .. } => stage.as_deref().unwrap_or(""),
+                PluginEvent::Done(_) => "done",
+                PluginEvent::Error { .. } => "error",
+                PluginEvent::Custom(_) => "custom",
+            })
+            .collect();
+        // The download key survives once, at its last position; error and
+        // custom keep their relative order.
+        assert_eq!(kinds, vec!["error", "download", "custom", "install", "done"]);
+    }
+
+    #[test]
+    fn distinct_progress_keys_are_kept() {
+        let out = coalesce_events(vec![
+            progress("download", 0.1),
+            progress("install", 0.2),
+            progress("download", 0.9),
+        ]);
+        assert_eq!(out.len(), 2);
+        assert!(matches!(&out[0], PluginEvent::Progress { stage: Some(s), .. } if s == "install"));
+        assert!(matches!(&out[1], PluginEvent::Progress { stage: Some(s), .. } if s == "download"));
+    }
 }
 
 #[cfg(test)]
@@ -780,6 +897,7 @@ mod tests {
 
     #[test]
     fn plugin_environment_is_cleared_before_spawn() {
+        let _env = crate::test_env::lock();
         std::env::set_var("CORKYTUX_TEST_SECRET", "leak");
         let mut cmd = Command::new(program("sh"));
         cmd.arg("-c")
@@ -860,6 +978,11 @@ mod tests {
         assert!(err.contains("terminated") || err.contains("limit"), "{}", err);
 
         let pid = wait_for_pid(&pidfile);
+        // SIGKILL delivery is asynchronous; give the kernel a bounded moment.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while process_alive(pid) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         assert!(
             !process_alive(pid),
             "the helper of the plugin must die with the plugin group"
@@ -900,6 +1023,14 @@ mod tests {
     /// the timeout takes the whole plugin group down.
     #[cfg(unix)]
     #[test]
+    fn kill_group_never_targets_pid_zero_or_one() {
+        assert!(!super::may_kill_group(0));
+        assert!(!super::may_kill_group(1));
+        assert!(super::may_kill_group(2));
+        assert!(super::may_kill_group(4_000));
+    }
+
+    #[test]
     fn the_stdin_arrives_and_the_timeout_kills_the_group() {
         // The lock keeps the isolation test from breaking the PATH while the
         // script of this test calls `cat` and `sleep` by name.
@@ -911,19 +1042,21 @@ mod tests {
         let pidfile = dir.join("child.pid");
         let script = dir.join("fake-plugin");
         {
-            use std::os::unix::fs::PermissionsExt;
+            // Run the script through sh instead of exec'ing it: a fresh file
+            // that another thread forks over while it is still open for write
+            // makes exec fail with ETXTBSY. A unique temp path does not help,
+            // because the inherited descriptor is a timing race, not a name
+            // collision. sh reads it, so exec never touches the file.
             let body = format!(
                 "#!/bin/sh\ncat > {}\nsleep 30 &\necho $! > {}\nsleep 30\n",
                 stdin_file.display(),
                 pidfile.display()
             );
             std::fs::write(&script, body).unwrap();
-            let mut perms = std::fs::metadata(&script).unwrap().permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&script, perms).unwrap();
         }
 
-        let mut cmd = Command::new(&script);
+        let mut cmd = Command::new("sh");
+        cmd.arg(&script);
         cmd.args(["scan", "/tmp"]);
         apply_plugin_env(&mut cmd);
         let scope = kill_scope_for(&["scan", "/tmp"]);
@@ -940,8 +1073,15 @@ mod tests {
         let got = std::fs::read_to_string(&stdin_file).unwrap_or_default();
         assert_eq!(got, "s3cret\n", "the payload must arrive whole");
 
-        // The helper of the plugin died with the group.
+        // The helper of the plugin died with the group. SIGKILL delivery is
+        // asynchronous (the task may still be running for a few cycles when
+        // kill returns), so wait for the kernel to switch it instead of
+        // checking once.
         let pid = wait_for_pid(&pidfile);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while process_alive(pid) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         assert!(!process_alive(pid), "the helper must die with the group");
         let _ = std::fs::remove_dir_all(&dir);
     }

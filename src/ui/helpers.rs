@@ -441,6 +441,46 @@ pub fn present_msg(parent_widget: &impl IsA<gtk::Widget>, heading: &str, body: &
     dlg.present();
 }
 
+/// One-time notice for the optional SteamGridDB fallback. Artwork lookup
+/// simply skips the provider when no key resolves, which leaves missing covers
+/// unexplained; this says how to add one. A single focused response keeps it
+/// usable with a controller: South activates it and Back closes the embedded
+/// dialog through `visible_dialog()`.
+pub fn sgdb_key_notice_pending(config: &crate::backend::ConfigManager) -> bool {
+    let dismissed = config
+        .launcher_value("SgdbKeyNoticeDismissed")
+        .map(|value| value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    !dismissed && crate::backend::IntegrationManager::user_sgdb_key().is_none()
+}
+
+pub fn present_sgdb_key_notice(
+    parent: &adw::ApplicationWindow,
+    config: &crate::backend::ConfigManager,
+) {
+    let dialog = adw::AlertDialog::new(
+        Some("SteamGridDB key not configured"),
+        Some(
+            "Cover art from SteamGridDB is skipped while no API key is set.\n\n\
+             Add ~/.config/CorkyTux/steamgriddb.key or set \
+             CORKYTUX_STEAMGRIDDB_API_KEY. See README, Configuration.",
+        ),
+    );
+    dialog.add_response("close", "OK");
+    dialog.set_default_response(Some("close"));
+    dialog.set_close_response("close");
+    dialog.connect_response(None, |dialog, _| {
+        dialog.close();
+    });
+    // Persist on close, not on response: Back/Escape close the dialog without
+    // emitting a response, and the notice must never come back on its own.
+    let config = config.clone();
+    dialog.connect_closed(move |_| {
+        config.set_launcher_value("SgdbKeyNoticeDismissed", "true");
+    });
+    dialog.present(Some(parent));
+}
+
 pub fn dialog_x_button() -> gtk::Button {
     let btn = gtk::Button::with_label("✕");
     btn.add_css_class("close-btn");
@@ -746,7 +786,15 @@ pub(crate) fn main_css_text(theme: &ThemeManager) -> String {
              .import-mode:disabled .import-opt-title {{ color: {text_muted}; }}\
              .import-warn {{ color: {text_main}; font-size: 12px; font-weight: 600; }}\
              tooltip.background {{ background-color: {tab_bar_bg}; border-radius: 8px; border: 1px solid {border}; padding: 12px; }}\
-             tooltip label {{ color: {text_main}; font-size: 13px; }}"
+             tooltip label {{ color: {text_main}; font-size: 13px; }}\
+             .gamepad-mode :focus {{ box-shadow: 0 0 0 2px {accent}; border-radius: 8px; }}\
+             .gamepad-mode .game-card:focus {{ background-color: {hover}; box-shadow: 0 0 0 2px {accent}; }}\
+             .gamepad-mode flowboxchild:focus {{ box-shadow: 0 0 0 2px {accent}; border-radius: 10px; }}\
+             .gamepad-mode flowboxchild:focus .game-card {{ background-color: {hover}; }}\
+             .gamepad-mode row:focus {{ box-shadow: 0 0 0 2px {accent}; border-radius: 8px; }}\
+             popover modelbutton:focus {{ outline: 2px solid {accent}; outline-offset: -2px; }}\
+             .game-card, .game-row, .action-btn {{ transition: background-color 120ms ease-in-out, box-shadow 120ms ease-in-out; }}\
+             .gamepad-help {{ background-color: {panel}; color: {text_main}; border-top: 1px solid {accent}; padding: 6px 12px; font-size: 12px; font-weight: 600; }}"
         )
 }
 
@@ -814,6 +862,7 @@ pub fn source_link(state: &crate::AppState, label: &str, url: Option<String>, to
     l.add_controller(click);
     l
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -911,3 +960,35 @@ mod tests {
         }
     }
 }
+
+
+/// Format a playtime in seconds as a human-readable string. Never truncates
+/// to whole hours: 13953 s -> "3 h 53 min", 3600 s -> "1 h", 60 s -> "1 min".
+pub fn format_playtime(secs: u64) -> String {
+    if secs < 60 {
+        return "<1 min".to_string();
+    }
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    if h == 0 {
+        format!("{} min", m)
+    } else if m == 0 {
+        format!("{} h", h)
+    } else {
+        format!("{} h {} min", h, m)
+    }
+}
+
+
+    #[test]
+    fn format_playtime_cases() {
+        assert_eq!(format_playtime(0), "<1 min");
+        assert_eq!(format_playtime(59), "<1 min");
+        assert_eq!(format_playtime(60), "1 min");
+        assert_eq!(format_playtime(3599), "59 min");
+        assert_eq!(format_playtime(3600), "1 h");
+        assert_eq!(format_playtime(3659), "1 h");
+        assert_eq!(format_playtime(13953), "3 h 52 min");
+        assert_eq!(format_playtime(36000), "10 h");
+        assert_eq!(format_playtime(360000), "100 h");
+    }

@@ -910,8 +910,22 @@ impl StoresView {
             gog_sort_dd = None;
         }
         let flow = gtk::FlowBox::new();
+        // GtkWidget has no "width" property (only width-request), so a
+        // notify::width handler would never fire. A tick callback compares
+        // the real allocation instead: one integer compare per frame.
         flow.set_max_children_per_line(10);
         flow.set_min_children_per_line(1);
+        flow.add_tick_callback(|flow, _| {
+            let columns = crate::ui::layout::columns_for_width(flow.width());
+            // Only the upper bound follows the window. Forcing the same
+            // value as the minimum makes the flow wider than the page when a
+            // tile is bigger than the 150 px the policy assumes, and the last
+            // column is clipped instead of wrapped.
+            if flow.max_children_per_line() != columns {
+                flow.set_max_children_per_line(columns);
+            }
+            gtk::glib::ControlFlow::Continue
+        });
         flow.set_selection_mode(gtk::SelectionMode::None);
         flow.set_row_spacing(8);
         flow.set_column_spacing(8);
@@ -1388,7 +1402,8 @@ impl StorePageHandle {
                     login_box.set_visible(true);
                     acc_row.set_visible(false);
                     hint.set_visible(true);
-                    hint.set_text(&format!("Log in to {} to list your games.", store));
+                    let store_name = if store == "epic" { "Epic Games" } else { "GOG" };
+                    hint.set_text(&format!("Log in to {} to list your games.", store_name));
                 }
                 glib::ControlFlow::Break
             }

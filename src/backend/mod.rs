@@ -1,3 +1,4 @@
+pub mod proc_tree;
 pub mod config;
 pub mod self_update;
 pub mod theme;
@@ -11,6 +12,9 @@ pub mod external;
 pub mod shortcuts;
 pub mod import_move;
 pub mod redact;
+pub mod ext_bin;
+pub mod session_ledger;
+pub mod download_integrity;
 
 pub use config::ConfigManager;
 pub use theme::ThemeManager;

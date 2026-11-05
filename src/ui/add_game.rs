@@ -30,8 +30,7 @@ pub fn show_add_game_modal(
 ) {
     let dialog = adw::Dialog::new();
     dialog.set_title("Add Game");
-    dialog.set_content_width(440);
-    dialog.set_content_height(500);
+    crate::ui::dialog::fit_dialog(&dialog, 440, 500);
 
     let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
     outer.add_css_class("modal-bg");
@@ -237,10 +236,10 @@ pub fn show_add_game_modal(
     p2_nav.set_halign(gtk::Align::Center);
     let p2_back = gtk::Button::with_label("Back");
     p2_back.add_css_class("settings-btn");
-    p2_back.set_width_request(100);
+    p2_back.set_width_request(88);
     let p2_next = gtk::Button::with_label("Next");
     p2_next.add_css_class("add-btn");
-    p2_next.set_width_request(144);
+    p2_next.set_width_request(120);
     p2_nav.append(&p2_back);
     p2_nav.append(&p2_next);
     page2.append(&p2_nav);

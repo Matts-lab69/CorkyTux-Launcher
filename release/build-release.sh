@@ -6,6 +6,12 @@ cd "$SCRIPT_DIR/.."
 
 VERSION=$(grep -m1 '^version' Cargo.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 ARCH=$(uname -m)
+case "$ARCH" in
+  amd64) ARCH=x86_64 ;;
+  arm64) ARCH=aarch64 ;;
+  x86_64|aarch64) ;;
+  *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
+esac
 TARBALL="corkytux-${VERSION}-linux-${ARCH}.tar.gz"
 
 # Version argument is mandatory and must match Cargo.toml.
@@ -22,6 +28,9 @@ if [[ "$EXPECTED" != "$VERSION" ]]; then
 fi
 
 echo "=== Building CorkyTux v${VERSION} (release) ==="
+# An already exported CORKYTUX_SGDB_BUILTIN_KEY is inherited by cargo and
+# embedded by option_env! in src/backend/integration.rs. Absent means a normal
+# build without the fallback. Never echo, log, persist or export the value here.
 cargo build --release --bins
 
 BIN="target/release/corkytux"

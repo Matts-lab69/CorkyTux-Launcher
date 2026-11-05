@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var("HOME").ok().map(PathBuf::from)
+    std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(PathBuf::from)
 }
 
 /// Data roots where Lutris keeps games, covers and icons.
@@ -60,9 +60,7 @@ fn tool_available(tool: &str) -> bool {
     if let Some(v) = cache.lock().map(|c| c.get(tool).copied()).ok().flatten() {
         return v;
     }
-    let ok = Command::new("which").arg(tool).output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    let ok = super::ext_bin::find_in_path(tool).is_some();
     if let Ok(mut c) = cache.lock() {
         c.insert(tool.to_string(), ok);
     }
@@ -266,19 +264,74 @@ impl IntegrationManager {
         let _ = Command::new("xdg-open").arg(url).spawn();
     }
 
-    /// SteamGridDB credentials are user supplied: the binary does not embed
-    /// a key. Without one the artwork lookup skips SteamGridDB instead of
-    /// sending an empty bearer token and failing silently.
+    /// SteamGridDB credentials are resolved at runtime, with an optional
+    /// fallback compiled into the binary. Without any of them the artwork
+    /// lookup skips SteamGridDB instead of sending an empty bearer token and
+    /// failing silently.
     fn key_or_none(value: &str) -> Option<&str> {
         let value = value.trim();
         if value.is_empty() { None } else { Some(value) }
     }
 
+    /// Fallback key baked in by the packager. Absent unless the build exported
+    /// `CORKYTUX_SGDB_BUILTIN_KEY`; a compiled key is extractable from the
+    /// binary, so it is a shared fallback and never a user's private secret.
+    fn builtin_sgdb_key() -> Option<&'static str> {
+        option_env!("CORKYTUX_SGDB_BUILTIN_KEY").and_then(Self::key_or_none)
+    }
+
+    /// Reads the private key file. A missing or blank file means "not
+    /// configured here" and lets the next source answer, so a stray empty file
+    /// cannot hide a working builtin fallback. Read errors warn by name only.
+    fn key_from_private_file(path: &Path) -> Option<String> {
+        match fs::read_to_string(path) {
+            Ok(value) => Self::key_or_none(&value).map(str::to_owned),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(_) => {
+                eprintln!("SteamGridDB key file cannot be read; checking the next source");
+                None
+            }
+        }
+    }
+
+    /// Order: environment, private file, Launcher.ini, compiled fallback.
+    /// The chosen value is registered with the redactor, so it can never reach
+    /// a log line or an error message even when a request echoes it back.
+    fn sgdb_key_from_sources(
+        environment: Option<&str>,
+        private_file: Option<&Path>,
+        legacy: &str,
+        builtin: Option<&str>,
+    ) -> Option<String> {
+        let selected = Self::key_or_none(environment.unwrap_or_default())
+            .map(str::to_owned)
+            .or_else(|| private_file.and_then(Self::key_from_private_file))
+            .or_else(|| Self::key_or_none(legacy).map(str::to_owned))
+            .or_else(|| builtin.and_then(Self::key_or_none).map(str::to_owned));
+        if let Some(key) = selected.as_deref() {
+            super::redact::register_secret(key);
+        }
+        selected
+    }
+
+    /// Credentials are resolved at runtime; the compiled fallback only answers
+    /// when every runtime source is silent. The private file overrides the
+    /// older Launcher.ini setting without copying its value.
     pub fn user_sgdb_key() -> Option<String> {
-        let value = super::ConfigManager::new()
+        let environment = std::env::var("CORKYTUX_STEAMGRIDDB_API_KEY").ok();
+        let private_file = std::env::var_os("CORKYTUX_STEAMGRIDDB_KEY_FILE")
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| home_dir().map(|home| home.join(".config/CorkyTux/steamgriddb.key")));
+        let legacy = super::ConfigManager::new()
             .launcher_value("IntegrationApiKey")
             .unwrap_or_default();
-        Self::key_or_none(&value).map(|k| k.to_string())
+        Self::sgdb_key_from_sources(
+            environment.as_deref(),
+            private_file.as_deref(),
+            &legacy,
+            Self::builtin_sgdb_key(),
+        )
     }
 
     /// Download helper: min_bytes required, Referer for steamgriddb CDN.
@@ -622,6 +675,17 @@ impl IntegrationManager {
         Self::extract_exe_icon_static(exe_path, game_name)
     }
 
+    /// Pure: icon extraction needs icoextract and ffmpeg. Missing either one
+    /// means the generic icon is used and the user must be told once.
+    pub fn icon_tools_missing(has_icoextract: bool, has_ffmpeg: bool) -> bool {
+        !(has_icoextract && has_ffmpeg)
+    }
+
+    /// true the first time it is called; false afterwards.
+    pub fn warn_once(flag: &std::sync::atomic::AtomicBool) -> bool {
+        !flag.swap(true, std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn extract_exe_icon_static(exe_path: &str, game_name: &str) -> Option<String> {
         if !exe_path.to_lowercase().ends_with(".exe") {
             return None;
@@ -636,10 +700,17 @@ impl IntegrationManager {
         if cached_icon_valid(&dest) {
             return Some(dest.display().to_string());
         }
-        for tool in ["icoextract", "ffmpeg"] {
-            if !tool_available(tool) {
-                return None;
+        let has_icoextract = tool_available("icoextract");
+        let has_ffmpeg = tool_available("ffmpeg");
+        if Self::icon_tools_missing(has_icoextract, has_ffmpeg) {
+            static WARNED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if Self::warn_once(&WARNED) {
+                eprintln!(
+                    "[icons] Icon extraction needs icoextract or ffmpeg; the generic icon is used"
+                );
             }
+            return None;
         }
         let tmp = std::env::temp_dir().join(format!(
             "corkytux-icon-{}-{}",
@@ -1668,6 +1739,41 @@ mod tests {
     }
 
     #[test]
+    fn sgdb_credentials_prefer_environment_then_file_then_legacy_then_builtin() {
+        let path = std::env::temp_dir().join(format!("corky-sgdb-sources-{}", std::process::id()));
+        std::fs::write(&path, " file-value\n").unwrap();
+        assert_eq!(IntegrationManager::sgdb_key_from_sources(Some(" env-value "), Some(&path), "legacy-value", Some("builtin-value")), Some("env-value".into()));
+        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "legacy-value", Some("builtin-value")), Some("file-value".into()));
+        std::fs::write(&path, "  \n").unwrap();
+        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), " legacy-value ", Some("builtin-value")), Some("legacy-value".into()));
+        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some("builtin-value")), Some("builtin-value".into()));
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some(" builtin-value ")), Some("builtin-value".into()));
+        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some("   ")), None);
+        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, None, "", None), None);
+    }
+
+    #[test]
+    fn sgdb_key_from_environment_wins_over_a_compiled_fallback() {
+        assert_eq!(
+            IntegrationManager::sgdb_key_from_sources(Some("environment-value"), None, "legacy-value", Some("builtin-value")),
+            Some("environment-value".into())
+        );
+    }
+
+    #[test]
+    fn a_resolved_sgdb_key_never_survives_redaction() {
+        let path = std::env::temp_dir().join(format!("corky-sgdb-redact-{}", std::process::id()));
+        std::fs::write(&path, "SGDB_REDACTION_TEST_VALUE\n").unwrap();
+        let key = IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", None).unwrap();
+        let message = format!("error sending request for url (https://example.invalid/): bearer {key}");
+        let safe = crate::backend::redact::redact_secrets(&message);
+        assert!(!safe.contains(&key), "redaction failed");
+        assert!(safe.contains(crate::backend::redact::REDACTED), "redaction failed");
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
     fn scan_steam_covers_flatpak_steam() {
         let _g = crate::test_env::lock();
         let base = std::env::temp_dir().join("flatpak-steam-test");
@@ -1688,4 +1794,16 @@ mod tests {
         assert!(res.iter().any(|e| e.name == "FlatpakGame"),
                 "Flatpak Steam game not found: {:?}", res);
     }
+    #[test]
+    fn icon_tools_policy_and_warn_once() {
+        assert!(IntegrationManager::icon_tools_missing(false, false));
+        assert!(IntegrationManager::icon_tools_missing(true, false));
+        assert!(IntegrationManager::icon_tools_missing(false, true));
+        assert!(!IntegrationManager::icon_tools_missing(true, true));
+        let flag = std::sync::atomic::AtomicBool::new(false);
+        assert!(IntegrationManager::warn_once(&flag));
+        assert!(!IntegrationManager::warn_once(&flag));
+        assert!(!IntegrationManager::warn_once(&flag));
+    }
+
 }

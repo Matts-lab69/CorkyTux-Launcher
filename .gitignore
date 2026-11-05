@@ -48,3 +48,10 @@ PENDIENTES.md
 *.bundle
 ai-notes/
 ai-notes-backup/
+
+# Process docs (live only in the private CorkyTux-Notes repo)
+ROADMAP.md
+docs/BRANCH_PROTECTION.md
+docs/UPDATER_NOTES.md
+docs/perf-audit.md
+docs/RELEASE_3.2.0.md
