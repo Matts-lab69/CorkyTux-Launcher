@@ -221,12 +221,19 @@ cd corkytux-*/
 ```
 
 `install.sh` does not use `sudo`.
+If the tarball contains `plugins/`, the installer also installs its bundled
+plugin code into `${XDG_DATA_HOME}/CorkyTux/plugins` when `XDG_DATA_HOME` is
+absolute, otherwise `~/.local/share/CorkyTux/plugins` — the same path the launcher
+uses. Run `./install.sh --no-plugins` to leave plugins untouched. Reinstalling
+updates bundled code without deleting runtime files or other plugins. Optional
+dependencies and game runtimes are not downloaded by the installer.
 
 | File | Destination |
 |------|-------------|
 | `corkytux` | `~/.local/share/corkytux/corkytux` |
 | `webdriver_login` | `~/.local/share/corkytux/webdriver_login` |
 | `assets/` | `~/.local/share/corkytux/assets/` |
+| `plugins/` (when bundled) | `~/.local/share/CorkyTux/plugins/` or absolute `XDG_DATA_HOME` equivalent |
 | `corkytux` (symlink) | `~/.local/bin/corkytux` |
 | `corkytux.png` | `~/.local/share/icons/corkytux.png` |
 | `corkytux.desktop` | `~/.local/share/applications/corkytux.desktop` |
@@ -249,6 +256,10 @@ the version is not, re-run `./install.sh`.
 cd corkytux-*/
 ./uninstall.sh
 ```
+
+Uninstall removes the bundled plugin code recorded by the installer, including
+after a reinstall. It leaves unrelated plugins and plugin-created files alone;
+deleting game data, cache and configuration still requires explicit confirmation.
 
 ---
 
@@ -296,8 +307,11 @@ CorkyTux resolves it in this order and stops at the first non-blank value:
 
 A missing or blank file moves on to the next source. Without any key the
 launcher skips SteamGridDB, keeps the other artwork sources, and shows a
-one-time notice explaining where to add one. Official builds may embed a shared
-fallback; anyone with the binary can extract it, so it is not a private secret,
+one-time notice explaining where to add one. Release 3.2.0 restores a compile-time
+shared fallback, reversing the no-embedded-key policy of PR #22. Packagers supply
+it with `CORKYTUX_SGDB_BUILTIN_KEY`; builds without that variable still work
+without an embedded key. Anyone with the binary can extract an embedded key,
+so it is not a private secret,
 and each user's own key always wins. See
 [docs/BUILD.md](docs/BUILD.md#optional-steamgriddb-fallback) for building with
 or without it.

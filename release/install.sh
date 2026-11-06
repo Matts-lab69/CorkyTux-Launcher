@@ -40,8 +40,60 @@ if [[ "${EUID}" -eq 0 ]]; then
   exit 1
 fi
 
-if [[ "${1:-}" == "--uninstall" || "${1:-}" == "-u" ]]; then
-  exec "${SCRIPT_DIR}/uninstall.sh"
+INSTALL_PLUGINS=true
+for arg in "$@"; do
+  case "$arg" in
+    --no-plugins) INSTALL_PLUGINS=false ;;
+    --uninstall|-u) exec "${SCRIPT_DIR}/uninstall.sh" ;;
+    --help|-h) echo "Usage: ./install.sh [--no-plugins | --uninstall]"; exit 0 ;;
+    *) err "Unknown option: $arg"; exit 1 ;;
+  esac
+done
+
+# Match plugin_process::plugins_base_dir: only an absolute XDG_DATA_HOME
+# overrides HOME. Track installed code files so uninstall can remove them
+# without deleting downloaded runtimes, saves or user configuration.
+PLUGIN_DATA_HOME="${HOME}/.local/share"
+[[ "${XDG_DATA_HOME:-}" == /* ]] && PLUGIN_DATA_HOME="${XDG_DATA_HOME%/}"
+PLUGINS_DIR="${PLUGIN_DATA_HOME}/CorkyTux/plugins"
+BUNDLED_PLUGINS="${SCRIPT_DIR}/plugins"
+PLUGIN_MANIFEST="${INSTALL_DIR}/plugins-installed.txt"
+PLUGIN_ROOT_FILE="${INSTALL_DIR}/plugins-install-root.txt"
+
+valid_plugin_path() {
+  [[ "$1" != /* && "$1" == */* && "$1" != *$'\n'* &&
+     "/$1/" != */../* && "/$1/" != */./* ]]
+}
+
+# Refuse symlinked destinations before mutating the installation. Replacing
+# plugin code must never follow a user link into an unrelated directory.
+check_plugin_target() {
+  local rel="$1" parent="${1%/*}"
+  valid_plugin_path "$rel" || { err "Unsafe bundled plugin path"; exit 1; }
+  [[ ! -L "${PLUGINS_DIR}/$rel" ]] || { err "Plugin destination is a symlink"; exit 1; }
+  while :; do
+    [[ ! -L "${PLUGINS_DIR}/$parent" ]] || { err "Plugin directory is a symlink"; exit 1; }
+    [[ "$parent" == */* ]] || break
+    parent="${parent%/*}"
+  done
+}
+
+if $INSTALL_PLUGINS && [[ -d "$BUNDLED_PLUGINS" ]]; then
+  [[ ! -L "$BUNDLED_PLUGINS" && ! -L "$PLUGINS_DIR" ]] || { err "Plugin root is a symlink"; exit 1; }
+  if [[ -f "$PLUGIN_ROOT_FILE" ]] && [[ "$(cat "$PLUGIN_ROOT_FILE")" != "$PLUGINS_DIR" ]]; then
+    err "Previous plugin installation uses a different data root; uninstall it first"
+    exit 1
+  fi
+  for meta in "$BUNDLED_PLUGINS"/*/plugin.json; do
+    [[ -f "$meta" ]] || continue
+    source_dir="${meta%/plugin.json}"
+    plugin_id="${source_dir##*/}"
+    [[ "$plugin_id" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ && -f "$source_dir/$plugin_id" ]] || { err "Invalid bundled plugin"; exit 1; }
+    [[ -z "$(find "$source_dir" -type l -print -quit)" ]] || { err "Bundled plugin contains a symlink"; exit 1; }
+    while IFS= read -r -d '' file; do
+      check_plugin_target "${file#"$BUNDLED_PLUGINS/"}"
+    done < <(find "$source_dir" -type f -print0)
+  done
 fi
 
 # Install UI assets into INSTALL_DIR/assets. Fail when source is missing.
@@ -245,6 +297,33 @@ find "${INSTALL_DIR}/assets" -type f -exec chmod 0644 {} + 2>/dev/null || true
 find "${INSTALL_DIR}/assets" -type d -exec chmod 0755 {} + 2>/dev/null || true
 log "Assets: ${INSTALL_DIR}/assets ($(ls "$ASSETS" | wc -l) files)"
 
+if $INSTALL_PLUGINS && [[ -d "$BUNDLED_PLUGINS" ]]; then
+  plugin_list="${PLUGIN_MANIFEST}.new"
+  : > "$plugin_list"
+  [[ ! -f "$PLUGIN_MANIFEST" ]] || cat "$PLUGIN_MANIFEST" >> "$plugin_list"
+  for meta in "$BUNDLED_PLUGINS"/*/plugin.json; do
+    [[ -f "$meta" ]] || continue
+    source_dir="${meta%/plugin.json}"
+    while IFS= read -r -d '' file; do
+      rel="${file#"$BUNDLED_PLUGINS/"}"
+      mkdir -p "${PLUGINS_DIR}/${rel%/*}"
+      mode=0644
+      [[ ! -x "$file" ]] || mode=0755
+      install -m "$mode" "$file" "${PLUGINS_DIR}/$rel"
+      printf '%s\n' "$rel" >> "$plugin_list"
+    done < <(find "$source_dir" -type f -print0)
+    chmod 0755 "${PLUGINS_DIR}/${source_dir##*/}/${source_dir##*/}"
+    log "Bundled plugin: ${source_dir##*/}"
+  done
+  LC_ALL=C sort -u "$plugin_list" > "$PLUGIN_MANIFEST"
+  rm -f "$plugin_list"
+  printf '%s\n' "$PLUGINS_DIR" > "$PLUGIN_ROOT_FILE"
+elif ! $INSTALL_PLUGINS; then
+  info "Bundled plugin installation skipped (--no-plugins)"
+else
+  info "No bundled plugins; existing plugins left untouched"
+fi
+
 # The desktop entry names the icon `corkytux`; the file has to live inside a
 # theme directory, or the menu and the window list fall back to the generic
 # missing-image glyph. hicolor is the theme every desktop inherits.
@@ -298,8 +377,8 @@ if ! echo "$PATH" | tr ':' '\n' | grep -qxF "$BIN_DIR"; then
 fi
 
 echo ""
-echo "  Plugin install scripts live in the plugins repo."
-echo "  See https://github.com/Matts-lab69/CorkyTux-Plugins for plugin install scripts."
+echo "  Bundled plugins are installed unless --no-plugins is used."
+echo "  Optional plugin dependencies and game runtimes are not downloaded by this installer."
 echo "  A running instance will use the new binary only after restart."
 echo -e "${BOLD}╔══════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║           Installation complete!             ║${NC}"

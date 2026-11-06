@@ -24,6 +24,29 @@ rm_path() { # $1=path $2=label [$3=dir?]
   elif [[ "${3:-}" != "dir" && ( -e "$1" || -L "$1" ) ]]; then rm -f "$1"; echo "  Removed $2"; removed=$((removed+1));
   else echo "  (not present) $2"; fi
 }
+# Only remove plugin code files this installer recorded, not unrelated plugins
+# or runtime state created later. Run before removing the installation manifest.
+if [[ -f "${INSTALL_DIR}/plugins-installed.txt" && -f "${INSTALL_DIR}/plugins-install-root.txt" ]]; then
+  PLUGINS_DIR="$(cat "${INSTALL_DIR}/plugins-install-root.txt")"
+  [[ "$PLUGINS_DIR" == /*/CorkyTux/plugins && "/$PLUGINS_DIR/" != */../* && ! -L "$PLUGINS_DIR" ]] || { echo "Unsafe installed plugin root; refusing removal"; exit 1; }
+  while IFS= read -r rel; do
+    [[ "$rel" != /* && "$rel" == */* && "/$rel/" != */../* && "/$rel/" != */./* ]] || { echo "Unsafe plugin manifest; refusing removal"; exit 1; }
+    parent="${rel%/*}"
+    check_parent="$parent"
+    while :; do
+      [[ ! -L "${PLUGINS_DIR}/$check_parent" ]] || { echo "Symlinked plugin directory; refusing removal"; exit 1; }
+      [[ "$check_parent" == */* ]] || break
+      check_parent="${check_parent%/*}"
+    done
+    rm_path "${PLUGINS_DIR}/$rel" "bundled plugin file"
+    while [[ "$parent" == */* ]]; do
+      rmdir "${PLUGINS_DIR}/$parent" 2>/dev/null || break
+      parent="${parent%/*}"
+    done
+    rmdir "${PLUGINS_DIR}/$parent" 2>/dev/null || true
+  done < "${INSTALL_DIR}/plugins-installed.txt"
+  rmdir "$PLUGINS_DIR" 2>/dev/null || true
+fi
 [[ -d "$INSTALL_DIR" ]] && { rm -rf "$INSTALL_DIR"; echo "  Removed ${INSTALL_DIR}"; removed=$((removed+1)); }
 
 if [[ -d "$DATA_DIR" ]]; then

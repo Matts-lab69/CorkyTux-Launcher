@@ -113,5 +113,8 @@ jobs:
         # network. It runs on a bare runner.
         run: cargo test --locked
 
+      - name: Bundled plugin installer tests
+        run: python3 -B -m unittest discover -s release/tests
+
       - name: cargo build --release
         run: cargo build --release --locked

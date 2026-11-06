@@ -53,7 +53,11 @@ The launcher compiles without a SteamGridDB key and works without one;
 SteamGridDB artwork is optional. A build may optionally embed a shared fallback
 key with `CORKYTUX_SGDB_BUILTIN_KEY` (see `docs/BUILD.md`). Such a key is
 extractable from the binary, so it is a shared fallback, never a private
-secret. Credentials are resolved at runtime in this order:
+secret. Release 3.2.0 deliberately reverses PR #22's no-embedded-key policy:
+packagers can supply the fallback at compilation through the named environment
+variable. It remains extractable from the distributed binary. The local
+candidate compiled without the variable has no embedded fallback.
+Credentials are resolved at runtime in this order:
 
 1. `CORKYTUX_STEAMGRIDDB_API_KEY` environment variable, if nonblank.
 2. The private file named by `CORKYTUX_STEAMGRIDDB_KEY_FILE`, or by default
