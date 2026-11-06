@@ -3,6 +3,44 @@ use std::sync::mpsc;
 
 use super::plugin_process::{self, PluginEvent, ProcessKiller};
 
+#[cfg(all(test, unix))]
+mod curse_stdin_tests {
+    use super::MinecraftManager;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn curse_key_uses_stdin_regardless_of_manifest_version() {
+        let _guard = crate::test_env::lock();
+        for (index, version) in [Some("1.1.0"), Some("1.2.0"), Some("unknown"), None].iter().enumerate() {
+            let home = std::env::temp_dir().join(format!("corky-curse-stdin-{}-{index}", std::process::id()));
+            let dir = home.join(".local/share/CorkyTux/plugins/minecraft-launcher");
+            std::fs::create_dir_all(&dir).unwrap();
+            if let Some(version) = version {
+                std::fs::write(dir.join("plugin.json"), serde_json::json!({"version": version}).to_string()).unwrap();
+            }
+            let executable = dir.join("minecraft-launcher");
+            std::fs::write(&executable, r#"#!/usr/bin/env python3
+import json
+import sys
+from pathlib import Path
+payload = sys.stdin.read().strip()
+print(json.dumps({"type": "done", "ok": True,
+    "argv": sys.argv[1:],
+    "payload_ok": payload == "CURSEFORGE_STDIN_TEST_INPUT",
+    "cmdline_safe": b"CURSEFORGE_STDIN_TEST_INPUT" not in Path("/proc/self/cmdline").read_bytes()}))
+"#).unwrap();
+            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::env::set_var("HOME", &home);
+            let result = MinecraftManager::curse_save_key("CURSEFORGE_STDIN_TEST_INPUT")
+                .expect("transport test failed");
+            assert!(result["payload_ok"] == true, "stdin transport failed");
+            assert!(result["cmdline_safe"] == true, "argv transport leaked input");
+            assert!(result["argv"] == serde_json::json!(["curse-auth-config", "--api-key-stdin"]), "unexpected argv");
+            std::fs::remove_dir_all(&home).unwrap();
+        }
+    }
+}
+
 fn exe(plugin_id: &str, entry: &str) -> PathBuf {
     plugin_process::plugin_exe(plugin_id, entry)
 }
@@ -789,35 +827,14 @@ impl MinecraftManager {
     }
 
     pub fn curse_save_key(api_key: &str) -> Result<serde_json::Value, String> {
-        // Declarative capability check: read the installed plugin version.
-        // Plugins >= 1.2.0 accept --api-key-stdin (no argv exposure); older
-        // ones only accept --api-key. Fall back to argv for the old ones and
-        // log a warning without the key.
-        let exe = Self::exe();
-        let supports_stdin = exe
-            .parent()
-            .and_then(|p| std::fs::read_to_string(p.join("plugin.json")).ok())
-            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-            .and_then(|v| v.get("version").and_then(|x| x.as_str()).map(String::from))
-            .map(|v| {
-                let parts: Vec<u32> = v.split('.').filter_map(|x| x.parse().ok()).collect();
-                parts >= vec![1, 2, 0]
-            })
-            .unwrap_or(false);
-
-        if supports_stdin {
-            plugin_process::run_single_json_with_stdin(
-                &exe,
-                &["curse-auth-config", "--api-key-stdin"],
-                api_key,
-            )
-        } else {
-            eprintln!("[CorkyTux] minecraft-launcher plugin is older than 1.2.0;                         saving the CurseForge key via argv. Update the plugin.");
-            plugin_process::run_single_json(
-                &exe,
-                &["curse-auth-config", "--api-key", api_key],
-            )
-        }
+        // Never expose credentials in argv, even for old/unknown plugins.
+        // A plugin without stdin support must fail rather than downgrade.
+        super::redact::register_secret(api_key);
+        plugin_process::run_single_json_with_stdin(
+            &Self::exe(),
+            &["curse-auth-config", "--api-key-stdin"],
+            api_key,
+        ).map_err(|error| super::redact::redact_secrets(&error))
     }
 
     pub fn curse_test() -> Result<serde_json::Value, String> {
