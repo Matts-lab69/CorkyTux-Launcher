@@ -8,24 +8,96 @@ mod ui;
 /// is a separate binary (own process), so it needs nothing from here.
 #[cfg(test)]
 pub(crate) mod test_env {
+    use std::cell::RefCell;
     use std::sync::{Mutex, MutexGuard};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    struct State {
+        depth: u32,
+        held: Option<MutexGuard<'static, ()>>,
+    }
+
+    thread_local! {
+        static STATE: RefCell<State> = const {
+            RefCell::new(State { depth: 0, held: None })
+        };
+    }
+
     pub(crate) struct EnvGuard {
-        _lock: MutexGuard<'static, ()>,
         saved_home: Option<String>,
         saved_helper: Option<String>,
     }
 
-    /// Locks process env and snapshots HOME + CORKYTUX_LOGIN_HELPER.
+    /// Reentrant per thread: a test that takes several guards (one per env
+    /// var) used to deadlock on the second `lock()`, because `std::sync::Mutex`
+    /// is not recursive. The mutex is taken once at depth 0 and released when
+    /// the outermost guard drops.
     pub(crate) fn lock() -> EnvGuard {
-        let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        STATE.with(|s| {
+            let mut st = s.borrow_mut();
+            if st.depth == 0 {
+                st.held = Some(ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner()));
+            }
+            st.depth += 1;
+        });
         EnvGuard {
-            _lock: lock,
             saved_home: std::env::var("HOME").ok(),
             saved_helper: std::env::var("CORKYTUX_LOGIN_HELPER").ok(),
         }
+    }
+
+    /// Locks env and sets HOME for a test, restoring it on drop (panic-safe).
+    pub(crate) struct HomeGuard {
+        _guard: EnvGuard,
+    }
+
+    impl HomeGuard {
+        pub(crate) fn set(path: &std::path::Path) -> Self {
+            let guard = lock();
+            std::env::set_var("HOME", path);
+            Self { _guard: guard }
+        }
+    }
+
+    #[test]
+    fn nested_guards_do_not_deadlock() {
+        // Three levels, the shape update_dialog uses (HOME, XDG_DATA_HOME,
+        // XDG_CONFIG_HOME): the second and third `lock()` must not block.
+        let outer = lock();
+        let second = lock();
+        let third = lock();
+        std::env::set_var("CORKYTUX_TEST_SECRET", "still-here");
+        drop(third);
+        drop(second);
+        assert_eq!(
+            std::env::var("CORKYTUX_TEST_SECRET").ok().as_deref(),
+            Some("still-here")
+        );
+        drop(outer);
+    }
+
+    #[test]
+    fn the_lock_excludes_another_thread() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let held = lock();
+        let (tx, rx) = mpsc::channel();
+        let spawned = std::thread::spawn(move || {
+            let _inner = lock();
+            let _ = tx.send(());
+        });
+        assert!(
+            rx.recv_timeout(Duration::from_millis(200)).is_err(),
+            "a second thread entered while the lock was held"
+        );
+        drop(held);
+        assert!(
+            rx.recv_timeout(Duration::from_secs(10)).is_ok(),
+            "the second thread never got the lock after the drop"
+        );
+        spawned.join().unwrap();
     }
 
     impl Drop for EnvGuard {
@@ -38,6 +110,33 @@ pub(crate) mod test_env {
                 Some(v) => std::env::set_var("CORKYTUX_LOGIN_HELPER", v),
                 None => std::env::remove_var("CORKYTUX_LOGIN_HELPER"),
             }
+            STATE.with(|s| {
+                let mut st = s.borrow_mut();
+                st.depth = st.depth.saturating_sub(1);
+                if st.depth == 0 {
+                    st.held = None;
+                }
+            });
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::HomeGuard;
+
+        #[test]
+        fn home_guard_restores_on_panic() {
+            let prev = std::env::var("HOME").ok();
+            let dir = std::env::temp_dir().join("home-guard-panic");
+            let _ = std::fs::create_dir_all(&dir);
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _home = HomeGuard::set(&dir);
+                assert_eq!(std::env::var("HOME").ok().as_deref(), dir.to_str());
+                panic!("boom");
+            }));
+            assert!(r.is_err());
+            assert_eq!(std::env::var("HOME").ok(), prev);
+            let _ = std::fs::remove_dir_all(&dir);
         }
     }
 }
@@ -129,6 +228,7 @@ impl AppState {
         let plugins = PluginManager::new();
         let integration = IntegrationManager::new();
         recent_model.refresh(30);
+        proton.ledger_recover();
         proton.detect_running_sessions();
 
         Self {
@@ -158,8 +258,13 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
             return match state_clone.proton.stop_game() {
                 Ok((game, secs)) => {
                     if !game.is_empty() {
+                        // secs > 0: the ledger did not handle it (adopted
+                        // session); credit it here. secs == 0: the ledger
+                        // already credited, only reload the model.
                         if secs > 0 {
                             state_clone.game_model.increment_time_spent(&game, secs);
+                        } else {
+                            state_clone.game_model.reload_time_spent(&game);
                         }
                         state_clone.game_model.touch_last_played(&game);
                         state_clone.recent_model.refresh(30);
@@ -175,6 +280,8 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
             if let Some((game, secs)) = state_clone.proton.stop_parked(&name) {
                 if secs > 0 {
                     state_clone.game_model.increment_time_spent(&game, secs);
+                } else {
+                    state_clone.game_model.reload_time_spent(&game);
                 }
                 state_clone.game_model.touch_last_played(&game);
                 state_clone.recent_model.refresh(30);
@@ -261,7 +368,15 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
     })
 }
 
-fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
+/// The one way out: bank every live session (D2) and stop the loop.
+fn quit_app(state: &AppState, window: &adw::ApplicationWindow) {
+    state.proton.quit_close_all();
+    if let Some(app) = window.application() {
+        app.quit();
+    }
+}
+
+fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWindow {
     let state = AppState::new();
     helpers::apply_theme_css(&state.theme);
     helpers::init_accent_provider(&state.theme);
@@ -276,8 +391,15 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     // here: GTK4 asserts on the display-singleton icon theme.)
     if let Some(display) = gtk::gdk::Display::default() {
         let it = gtk::IconTheme::for_display(&display);
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-        let mut paths = vec![std::path::PathBuf::from(home).join(".local/share/corkytux/assets/icons")];
+        let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()));
+        let exe = std::env::current_exe().unwrap_or_default();
+        let xdg: Vec<std::path::PathBuf> = std::env::var("XDG_DATA_DIRS")
+            .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string())
+            .split(':')
+            .filter(|s| !s.is_empty())
+            .map(std::path::PathBuf::from)
+            .collect();
+        let mut paths = ui::icons::icon_search_paths(&exe, &home, &xdg);
         paths.extend(it.search_path());
         let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
         it.set_search_path(&refs);
@@ -292,13 +414,106 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
         .default_width(saved_w).default_height(saved_h)
         .build();
     window.set_size_request(640, 400);
+    // Tray: the StatusNotifierItem service lives on its own thread and never
+    // touches GTK; menu events come back through an async channel.
+    let playing = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+    let watcher_alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (tray_tx, tray_rx) = async_channel::unbounded::<ui::tray::TrayMsg>();
+    let tray_handle = ui::tray::spawn(ui::tray::TrayShared {
+        playing: playing.clone(),
+        watcher_alive: watcher_alive.clone(),
+        tx: tray_tx,
+    });
+    let tray_ok = tray_handle.is_some();
+    if tray_ok {
+        watcher_alive.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     {
         let state_c = state.clone();
+        let win_for_dialog = window.clone();
+        let watcher_live = watcher_alive.clone();
         window.connect_close_request(move |win| {
             let a = win.allocation();
             state_c.config.set_launcher_value("CkWinW", &a.width().to_string());
             state_c.config.set_launcher_value("CkWinH", &a.height().to_string());
-            glib::Propagation::Proceed
+            // Best-effort final checkpoint. The ledger is not closed: the
+            // session stays live for adoption on the next start.
+            if state_c.proton.is_game_running() {
+                state_c.proton.ledger_checkpoint();
+            }
+            let setting = state_c
+                .config
+                .launcher_value("closeToTray")
+                .map(|v| v == "1")
+                .unwrap_or(false);
+            let remembered = state_c.config.launcher_value("closeToTrayChoice");
+            // The host can vanish while the window is hidden: then the X
+            // must close, never hide into nothing.
+            let tray_now = tray_ok && watcher_live.load(std::sync::atomic::Ordering::Relaxed);
+            match ui::tray::should_hide_on_close(tray_now, setting, remembered.as_deref()) {
+                ui::tray::CloseAction::Hide => {
+                    win.set_visible(false);
+                    glib::Propagation::Stop
+                }
+                ui::tray::CloseAction::Quit => {
+                    quit_app(&state_c, win);
+                    glib::Propagation::Stop
+                }
+                ui::tray::CloseAction::Ask => {
+                    let dlg = adw::MessageDialog::new(
+                        Some(&win_for_dialog),
+                        Some("Keep running in background?"),
+                        Some("CorkyTux can keep your play time up to date from the system tray."),
+                    );
+                    dlg.add_response("background", "Keep running in background");
+                    dlg.add_response("quit", "Quit");
+                    dlg.set_response_appearance("quit", adw::ResponseAppearance::Destructive);
+                    dlg.set_default_response(Some("background"));
+                    let remember_btn = gtk::CheckButton::with_label("Remember my choice");
+                    dlg.set_extra_child(Some(&remember_btn));
+                    let win_c = win_for_dialog.clone();
+                    let state_d = state_c.clone();
+                    let remember_c = remember_btn.clone();
+                    dlg.connect_response(None, move |dlg: &adw::MessageDialog, resp: &str| {
+                        let remember = remember_c.is_active();
+                        match resp {
+                            "background" => {
+                                if remember {
+                                    state_d.config.set_launcher_value("closeToTrayChoice", "tray");
+                                }
+                                win_c.set_visible(false);
+                            }
+                            "quit" => {
+                                if remember {
+                                    state_d.config.set_launcher_value("closeToTrayChoice", "quit");
+                                }
+                                quit_app(&state_d, &win_c);
+                            }
+                            _ => {}
+                        }
+                        dlg.close();
+                    });
+                    dlg.present();
+                    glib::Propagation::Stop
+                }
+            }
+        });
+    }
+    {
+        let window_c = window.clone();
+        let state_t = state.clone();
+        let handle_c = tray_handle.clone();
+        glib::MainContext::default().spawn_local(async move {
+            while let Ok(msg) = tray_rx.recv().await {
+                match msg {
+                    ui::tray::TrayMsg::Show => window_c.present(),
+                    ui::tray::TrayMsg::Quit => {
+                        quit_app(&state_t, &window_c);
+                        break;
+                    }
+                }
+            }
+            let _ = handle_c;
         });
     }
 
@@ -312,6 +527,12 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     title_box.append(&corky_icon);
     title_box.append(&gtk::Label::new(Some("CorkyTux")));
     header.set_title_widget(Some(&title_box));
+    // Narrow windows: the sidebar collapses and this button brings it back.
+    let sidebar_toggle = gtk::Button::from_icon_name("open-menu-symbolic");
+    sidebar_toggle.add_css_class("flat");
+    sidebar_toggle.set_tooltip_text(Some("Show or hide the sidebar"));
+    sidebar_toggle.set_visible(false);
+    header.pack_start(&sidebar_toggle);
     main_box.append(&header);
 
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -485,6 +706,21 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     sidebar.widget.set_hexpand(false);
     sidebar.widget.set_halign(gtk::Align::Start);
     body.append(&sidebar.widget);
+    {
+        let sidebar_widget = sidebar.widget.clone();
+        let toggle = sidebar_toggle.clone();
+        toggle.connect_clicked(move |_| {
+            sidebar_widget.set_visible(!sidebar_widget.is_visible());
+        });
+        if let Ok(cond) = adw::BreakpointCondition::parse("max-width: 700px") {
+            let bp = adw::Breakpoint::new(cond);
+            let hidden = gtk::glib::Value::from(false);
+            let shown = gtk::glib::Value::from(true);
+            bp.add_setter(&sidebar.widget, "visible", Some(&hidden));
+            bp.add_setter(&sidebar_toggle, "visible", Some(&shown));
+            window.add_breakpoint(bp);
+        }
+    }
 
     // Build center
     let center = ui::center::build_center(&state, &details_ref);
@@ -549,6 +785,37 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     details.revealer.set_valign(gtk::Align::Fill);
     content_overlay.add_overlay(&details.revealer);
     body.append(&content_overlay);
+    {
+        // Narrow windows: the details panel replaces the library; closing it
+        // (its X) brings the library back. Wider: it floats as before.
+        let narrow = std::rc::Rc::new(std::cell::Cell::new(false));
+        let revealer = details.revealer.clone();
+        let stack = content_stack.clone();
+        let narrow_c = narrow.clone();
+        revealer.connect_child_revealed_notify(move |rev| {
+            if narrow_c.get() {
+                stack.set_visible(!rev.reveals_child());
+            }
+        });
+        let narrow_bp = narrow.clone();
+        let rev_bp = details.revealer.clone();
+        let stack_bp = content_stack.clone();
+        if let Ok(cond) = adw::BreakpointCondition::parse("max-width: 900px") {
+            let bp = adw::Breakpoint::new(cond);
+            bp.connect_apply(move |_| narrow_bp.set(true));
+            let narrow_un = narrow.clone();
+            let rev_un = rev_bp.clone();
+            let stack_un = stack_bp.clone();
+            bp.connect_unapply(move |_| {
+                narrow_un.set(false);
+                rev_un.set_halign(gtk::Align::End);
+                stack_un.set_visible(true);
+            });
+            let fill = gtk::glib::Value::from(gtk::Align::Fill);
+            bp.add_setter(&rev_bp, "halign", Some(&fill));
+            window.add_breakpoint(bp);
+        }
+    }
 
     // Add game button in header (left side)
     let add_btn = gtk::Button::with_label("+ Add game");
@@ -982,7 +1249,16 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     // (handled inside DetailsPanel)
 
     main_box.append(&body);
-    window.set_content(Some(&main_box));
+    // Gamepad help bar: hidden until a pad moves the focus.
+    let gamepad_help = gtk::Label::new(None);
+    gamepad_help.add_css_class("gamepad-help");
+    gamepad_help.set_halign(gtk::Align::Fill);
+    gamepad_help.set_xalign(0.0);
+    gamepad_help.set_visible(false);
+    main_box.append(&gamepad_help);
+    let toast_overlay = adw::ToastOverlay::new();
+    toast_overlay.set_child(Some(&main_box));
+    window.set_content(Some(&toast_overlay));
 
     // Session poller (C++ onGameFinished parity): bank play time when the
     // child exits on its own, and keep the Play/Stop label in sync.
@@ -990,10 +1266,81 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
         let state_c = state.clone();
         let det_c = details_ref.clone();
         let ch_c = center_handle.clone();
+        let ledger_tick = std::cell::Cell::new(0u32);
+        let adopt_tick = std::cell::Cell::new(0u32);
+        let last_adopt_scan = std::cell::Cell::new(0u32);
         glib::timeout_add_local(std::time::Duration::from_secs(2), move || {
+            // Checkpoint the session ledger every 60 s (30 ticks of 2 s).
+            ledger_tick.set(ledger_tick.get() + 1);
+            if ledger_tick.get() % 30 == 0 {
+                state_c.proton.ledger_checkpoint();
+            }
+            // Reap parked sessions every 10 s: each call spawns one pgrep (or
+            // one box-rpg probe) per parked entry, so 2 s would be wasteful.
+            if ledger_tick.get() % 5 == 0 {
+                for name in state_c.proton.purge_dead() {
+                    state_c.game_model.reload_time_spent(&name);
+                    state_c.recent_model.refresh(30);
+                }
+            }
+            // Adopt a session started outside the launcher (desktop entry)
+            // within ~10 s. The gate skips the scan while a session holds the
+            // foreground slot, so pgrep does not run on every tick.
+            adopt_tick.set(adopt_tick.get() + 1);
+            if crate::backend::proton::should_scan(
+                adopt_tick.get(),
+                state_c.proton.is_game_running(),
+                last_adopt_scan.get(),
+            ) {
+                last_adopt_scan.set(adopt_tick.get());
+                if state_c.proton.detect_running_sessions() {
+                    let game = state_c.proton.session_game_name();
+                    if !game.is_empty() {
+                        state_c.game_model.touch_last_played(&game);
+                        state_c.recent_model.refresh(30);
+                    }
+                    if let Some(ref ch) = *ch_c.borrow() {
+                        ch.rebuild(&state_c, &det_c);
+                    }
+                    if let Some(ref d) = *det_c.borrow() {
+                        d.set_game(&game, &state_c.config);
+                        d.set_playing(true, state_c.theme.is_dark());
+                    }
+                }
+            }
+            // Keep the tray's "Playing" line current (every 10 s).
+            if ledger_tick.get() % 5 == 0 {
+                let current = if state_c.proton.is_game_running() {
+                    Some(state_c.proton.session_game_name())
+                } else {
+                    None
+                };
+                // The tray reads `playing` while it builds the menu, and
+                // `update()` blocks until the tray thread has done so. The
+                // guard must be gone before the call, or the UI thread holds
+                // the lock the tray is waiting for and both deadlock.
+                let changed = match playing.lock() {
+                    Ok(mut slot) => {
+                        if *slot == current {
+                            false
+                        } else {
+                            *slot = current;
+                            true
+                        }
+                    }
+                    Err(_) => false,
+                };
+                if changed {
+                    if let Some(handle) = &tray_handle {
+                        let _ = handle.update(|_| {});
+                    }
+                }
+            }
             if let Some((game, secs)) = state_c.proton.check_finished() {
                 if secs > 0 {
                     state_c.game_model.increment_time_spent(&game, secs);
+                } else {
+                    state_c.game_model.reload_time_spent(&game);
                 }
                 state_c.game_model.touch_last_played(&game);
                 state_c.recent_model.refresh(30);
@@ -1066,6 +1413,79 @@ fn build_window(app: &adw::Application) -> adw::ApplicationWindow {
     // Warning indicators for both checks (off the main loop; also refreshed
     // after library/path changes and after a Store refresh) + focus hook.
     refresh_warn_buttons(&state);
+
+    // SIGTERM/SIGINT take the same exit path, so a logout or a Ctrl+C also
+    // banks the sessions instead of leaving a live ledger behind.
+    for signum in [libc::SIGTERM, libc::SIGINT] {
+        let state_s = state.clone();
+        let win_s = window.clone();
+        glib::unix_signal_add_local(signum, move || {
+            quit_app(&state_s, &win_s);
+            glib::ControlFlow::Break
+        });
+    }
+
+    // --background: stay in the tray. Without a tray the window must show,
+    // never leave the app invisible and unreachable. A hidden window is still
+    // a window for GtkApplication (it exits when the last one is closed), so
+    // no app.hold() is needed while it is hidden.
+    if !background || !tray_ok {
+        window.present();
+    }
+
+    // Gamepad navigation (D3: ignored unless this window is active).
+    let quick_details = details.clone();
+    let quick_state = state.clone();
+    let quick_view = content_stack.clone();
+    let quick_body = body.clone();
+    let quick_window = window.clone();
+    let quick = std::rc::Rc::new(move || {
+        let selected_game = quick_state.selected_game.borrow().clone();
+        let selected = !selected_game.is_empty();
+        let running = quick_state.proton.is_game_running()
+            && quick_state.proton.session_game_name() == selected_game;
+        let view = quick_view
+            .visible_child_name()
+            .map(|name| name.to_string())
+            .unwrap_or_default();
+        // A dialog takes the focus out of the library body; any other visible
+        // window is a dialog too.
+        let other_window = quick_window
+            .application()
+            .map(|app| {
+                let main: &gtk::Window = quick_window.upcast_ref();
+                app.windows().iter().any(|w| w.is_visible() && w != main)
+            })
+            .unwrap_or(false);
+        // The library body is the content stack (the pages), not the sidebar
+        // and not the floating details panel.
+        let focus_in_library = gtk::prelude::GtkWindowExt::focus(&quick_window)
+            .map(|f| f.is_ancestor(&quick_view))
+            .unwrap_or(false);
+        let dialog_open = other_window;
+        if ui::gamepad_nav::quick_action_target(
+            &view,
+            dialog_open,
+            focus_in_library,
+            selected,
+            running,
+        ) == ui::gamepad_nav::QuickTarget::Play
+        {
+            quick_details.play_button().activate();
+        }
+    });
+    ui::gamepad::start(&window, &gamepad_help, &toast_overlay, quick);
+
+    // Artwork from SteamGridDB is optional and silently skipped without a key.
+    // Explain it once, after the window is mapped, in a dialog the gamepad can
+    // dismiss. The dismissed flag lives in Launcher.ini so it never nags.
+    if !background && ui::helpers::sgdb_key_notice_pending(&state.config) {
+        let notice_window = window.clone();
+        let notice_config = state.config.clone();
+        glib::timeout_add_local_once(std::time::Duration::from_millis(1200), move || {
+            ui::helpers::present_sgdb_key_notice(&notice_window, &notice_config);
+        });
+    }
 
     window
 }
@@ -1765,6 +2185,13 @@ pub(crate) fn maybe_autoinstall_proton(state: &AppState, parent: &adw::Applicati
 }
 
 fn main() {
+    // Become the subreaper for game processes: when an AppImage/Electron app
+    // re-execs or self-updates, the orphan is reparented to us instead of
+    // init, so the session tree stays visible. One documented unsafe block.
+    unsafe {
+        libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0);
+    }
+
     // Cap glibc malloc arenas: 20+ threads (GPU pools, workers) otherwise
     // grow many arenas that retain freed heap. 4 is plenty for a mostly
     // main-thread UI app. Must precede GTK init (glibc reads it lazily
@@ -1774,6 +2201,10 @@ fn main() {
     // The child survives the parent exit, so the game keeps running while
     // the launcher itself never opens a window.
     let args: Vec<String> = std::env::args().collect();
+    // --background is ours, not GApplication's: keep it out of the args the
+    // application parses.
+    let background = args.iter().any(|a| a == "--background");
+    let app_args: Vec<String> = args.iter().filter(|a| *a != "--background").cloned().collect();
     // Health probe for the self-updater: print and exit before GTK, the
     // display, or any config I/O. Output is exactly "corkytux X.Y.Z".
     // Only a lone `--version` counts: `corkytux --version --play X` and
@@ -1796,7 +2227,30 @@ fn main() {
         if !name.is_empty() {
             let proton = ProtonManager::new();
             match proton.run_game(name) {
-                Ok(()) => std::process::exit(0),
+                Ok(()) => {
+                    // Headless: keep the process alive so the ledger gets
+                    // checkpoints and the close banks the time.
+                    let mut ticks: u32 = 0;
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        ticks = ticks.saturating_add(1);
+                        let finished = proton.check_finished();
+                        let action = crate::backend::session_ledger::headless_tick(
+                            ticks,
+                            finished.is_some(),
+                        );
+                        if action.checkpoint {
+                            proton.ledger_checkpoint();
+                        }
+                        if let Some((game, secs)) = finished {
+                            if secs > 0 && !game.is_empty() {
+                                let cfg = crate::backend::config::ConfigManager::new();
+                                let _ = cfg.credit_time_spent(&game, secs);
+                            }
+                            std::process::exit(0);
+                        }
+                    }
+                }
                 Err(e) => {
                     eprintln!("[CorkyTux] Failed to launch {}: {}", name, e);
                     std::process::exit(1);
@@ -1836,9 +2290,14 @@ fn main() {
     }
     let app = adw::Application::builder()
         .application_id("com.corkytux.CorkyTux").build();
-    app.connect_activate(|app| {
-        let window = build_window(app);
-        window.present();
+    app.connect_activate(move |app| {
+        // One window, one AppState, one poller: a second launch (the desktop
+        // entry while the app runs) activates this instance and just presents.
+        if let Some(window) = app.active_window() {
+            window.present();
+            return;
+        }
+        build_window(app, background);
     });
-    app.run();
+    app.run_with_args(&app_args);
 }

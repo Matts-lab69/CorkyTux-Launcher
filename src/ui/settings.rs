@@ -1479,6 +1479,39 @@ pub fn show_settings_modal(
         row
     };
 
+    misc_inner.append(&misc_switch("controllerSupport", "Controller support", true, true, state));
+    misc_inner.append(&misc_switch("closeToTray", "Close to tray", false, true, state));
+    {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        row.set_margin_top(4);
+        let lbl = gtk::Label::new(Some("Start with the system, minimized"));
+        lbl.add_css_class("info-value");
+        lbl.set_halign(gtk::Align::Start);
+        lbl.set_hexpand(true);
+        lbl.set_wrap(true);
+        let sw = gtk::Switch::new();
+        sw.set_halign(gtk::Align::End);
+        sw.set_active(
+            state
+                .config
+                .launcher_value("autostart")
+                .map(|v| v == "1")
+                .unwrap_or(false),
+        );
+        let state_auto = state.clone();
+        sw.connect_active_notify(move |switch| {
+            let on = switch.is_active();
+            state_auto
+                .config
+                .set_launcher_value("autostart", if on { "1" } else { "0" });
+            if let Err(e) = crate::ui::tray::apply_autostart(on) {
+                eprintln!("[autostart] {}", e);
+            }
+        });
+        row.append(&lbl);
+        row.append(&sw);
+        misc_inner.append(&row);
+    }
     misc_inner.append(&misc_switch("gamesUsesWined3d", "Use wined3d instead of DXVK", false, true, state));
     misc_inner.append(&misc_switch("gamesUsesWayland", "Prefer Wayland driver", false, true, state));
     misc_inner.append(&misc_switch("gamesUsesSteamRuntime", "Use Steam Runtime for Proton games", true, true, state));
@@ -1658,7 +1691,8 @@ pub fn show_settings_modal(
                     row.append(&del);
                     inner.append(&row);
                     if !p.description.is_empty() {
-                        let desc = gtk::Label::new(Some(&p.description));
+                        let desc = gtk::Label::new(None);
+                        desc.set_markup(&crate::ui::markdown::markdown_to_pango(&p.description));
                         desc.set_halign(gtk::Align::Start);
                         
                         desc.set_wrap(true);
@@ -1687,7 +1721,8 @@ pub fn show_settings_modal(
                     name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
                     col.append(&name_lbl);
                     if !p.description.is_empty() {
-                        let desc = gtk::Label::new(Some(&p.description));
+                        let desc = gtk::Label::new(None);
+                        desc.set_markup(&crate::ui::markdown::markdown_to_pango(&p.description));
                         desc.set_halign(gtk::Align::Start);
                         
                         desc.set_wrap(true);
@@ -2002,9 +2037,9 @@ pub fn show_settings_modal(
     int_status.add_css_class("time-label");
     integrations_page.append(&int_status);
 
-    // SteamGridDB needs a user key: the binary does not embed one. With no
-    // key the artwork lookup simply skips SteamGridDB and this label says so
-    // instead of failing silently.
+    // SteamGridDB needs a key. The user's own key always overrides any shared
+    // fallback the build may embed, and with no key at all the artwork lookup
+    // simply skips SteamGridDB; this label says so instead of failing silently.
     let art_card = gtk::Frame::new(None);
     art_card.add_css_class("page-card");
     let art_col = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -2018,7 +2053,8 @@ pub fn show_settings_modal(
     art_col.append(&art_title);
     let art_desc = gtk::Label::new(Some(
         "Covers and icons for games that Steam or Lutris do not provide. \
-         The key is stored in your user config, never in the binary.",
+         Your own key is stored in your user config and wins over any \
+         fallback the build may embed.",
     ));
     art_desc.set_halign(gtk::Align::Start);
     art_desc.set_wrap(true);
@@ -2039,7 +2075,9 @@ pub fn show_settings_modal(
     art_status.set_halign(gtk::Align::Start);
     art_status.set_wrap(true);
     art_status.add_css_class("time-label");
-    art_status.set_text(if state.integration.api_key().trim().is_empty() {
+    art_status.set_text(if state.integration.api_key().trim().is_empty()
+        && crate::backend::IntegrationManager::user_sgdb_key().is_none()
+    {
         "Artwork disabled: add your SteamGridDB key to download covers and icons."
     } else {
         "Artwork enabled."
@@ -2055,7 +2093,11 @@ pub fn show_settings_modal(
         state_key.integration.set_api_key(&key);
         if key.is_empty() {
             art_status_c.set_text(
-                "Artwork disabled: add your SteamGridDB key to download covers and icons.",
+                if crate::backend::IntegrationManager::user_sgdb_key().is_none() {
+                    "Artwork disabled: add your SteamGridDB key to download covers and icons."
+                } else {
+                    "Artwork enabled with a key from another source."
+                },
             );
         } else {
             art_status_c.set_text("Artwork enabled.");
@@ -2659,9 +2701,10 @@ fn rebuild_emu_rows(
         // "Working…" appears in place and badge/button never shift. Ver DESIGN.md.
         let st = gtk::Label::new(None);
         st.add_css_class("time-label");
-        st.set_width_chars(12);
+        st.set_ellipsize(gtk::pango::EllipsizeMode::End);
         if let Some(s) = emu_status.borrow().get(&emu.name) {
             st.set_text(s);
+            st.set_tooltip_text(Some(s));
         }
         row.append(&st);
         // System rows keep a static warning beside the explicit action: the
@@ -2685,7 +2728,8 @@ fn rebuild_emu_rows(
                 notice.add_css_class("emu-system-notice");
                 notice.set_halign(gtk::Align::Center);
                 notice.set_valign(gtk::Align::Center);
-                notice.set_width_request(140);
+                notice.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                notice.set_tooltip_text(Some("Found in system"));
                 row.append(&notice);
             }
             let btn = if emu.source.is_empty() {
@@ -2718,7 +2762,7 @@ fn rebuild_emu_rows(
             if remove_c {
                 btn.add_css_class("danger-btn");
             }
-            btn.set_width_request(if is_pin { 120 } else { 80 });
+            btn.set_size_request(80, -1);
             let name_c = emu.name.clone();
             // emu.path is the detected binary (shutil.which result for
             // system emulators): pinning passes it straight to corky-link,

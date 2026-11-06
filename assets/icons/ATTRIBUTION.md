@@ -5,7 +5,8 @@ from the **Adwaita icon theme** (GNOME), used as a bundled fallback so the
 launcher does not depend on the user's system icon theme being installed.
 
 - Source: Adwaita (https://gitlab.gnome.org/GNOME/adwaita-icon-theme)
-- License: CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0/)
+- License: LGPL v3 (https://www.gnu.org/licenses/lgpl-3.0.html), selected from
+  the alternatives in Adwaita's COPYING (https://github.com/GNOME/adwaita-icon-theme/blob/master/COPYING).
 - Exception: `emblem-ok-symbolic.svg` is a copy of Adwaita's
   `object-select-symbolic.svg` renamed, because Adwaita ships no
   `emblem-ok-symbolic` (only full-color PNGs exist elsewhere).

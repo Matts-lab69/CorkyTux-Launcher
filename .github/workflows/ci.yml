@@ -38,8 +38,15 @@ jobs:
             build-essential \
             pkg-config \
             libgtk-4-dev \
+            libudev-dev \
             libadwaita-1-dev \
             libglib2.0-dev
+
+      - name: shellcheck the release scripts
+        # Blocking only on errors (SC1xxx); style notes stay as a log.
+        run: |
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck --severity=error release/install.sh release/build-release.sh
 
       - name: Check GTK versions
         run: |
@@ -105,6 +112,9 @@ jobs:
         # The suite is hermetic: no display, no installed plugin and no
         # network. It runs on a bare runner.
         run: cargo test --locked
+
+      - name: Bundled plugin installer tests
+        run: python3 -B -m unittest discover -s release/tests
 
       - name: cargo build --release
         run: cargo build --release --locked

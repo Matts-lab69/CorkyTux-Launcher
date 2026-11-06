@@ -3,6 +3,44 @@ use std::sync::mpsc;
 
 use super::plugin_process::{self, PluginEvent, ProcessKiller};
 
+#[cfg(all(test, unix))]
+mod curse_stdin_tests {
+    use super::MinecraftManager;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn curse_key_uses_stdin_regardless_of_manifest_version() {
+        let _guard = crate::test_env::lock();
+        for (index, version) in [Some("1.1.0"), Some("1.2.0"), Some("unknown"), None].iter().enumerate() {
+            let home = std::env::temp_dir().join(format!("corky-curse-stdin-{}-{index}", std::process::id()));
+            let dir = home.join(".local/share/CorkyTux/plugins/minecraft-launcher");
+            std::fs::create_dir_all(&dir).unwrap();
+            if let Some(version) = version {
+                std::fs::write(dir.join("plugin.json"), serde_json::json!({"version": version}).to_string()).unwrap();
+            }
+            let executable = dir.join("minecraft-launcher");
+            std::fs::write(&executable, r#"#!/usr/bin/env python3
+import json
+import sys
+from pathlib import Path
+payload = sys.stdin.read().strip()
+print(json.dumps({"type": "done", "ok": True,
+    "argv": sys.argv[1:],
+    "payload_ok": payload == "CURSEFORGE_STDIN_TEST_INPUT",
+    "cmdline_safe": b"CURSEFORGE_STDIN_TEST_INPUT" not in Path("/proc/self/cmdline").read_bytes()}))
+"#).unwrap();
+            std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::env::set_var("HOME", &home);
+            let result = MinecraftManager::curse_save_key("CURSEFORGE_STDIN_TEST_INPUT")
+                .expect("transport test failed");
+            assert!(result["payload_ok"] == true, "stdin transport failed");
+            assert!(result["cmdline_safe"] == true, "argv transport leaked input");
+            assert!(result["argv"] == serde_json::json!(["curse-auth-config", "--api-key-stdin"]), "unexpected argv");
+            std::fs::remove_dir_all(&home).unwrap();
+        }
+    }
+}
+
 fn exe(plugin_id: &str, entry: &str) -> PathBuf {
     plugin_process::plugin_exe(plugin_id, entry)
 }
@@ -789,10 +827,14 @@ impl MinecraftManager {
     }
 
     pub fn curse_save_key(api_key: &str) -> Result<serde_json::Value, String> {
-        plugin_process::run_single_json(
+        // Never expose credentials in argv, even for old/unknown plugins.
+        // A plugin without stdin support must fail rather than downgrade.
+        super::redact::register_secret(api_key);
+        plugin_process::run_single_json_with_stdin(
             &Self::exe(),
-            &["curse-auth-config", "--api-key", api_key],
-        )
+            &["curse-auth-config", "--api-key-stdin"],
+            api_key,
+        ).map_err(|error| super::redact::redact_secrets(&error))
     }
 
     pub fn curse_test() -> Result<serde_json::Value, String> {
@@ -977,13 +1019,8 @@ impl MinecraftManager {
         for c in ["java", "/usr/bin/java", "/opt/java/bin/java"] {
             let p = PathBuf::from(c);
             if c == "java" {
-                if let Ok(which) = std::process::Command::new("which").arg("java").output() {
-                    if which.status.success() {
-                        let s = String::from_utf8_lossy(&which.stdout).trim().to_string();
-                        if !s.is_empty() {
-                            out.push(PathBuf::from(s));
-                        }
-                    }
+                if let Some(java) = super::ext_bin::find_in_path("java") {
+                    out.push(java);
                 }
             } else if p.exists() {
                 out.push(p);

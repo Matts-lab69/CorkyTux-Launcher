@@ -459,13 +459,8 @@ impl DetailsPanel {
     }
 
     pub fn set_time_played(&self, seconds: u64) {
-        if seconds < 3600 {
-            let m = seconds / 60;
-            self.time_label.set_text(&format!("Time played: {} min", m));
-        } else {
-            let h = seconds / 3600;
-            self.time_label.set_text(&format!("Time played: {} h", h));
-        }
+        self.time_label
+            .set_text(&format!("Time played: {}", helpers::format_playtime(seconds)));
     }
 
     pub fn set_favorited(&self, fav: bool) {
@@ -658,6 +653,12 @@ impl DetailsPanel {
         }
     }
 
+    /// The Play/Stop button, so the gamepad QuickAction runs exactly the same
+    /// path as a click on it.
+    pub fn play_button(&self) -> gtk::Button {
+        self.play_button.clone()
+    }
+
     pub fn get_action_button(&self, name: &str) -> Option<gtk::Button> {
         self.action_buttons.borrow().iter()
             .find(|(n, _, _)| n == name)
@@ -694,13 +695,8 @@ impl DetailsPanel {
             .game_value(name, "TimeSpent")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
-        if time_spent < 3600 {
-            let m = time_spent / 60;
-            self.time_label.set_text(&format!("Time played: {} min", m));
-        } else {
-            let h = time_spent / 3600;
-            self.time_label.set_text(&format!("Time played: {} h", h));
-        }
+        self.time_label
+            .set_text(&format!("Time played: {}", helpers::format_playtime(time_spent)));
 
         // Favorite — block signal to avoid triggering callback
         if let Some(ref id) = *self.star_handler_id.borrow() {

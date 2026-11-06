@@ -12,6 +12,7 @@ APP_VERSION="${APP_VERSION:-dev}"
 INSTALL_DIR="${HOME}/.local/share/corkytux"
 BIN_DIR="${HOME}/.local/bin"
 ICON_DIR="${HOME}/.local/share/icons"
+ICON_THEME_DIR="${ICON_DIR}/hicolor"
 DESKTOP_DIR="${HOME}/.local/share/applications"
 DOCS_URL="https://github.com/Matts-lab69/CorkyTux-Launcher/blob/main/docs/BUILD.md"
 
@@ -39,8 +40,60 @@ if [[ "${EUID}" -eq 0 ]]; then
   exit 1
 fi
 
-if [[ "${1:-}" == "--uninstall" || "${1:-}" == "-u" ]]; then
-  exec "${SCRIPT_DIR}/uninstall.sh"
+INSTALL_PLUGINS=true
+for arg in "$@"; do
+  case "$arg" in
+    --no-plugins) INSTALL_PLUGINS=false ;;
+    --uninstall|-u) exec "${SCRIPT_DIR}/uninstall.sh" ;;
+    --help|-h) echo "Usage: ./install.sh [--no-plugins | --uninstall]"; exit 0 ;;
+    *) err "Unknown option: $arg"; exit 1 ;;
+  esac
+done
+
+# Match plugin_process::plugins_base_dir: only an absolute XDG_DATA_HOME
+# overrides HOME. Track installed code files so uninstall can remove them
+# without deleting downloaded runtimes, saves or user configuration.
+PLUGIN_DATA_HOME="${HOME}/.local/share"
+[[ "${XDG_DATA_HOME:-}" == /* ]] && PLUGIN_DATA_HOME="${XDG_DATA_HOME%/}"
+PLUGINS_DIR="${PLUGIN_DATA_HOME}/CorkyTux/plugins"
+BUNDLED_PLUGINS="${SCRIPT_DIR}/plugins"
+PLUGIN_MANIFEST="${INSTALL_DIR}/plugins-installed.txt"
+PLUGIN_ROOT_FILE="${INSTALL_DIR}/plugins-install-root.txt"
+
+valid_plugin_path() {
+  [[ "$1" != /* && "$1" == */* && "$1" != *$'\n'* &&
+     "/$1/" != */../* && "/$1/" != */./* ]]
+}
+
+# Refuse symlinked destinations before mutating the installation. Replacing
+# plugin code must never follow a user link into an unrelated directory.
+check_plugin_target() {
+  local rel="$1" parent="${1%/*}"
+  valid_plugin_path "$rel" || { err "Unsafe bundled plugin path"; exit 1; }
+  [[ ! -L "${PLUGINS_DIR}/$rel" ]] || { err "Plugin destination is a symlink"; exit 1; }
+  while :; do
+    [[ ! -L "${PLUGINS_DIR}/$parent" ]] || { err "Plugin directory is a symlink"; exit 1; }
+    [[ "$parent" == */* ]] || break
+    parent="${parent%/*}"
+  done
+}
+
+if $INSTALL_PLUGINS && [[ -d "$BUNDLED_PLUGINS" ]]; then
+  [[ ! -L "$BUNDLED_PLUGINS" && ! -L "$PLUGINS_DIR" ]] || { err "Plugin root is a symlink"; exit 1; }
+  if [[ -f "$PLUGIN_ROOT_FILE" ]] && [[ "$(cat "$PLUGIN_ROOT_FILE")" != "$PLUGINS_DIR" ]]; then
+    err "Previous plugin installation uses a different data root; uninstall it first"
+    exit 1
+  fi
+  for meta in "$BUNDLED_PLUGINS"/*/plugin.json; do
+    [[ -f "$meta" ]] || continue
+    source_dir="${meta%/plugin.json}"
+    plugin_id="${source_dir##*/}"
+    [[ "$plugin_id" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ && -f "$source_dir/$plugin_id" ]] || { err "Invalid bundled plugin"; exit 1; }
+    [[ -z "$(find "$source_dir" -type l -print -quit)" ]] || { err "Bundled plugin contains a symlink"; exit 1; }
+    while IFS= read -r -d '' file; do
+      check_plugin_target "${file#"$BUNDLED_PLUGINS/"}"
+    done < <(find "$source_dir" -type f -print0)
+  done
 fi
 
 # Install UI assets into INSTALL_DIR/assets. Fail when source is missing.
@@ -59,9 +112,10 @@ fi
 
 # ─── Binary ──────────────────────────────────────────────────────
 # Locate prebuilt ELF binary next to this script.
+elf() { [[ "$(head -c4 "$1" 2>/dev/null)" == $'\x7fELF' ]]; }
 APP=""
 for candidate in "${SCRIPT_DIR}/corkytux" "${SCRIPT_DIR}/release/corkytux"; do
-  if [[ -f "$candidate" ]] && file "$candidate" | grep -q 'ELF'; then
+  if [[ -f "$candidate" ]] && elf "$candidate"; then
     APP="$candidate"
     break
   fi
@@ -78,8 +132,7 @@ log "Binary found: $(basename "$APP") ($(du -h "$APP" | cut -f1))"
 if [[ -d "${HOME}/Games" ]]; then
   info "Games folder: ${HOME}/Games (already there, left untouched)"
 else
-  mkdir -p "${HOME}/Games"
-  log "Games folder: ${HOME}/Games (created)"
+  info "Games folder: ${HOME}/Games does not exist (create it if you import games there)"
 fi
 
 # Keep 3 most recent backups of installed binary.
@@ -111,11 +164,16 @@ info "Detected: ${DISTRO_ID} (${DISTRO_LIKE})"
 
 # ─── Check GTK4/libadwaita runtime ───────────────────────────────
 GTK_LIBS=( libgtk-4.so.1 libadwaita-1.so.0 libpango-1.0.so.0 libcairo.so.2 libgdk_pixbuf-2.0.so.0 libglib-2.0.so.0 )
+LIB_DIRS=( /usr/lib64 /usr/lib /usr/local/lib "/usr/lib/$(uname -m)-linux-gnu" )
+# NixOS keeps glibc and GTK in the store, not in /usr.
+if [[ -d /nix/store ]]; then
+  LIB_DIRS+=( /nix/store/*-glibc-*/lib /nix/store/*-gtk4-*/lib )
+fi
 missing_libs=()
 for lib in "${GTK_LIBS[@]}"; do
   if ! ldconfig -p 2>/dev/null | grep -q "$lib"; then
     found=false
-    for path in /usr/lib64 /usr/lib /usr/lib/x86_64-linux-gnu /usr/local/lib; do
+    for path in "${LIB_DIRS[@]}"; do
       [[ -f "${path}/${lib}" ]] && { found=true; break; }
     done
     $found || missing_libs+=("$lib")
@@ -150,7 +208,7 @@ if command -v python3 &>/dev/null; then
   pymissing=()
   python3 -c "import requests" 2>/dev/null || pymissing+=("requests")
   if [[ ${#pymissing[@]} -gt 0 ]]; then
-    warn "Missing python modules: ${pymissing[*]} (pip install --user ${pymissing[*]} minecraft_launcher_lib psutil)"
+    warn "Missing python modules: ${pymissing[*]} (python3 -m pip install --user ${pymissing[*]} minecraft_launcher_lib psutil, or use your distro package)"
   else
     log "python3 requests OK"
   fi
@@ -169,7 +227,7 @@ svg_ok=false
 if ldconfig -p 2>/dev/null | grep -q "librsvg-2.so"; then
   svg_ok=true
 else
-  for path in /usr/lib64 /usr/lib /usr/lib/x86_64-linux-gnu /usr/local/lib; do
+  for path in "${LIB_DIRS[@]}"; do
     [[ -f "${path}/librsvg-2.so.2" ]] && { svg_ok=true; break; }
   done
 fi
@@ -219,7 +277,7 @@ log "Symlink: ${BIN_DIR}/corkytux"
 # Honor CORKYTUX_LOGIN_HELPER override for tests.
 HELPER=""
 for candidate in "${SCRIPT_DIR}/webdriver_login" "${SCRIPT_DIR}/release/webdriver_login"; do
-  if [[ -f "$candidate" ]] && file "$candidate" | grep -q 'ELF'; then
+  if [[ -f "$candidate" ]] && elf "$candidate"; then
     HELPER="$candidate"
     break
   fi
@@ -239,12 +297,46 @@ find "${INSTALL_DIR}/assets" -type f -exec chmod 0644 {} + 2>/dev/null || true
 find "${INSTALL_DIR}/assets" -type d -exec chmod 0755 {} + 2>/dev/null || true
 log "Assets: ${INSTALL_DIR}/assets ($(ls "$ASSETS" | wc -l) files)"
 
-if [[ -f "${SCRIPT_DIR}/corkytux.png" ]]; then
-  install -m 0644 "${SCRIPT_DIR}/corkytux.png" "${ICON_DIR}/corkytux.png"
-  log "Icon installed"
-elif [[ -f "${SCRIPT_DIR}/release/corkytux.png" ]]; then
-  install -m 0644 "${SCRIPT_DIR}/release/corkytux.png" "${ICON_DIR}/corkytux.png"
-  log "Icon installed"
+if $INSTALL_PLUGINS && [[ -d "$BUNDLED_PLUGINS" ]]; then
+  plugin_list="${PLUGIN_MANIFEST}.new"
+  : > "$plugin_list"
+  [[ ! -f "$PLUGIN_MANIFEST" ]] || cat "$PLUGIN_MANIFEST" >> "$plugin_list"
+  for meta in "$BUNDLED_PLUGINS"/*/plugin.json; do
+    [[ -f "$meta" ]] || continue
+    source_dir="${meta%/plugin.json}"
+    while IFS= read -r -d '' file; do
+      rel="${file#"$BUNDLED_PLUGINS/"}"
+      mkdir -p "${PLUGINS_DIR}/${rel%/*}"
+      mode=0644
+      [[ ! -x "$file" ]] || mode=0755
+      install -m "$mode" "$file" "${PLUGINS_DIR}/$rel"
+      printf '%s\n' "$rel" >> "$plugin_list"
+    done < <(find "$source_dir" -type f -print0)
+    chmod 0755 "${PLUGINS_DIR}/${source_dir##*/}/${source_dir##*/}"
+    log "Bundled plugin: ${source_dir##*/}"
+  done
+  LC_ALL=C sort -u "$plugin_list" > "$PLUGIN_MANIFEST"
+  rm -f "$plugin_list"
+  printf '%s\n' "$PLUGINS_DIR" > "$PLUGIN_ROOT_FILE"
+elif ! $INSTALL_PLUGINS; then
+  info "Bundled plugin installation skipped (--no-plugins)"
+else
+  info "No bundled plugins; existing plugins left untouched"
+fi
+
+# The desktop entry names the icon `corkytux`; the file has to live inside a
+# theme directory, or the menu and the window list fall back to the generic
+# missing-image glyph. hicolor is the theme every desktop inherits.
+ICON_SRC=""
+for candidate in "${SCRIPT_DIR}/corkytux.png" "${SCRIPT_DIR}/release/corkytux.png"; do
+  if [[ -f "$candidate" ]]; then ICON_SRC="$candidate"; break; fi
+done
+if [[ -n "$ICON_SRC" ]]; then
+  install -d "${ICON_THEME_DIR}/128x128/apps"
+  install -m 0644 "$ICON_SRC" "${ICON_THEME_DIR}/128x128/apps/corkytux.png"
+  # Older entries pointed at this absolute path; keep it working.
+  install -m 0644 "$ICON_SRC" "${ICON_DIR}/corkytux.png"
+  log "Icon installed: ${ICON_THEME_DIR}/128x128/apps/corkytux.png"
 else
   warn "corkytux.png not found, skipping icon"
 fi
@@ -263,8 +355,8 @@ cat > "${DESKTOP_DIR}/corkytux.desktop" <<DESKTOP
 Version=1.0
 Name=CorkyTux
 Comment=Linux game launcher
-Exec=${INSTALL_DIR}/corkytux
-Icon=${ICON_DIR}/corkytux.png
+Exec="${INSTALL_DIR}/corkytux"
+Icon=corkytux
 Terminal=false
 Type=Application
 Categories=Game;
@@ -276,18 +368,17 @@ if command -v update-desktop-database &>/dev/null; then
   update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 fi
 if command -v gtk-update-icon-cache &>/dev/null; then
-  gtk-update-icon-cache -f -t "$ICON_DIR" 2>/dev/null || true
+  gtk-update-icon-cache -f -t "$ICON_THEME_DIR" 2>/dev/null || true
 fi
 
 if ! echo "$PATH" | tr ':' '\n' | grep -qxF "$BIN_DIR"; then
   echo ""
-  warn "Add to ~/.bashrc / ~/.zshrc:"
-  echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+  warn "Add ${BIN_DIR} to PATH (bash/zsh: export PATH=\"${BIN_DIR}:\$PATH\"; fish: fish_add_path ${BIN_DIR})"
 fi
 
 echo ""
-echo "  Plugin install scripts live in the plugins repo."
-echo "  See https://github.com/Matts-lab69/CorkyTux-Plugins for plugin install scripts."
+echo "  Bundled plugins are installed unless --no-plugins is used."
+echo "  Optional plugin dependencies and game runtimes are not downloaded by this installer."
 echo "  A running instance will use the new binary only after restart."
 echo -e "${BOLD}╔══════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║           Installation complete!             ║${NC}"

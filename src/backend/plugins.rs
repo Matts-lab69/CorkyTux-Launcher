@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var("HOME").ok().map(PathBuf::from)
+    std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(PathBuf::from)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -499,47 +499,76 @@ impl PluginManager {
         let client = reqwest::blocking::Client::builder()
             .user_agent("CorkyTux/3.0")
             .timeout(std::time::Duration::from_secs(600))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| format!("HTTP client failed: {}", e))?;
-        let mut resp = client.get(url).send().map_err(|e| format!("Download failed: {}", e))?;
+
+        let asset_name = url
+            .rsplit('/')
+            .next()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("plugin.tar.gz")
+            .to_string();
+
+        // Derive the release API URL from the tarball URL so we can read
+        // the digest GitHub publishes for the asset. Tarball URL shape:
+        // https://github.com/{owner}/{repo}/releases/download/{tag}/{asset}
+        let api_digest = Self::github_asset_digest(&client, url, &asset_name)?;
+
+        // Optional cross-check: checksums.txt in the same release. If it
+        // exists it must agree with the API digest; if absent we proceed
+        // with the API digest alone (older releases ship no checksums.txt).
+        let checksums_url = match url.rfind('/') {
+            Some(i) => format!("{}/checksums.txt", &url[..i]),
+            None => return Err("Download URL has no host path".into()),
+        };
+        if let Ok(resp) = super::self_update::get_guarded(
+            &client,
+            &checksums_url,
+            None,
+            super::self_update::ASSET_HOSTS,
+            5,
+        ) {
+            if let Ok(body) = resp.text() {
+                for line in body.lines() {
+                    let mut parts = line.split_whitespace();
+                    let hex = match parts.next() {
+                        Some(h) => h,
+                        None => continue,
+                    };
+                    let name = match parts.next() {
+                        Some(n) => n.trim_start_matches('*'),
+                        None => continue,
+                    };
+                    if name == asset_name {
+                        if hex.to_lowercase() != api_digest {
+                            return Err(format!(
+                                "checksums.txt disagrees with the release digest"
+                            ));
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Download the tarball with host-checked redirects.
+        let mut resp = super::self_update::get_guarded(
+            &client,
+            url,
+            None,
+            super::self_update::ASSET_HOSTS,
+            5,
+        )
+        .map_err(|e| format!("Download failed: {}", e))?;
         if !resp.status().is_success() {
             return Err(format!("Download HTTP error: {}", resp.status()));
         }
         let total = resp.content_length().unwrap_or(0);
-        let mut file = fs::File::create(&dest).map_err(|e| format!("Cannot write: {}", e))?;
-        let mut downloaded: u64 = 0;
-        let start = std::time::Instant::now();
-        loop {
-            let mut buf = vec![0u8; 256 * 1024];
-            let n = std::io::Read::read(&mut resp, &mut buf)
-                .map_err(|e| format!("Read failed: {}", e))?;
-            if n == 0 {
-                break;
-            }
-            std::io::Write::write_all(&mut file, &buf[..n])
-                .map_err(|e| format!("Write failed: {}", e))?;
-            downloaded += n as u64;
-            if total > 0 {
-                let secs = start.elapsed().as_secs_f64().max(0.001);
-                on_progress(downloaded as f64 / total as f64, downloaded as f64 / secs);
-            }
-        }
-        drop(file);
-        let size = fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
-        if size < 100 {
-            fs::remove_file(&dest).ok();
-            return Err(format!("Downloaded file too small ({} bytes)", size));
-        }
-        let status = Command::new("tar")
-            .args(["-xf", dest.to_str().unwrap_or("")])
-            .current_dir(&dir)
-            .status()
-            .map_err(|e| format!("Extract failed: {}", e))?;
-        fs::remove_file(&dest).ok();
-        if !status.success() {
-            return Err("Extraction failed".into());
-        }
-        // I detect the fresh dir holding plugin.json, like the legacy code did
+        let (downloaded, start) = Self::receive_plugin_archive(
+            &mut resp, &dest, dir, total, &api_digest, &mut on_progress,
+        )?;
+
         let after: Vec<String> = fs::read_dir(&dir)
             .map(|entries| {
                 entries
@@ -561,6 +590,204 @@ impl PluginManager {
         Ok(tag.to_string())
     }
 
+    // Shared production boundary for the HTTP response: stream, verify, then
+    // extract. Accepting Read lets tests exercise the exact gate on loopback
+    // responses without weakening the public downloader's host restrictions.
+    fn receive_plugin_archive(
+        reader: &mut impl std::io::Read,
+        dest: &Path,
+        dir: &Path,
+        total: u64,
+        api_digest: &str,
+        mut on_progress: impl FnMut(f64, f64),
+    ) -> Result<(u64, std::time::Instant), String> {
+        let mut file = fs::File::create(dest).map_err(|e| format!("Cannot write: {}", e))?;
+        let mut downloaded: u64 = 0;
+        use sha2::Digest;
+        let mut hasher = sha2::Sha256::default();
+        let start = std::time::Instant::now();
+        loop {
+            let mut buf = vec![0u8; 256 * 1024];
+            let n = std::io::Read::read(reader, &mut buf)
+                .map_err(|e| format!("Read failed: {}", e))?;
+            if n == 0 {
+                break;
+            }
+            std::io::Write::write_all(&mut file, &buf[..n])
+                .map_err(|e| format!("Write failed: {}", e))?;
+            hasher.update(&buf[..n]);
+            downloaded += n as u64;
+            if total > 0 {
+                let secs = start.elapsed().as_secs_f64().max(0.001);
+                on_progress(downloaded as f64 / total as f64, downloaded as f64 / secs);
+            }
+        }
+        drop(file);
+        let size = fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
+        if size < 100 {
+            fs::remove_file(dest).ok();
+            return Err(format!("Downloaded file too small ({} bytes)", size));
+        }
+        let actual = format!("{:x}", hasher.finalize());
+        if actual != api_digest {
+            fs::remove_file(dest).ok();
+            return Err(format!(
+                "Checksum mismatch: expected {} got {}",
+                api_digest, actual
+            ));
+        }
+
+        // Safe extraction.
+        if let Err(e) = Self::extract_plugin_safe(dest, dir) {
+            fs::remove_file(dest).ok();
+            return Err(e);
+        }
+        fs::remove_file(dest).ok();
+        Ok((downloaded, start))
+    }
+
+    /// Derive the release API URL from a tarball URL and read the asset
+    /// digest GitHub publishes. Returns None if the URL is not a GitHub
+    /// release URL or the asset has no digest.
+    fn github_asset_digest(
+        client: &reqwest::blocking::Client,
+        url: &str,
+        asset_name: &str,
+    ) -> Result<String, String> {
+        // url: https://github.com/{owner}/{repo}/releases/download/{tag}/{asset}
+        let parts: Vec<&str> = url.split('/').collect();
+        // find "releases" segment
+        let idx = parts
+            .iter()
+            .position(|s| *s == "releases")
+            .ok_or_else(|| "Download URL is not a GitHub release URL".to_string())?;
+        if idx + 2 >= parts.len() || parts.get(idx + 1) != Some(&"download") {
+            return Err("Download URL is not a GitHub release URL".into());
+        }
+        let owner = parts.get(idx - 2).ok_or("bad URL")?;
+        let repo = parts.get(idx - 1).ok_or("bad URL")?;
+        let tag = parts.get(idx + 2).ok_or("bad URL")?;
+        let api_url = format!(
+            "https://api.github.com/repos/{}/{}/releases/tags/{}",
+            owner, repo, tag
+        );
+        let resp = super::self_update::get_guarded(
+            client,
+            &api_url,
+            None,
+            super::self_update::ASSET_HOSTS,
+            5,
+        )
+        .map_err(|e| format!("Cannot fetch release metadata: {}", e))?;
+        let body: serde_json::Value = resp
+            .json()
+            .map_err(|e| format!("Bad release metadata: {}", e))?;
+        let assets = body
+            .get("assets")
+            .and_then(|a| a.as_array())
+            .ok_or("No assets in release metadata")?;
+        for a in assets {
+            if a.get("name").and_then(|n| n.as_str()) == Some(asset_name) {
+                let digest = a
+                    .get("digest")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                let digest = digest.strip_prefix("sha256:").unwrap_or(&digest).to_lowercase();
+                if digest.is_empty() {
+                    return Err("Release asset has no published digest".into());
+                }
+                return Ok(digest);
+            }
+        }
+        Err(format!("Asset {} not found in release", asset_name))
+    }
+
+    fn extract_plugin_safe(archive: &Path, dest: &Path) -> Result<(), String> {
+        use std::io::{Read, Write};
+        use std::path::Component;
+        let file = fs::File::open(archive).map_err(|e| format!("cannot read tarball: {}", e))?;
+        let gz = flate2::read::GzDecoder::new(file);
+        let mut ar = tar::Archive::new(gz);
+        let entries = ar.entries().map_err(|e| format!("bad tarball: {}", e))?;
+        const MAX_ENTRIES: usize = 10_000;
+        const MAX_FILE_BYTES: u64 = 50 * 1024 * 1024;
+        const MAX_TOTAL_BYTES: u64 = 200 * 1024 * 1024;
+        let mut total: u64 = 0;
+        let mut count: usize = 0;
+        let mut buf = [0u8; 64 * 1024];
+        for entry in entries {
+            count += 1;
+            if count > MAX_ENTRIES {
+                return Err("tarball has too many entries: refused".into());
+            }
+            let mut entry = entry.map_err(|e| format!("bad tarball entry: {}", e))?;
+            let kind = entry.header().entry_type();
+            if kind.is_symlink() || kind.is_hard_link() {
+                return Err("tarball contains a link: refused".into());
+            }
+            if !kind.is_file() && !kind.is_dir() {
+                return Err("tarball contains a special file: refused".into());
+            }
+            let rel = entry
+                .path()
+                .map_err(|e| format!("bad tarball path: {}", e))?
+                .into_owned();
+            let mut clean = PathBuf::new();
+            for c in rel.components() {
+                match c {
+                    Component::Normal(name) => clean.push(name),
+                    _ => return Err("tarball path escapes its directory: refused".into()),
+                }
+            }
+            if clean.as_os_str().is_empty() {
+                continue;
+            }
+            let target = dest.join(&clean);
+            if kind.is_dir() {
+                fs::create_dir_all(&target)
+                    .map_err(|e| format!("cannot create dir {}: {}", clean.display(), e))?;
+                continue;
+            }
+            let declared = entry
+                .header()
+                .size()
+                .map_err(|e| format!("bad tarball entry: {}", e))?;
+            if declared > MAX_FILE_BYTES {
+                return Err(format!("tarball file too large: {}", clean.display()));
+            }
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("cannot create dir {}: {}", clean.display(), e))?;
+            }
+            let mut dst = fs::File::create(&target)
+                .map_err(|e| format!("cannot write {}: {}", clean.display(), e))?;
+            let mut written: u64 = 0;
+            loop {
+                let n = entry
+                    .read(&mut buf)
+                    .map_err(|e| format!("cannot read {}: {}", clean.display(), e))?;
+                if n == 0 {
+                    break;
+                }
+                written += n as u64;
+                if written > MAX_FILE_BYTES {
+                    drop(dst);
+                    let _ = fs::remove_file(&target);
+                    return Err(format!("tarball file too large: {}", clean.display()));
+                }
+                dst.write_all(&buf[..n])
+                    .map_err(|e| format!("cannot write {}: {}", clean.display(), e))?;
+            }
+            total += written;
+            if total > MAX_TOTAL_BYTES {
+                let _ = fs::remove_file(&target);
+                return Err("tarball too large when unpacked: refused".into());
+            }
+        }
+        Ok(())
+    }
     // --- Dependency Installer + DLL Overrides Automator (I port the legacy applyScanPlugins behavior) ---
     //
     // Both are JSON-protocol scripts. All helpers below are thread-safe
@@ -1206,15 +1433,7 @@ impl PluginManager {
 }
 
 fn which(name: &str) -> Option<PathBuf> {
-    if let Ok(output) = Command::new("which").arg(name).output() {
-        if output.status.success() {
-            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path_str.is_empty() {
-                return Some(PathBuf::from(path_str));
-            }
-        }
-    }
-    None
+    super::ext_bin::find_in_path(name)
 }
 
 
@@ -1240,6 +1459,90 @@ fn truncate_description(body: &str, max: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    fn integrity_archive(path: &str) -> Vec<u8> {
+        let bytes: Vec<u8> = (0..2048).map(|i| (i % 251) as u8).collect();
+        let gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        let mut builder = tar::Builder::new(gzip);
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_entry_type(tar::EntryType::Regular);
+        // Raw headers also exercise names that Builder::append_path refuses.
+        header.as_mut_bytes()[..100].fill(0);
+        header.as_mut_bytes()[..path.len()].copy_from_slice(path.as_bytes());
+        header.set_cksum();
+        builder.append(&header, bytes.as_slice()).unwrap();
+        let archive = builder.into_inner().unwrap().finish().unwrap();
+        assert!(archive.len() >= 100);
+        archive
+    }
+
+    fn integrity_directory(label: &str) -> std::path::PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!("corky-plugin-{label}-{}-{nonce}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn plugin_http_download_rejects_bad_checksum_before_extraction() {
+        use std::io::{Read, Write};
+        use sha2::Digest;
+        for valid_digest in [false, true] {
+            let body = integrity_archive("fixture/payload");
+            let digest = if valid_digest {
+                format!("{:x}", sha2::Sha256::digest(&body))
+            } else {
+                "0".repeat(64)
+            };
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let length = body.len();
+            let server = std::thread::spawn(move || {
+                let (mut connection, _) = listener.accept().unwrap();
+                let mut request = [0u8; 4096];
+                let received = connection.read(&mut request).unwrap();
+                assert!(received > 0, "empty HTTP request");
+                write!(connection, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
+                connection.write_all(&body).unwrap();
+            });
+            let client = reqwest::blocking::Client::builder()
+                .no_proxy().timeout(std::time::Duration::from_secs(10)).build().unwrap();
+            let mut response = client.get(format!("http://{address}/fixture.tar.gz")).send().unwrap();
+            let dir = integrity_directory("checksum");
+            let dest = dir.join("download.tar.gz");
+            let result = super::PluginManager::receive_plugin_archive(
+                &mut response, &dest, &dir, length as u64, &digest, |_, _| {},
+            );
+            server.join().unwrap();
+            if valid_digest {
+                assert!(result.is_ok(), "valid download rejected");
+                assert!(dir.join("fixture/payload").is_file());
+            } else {
+                assert!(result.err().unwrap().contains("Checksum mismatch"));
+                assert!(!dir.join("fixture").exists(), "unverified archive extracted");
+            }
+            assert!(!dest.exists(), "download archive not cleaned up");
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn plugin_extraction_rejects_traversal_and_absolute_paths() {
+        for path in ["../escaped", "/absolute", "fixture/../../escaped"] {
+            let dir = integrity_directory("paths");
+            let dest = dir.join("download.tar.gz");
+            std::fs::write(&dest, integrity_archive(path)).unwrap();
+            let extracted = dir.join("extract");
+            std::fs::create_dir(&extracted).unwrap();
+            assert!(super::PluginManager::extract_plugin_safe(&dest, &extracted).is_err(), "unsafe path accepted");
+            assert_eq!(std::fs::read_dir(&extracted).unwrap().count(), 0);
+            assert!(!dir.join("escaped").exists());
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
     use super::PluginManager;
     use super::truncate_description;
 

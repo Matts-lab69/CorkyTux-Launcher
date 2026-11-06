@@ -229,17 +229,6 @@ fn java_range_text(ver: &str) -> String {
     }
 }
 
-fn fmt_playtime_long(secs: u64) -> String {
-    let h = secs / 3600;
-    let m = (secs % 3600) / 60;
-    if h == 0 {
-        return format!("{} min", m);
-    }
-    if m == 0 {
-        return format!("{} h", h);
-    }
-    format!("{} h {} min", h, m)
-}
 
 fn card(title: &str) -> (gtk::Box, gtk::Box) {
     let frame = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -1388,6 +1377,24 @@ impl Clone for MinecraftView {
     }
 }
 
+/// Where a modpack error is shown: the progress dialog when it is open, a
+/// toast when only the window is visible, nowhere otherwise. One surface.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ErrorSurface {
+    Dialog,
+    Toast,
+}
+
+pub fn error_surface(dialog_open: bool, window_visible: bool) -> Option<ErrorSurface> {
+    if dialog_open {
+        Some(ErrorSurface::Dialog)
+    } else if window_visible {
+        Some(ErrorSurface::Toast)
+    } else {
+        None
+    }
+}
+
 impl MinecraftView {
     fn cfg(&self, key: &str) -> String {
         self.state.config.launcher_value(key).unwrap_or_default()
@@ -1537,7 +1544,7 @@ impl MinecraftView {
                 pop.popup();
             });
         }
-        if let Ok(c1100) = adw::BreakpointCondition::parse("max-width: 1100px") {
+        if let Ok(c1100) = adw::BreakpointCondition::parse("max-width: 760px") {
             let bp = adw::Breakpoint::new(c1100);
             let t = gtk::glib::Value::from(true);
             let f = gtk::glib::Value::from(false);
@@ -1545,7 +1552,7 @@ impl MinecraftView {
             bp.add_setter(&sort_cycle, "visible", Some(&t));
             parent.add_breakpoint(bp);
         }
-        if let Ok(c800) = adw::BreakpointCondition::parse("max-width: 800px") {
+        if let Ok(c800) = adw::BreakpointCondition::parse("max-width: 640px") {
             let bp2 = adw::Breakpoint::new(c800);
             let t = gtk::glib::Value::from(true);
             let f = gtk::glib::Value::from(false);
@@ -1559,8 +1566,20 @@ impl MinecraftView {
         lib_page.append(&lib_status);
 
         let flow = gtk::FlowBox::new();
-        flow.set_max_children_per_line(20);
-        flow.set_min_children_per_line(1);
+        flow.set_max_children_per_line(6);
+        flow.set_min_children_per_line(2);
+        // A widget has no "width" property, so notify::width never fires; a
+        // tick callback reads the real allocation instead.
+        flow.add_tick_callback(|flow, _| {
+            let cols = crate::ui::layout::grid_columns(flow.width());
+            // Only the upper bound follows the window. Setting the minimum
+            // to the same number pins the flow at a width the tiles may not
+            // fit in (198 px each), and the extra columns are clipped.
+            if flow.max_children_per_line() != cols {
+                flow.set_max_children_per_line(cols);
+            }
+            gtk::glib::ControlFlow::Continue
+        });
         flow.set_selection_mode(gtk::SelectionMode::None);
         flow.set_row_spacing(12);
         flow.set_column_spacing(12);
@@ -1846,7 +1865,7 @@ impl MinecraftView {
         logs_view.set_cursor_visible(false);
         logs_view.set_monospace(true);
         logs_view.set_vexpand(true);
-        logs_view.set_size_request(-1, 200);
+        logs_view.set_size_request(-1, 120);
         lg_inner.append(&logs_view);
         let lg_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         lg_row.set_halign(gtk::Align::End);
@@ -2483,6 +2502,7 @@ impl MinecraftView {
         for inst in &list {
             let tile = gtk::FlowBoxChild::new();
             tile.set_width_request((self.cfg("McTileSize").parse().unwrap_or(64) + if compact { 110 } else { 134 }).max(158));
+            tile.set_hexpand(true);
             let inner = gtk::Box::new(gtk::Orientation::Vertical, if compact { 4 } else { 6 });
             let pad = if compact { 8 } else { 12 };
             inner.set_margin_top(pad);
@@ -2878,7 +2898,7 @@ impl MinecraftView {
         list.set_margin_bottom(8);
         list.set_margin_start(8);
         list.set_margin_end(8);
-        list.set_size_request(260, -1);
+        list.set_hexpand(true);
         let (cur_aid, cur_name) = self.selected_account();
         let accounts = self.data.borrow().accounts.clone();
         if accounts.is_empty() {
@@ -3020,7 +3040,7 @@ impl MinecraftView {
         self.ov_loader.set_text(&loader_txt);
         let count = self.count_addons();
         self.ov_addons.set_text(&format!("{}", count));
-        self.ov_played.set_text(&fmt_playtime_long(inst.secs));
+        self.ov_played.set_text(&crate::ui::helpers::format_playtime(inst.secs));
         self.set_jvm.set_text(&self.inst_cfg(&inst.id, "Jvm"));
         self.set_res_w.set_text(&self.inst_cfg(&inst.id, "ResW"));
         self.set_res_h.set_text(&self.inst_cfg(&inst.id, "ResH"));
@@ -3762,7 +3782,8 @@ impl MinecraftView {
         sub.add_css_class("time-label");
         content.append(&sub);
         let scroll = gtk::ScrolledWindow::new();
-        scroll.set_min_content_height(240);
+        scroll.set_propagate_natural_height(true);
+        scroll.set_max_content_height(480);
         scroll.set_margin_start(16);
         scroll.set_margin_end(16);
         let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -3876,7 +3897,8 @@ impl MinecraftView {
         bar.set_margin_end(16);
         content.append(&bar);
         let scroll = gtk::ScrolledWindow::new();
-        scroll.set_min_content_height(180);
+        scroll.set_propagate_natural_height(true);
+        scroll.set_max_content_height(360);
         scroll.set_margin_start(16);
         scroll.set_margin_end(16);
         let results = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -4019,7 +4041,7 @@ impl MinecraftView {
         let loader_txt = if inst.loader == "vanilla" { "Vanilla".to_string() } else { format!("{} {}", inst.loader, inst.loader_ver) };
         self.ov_loader.set_text(&loader_txt);
         self.ov_addons.set_text(&format!("{}", self.count_addons()));
-        self.ov_played.set_text(&fmt_playtime_long(inst.secs));
+        self.ov_played.set_text(&crate::ui::helpers::format_playtime(inst.secs));
     }
 
     // ============ logs tab ============
@@ -4191,7 +4213,8 @@ impl MinecraftView {
         let pack_results = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let pack_scroll = gtk::ScrolledWindow::new();
         pack_scroll.set_vexpand(true);
-        pack_scroll.set_min_content_height(220);
+        pack_scroll.set_propagate_natural_height(true);
+        pack_scroll.set_max_content_height(440);
         pack_scroll.set_child(Some(&pack_results));
         pack_page.append(&pack_scroll);
         import_page.append(&note("Import a Modrinth .mrpack (or compatible zip) from disk."));
@@ -4911,7 +4934,8 @@ impl MinecraftView {
         let list = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_vexpand(true);
-        scroll.set_min_content_height(300);
+        scroll.set_propagate_natural_height(true);
+        scroll.set_max_content_height(600);
         scroll.set_child(Some(&list));
         body.append(&scroll);
         content.append(&body);
@@ -5111,7 +5135,8 @@ impl MinecraftView {
         let list = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_vexpand(true);
-        scroll.set_min_content_height(300);
+        scroll.set_propagate_natural_height(true);
+        scroll.set_max_content_height(600);
         scroll.set_child(Some(&list));
         body.append(&scroll);
         content.append(&body);
@@ -5332,9 +5357,10 @@ impl MinecraftView {
                 crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
                     bar.set_fraction(0.0);
                     bar.set_text(Some("Failed"));
-                    status.set_text(&message);
-                    v.lib_status.set_text(&format!("Modpack failed: {}", message));
-                    v.toast("Modpack failed", &message);
+                    // The progress dialog is open here: report in one place.
+                    if error_surface(true, true) == Some(ErrorSurface::Dialog) {
+                        status.set_text(&message);
+                    }
                     std::fs::remove_dir_all(&staging).ok();
                     false
                 }
@@ -5377,9 +5403,10 @@ impl MinecraftView {
                 crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
                     bar.set_fraction(0.0);
                     bar.set_text(Some("Failed"));
-                    status.set_text(&message);
-                    v.lib_status.set_text(&format!("Modpack failed: {}", message));
-                    v.toast("Modpack failed", &message);
+                    // The progress dialog is open here: report in one place.
+                    if error_surface(true, true) == Some(ErrorSurface::Dialog) {
+                        status.set_text(&message);
+                    }
                     std::fs::remove_dir_all(&staging).ok();
                     false
                 }
@@ -5764,7 +5791,8 @@ impl MinecraftView {
                 if !body_txt.is_empty() {
                     let scroll = gtk::ScrolledWindow::new();
                     scroll.set_vexpand(true);
-                    scroll.set_min_content_height(160);
+                    scroll.set_propagate_natural_height(true);
+                    scroll.set_max_content_height(320);
                     let tv = gtk::TextView::new();
                     tv.set_editable(false);
                     tv.set_cursor_visible(false);
@@ -6022,7 +6050,8 @@ impl MinecraftView {
         let results = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let res_scroll = gtk::ScrolledWindow::new();
         res_scroll.set_vexpand(true);
-        res_scroll.set_min_content_height(320);
+        res_scroll.set_propagate_natural_height(true);
+        res_scroll.set_max_content_height(640);
         res_scroll.set_child(Some(&results));
         body.append(&res_scroll);
         content.append(&body);
@@ -7368,6 +7397,15 @@ fn chrono_date(epoch: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn error_surface_policy() {
+        use super::{error_surface, ErrorSurface};
+        assert_eq!(error_surface(true, true), Some(ErrorSurface::Dialog));
+        assert_eq!(error_surface(true, false), Some(ErrorSurface::Dialog));
+        assert_eq!(error_surface(false, true), Some(ErrorSurface::Toast));
+        assert_eq!(error_surface(false, false), None);
+    }
+
     use super::*;
     use std::fs;
 

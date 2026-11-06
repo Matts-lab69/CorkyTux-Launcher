@@ -259,7 +259,13 @@ impl ConfigManager {
     }
 
     fn setup_directories(&self) {
-        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let home = match dirs::home_dir() {
+            Some(h) => h,
+            None => {
+                eprintln!("[CorkyTux] HOME is empty or unset; cannot locate config/data dirs");
+                return;
+            }
+        };
         let config_dir = home.join(".config").join("CorkyTux");
         let data_dir = home.join(".local").join("share").join("CorkyTux");
         fs::create_dir_all(&config_dir).ok();
@@ -276,7 +282,7 @@ impl ConfigManager {
                 return PathBuf::from(format!("/home/{}", sudo_user));
             }
         }
-        dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
+        dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
     }
 
     pub fn config_dir(&self) -> PathBuf {
@@ -468,6 +474,45 @@ impl ConfigManager {
     pub fn set_game_value(&self, game: &str, key: &str, value: &str) {
         self.imp().games_ini.borrow_mut().set_value(game, key, value);
         self.save_games_ini();
+    }
+
+    /// Credit `delta` seconds to `TimeSpent` under an exclusive lock on
+    /// `Games.ini.lock`, then write atomically. Never lowers the stored value
+    /// (the max() policy from #74).
+    pub fn credit_time_spent(&self, game: &str, delta: u64) -> Result<(), String> {
+        if delta == 0 {
+            return Ok(());
+        }
+        use std::os::unix::io::AsRawFd;
+        let lock_path = self.games_ini_path().with_file_name("Games.ini.lock");
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&lock_path)
+            .map_err(|e| format!("cannot open Games.ini.lock: {}", e))?;
+        // Non-blocking lock with a short retry: this runs on the GTK main
+        // thread, so a blocking flock could freeze the UI. A busy lock is
+        // retried by the caller on the next tick.
+        let mut locked = false;
+        for _ in 0..5 {
+            let rc = unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+            if rc == 0 {
+                locked = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        if !locked {
+            return Err("Games.ini is locked; retry on the next tick".into());
+        }
+        let current: u64 = self
+            .game_value(game, "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let next = current.saturating_add(delta);
+        self.set_game_value(game, "TimeSpent", &next.to_string());
+        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN); }
+        Ok(())
     }
 
     pub fn remove_game(&self, game: &str) {

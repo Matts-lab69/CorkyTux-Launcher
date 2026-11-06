@@ -2,6 +2,7 @@
 name = "corkytux"
 version = "3.2.0"
 edition = "2021"
+license-file = "LICENSE"
 
 [dependencies]
 gtk = { package = "gtk4", version = "0.9", features = ["v4_12"] }
@@ -26,6 +27,16 @@ libc = "0.2"
 # segundo modo de fallo sobre una descarga de 188 MB, y aqui el binario tiene
 # que funcionar o el login no funciona.
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# Gamepad support (SDL_GameControllerDB mappings, hotplug). Apache-2.0/MIT.
+# On Linux it needs libudev; CI installs libudev-dev.
+gilrs = "=0.11.2"
+# Playpad events from the input thread to the GTK main loop.
+# System tray (StatusNotifierItem over D-Bus). Unlicense. No tokio: the
+# launcher has no async runtime, so ksni runs with its async-io backend and
+# the blocking API spawns its own thread.
+ksni = { version = "=0.3.6", default-features = false, features = ["blocking", "async-io"] }
+# Trait events from the tray thread to the GTK main loop.
+async-channel = "=2.3.1"
 
 
 [profile.release]

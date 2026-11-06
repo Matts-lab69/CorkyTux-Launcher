@@ -221,12 +221,19 @@ cd corkytux-*/
 ```
 
 `install.sh` does not use `sudo`.
+If the tarball contains `plugins/`, the installer also installs its bundled
+plugin code into `${XDG_DATA_HOME}/CorkyTux/plugins` when `XDG_DATA_HOME` is
+absolute, otherwise `~/.local/share/CorkyTux/plugins` — the same path the launcher
+uses. Run `./install.sh --no-plugins` to leave plugins untouched. Reinstalling
+updates bundled code without deleting runtime files or other plugins. Optional
+dependencies and game runtimes are not downloaded by the installer.
 
 | File | Destination |
 |------|-------------|
 | `corkytux` | `~/.local/share/corkytux/corkytux` |
 | `webdriver_login` | `~/.local/share/corkytux/webdriver_login` |
 | `assets/` | `~/.local/share/corkytux/assets/` |
+| `plugins/` (when bundled) | `~/.local/share/CorkyTux/plugins/` or absolute `XDG_DATA_HOME` equivalent |
 | `corkytux` (symlink) | `~/.local/bin/corkytux` |
 | `corkytux.png` | `~/.local/share/icons/corkytux.png` |
 | `corkytux.desktop` | `~/.local/share/applications/corkytux.desktop` |
@@ -249,6 +256,10 @@ the version is not, re-run `./install.sh`.
 cd corkytux-*/
 ./uninstall.sh
 ```
+
+Uninstall removes the bundled plugin code recorded by the installer, including
+after a reinstall. It leaves unrelated plugins and plugin-created files alone;
+deleting game data, cache and configuration still requires explicit confirmation.
 
 ---
 
@@ -281,6 +292,37 @@ cd corkytux-*/
 | `gamemode`, `mangohud`, `zenity`/`kdialog`, `glxinfo` | optional launch helpers |
 
 ---
+
+## SteamGridDB artwork
+
+Cover, banner and icon art fall back to SteamGridDB when a key is available.
+CorkyTux resolves it in this order and stops at the first non-blank value:
+
+1. `CORKYTUX_STEAMGRIDDB_API_KEY` environment variable.
+2. The file named by `CORKYTUX_STEAMGRIDDB_KEY_FILE`, or
+   `~/.config/CorkyTux/steamgriddb.key` by default. Store only the key and keep
+   the file readable by its owner alone (`0600`).
+3. `IntegrationApiKey` in `~/.config/CorkyTux/Launcher.ini`.
+4. A fallback key a packager embedded at build time, when the binary has one.
+
+A missing or blank file moves on to the next source. Without any key the
+launcher skips SteamGridDB, keeps the other artwork sources, and shows a
+one-time notice explaining where to add one. Release 3.2.0 restores a compile-time
+shared fallback, reversing the no-embedded-key policy of PR #22. Packagers supply
+it with `CORKYTUX_SGDB_BUILTIN_KEY`; builds without that variable still work
+without an embedded key. Anyone with the binary can extract an embedded key,
+so it is not a private secret,
+and each user's own key always wins. See
+[docs/BUILD.md](docs/BUILD.md#optional-steamgriddb-fallback) for building with
+or without it.
+
+---
+
+## Game icons
+
+Windows `.exe` icons are extracted with `icoextract` and `ffmpeg`. When either
+is missing, CorkyTux keeps the generic cover and logs one warning per run:
+"icon extraction needs icoextract or ffmpeg; the generic icon is used".
 
 ## Self-update
 
@@ -336,6 +378,20 @@ builds with `cargo build --release --bins`, creates
 
 ---
 
+
+## Security
+
+- Epic Online Services exchange codes: games that use EOS authentication
+  receive the exchange code through their launch arguments
+  (`-auth_password=...`), because the Epic client reads it from argv and
+  offers no environment variable or file alternative. The code is therefore
+  visible in `/proc/<pid>/cmdline` while the game runs. The launcher
+  mitigates what it can: the game log is created with mode 0600 and every
+  copy the launcher makes (the log view and the saved log) is redacted.
+  Do not share game logs or crash reports from an EOS game without
+  reviewing them first.
+
+
 ## Architecture
 
 ```text
@@ -371,10 +427,37 @@ plugins/<name>/                 separate repo (CorkyTux-Plugins): plugin binary 
 
 ## Credits
 
+See [CREDITS.md](CREDITS.md) for included code and artwork, optional runtimes,
+upstream license references, and project inspirations.
+Existing third-party copyright and license notices remain authoritative.
+
 - [@Cristioro](https://github.com/Cristioro) — UI ideas and suggestions
   to make the code more efficient.
 - [@ZzEdovec](https://github.com/ZzEdovec) — some interfaces and icons
   used or inspired by this person's repositories.
+
+---
+
+## Gamepad
+
+Any controller with an SDL gamepad mapping works: DualShock 4, DualSense,
+Xbox (including the newer Bluetooth pads), Switch Pro and most 8BitDo pads.
+Wheels, flight sticks and devices without an SDL mapping are ignored.
+
+- Linux needs read access to `/dev/input/event*`. On most distributions the
+  user in the `input` group is enough; a udev rule can grant it to a single
+  vendor:
+
+  ```
+  SUBSYSTEM=="input", ATTRS{idVendor}=="054c", MODE="0660", GROUP="input"
+  ```
+
+- `SDL_GAMECONTROLLERCONFIG` is honored: export a mapping line for a pad that
+  SDL does not know and it will be used instead of the built-in database.
+- With Steam running, Steam Input exposes a virtual pad. CorkyTux keeps the
+  virtual pad and drops the physical duplicate, so one press is one action.
+- There is no on-screen keyboard yet, so search fields and paths cannot be
+  typed with a controller (#88).
 
 ---
 

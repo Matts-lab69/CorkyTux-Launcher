@@ -59,6 +59,28 @@ The build produces:
 `webdriver_login` is the Epic/GOG WebDriver login helper. The release
 profile enables LTO and strip.
 
+### Optional SteamGridDB fallback
+
+The binary can embed a fallback SteamGridDB key for users who have none of
+their own. It is read at compile time and is entirely optional:
+
+```bash
+cargo build --release --locked --bins
+```
+
+For a build with the shared fallback, supply `CORKYTUX_SGDB_BUILTIN_KEY` securely
+in the exported environment before that command. Do not put its value in a
+command, file, build flag or shell history.
+
+Leave the variable unset for a normal build: the launcher still compiles and
+simply skips SteamGridDB. `release/build-release.sh` inherits the variable when
+it is already exported, and `.github/workflows/release.yml` passes the
+`CORKYTUX_SGDB_BUILTIN_KEY` secret to the build step only. Never commit a key.
+A compiled fallback can be extracted from the binary, so treat it as a shared
+fallback rather than a secret. At runtime each user's
+`CORKYTUX_STEAMGRIDDB_API_KEY`, `steamgriddb.key` file or `IntegrationApiKey`
+setting wins over it.
+
 ## 5. Run without installing
 
 ```bash
@@ -80,11 +102,31 @@ chmod +x release/build-release.sh
 
 Replace `vX.Y.Z` with the `version` in `Cargo.toml`; the version argument
 is mandatory and must match it. The script does not check that the git tag
-exists. The script runs `cargo build --release --bins` and
+exists. The script runs `cargo build --release --locked --bins` and
 creates:
 
 - `corkytux-<version>-linux-<arch>.tar.gz`
 - `checksums.txt`
+- `SHA256SUMS` (identical checksum list)
+
+To include the plugins from a clean, local checkout without network downloads:
+
+```bash
+CORKYTUX_PLUGINS_SOURCE=/path/to/CorkyTux-Plugins ./release/build-release.sh v3.2.0
+```
+
+The exported `CORKYTUX_SGDB_BUILTIN_KEY`, if supplied securely, is inherited by
+this command without being printed. The tarball has one root directory,
+`corkytux-3.2.0/`, containing the binaries, assets, bundled plugins, installers,
+desktop entry, icon, LICENSE, README, CREDITS and THIRD-PARTY documentation.
+Only tracked plugin files are copied; test directories are omitted.
+
+`./install.sh` installs bundled code into the launcher's plugin directory:
+absolute `XDG_DATA_HOME` plus `/CorkyTux/plugins`, or
+`~/.local/share/CorkyTux/plugins` otherwise. `./install.sh --no-plugins` leaves
+plugins untouched. Uninstall removes only plugin code recorded by the
+installer; unrelated plugins and runtime files are preserved unless the user
+explicitly requests deletion of their data. No plugin dependencies are fetched.
 
 For example, version `3.2.0` on x86_64 produces
 `corkytux-3.2.0-linux-x86_64.tar.gz`. The architecture comes from `uname -m`
