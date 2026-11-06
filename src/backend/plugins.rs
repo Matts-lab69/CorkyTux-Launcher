@@ -1502,7 +1502,8 @@ mod tests {
             let server = std::thread::spawn(move || {
                 let (mut connection, _) = listener.accept().unwrap();
                 let mut request = [0u8; 4096];
-                connection.read(&mut request).unwrap();
+                let received = connection.read(&mut request).unwrap();
+                assert!(received > 0, "empty HTTP request");
                 write!(connection, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
                 connection.write_all(&body).unwrap();
             });
