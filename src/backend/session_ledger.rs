@@ -489,6 +489,11 @@ pub fn recover<C: Clock>(
     let mut handled = 0;
     for entry in entries.flatten() {
         let path = entry.path();
+        // Quit/adoption records are a JSON list, not a per-session ledger.
+        // Keep them for take_closed/prune_closed instead of quarantining them.
+        if path == closed_json_path(dir) {
+            continue;
+        }
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
@@ -647,6 +652,33 @@ mod closed_tests {
         assert!(load_closed(&dir).is_empty());
         record_closed(&dir, 7, 8, 9).unwrap();
         assert_eq!(load_closed(&dir).len(), 1);
+    }
+
+    #[test]
+    fn recovery_preserves_closed_records_instead_of_quarantining_them() {
+        for (tag, records) in [
+            ("recover-empty", Vec::new()),
+            ("recover-records", vec![ClosedRecord {
+                pid: 42, starttime: 700, closed_at: 1_000,
+            }]),
+        ] {
+            let dir = tmp(tag);
+            save_closed(&dir, &records).unwrap();
+            let before = fs::read(closed_json_path(&dir)).unwrap();
+            fs::write(dir.join("999.json"), "not a session ledger").unwrap();
+            let mut credits = Vec::new();
+            for _ in 0..2 {
+                assert_eq!(recover(&dir, &SystemClock, &|_, _| false, &mut |g, d| {
+                    credits.push((g.to_owned(), d));
+                    Ok(())
+                }).unwrap(), 0);
+                assert_eq!(fs::read(closed_json_path(&dir)).ok(), Some(before.clone()));
+                assert_eq!(load_closed(&dir), records);
+                assert!(!dir.join("closed.json.bad").exists());
+            }
+            assert!(credits.is_empty());
+            assert!(!dir.join("999.json").exists());
+        }
     }
 
     #[test]
