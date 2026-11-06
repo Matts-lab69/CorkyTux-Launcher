@@ -565,48 +565,9 @@ impl PluginManager {
             return Err(format!("Download HTTP error: {}", resp.status()));
         }
         let total = resp.content_length().unwrap_or(0);
-        let mut file = fs::File::create(&dest).map_err(|e| format!("Cannot write: {}", e))?;
-        let mut downloaded: u64 = 0;
-        use sha2::Digest;
-        let mut hasher = sha2::Sha256::default();
-        let start = std::time::Instant::now();
-        loop {
-            let mut buf = vec![0u8; 256 * 1024];
-            let n = std::io::Read::read(&mut resp, &mut buf)
-                .map_err(|e| format!("Read failed: {}", e))?;
-            if n == 0 {
-                break;
-            }
-            std::io::Write::write_all(&mut file, &buf[..n])
-                .map_err(|e| format!("Write failed: {}", e))?;
-            hasher.update(&buf[..n]);
-            downloaded += n as u64;
-            if total > 0 {
-                let secs = start.elapsed().as_secs_f64().max(0.001);
-                on_progress(downloaded as f64 / total as f64, downloaded as f64 / secs);
-            }
-        }
-        drop(file);
-        let size = fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
-        if size < 100 {
-            fs::remove_file(&dest).ok();
-            return Err(format!("Downloaded file too small ({} bytes)", size));
-        }
-        let actual = format!("{:x}", hasher.finalize());
-        if actual != api_digest {
-            fs::remove_file(&dest).ok();
-            return Err(format!(
-                "Checksum mismatch: expected {} got {}",
-                api_digest, actual
-            ));
-        }
-
-        // Safe extraction.
-        if let Err(e) = Self::extract_plugin_safe(&dest, &dir) {
-            fs::remove_file(&dest).ok();
-            return Err(e);
-        }
-        fs::remove_file(&dest).ok();
+        let (downloaded, start) = Self::receive_plugin_archive(
+            &mut resp, &dest, dir, total, &api_digest, &mut on_progress,
+        )?;
 
         let after: Vec<String> = fs::read_dir(&dir)
             .map(|entries| {
@@ -627,6 +588,62 @@ impl PluginManager {
         }
         on_progress(1.0, bps);
         Ok(tag.to_string())
+    }
+
+    // Shared production boundary for the HTTP response: stream, verify, then
+    // extract. Accepting Read lets tests exercise the exact gate on loopback
+    // responses without weakening the public downloader's host restrictions.
+    fn receive_plugin_archive(
+        reader: &mut impl std::io::Read,
+        dest: &Path,
+        dir: &Path,
+        total: u64,
+        api_digest: &str,
+        mut on_progress: impl FnMut(f64, f64),
+    ) -> Result<(u64, std::time::Instant), String> {
+        let mut file = fs::File::create(dest).map_err(|e| format!("Cannot write: {}", e))?;
+        let mut downloaded: u64 = 0;
+        use sha2::Digest;
+        let mut hasher = sha2::Sha256::default();
+        let start = std::time::Instant::now();
+        loop {
+            let mut buf = vec![0u8; 256 * 1024];
+            let n = std::io::Read::read(reader, &mut buf)
+                .map_err(|e| format!("Read failed: {}", e))?;
+            if n == 0 {
+                break;
+            }
+            std::io::Write::write_all(&mut file, &buf[..n])
+                .map_err(|e| format!("Write failed: {}", e))?;
+            hasher.update(&buf[..n]);
+            downloaded += n as u64;
+            if total > 0 {
+                let secs = start.elapsed().as_secs_f64().max(0.001);
+                on_progress(downloaded as f64 / total as f64, downloaded as f64 / secs);
+            }
+        }
+        drop(file);
+        let size = fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
+        if size < 100 {
+            fs::remove_file(dest).ok();
+            return Err(format!("Downloaded file too small ({} bytes)", size));
+        }
+        let actual = format!("{:x}", hasher.finalize());
+        if actual != api_digest {
+            fs::remove_file(dest).ok();
+            return Err(format!(
+                "Checksum mismatch: expected {} got {}",
+                api_digest, actual
+            ));
+        }
+
+        // Safe extraction.
+        if let Err(e) = Self::extract_plugin_safe(dest, dir) {
+            fs::remove_file(dest).ok();
+            return Err(e);
+        }
+        fs::remove_file(dest).ok();
+        Ok((downloaded, start))
     }
 
     /// Derive the release API URL from a tarball URL and read the asset
@@ -1442,6 +1459,89 @@ fn truncate_description(body: &str, max: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    fn integrity_archive(path: &str) -> Vec<u8> {
+        let bytes: Vec<u8> = (0..2048).map(|i| (i % 251) as u8).collect();
+        let gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        let mut builder = tar::Builder::new(gzip);
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_entry_type(tar::EntryType::Regular);
+        // Raw headers also exercise names that Builder::append_path refuses.
+        header.as_mut_bytes()[..100].fill(0);
+        header.as_mut_bytes()[..path.len()].copy_from_slice(path.as_bytes());
+        header.set_cksum();
+        builder.append(&header, bytes.as_slice()).unwrap();
+        let archive = builder.into_inner().unwrap().finish().unwrap();
+        assert!(archive.len() >= 100);
+        archive
+    }
+
+    fn integrity_directory(label: &str) -> std::path::PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!("corky-plugin-{label}-{}-{nonce}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn plugin_http_download_rejects_bad_checksum_before_extraction() {
+        use std::io::{Read, Write};
+        use sha2::Digest;
+        for valid_digest in [false, true] {
+            let body = integrity_archive("fixture/payload");
+            let digest = if valid_digest {
+                format!("{:x}", sha2::Sha256::digest(&body))
+            } else {
+                "0".repeat(64)
+            };
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let length = body.len();
+            let server = std::thread::spawn(move || {
+                let (mut connection, _) = listener.accept().unwrap();
+                let mut request = [0u8; 4096];
+                connection.read(&mut request).unwrap();
+                write!(connection, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
+                connection.write_all(&body).unwrap();
+            });
+            let client = reqwest::blocking::Client::builder()
+                .no_proxy().timeout(std::time::Duration::from_secs(10)).build().unwrap();
+            let mut response = client.get(format!("http://{address}/fixture.tar.gz")).send().unwrap();
+            let dir = integrity_directory("checksum");
+            let dest = dir.join("download.tar.gz");
+            let result = super::PluginManager::receive_plugin_archive(
+                &mut response, &dest, &dir, length as u64, &digest, |_, _| {},
+            );
+            server.join().unwrap();
+            if valid_digest {
+                assert!(result.is_ok(), "valid download rejected");
+                assert!(dir.join("fixture/payload").is_file());
+            } else {
+                assert!(result.err().unwrap().contains("Checksum mismatch"));
+                assert!(!dir.join("fixture").exists(), "unverified archive extracted");
+            }
+            assert!(!dest.exists(), "download archive not cleaned up");
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn plugin_extraction_rejects_traversal_and_absolute_paths() {
+        for path in ["../escaped", "/absolute", "fixture/../../escaped"] {
+            let dir = integrity_directory("paths");
+            let dest = dir.join("download.tar.gz");
+            std::fs::write(&dest, integrity_archive(path)).unwrap();
+            let extracted = dir.join("extract");
+            std::fs::create_dir(&extracted).unwrap();
+            assert!(super::PluginManager::extract_plugin_safe(&dest, &extracted).is_err(), "unsafe path accepted");
+            assert_eq!(std::fs::read_dir(&extracted).unwrap().count(), 0);
+            assert!(!dir.join("escaped").exists());
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
     use super::PluginManager;
     use super::truncate_description;
 

@@ -16,6 +16,9 @@ needs the launcher and `minecraft-launcher` 1.2.0 updated together.
   sus endpoints de última release devuelven HTTP 404.
 - Los argumentos de lanzamiento de emuladores Flatpak vinculados no se
   reproducen al iniciarlos desde el launcher.
+- Un plugin de terceros antiguo que no acepte `--api-key-stdin` no puede guardar
+  la key de CurseForge desde el launcher: devuelve un error y debe actualizarse;
+  no se degrada al envío por argv.
 
 ### Security
 
