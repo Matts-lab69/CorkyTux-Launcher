@@ -235,8 +235,15 @@ dependencies and game runtimes are not downloaded by the installer.
 | `assets/` | `~/.local/share/corkytux/assets/` |
 | `plugins/` (when bundled) | `~/.local/share/CorkyTux/plugins/` or absolute `XDG_DATA_HOME` equivalent |
 | `corkytux` (symlink) | `~/.local/bin/corkytux` |
-| `corkytux.png` | `~/.local/share/icons/corkytux.png` |
-| `corkytux.desktop` | `~/.local/share/applications/corkytux.desktop` |
+| `corkytux.png` | `~/.local/share/icons/hicolor/128x128/apps/com.corkytux.CorkyTux.png` (plus legacy aliases) |
+| `com.corkytux.CorkyTux.desktop` | `~/.local/share/applications/com.corkytux.CorkyTux.desktop` |
+
+The desktop filename, `Icon`, `StartupWMClass` and GTK application ID all use
+`com.corkytux.CorkyTux`, so menus and window grouping can resolve the installed
+hicolor icon. With absolute `XDG_DATA_HOME`, icons and the desktop entry use
+that data directory instead. Reinstalling migrates the old `corkytux.desktop`
+entry only when it points to this launcher, preserving a backup. Installation
+fails before replacing anything if the package is missing `corkytux.png`.
 
 ### Check the installation
 

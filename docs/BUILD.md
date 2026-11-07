@@ -119,6 +119,9 @@ The exported `CORKYTUX_SGDB_BUILTIN_KEY`, if supplied securely, is inherited by
 this command without being printed. The tarball has one root directory,
 `corkytux-3.2.0/`, containing the binaries, assets, bundled plugins, installers,
 desktop entry, icon, LICENSE, README, CREDITS and THIRD-PARTY documentation.
+The packaged desktop entry is `com.corkytux.CorkyTux.desktop`; its `Icon` and
+`StartupWMClass` match the GTK app ID. The installer places the matching PNG in
+hicolor, using absolute `XDG_DATA_HOME` or `~/.local/share` for desktop/icons.
 Only tracked plugin files are copied; test directories are omitted.
 
 `./install.sh` installs bundled code into the launcher's plugin directory:
