@@ -750,16 +750,16 @@ pub fn show_settings_modal(
         let entry_c = entry.clone();
         let key = config_key.to_string();
         let label_str = label.to_string();
-        let slot_c = rebuild_proton_slot.clone();
+        // Weak: the row lives inside the list this slot rebuilds, so a strong
+        // handle here would keep the slot (and the row) alive forever.
+        let slot_c = Rc::downgrade(&rebuild_proton_slot);
         browse_btn.connect_clicked(move |_| {
             if let Some(path) = state_c.config.pick_folder(&format!("Select {}", label_str)) {
                 entry_c.set_text(&path.display().to_string());
                 state_c.config.set_launcher_value(&key, &path.display().to_string());
                 if key.starts_with("protonsPath") {
                     state_c.proton.refresh_installed();
-                    if let Some(r) = slot_c.borrow().clone() {
-                        r();
-                    }
+                    crate::ui::slot::run(&slot_c);
                 }
             }
         });
@@ -768,14 +768,12 @@ pub fn show_settings_modal(
         // wipe the stored path.
         let state_c2 = state.clone();
         let key2 = config_key.to_string();
-        let slot_c2 = rebuild_proton_slot.clone();
+        let slot_c2 = Rc::downgrade(&rebuild_proton_slot);
         let save_path = Rc::new(move |text: &str| {
             state_c2.config.set_launcher_value(&key2, text.trim());
             if key2.starts_with("protonsPath") {
                 state_c2.proton.refresh_installed();
-                if let Some(r) = slot_c2.borrow().clone() {
-                    r();
-                }
+                crate::ui::slot::run(&slot_c2);
             }
         });
         let save_c = save_path.clone();
@@ -1069,8 +1067,11 @@ pub fn show_settings_modal(
         let ibox = installed_box.clone();
         let state_c = state.clone();
         let proton_c = state.proton.clone();
-        let slot_c = rebuild_proton_slot.clone();
-        let avail_early_c = rebuild_avail_early.clone();
+        // Weak: this closure is stored in rebuild_proton_slot itself, and it
+        // also forwards to the Available list. Strong handles would tie the
+        // two slots to their own closures in a cycle.
+        let slot_c = Rc::downgrade(&rebuild_proton_slot);
+        let avail_early_c = Rc::downgrade(&rebuild_avail_early);
         let def_drop = default_proton.clone();
         let status_c = proton_status.clone();
         let win_c = parent.clone();
@@ -1162,12 +1163,8 @@ pub fn show_settings_modal(
                     state_cc.proton.refresh_installed();
                     // remove_proton clears games pointing at it: reload model.
                     state_cc.game_model.load_from_disk();
-                    if let Some(r) = slot_cc.borrow().clone() {
-                        r();
-                    }
-                    if let Some(r) = avail_cc.borrow().clone() {
-                        r();
-                    }
+                    crate::ui::slot::run(&slot_cc);
+                    crate::ui::slot::run(&avail_cc);
                 });
                 inner.append(&remove_btn);
                 card.set_child(Some(&inner));
@@ -1192,8 +1189,10 @@ pub fn show_settings_modal(
         let picker_rows_c = path_picker_rows.clone();
         let pending_c = pending_dl.clone();
         let ptx_c = ptx.clone();
-        let avail_slot_c = rebuild_avail_slot.clone();
-        let proton_slot_c = rebuild_proton_slot.clone();
+        // Weak: this closure is stored in rebuild_avail_slot (and forwarded
+        // through rebuild_avail_early), so strong handles would cycle.
+        let avail_slot_c = Rc::downgrade(&rebuild_avail_slot);
+        let proton_slot_c = Rc::downgrade(&rebuild_proton_slot);
         move || {
             while let Some(child) = abox.first_child() {
                 abox.remove(&child);
@@ -1244,12 +1243,8 @@ pub fn show_settings_modal(
                         state_cc.proton.refresh_installed();
                         state_cc.game_model.load_from_disk();
                         status_cc.set_text(&format!("Removed {}", tag_c));
-                        if let Some(r) = avail_slot_cc.borrow().clone() {
-                            r();
-                        }
-                        if let Some(r) = proton_slot_cc.borrow().clone() {
-                            r();
-                        }
+                        crate::ui::slot::run(&avail_slot_cc);
+                        crate::ui::slot::run(&proton_slot_cc);
                         return;
                     }
                     let paths = state_cc.proton.proton_paths();
@@ -1610,7 +1605,9 @@ pub fn show_settings_modal(
         let emu_list_c = emu_list.clone();
         let emu_status_c = emu_status.clone();
         let pltx_c = pltx.clone();
-        let slot_c = rebuild_slot.clone();
+        // Weak: rebuild_plugins is stored in rebuild_slot itself, so a strong
+        // handle would keep the slot and every card it built alive.
+        let slot_c = Rc::downgrade(&rebuild_slot);
         let reg_slot_c = rebuild_reg_slot.clone();
         move || {
             while let Some(child) = ibox.first_child() {
@@ -1655,9 +1652,7 @@ pub fn show_settings_modal(
                                     let _ = tx2.send(PluginTabMsg::Emus(list));
                                 });
                             }
-                            if let Some(r) = slot_cc.borrow().clone() {
-                                r();
-                            }
+                            crate::ui::slot::run(&slot_cc);
                         });
                     }
                     let name_lbl = gtk::Label::new(Some(&format!(
@@ -1678,9 +1673,7 @@ pub fn show_settings_modal(
                         let slot_cc2 = slot_cc.clone();
                         let reg_cc2 = reg_cc.clone();
                         confirm_remove_plugin(&del_c, &state_cc, pid.clone(), move || {
-                            if let Some(r) = slot_cc2.borrow().clone() {
-                                r();
-                            }
+                            crate::ui::slot::run(&slot_cc2);
                             if let Some(rr) = reg_cc2.borrow().clone() {
                                 rr();
                             }
@@ -1755,9 +1748,7 @@ pub fn show_settings_modal(
                         let slot_cc3 = slot_cc2.clone();
                         let reg_cc3 = reg_cc2.clone();
                         confirm_remove_plugin(&del_c2, &state_cc2, pid2.clone(), move || {
-                            if let Some(r) = slot_cc3.borrow().clone() {
-                                r();
-                            }
+                            crate::ui::slot::run(&slot_cc3);
                             if let Some(rr) = reg_cc3.borrow().clone() {
                                 rr();
                             }

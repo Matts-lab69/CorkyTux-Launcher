@@ -1,4 +1,5 @@
 pub mod helpers;
+pub mod slot;
 #[path = "policies/layout.rs"]
 pub mod layout;
 pub mod deps_modal;

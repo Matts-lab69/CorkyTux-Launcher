@@ -621,7 +621,12 @@ impl StoresView {
                     let st_c = state.clone();
                     let page_c = page.clone();
                     let pages_c = pages.clone();
-                    let rebuild_c = rebuild_slot.clone();
+                    // Weak: this closure is stored in loader (via goto), while
+                    // rebuild_slot's closure stores goto. A strong handle here
+                    // closes loader → rebuild → goto → loader. Weak breaks it;
+                    // run() upgrades at call time and is a no-op if the slot
+                    // was already dropped.
+                    let rebuild_c = Rc::downgrade(&rebuild_slot);
                     *loader.borrow_mut() = Some(Rc::new(move |start: u64| {
                         if loading_c.get() {
                             return;
@@ -725,9 +730,7 @@ impl StoresView {
                                 } else {
                                     lbl_cc.set_text(&format!("Page {} of {}", page_cc.get().max(1), npages));
                                 }
-                                if let Some(r) = rebuild_cc.borrow().as_ref() {
-                                    r();
-                                }
+                                crate::ui::slot::run(&rebuild_cc);
                                 glib::ControlFlow::Break
                             }
                             Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
