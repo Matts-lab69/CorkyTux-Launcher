@@ -77,12 +77,36 @@ binaries and guides.
 
 The prebuilt tarball needs a 64-bit Linux system with:
 
+- **glibc 2.39 or newer.** The official binary is built on Ubuntu 24.04 and
+  links against that glibc. Older releases cannot run it: Ubuntu 22.04
+  (glibc 2.35), Debian 12 (2.36), Fedora 39 (2.38) and Linux Mint 21 (2.35)
+  are not supported by the prebuilt tarball.
 - GTK 4.12 or newer.
 - libadwaita 1.5 or newer.
+- libudev (`libudev.so.1`).
 
-The official binary is built on Ubuntu 24.04 (glibc 2.39); an older glibc was
-not tested. The build enables the GTK `v4_12` and libadwaita `v1_5` features,
-so a newer distribution is fine and an older GTK or libadwaita is not.
+Distributions that meet that floor, and where the tarball is expected to run:
+Ubuntu 24.04 and newer, Debian 13 and newer, Fedora 40 and newer, Linux Mint 22
+and newer, Arch Linux, openSUSE Tumbleweed and NixOS (`install.sh` looks for
+GTK and glibc in `/nix/store`). Other distributions with the same library
+versions should work, but they are not tested per release.
+
+The build enables the GTK `v4_12` and libadwaita `v1_5` features, so a newer
+distribution is fine and an older GTK or libadwaita is not.
+
+The launcher itself needs no Python or Java. The bundled plugins use these
+optional runtime dependencies; `install.sh` warns about the ones it can check:
+
+| Dependency | Needed for | Without it |
+|---|---|---|
+| `python3` | every bundled plugin | plugins do not start |
+| `python3-requests` | plugins that call HTTP APIs | network-backed actions fail |
+| `minecraft_launcher_lib`, `psutil` | Minecraft plugin | Minecraft install and launch fail |
+| a Java runtime (8, 17, 21 or 25, matching the game version) | Minecraft plugin | Minecraft cannot launch |
+| `ffmpeg` or Pillow (`python3-PIL`) | WebP mod icons | a generic icon is shown |
+| `icoextract` | icons extracted from Windows executables | a generic icon is shown |
+| `sqlite3` | Lutris library scan | the scan is skipped |
+| `curl` | Proton downloads | Proton downloads fail |
 
 ---
 

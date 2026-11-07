@@ -2580,12 +2580,19 @@ fn emulator_icon_path(name: &str) -> Option<String> {
     if installed.is_file() {
         return Some(installed.to_string_lossy().into_owned());
     }
-    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("assets/icons/emulators")
-        .join(filename);
-    source
-        .is_file()
-        .then(|| source.to_string_lossy().into_owned())
+    // Source-tree fallback for `cargo run`. It walks up from the running
+    // binary instead of embedding CARGO_MANIFEST_DIR, which would leak the
+    // build machine's checkout path into the shipped binary.
+    let exe = std::env::current_exe().ok()?;
+    let mut dir = exe.parent()?;
+    for _ in 0..4 {
+        let candidate = dir.join("assets/icons/emulators").join(filename);
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
+        dir = dir.parent()?;
+    }
+    None
 }
 
 fn rebuild_emu_rows(

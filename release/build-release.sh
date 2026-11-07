@@ -28,6 +28,26 @@ if [[ "$EXPECTED" != "$VERSION" ]]; then
 fi
 
 echo "=== Building CorkyTux v${VERSION} (release) ==="
+
+# Keep build-machine paths out of the binaries: panic locations and debug
+# strings would otherwise embed ~/.cargo/registry/... and this checkout path.
+# CARGO_ENCODED_RUSTFLAGS separates flags with 0x1f, so a checkout path that
+# contains spaces survives; RUSTFLAGS is split on whitespace and would break it.
+# The trim-paths profile option would do part of this, but it is still unstable
+# in cargo 1.96, so the remap flags are the portable equivalent.
+if [[ -n "${RUSTFLAGS:-}" && -z "${CARGO_ENCODED_RUSTFLAGS:-}" ]]; then
+  echo "Note: RUSTFLAGS is replaced by CARGO_ENCODED_RUSTFLAGS for this build." >&2
+fi
+REPO_ROOT="$PWD"
+CARGO_HOME_DIR="${CARGO_HOME:-$HOME/.cargo}"
+if [[ -n "${CARGO_ENCODED_RUSTFLAGS:-}" ]]; then
+  CARGO_ENCODED_RUSTFLAGS+=$'\x1f'
+fi
+CARGO_ENCODED_RUSTFLAGS+="--remap-path-prefix=${CARGO_HOME_DIR}=/cargo"
+CARGO_ENCODED_RUSTFLAGS+=$'\x1f'"--remap-path-prefix=${HOME}/.rustup=/rustup"
+CARGO_ENCODED_RUSTFLAGS+=$'\x1f'"--remap-path-prefix=${REPO_ROOT}=/build"
+export CARGO_ENCODED_RUSTFLAGS
+
 # An already exported CORKYTUX_SGDB_BUILTIN_KEY is inherited by cargo and
 # embedded by option_env! in src/backend/integration.rs. Absent means a normal
 # build without the fallback. Never echo, log, persist or export the value here.
@@ -58,6 +78,8 @@ cp release/corkytux.desktop.in "$PKGDIR/com.corkytux.CorkyTux.desktop"
 cp LICENSE README.md CREDITS.md "$PKGDIR/"
 cp docs/THIRD-PARTY.md "$PKGDIR/THIRD-PARTY.md"
 cp -r assets "$PKGDIR/assets"
+# Assets are data, not programs: no executable bits on packaged images.
+find "$PKGDIR/assets" -type f -name '*.png' -exec chmod 0644 {} +
 
 # Opt-in local plugin checkout for the combined release. Never download from
 # another repository or copy untracked runtime/configuration files.
