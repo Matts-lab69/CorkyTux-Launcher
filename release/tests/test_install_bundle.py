@@ -1,13 +1,15 @@
 """Installer lifecycle tests; every write stays below a temporary HOME."""
 import json
 import os
-from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 RELEASE = Path(__file__).resolve().parents[1]
+APP_ID = re.search(r'\.application_id\("([^"]+)"\)', (RELEASE.parent / 'src/main.rs').read_text()).group(1)
 
 
 @unittest.skipIf(os.geteuid() == 0, "installer deliberately refuses root")
@@ -26,6 +28,7 @@ class BundledPluginInstall(unittest.TestCase):
             (self.package / binary).write_bytes(b"\x7fELF installer-test fixture\n")
         (self.package / "assets").mkdir()
         (self.package / "assets/icon.txt").write_text("fixture\n")
+        shutil.copy2(RELEASE / 'corkytux.png', self.package / 'corkytux.png')
         self.env = dict(os.environ, HOME=str(self.home), XDG_DATA_HOME="")
         self.install_dir = self.home / ".local/share/corkytux"
         self.plugin_root = self.home / ".local/share/CorkyTux/plugins"
@@ -85,8 +88,11 @@ class BundledPluginInstall(unittest.TestCase):
         entry = xdg / "CorkyTux/plugins/sample-plugin/sample-plugin"
         self.assertTrue(entry.is_file())
         self.assertFalse(self.plugin_root.exists())
+        self.assertTrue((xdg / f"applications/{APP_ID}.desktop").is_file())
+        self.assertTrue((xdg / f"icons/hicolor/128x128/apps/{APP_ID}.png").is_file())
         self.run_script("uninstall.sh")
         self.assertFalse(entry.exists())
+        self.assertFalse((xdg / f"applications/{APP_ID}.desktop").exists())
 
     def test_relative_xdg_data_home_falls_back_to_home(self):
         self.env["XDG_DATA_HOME"] = "relative-not-used"
@@ -115,6 +121,38 @@ class BundledPluginInstall(unittest.TestCase):
         (self.install_dir / "plugins-installed.txt").write_text("../../outside.txt\n")
         self.run_script("uninstall.sh", success=False)
         self.assertEqual(outside.read_text(), "preserve\n")
+
+    def test_desktop_and_hicolor_match_the_gtk_application_id(self):
+        self.run_script("install.sh", answer="y\n")
+        data = self.home / '.local/share'
+        desktop = data / f'applications/{APP_ID}.desktop'
+        fields = dict(line.split('=', 1) for line in desktop.read_text().splitlines() if '=' in line)
+        self.assertEqual(fields['Icon'], APP_ID)
+        self.assertEqual(fields['StartupWMClass'], APP_ID)
+        self.assertEqual((data / f'icons/hicolor/128x128/apps/{APP_ID}.png').read_bytes(),
+                         (self.package / 'corkytux.png').read_bytes())
+        self.run_script('uninstall.sh')
+        self.assertFalse(desktop.exists())
+        self.assertFalse((data / f'icons/hicolor/128x128/apps/{APP_ID}.png').exists())
+
+    def test_reinstall_migrates_only_our_legacy_desktop_entry(self):
+        self.run_script('install.sh', answer='y\n')
+        applications = self.home / '.local/share/applications'
+        canonical = applications / f'{APP_ID}.desktop'
+        legacy = applications / 'corkytux.desktop'
+        shutil.copy2(canonical, legacy)
+        self.run_script('install.sh', answer='y\n')
+        self.assertTrue(canonical.is_file())
+        self.assertFalse(legacy.exists())
+        self.assertTrue(list(applications.glob('corkytux.desktop.bak-*')))
+        legacy.write_text('[Desktop Entry]\nExec=/unrelated/application\n')
+        self.run_script('install.sh', answer='y\n')
+        self.assertTrue(legacy.is_file(), 'unrelated shortcut removed')
+
+    def test_missing_icon_is_rejected_before_installing(self):
+        (self.package / 'corkytux.png').unlink()
+        self.run_script('install.sh', success=False)
+        self.assertFalse(self.install_dir.exists())
 
 
 if __name__ == "__main__":

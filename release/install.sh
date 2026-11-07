@@ -11,9 +11,12 @@ APP_VERSION="$(basename "$SCRIPT_DIR" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' 2>/dev
 APP_VERSION="${APP_VERSION:-dev}"
 INSTALL_DIR="${HOME}/.local/share/corkytux"
 BIN_DIR="${HOME}/.local/bin"
-ICON_DIR="${HOME}/.local/share/icons"
+APP_ID="com.corkytux.CorkyTux"
+DATA_HOME="${HOME}/.local/share"
+[[ "${XDG_DATA_HOME:-}" != /* ]] || DATA_HOME="${XDG_DATA_HOME%/}"
+ICON_DIR="${DATA_HOME}/icons"
 ICON_THEME_DIR="${ICON_DIR}/hicolor"
-DESKTOP_DIR="${HOME}/.local/share/applications"
+DESKTOP_DIR="${DATA_HOME}/applications"
 DOCS_URL="https://github.com/Matts-lab69/CorkyTux-Launcher/blob/main/docs/BUILD.md"
 
 RED='\033[0;31m'
@@ -53,9 +56,7 @@ done
 # Match plugin_process::plugins_base_dir: only an absolute XDG_DATA_HOME
 # overrides HOME. Track installed code files so uninstall can remove them
 # without deleting downloaded runtimes, saves or user configuration.
-PLUGIN_DATA_HOME="${HOME}/.local/share"
-[[ "${XDG_DATA_HOME:-}" == /* ]] && PLUGIN_DATA_HOME="${XDG_DATA_HOME%/}"
-PLUGINS_DIR="${PLUGIN_DATA_HOME}/CorkyTux/plugins"
+PLUGINS_DIR="${DATA_HOME}/CorkyTux/plugins"
 BUNDLED_PLUGINS="${SCRIPT_DIR}/plugins"
 PLUGIN_MANIFEST="${INSTALL_DIR}/plugins-installed.txt"
 PLUGIN_ROOT_FILE="${INSTALL_DIR}/plugins-install-root.txt"
@@ -109,6 +110,13 @@ if [[ -z "$ASSETS" ]]; then
   err "Assets not found: none of assets/, release/assets/, ../assets/ exist"
   exit 1
 fi
+
+# A missing application icon is an incomplete package, not a silent fallback.
+ICON_SRC=""
+for candidate in "${SCRIPT_DIR}/corkytux.png" "${SCRIPT_DIR}/release/corkytux.png"; do
+  if [[ -f "$candidate" ]]; then ICON_SRC="$candidate"; break; fi
+done
+[[ -n "$ICON_SRC" ]] || { err "corkytux.png not found; refusing incomplete installation"; exit 1; }
 
 # ─── Binary ──────────────────────────────────────────────────────
 # Locate prebuilt ELF binary next to this script.
@@ -324,45 +332,42 @@ else
   info "No bundled plugins; existing plugins left untouched"
 fi
 
-# The desktop entry names the icon `corkytux`; the file has to live inside a
-# theme directory, or the menu and the window list fall back to the generic
-# missing-image glyph. hicolor is the theme every desktop inherits.
-ICON_SRC=""
-for candidate in "${SCRIPT_DIR}/corkytux.png" "${SCRIPT_DIR}/release/corkytux.png"; do
-  if [[ -f "$candidate" ]]; then ICON_SRC="$candidate"; break; fi
-done
-if [[ -n "$ICON_SRC" ]]; then
-  install -d "${ICON_THEME_DIR}/128x128/apps"
-  install -m 0644 "$ICON_SRC" "${ICON_THEME_DIR}/128x128/apps/corkytux.png"
-  # Older entries pointed at this absolute path; keep it working.
-  install -m 0644 "$ICON_SRC" "${ICON_DIR}/corkytux.png"
-  log "Icon installed: ${ICON_THEME_DIR}/128x128/apps/corkytux.png"
-else
-  warn "corkytux.png not found, skipping icon"
-fi
+# GTK app ID, desktop ID, WM class and hicolor icon share one identity.
+install -d "${ICON_THEME_DIR}/128x128/apps"
+install -m 0644 "$ICON_SRC" "${ICON_THEME_DIR}/128x128/apps/${APP_ID}.png"
+# Keep the old names working for existing shortcuts.
+install -m 0644 "$ICON_SRC" "${ICON_THEME_DIR}/128x128/apps/corkytux.png"
+install -m 0644 "$ICON_SRC" "${ICON_DIR}/corkytux.png"
+log "Icon installed: ${ICON_THEME_DIR}/128x128/apps/${APP_ID}.png"
 
 # Back up current desktop entry before overwrite. Keep 3 most recent copies.
-if [[ -f "${DESKTOP_DIR}/corkytux.desktop" ]]; then
-  cp -p "${DESKTOP_DIR}/corkytux.desktop" "${DESKTOP_DIR}/corkytux.desktop.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
-  readarray -t _desk_old < <(find "${DESKTOP_DIR}" -maxdepth 1 -name 'corkytux.desktop.bak-*' -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | cut -d' ' -f2-)
+if [[ -f "${DESKTOP_DIR}/${APP_ID}.desktop" ]]; then
+  cp -p "${DESKTOP_DIR}/${APP_ID}.desktop" "${DESKTOP_DIR}/${APP_ID}.desktop.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+  readarray -t _desk_old < <(find "${DESKTOP_DIR}" -maxdepth 1 -name "${APP_ID}.desktop.bak-*" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | cut -d' ' -f2-)
   for ((i=3; i<${#_desk_old[@]}; i++)); do
     rm -f "${_desk_old[i]}" 2>/dev/null || true
   done
   unset _desk_old
 fi
-cat > "${DESKTOP_DIR}/corkytux.desktop" <<DESKTOP
+cat > "${DESKTOP_DIR}/${APP_ID}.desktop" <<DESKTOP
 [Desktop Entry]
 Version=1.0
 Name=CorkyTux
 Comment=Linux game launcher
 Exec="${INSTALL_DIR}/corkytux"
-Icon=corkytux
+Icon=${APP_ID}
 Terminal=false
 Type=Application
 Categories=Game;
-StartupWMClass=corkytux
+StartupWMClass=${APP_ID}
 DESKTOP
-log "Desktop entry: ${DESKTOP_DIR}/corkytux.desktop"
+[[ -s "${ICON_THEME_DIR}/128x128/apps/${APP_ID}.png" ]] || { err "Installed application icon is missing"; exit 1; }
+# Migrate only the legacy entry owned by this install, preserving a backup.
+legacy_desktop="${DESKTOP_DIR}/corkytux.desktop"
+if [[ -f "$legacy_desktop" ]] && grep -Fqx -e "Exec=\"${INSTALL_DIR}/corkytux\"" -e "Exec=${INSTALL_DIR}/corkytux" -e 'Exec=corkytux' "$legacy_desktop"; then
+  mv "$legacy_desktop" "${legacy_desktop}.bak-$(date +%Y%m%d-%H%M%S)"
+fi
+log "Desktop entry: ${DESKTOP_DIR}/${APP_ID}.desktop"
 
 if command -v update-desktop-database &>/dev/null; then
   update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true

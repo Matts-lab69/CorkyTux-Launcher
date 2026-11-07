@@ -5,9 +5,12 @@ INSTALL_DIR="${HOME}/.local/share/corkytux"
 DATA_DIR="${HOME}/.local/share/CorkyTux"
 CONFIG_DIR="${HOME}/.config/CorkyTux"
 BIN_DIR="${HOME}/.local/bin"
-ICON_DIR="${HOME}/.local/share/icons"
+APP_ID="com.corkytux.CorkyTux"
+DATA_HOME="${HOME}/.local/share"
+[[ "${XDG_DATA_HOME:-}" != /* ]] || DATA_HOME="${XDG_DATA_HOME%/}"
+ICON_DIR="${DATA_HOME}/icons"
 ICON_THEME_DIR="${ICON_DIR}/hicolor"
-DESKTOP_DIR="${HOME}/.local/share/applications"
+DESKTOP_DIR="${DATA_HOME}/applications"
 
 echo ""
 echo "=== CorkyTux Uninstaller ==="
@@ -70,6 +73,8 @@ fi
 
 rm_path "${BIN_DIR}/corkytux" "symlink"
 rm_path "${DESKTOP_DIR}/corkytux.desktop" "desktop entry"
+rm_path "${DESKTOP_DIR}/${APP_ID}.desktop" "application-ID desktop entry"
+rm_path "${ICON_THEME_DIR}/128x128/apps/${APP_ID}.png" "application-ID icon"
 rm_path "${ICON_THEME_DIR}/128x128/apps/corkytux.png" "icon"
 rm_path "${ICON_DIR}/corkytux.png" "legacy icon"
 
