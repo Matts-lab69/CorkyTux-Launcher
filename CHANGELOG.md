@@ -4,13 +4,43 @@ All notable changes to CorkyTux. The format follows Keep a Changelog and the
 project uses SemVer. The plugins are released from CorkyTux-Plugins and are
 named here when they ship the same day as a launcher release.
 
+## [3.2.1] - 2026-11-08
+
+Release preparation for the 3.2.1 tarball. No plugin code changes.
+
+### Changed
+
+- Attribute the bundled `Newtonsoft.Json.dll` (MIT) in `docs/THIRD-PARTY.md`
+  and `CREDITS.md`.
+- Hide build-machine paths from the release binaries with a path remap.
+- Package PNG assets as `0644` so no image is executable.
+- Document the glibc 2.39 floor and the optional runtime dependencies in the
+  README.
+- Resolve emulator icons from the running binary instead of embedding
+  `CARGO_MANIFEST_DIR`, with a test for the installed and source-tree layouts.
+- The release tarball bundles the seven plugins from a pinned
+  CorkyTux-Plugins commit (`3866528`).
+- The release workflow opens a draft only, never overwrites an existing
+  release, and attaches `SHA256SUMS`.
+- The changelog is now in English.
+
+### Known limitations
+
+- Ryujinx and Mupen64Plus catalog downloads are unavailable: their
+  latest-release endpoints return HTTP 404.
+- Launch arguments for linked Flatpak emulators are not passed
+  through when starting the emulator from CorkyTux.
+- A third-party plugin that does not support --api-key-stdin cannot
+  save the CurseForge key from the launcher: it returns an error and
+  must be updated; there is no fallback to argv.
+
 ## [3.2.0] - 2026-10-24
 
 Ships with the plugin releases `minecraft-launcher` 1.2.0,
 `heroic-store` 1.2.0 and `dependency-installer` 2.1.4. The Ely.by sign-in
 needs the launcher and `minecraft-launcher` 1.2.0 updated together.
 
-### Limitaciones conocidas
+### Known limitations
 
 - Ryujinx and Mupen64Plus catalog downloads are unavailable: their
   latest-release endpoints return HTTP 404.
