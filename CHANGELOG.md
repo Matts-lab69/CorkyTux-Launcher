@@ -12,13 +12,13 @@ needs the launcher and `minecraft-launcher` 1.2.0 updated together.
 
 ### Limitaciones conocidas
 
-- Las descargas de Ryujinx y Mupen64Plus del catálogo no están disponibles:
-  sus endpoints de última release devuelven HTTP 404.
-- Los argumentos de lanzamiento de emuladores Flatpak vinculados no se
-  reproducen al iniciarlos desde el launcher.
-- Un plugin de terceros antiguo que no acepte `--api-key-stdin` no puede guardar
-  la key de CurseForge desde el launcher: devuelve un error y debe actualizarse;
-  no se degrada al envío por argv.
+- Ryujinx and Mupen64Plus catalog downloads are unavailable: their
+  latest-release endpoints return HTTP 404.
+- Launch arguments for linked Flatpak emulators are not passed
+  through when starting the emulator from CorkyTux.
+- A third-party plugin that does not support --api-key-stdin cannot
+  save the CurseForge key from the launcher: it returns an error and
+  must be updated; there is no fallback to argv.
 
 ### Security
 
