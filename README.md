@@ -42,9 +42,6 @@ CorkyTux is a Linux launcher built with **Rust + GTK4/libadwaita** to
 Proton/Wine and umu, Steam/Lutris/Heroic scans, and emulators, plus
 multi-purpose plugins.
 
-CorkyTux began as a C++/Qt/QML application; the current launcher is the
-Rust/GTK4 codebase in this repository.
-
 ---
 
 ## Features
