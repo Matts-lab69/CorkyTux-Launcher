@@ -57,6 +57,37 @@ pub const FIRST_REPEAT_MS: u64 = 400;
 pub const REPEAT_MS: u64 = 120;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RepeatDelays {
+    pub initial_ms: u64,
+    pub repeat_ms: u64,
+}
+
+impl RepeatDelays {
+    pub fn from_values(initial: Option<&str>, repeat: Option<&str>) -> Self {
+        fn parse(value: Option<&str>, default: u64) -> u64 {
+            value
+                .and_then(|value| value.parse::<u64>().ok())
+                .filter(|value| *value > 0)
+                .unwrap_or(default)
+        }
+
+        Self {
+            initial_ms: parse(initial, FIRST_REPEAT_MS),
+            repeat_ms: parse(repeat, REPEAT_MS),
+        }
+    }
+}
+
+impl Default for RepeatDelays {
+    fn default() -> Self {
+        Self {
+            initial_ms: FIRST_REPEAT_MS,
+            repeat_ms: REPEAT_MS,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PadMapping {
     Sdl,
     Driver,
@@ -219,20 +250,30 @@ fn step(
     after: Option<Dir>,
     state: &mut NavState,
     now_ms: u64,
+    delays: RepeatDelays,
 ) -> Option<NavAction> {
     let dir = after?;
     if Some(dir) != before {
-        state.next_repeat_ms = now_ms + FIRST_REPEAT_MS;
+        state.next_repeat_ms = now_ms.saturating_add(delays.initial_ms);
         return Some(NavAction::Move(dir));
     }
     if now_ms >= state.next_repeat_ms {
-        state.next_repeat_ms = now_ms + REPEAT_MS;
+        state.next_repeat_ms = now_ms.saturating_add(delays.repeat_ms);
         return Some(NavAction::Move(dir));
     }
     None
 }
 
 pub fn map_event(input: PadInput, state: &mut NavState, now_ms: u64) -> Option<NavAction> {
+    map_event_with_delays(input, state, now_ms, RepeatDelays::default())
+}
+
+pub fn map_event_with_delays(
+    input: PadInput,
+    state: &mut NavState,
+    now_ms: u64,
+    delays: RepeatDelays,
+) -> Option<NavAction> {
     match input {
         PadInput::Button(button, pressed) => {
             if !pressed {
@@ -259,13 +300,13 @@ pub fn map_event(input: PadInput, state: &mut NavState, now_ms: u64) -> Option<N
                 state.dpad
             };
             let after = effective(state);
-            step(before, after, state, now_ms)
+            step(before, after, state, now_ms, delays)
         }
         PadInput::Stick { x, y } => {
             let before = effective(state);
             state.stick = stick_dir(x, y);
             let after = effective(state);
-            step(before, after, state, now_ms)
+            step(before, after, state, now_ms, delays)
         }
     }
 }
@@ -304,6 +345,48 @@ mod tests {
         );
         assert_eq!(map_event(PadInput::Dpad(Dir::Down, false), &mut st, 530), None);
         assert_eq!(map_event(PadInput::Dpad(Dir::Down, true), &mut st, 600), Some(NavAction::Move(Dir::Down)));
+    }
+
+    #[test]
+    fn repeat_delays_accept_positive_values_and_default_invalid_values() {
+        assert_eq!(
+            RepeatDelays::from_values(Some("600"), Some("75")),
+            RepeatDelays {
+                initial_ms: 600,
+                repeat_ms: 75,
+            }
+        );
+        assert_eq!(
+            RepeatDelays::from_values(Some("0"), Some("invalid")),
+            RepeatDelays::default()
+        );
+        assert_eq!(RepeatDelays::from_values(None, None), RepeatDelays::default());
+    }
+
+    #[test]
+    fn hold_uses_configured_repeat_delays() {
+        let delays = RepeatDelays::from_values(Some("500"), Some("75"));
+        let mut state = NavState::default();
+        assert_eq!(
+            map_event_with_delays(PadInput::Dpad(Dir::Down, true), &mut state, 0, delays),
+            Some(NavAction::Move(Dir::Down))
+        );
+        assert_eq!(
+            map_event_with_delays(PadInput::Dpad(Dir::Down, true), &mut state, 499, delays),
+            None
+        );
+        assert_eq!(
+            map_event_with_delays(PadInput::Dpad(Dir::Down, true), &mut state, 500, delays),
+            Some(NavAction::Move(Dir::Down))
+        );
+        assert_eq!(
+            map_event_with_delays(PadInput::Dpad(Dir::Down, true), &mut state, 574, delays),
+            None
+        );
+        assert_eq!(
+            map_event_with_delays(PadInput::Dpad(Dir::Down, true), &mut state, 575, delays),
+            Some(NavAction::Move(Dir::Down))
+        );
     }
 
     #[test]

@@ -470,6 +470,10 @@ Wheels, flight sticks and devices without an SDL mapping are ignored.
   SDL does not know and it will be used instead of the built-in database.
 - With Steam running, Steam Input exposes a virtual pad. CorkyTux keeps the
   virtual pad and drops the physical duplicate, so one press is one action.
+- Repeat timing can be tuned in `~/.config/CorkyTux/Launcher.ini` under
+  `[User Settings]` with `gamepadInitialRepeatDelay` (default `400` ms) and
+  `gamepadRepeatDelay` (default `120` ms). Values must be positive integers;
+  invalid or zero values use the defaults.
 - There is no on-screen keyboard yet, so search fields and paths cannot be
   typed with a controller (#88).
 
