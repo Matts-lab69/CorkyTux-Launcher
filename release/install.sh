@@ -216,7 +216,7 @@ if command -v python3 &>/dev/null; then
   pymissing=()
   python3 -c "import requests" 2>/dev/null || pymissing+=("requests")
   if [[ ${#pymissing[@]} -gt 0 ]]; then
-    warn "Missing python modules: ${pymissing[*]} (install via your distribution packages or a Python virtual environment)"
+    warn "Missing python modules: ${pymissing[*]} (install via your distribution packages, or activate a Python virtual environment with its bin directory on PATH before launching CorkyTux)"
   else
     log "python3 requests OK"
   fi

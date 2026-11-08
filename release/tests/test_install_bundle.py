@@ -110,7 +110,7 @@ class BundledPluginInstall(unittest.TestCase):
 
         result = self.run_script("install.sh", answer="y\n")
         self.assertIn("Missing python modules: requests", result.stdout)
-        self.assertIn("Python virtual environment", result.stdout)
+        self.assertIn("virtual environment with its bin directory on PATH", result.stdout)
         self.assertNotIn("pip install --user", result.stdout)
 
     def test_symlink_payload_is_refused_before_installing_binary(self):
