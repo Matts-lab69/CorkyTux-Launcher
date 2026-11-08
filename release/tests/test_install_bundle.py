@@ -100,6 +100,19 @@ class BundledPluginInstall(unittest.TestCase):
         self.assertTrue((self.plugin_root / "sample-plugin/sample-plugin").exists())
         self.run_script("uninstall.sh")
 
+    def test_missing_python_modules_recommends_managed_install(self):
+        fake_bin = self.root / "fake-bin"
+        fake_bin.mkdir()
+        fake_python = fake_bin / "python3"
+        fake_python.write_text("#!/bin/sh\nexit 1\n")
+        fake_python.chmod(0o755)
+        self.env["PATH"] = f"{fake_bin}:{os.environ['PATH']}"
+
+        result = self.run_script("install.sh", answer="y\n")
+        self.assertIn("Missing python modules: requests", result.stdout)
+        self.assertIn("Python virtual environment", result.stdout)
+        self.assertNotIn("pip install --user", result.stdout)
+
     def test_symlink_payload_is_refused_before_installing_binary(self):
         (self.source / "link").symlink_to(self.root / "outside")
         self.run_script("install.sh", success=False)
