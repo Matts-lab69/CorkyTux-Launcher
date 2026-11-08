@@ -1,4 +1,6 @@
 pub mod helpers;
+#[path = "policies/layout.rs"]
+pub mod layout;
 pub mod deps_modal;
 pub mod sidebar;
 pub mod details_panel;
