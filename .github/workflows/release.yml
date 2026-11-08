@@ -140,6 +140,7 @@ jobs:
           path: |
             corkytux-*.tar.gz
             checksums.txt
+            SHA256SUMS
           if-no-files-found: error
           retention-days: 7
 
@@ -170,7 +171,7 @@ jobs:
             echo "Release ${TAG} already exists: published assets are not touched."
             exit 0
           fi
-          gh release create "$TAG" dist/*.tar.gz dist/checksums.txt \
+          gh release create "$TAG" dist/*.tar.gz dist/checksums.txt dist/SHA256SUMS \
             --draft \
             --verify-tag \
             --title "CorkyTux ${TAG#v}" \
