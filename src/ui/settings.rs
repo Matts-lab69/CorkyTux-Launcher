@@ -2288,7 +2288,7 @@ pub fn show_settings_modal(
         desc_icon.set_pixel_size(24);
         desc_icon.set_valign(gtk::Align::Center);
         row.append(&desc_icon);
-        let lbl = gtk::Label::new(Some("Descripciones de Epic"));
+        let lbl = gtk::Label::new(Some("Epic descriptions"));
         lbl.set_halign(gtk::Align::Start);
         lbl.set_hexpand(true);
         lbl.add_css_class("details-title");

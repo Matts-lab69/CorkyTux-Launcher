@@ -202,7 +202,23 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-6. Create a GitHub Release for `vX.Y.Z` and upload the generated tarball and `checksums.txt`.
+**Plugin pin:** the release build checks out
+`Matts-lab69/CorkyTux-Plugins` at the commit in the `Checkout the plugins`
+step of `.github/workflows/release.yml` (`ref:`) and bundles those files.
+Before tagging, set that `ref` to the current `main` of CorkyTux-Plugins and
+confirm both point at the same commit:
+
+```bash
+git ls-remote https://github.com/Matts-lab69/CorkyTux-Plugins refs/heads/main
+grep -A3 'Checkout the plugins' .github/workflows/release.yml
+```
+
+Update the pin on every release; the CHANGELOG names the commit that
+shipped. The build fails if the tarball does not contain the seven plugins.
+
+6. Pushing the tag runs `.github/workflows/release.yml`, which builds the
+   tarball and opens a **draft** release with the tarball, `checksums.txt` and
+   `SHA256SUMS`. Review the draft, then publish it.
 
 `vX.Y.Z` is the version from `Cargo.toml` (the tarball example in step 7
 uses the same value). The self-updater requires the GitHub release tag to

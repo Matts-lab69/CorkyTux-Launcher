@@ -1784,7 +1784,7 @@ impl StorePageHandle {
         }
         drop(killer);
         self.desc_running.set(true);
-        self.lib_status.set_text("Actualizando descripciones…");
+        self.lib_status.set_text("Updating descriptions…");
         let (rx, k) = StoreManager::spawn_refresh_library(self.store.clone(), "spanish".to_string());
         *self.desc_killer.borrow_mut() = Some(k);
         let vh = self.clone();
@@ -1822,7 +1822,7 @@ impl StorePageHandle {
                     let total = extra.get("total").and_then(|x| x.as_u64()).unwrap_or(0);
                     let stage = extra.get("stage").and_then(|x| x.as_str()).unwrap_or("");
                     vh.lib_status.set_text(&format!(
-                        "Actualizando descripciones {}/{} · {stage}",
+                        "Updating descriptions {}/{} · {stage}",
                         done, total
                     ));
                     true
@@ -1832,9 +1832,9 @@ impl StorePageHandle {
                     *vh.desc_killer.borrow_mut() = None;
                     let updated = val.get("updated").and_then(|x| x.as_u64()).unwrap_or(0);
                     let total = val.get("total").and_then(|x| x.as_u64()).unwrap_or(0);
-                    let msg = format!("{updated} actualizadas de {total}");
-                    vh.lib_status.set_text(&format!("Descripciones actualizadas · {msg}"));
-                    vh.state_toast("Descripciones actualizadas", &msg);
+                    let msg = format!("{updated} of {total} updated");
+                    vh.lib_status.set_text(&format!("Descriptions updated · {msg}"));
+                    vh.state_toast("Descriptions updated", &msg);
                     false
                 }
                 PluginEvent::Error { message, .. } => {
