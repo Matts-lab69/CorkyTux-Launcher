@@ -6,7 +6,30 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(PathBuf::from)
+    let home = home_dir_from(std::env::var_os("HOME"));
+    if home.is_none() {
+        static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!(
+                "[integrations] HOME is unset, empty, or relative; user data paths are unavailable"
+            );
+        }
+    }
+    home
+}
+
+fn home_dir_from(value: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    let home = PathBuf::from(value?);
+    home.is_absolute().then_some(home)
+}
+
+fn user_config_dir_from(home: Option<PathBuf>) -> Option<PathBuf> {
+    let home = home.filter(|path| path.is_absolute())?;
+    Some(home.join(".config").join("CorkyTux"))
+}
+
+fn user_config_dir() -> Option<PathBuf> {
+    user_config_dir_from(home_dir())
 }
 
 /// Data roots where Lutris keeps games, covers and icons.
@@ -426,9 +449,14 @@ impl IntegrationManager {
         slug: &str,
         sgdb_key: Option<&str>,
     ) -> (Option<String>, Option<String>) {
-        let home = home_dir().unwrap_or_default();
-        let banners_dir = home.join(".config").join("CorkyTux").join("banners");
-        let icons_dir = home.join(".config").join("CorkyTux").join("icons");
+        let Some(home) = home_dir() else {
+            return (None, None);
+        };
+        let Some(config_dir) = user_config_dir_from(Some(home.clone())) else {
+            return (None, None);
+        };
+        let banners_dir = config_dir.join("banners");
+        let icons_dir = config_dir.join("icons");
         fs::create_dir_all(&banners_dir).ok();
         fs::create_dir_all(&icons_dir).ok();
         let client = match reqwest::blocking::Client::builder()
@@ -694,8 +722,8 @@ impl IntegrationManager {
         if !Path::new(&expanded).is_file() {
             return None;
         }
-        let home = home_dir().unwrap_or_default();
-        let dest = home.join(".config").join("CorkyTux").join("icons")
+        let dest = user_config_dir()?
+            .join("icons")
             .join(format!("{}-exe.png", slugify(game_name)));
         if cached_icon_valid(&dest) {
             return Some(dest.display().to_string());
@@ -777,8 +805,8 @@ impl IntegrationManager {
         if !tool_available("ffmpeg") {
             return None;
         }
-        let home = home_dir().unwrap_or_default();
-        let dest = home.join(".config").join("CorkyTux").join("banners")
+        let dest = user_config_dir()?
+            .join("banners")
             .join(format!("{}-iconbanner.jpg", slugify(game_name)));
         if cached_icon_valid(&dest) {
             return Some(dest.display().to_string());
@@ -844,8 +872,8 @@ impl IntegrationManager {
         if !Path::new(&expanded).is_file() {
             return None;
         }
-        let home = home_dir().unwrap_or_default();
-        let dest = home.join(".config").join("CorkyTux").join("icons")
+        let dest = user_config_dir()?
+            .join("icons")
             .join(format!("{}-appimage.png", slugify(game_name)));
         if cached_icon_valid(&dest) {
             return Some(dest.display().to_string());
@@ -902,8 +930,8 @@ impl IntegrationManager {
         } else {
             return None;
         }
-        let home = home_dir().unwrap_or_default();
-        let dest = home.join(".config").join("CorkyTux").join("icons")
+        let dest = user_config_dir()?
+            .join("icons")
             .join(format!("{}-rpg.png", slugify(game_name)));
         if cached_icon_valid(&dest) {
             return Some(dest.display().to_string());
@@ -981,7 +1009,10 @@ impl IntegrationManager {
     }
 
     pub fn scan_lutris(&self) -> Vec<IntegrationEntry> {
-        let roots = lutris_data_roots(&home_dir().unwrap_or_default());
+        let Some(home) = home_dir() else {
+            return Vec::new();
+        };
+        let roots = lutris_data_roots(&home);
         // 1) Preferred: Lutris SQLite database pga.db (no new deps: sqlite3 CLI)
         for root in &roots {
             let db = root.join("lutris").join("pga.db");
@@ -1284,7 +1315,9 @@ impl IntegrationManager {
 
     pub fn scan_steam(&self) -> Vec<IntegrationEntry> {
         let mut results = Vec::new();
-        let home = home_dir().unwrap_or_default();
+        let Some(home) = home_dir() else {
+            return results;
+        };
         // Steam keeps libraries in libraryfolders.vdf (VDF format, NOT json).
         // Walk every Steam root (native + Flatpak) instead of hardcoding
         // ~/.steam/steam, so a Flatpak Steam install is seen.
@@ -1426,11 +1459,10 @@ pub fn steam_install_confirmed(appid: &str) -> bool {
     if appid.is_empty() {
         return false;
     }
-    let steam_dir = home_dir()
-        .unwrap_or_default()
-        .join(".steam")
-        .join("steam")
-        .join("steamapps");
+    let Some(home) = home_dir() else {
+        return false;
+    };
+    let steam_dir = home.join(".steam").join("steam").join("steamapps");
     // Same library discovery as scan_steam: default dir + libraryfolders.vdf
     let mut steam_dirs = vec![steam_dir.clone()];
     for candidate in [
@@ -1710,7 +1742,33 @@ fn format_size_bytes(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::IntegrationManager;
+    use super::{home_dir_from, user_config_dir_from, IntegrationManager};
+
+    #[test]
+    fn empty_or_relative_home_cannot_create_user_config_paths() {
+        assert_eq!(home_dir_from(None), None);
+        assert_eq!(home_dir_from(Some(std::ffi::OsString::new())), None);
+        assert_eq!(
+            home_dir_from(Some(std::ffi::OsString::from("relative/home"))),
+            None
+        );
+
+        let home = std::path::PathBuf::from("/tmp/corkytux-home");
+        assert_eq!(
+            home_dir_from(Some(home.clone().into_os_string())),
+            Some(home.clone())
+        );
+        assert_eq!(user_config_dir_from(None), None);
+        assert_eq!(user_config_dir_from(Some(std::path::PathBuf::new())), None);
+        assert_eq!(
+            user_config_dir_from(Some(std::path::PathBuf::from("relative/home"))),
+            None
+        );
+        assert_eq!(
+            user_config_dir_from(Some(home.clone())),
+            Some(home.join(".config").join("CorkyTux"))
+        );
+    }
 
     #[test]
     fn remove_dir_recursive_tempdir() {
