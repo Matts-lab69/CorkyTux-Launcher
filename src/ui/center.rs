@@ -12,6 +12,7 @@ pub struct CenterHandle {
     flow: gtk::FlowBox,
     recent_inner: gtk::Box,
     empty_label: gtk::Label,
+    center_col: gtk::Box,
 }
 
 impl Clone for CenterHandle {
@@ -21,11 +22,16 @@ impl Clone for CenterHandle {
             flow: self.flow.clone(),
             recent_inner: self.recent_inner.clone(),
             empty_label: self.empty_label.clone(),
+            center_col: self.center_col.clone(),
         }
     }
 }
 
 impl CenterHandle {
+    pub fn set_sidebar_visible(&self, visible: bool) {
+        self.center_col.set_margin_start(if visible { 8 } else { 24 });
+    }
+
     pub fn rebuild(&self, state: &AppState, details: &Rc<RefCell<Option<DetailsPanel>>>) {
         self.flow.remove_all();
         let entries = state.recent_model.entries();
@@ -55,7 +61,7 @@ pub fn build_center(
     let center_col = gtk::Box::new(gtk::Orientation::Vertical, 24);
     center_col.set_margin_top(24);
     center_col.set_margin_bottom(24);
-    center_col.set_margin_start(24);
+    center_col.set_margin_start(8);
     center_col.set_margin_end(24);
     center_col.set_halign(gtk::Align::Fill);
     center_col.set_valign(gtk::Align::Fill);
@@ -123,5 +129,6 @@ pub fn build_center(
         flow,
         recent_inner,
         empty_label,
+        center_col,
     }
 }
