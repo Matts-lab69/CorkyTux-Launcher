@@ -222,11 +222,12 @@ jobs:
         run: |
           set -euo pipefail
           ls -l dist
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release ${TAG} already exists: published assets are not touched."
             exit 0
           fi
           gh release create "$TAG" dist/*.tar.gz dist/checksums.txt dist/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
             --draft \
             --verify-tag \
             --title "CorkyTux ${TAG#v}" \
