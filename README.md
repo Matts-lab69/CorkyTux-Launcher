@@ -359,9 +359,11 @@ is missing, CorkyTux keeps the generic cover and logs one warning per run:
 - Integrity: the GitHub release API SHA256 digest is mandatory; `checksums.txt` is optional and must match when present.
 - Hosts: HTTPS only; redirects only to `github.com`, `objects.githubusercontent.com`, and `release-assets.githubusercontent.com` for assets, and `api.github.com` and `github.com` for metadata.
 - Limits: 200 MiB total, 50 MiB per file, 10,000 entries; no absolute paths, `..`, symlinks, hardlinks, or unexpected files.
+- Payload: the binary, `webdriver_login`, the icon and `assets/` are replaced. The bundled plugins and the docs in the tarball are skipped by exact name and the install log says so; re-run `install.sh` to refresh plugins. Any other unexpected entry aborts the update.
 - Rollback: every replaced file is backed up and restored on failure; backups are pruned after a successful install.
 - Restart: the launcher quits and a detached sleeper starts the new binary after the old process exits.
 - Scope: only copies installed by `install.sh` under `~/.local/share/corkytux` can self-update. Repository builds report that they must be updated manually.
+- From 3.2.0: that release shipped a stricter extractor that rejects the release tarball, so a 3.2.0 install needs one manual `install.sh` run. From 3.2.1 the in-app update works.
 
 ---
 

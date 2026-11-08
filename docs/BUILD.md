@@ -217,12 +217,19 @@ Update the pin on every release; the CHANGELOG names the commit that
 shipped. The build fails if the tarball does not contain the seven plugins.
 
 6. Pushing the tag runs `.github/workflows/release.yml`, which builds the
-   tarball and opens a **draft** release with the tarball, `checksums.txt` and
+   tarball, checks it with the in-app updater extractor and a full loopback
+   install, and opens a **draft** release with the tarball, `checksums.txt` and
    `SHA256SUMS`. Review the draft, then publish it.
 
 `vX.Y.Z` is the version from `Cargo.toml` (the tarball example in step 7
-uses the same value). The self-updater requires the GitHub release tag to
-match the `Cargo.toml` version and the release asset SHA256 digest.
+uses the same value). The self-updater requires the release tag to match the
+`Cargo.toml` version, the asset name
+`corkytux-<version>-linux-<arch>.tar.gz`, and that asset's SHA256 digest from
+the release API. `checksums.txt` is optional and must match the digest when
+present; `SHA256SUMS` is for manual verification and the updater does not read
+it. The updater installs the binary, `webdriver_login`, the icon and `assets/`;
+the bundled plugins are skipped and reported in the install log, so a
+plugin-only change needs a reinstall.
 
 ## 10. Runtime notes
 

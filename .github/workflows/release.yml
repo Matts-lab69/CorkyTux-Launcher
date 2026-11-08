@@ -165,6 +165,19 @@ jobs:
           objdump -T target/release/corkytux \
             | grep -o 'GLIBC_[0-9.]*' | sort -V -u | tail -3
 
+      - name: Check the tarball with the updater extractor
+        # The updater skips the plugin tree, the docs set and the
+        # packaged .desktop by exact name; any other unexpected entry
+        # must abort here, not on a user's machine. The second test runs
+        # the whole download, checksum and install path on the real file.
+        run: |
+          set -euo pipefail
+          tarball="$PWD/$(ls corkytux-*.tar.gz)"
+          CORKYTUX_REAL_TARBALL="$tarball" \
+            cargo test --locked real_release_tarball_extracts -- --nocapture
+          CORKYTUX_REAL_TARBALL="$tarball" \
+            cargo test --locked real_release_assets_update_and_bad_checksum -- --nocapture
+
       - name: Upload the artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 (4.6.2)
         with:

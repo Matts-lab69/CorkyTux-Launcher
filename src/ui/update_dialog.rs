@@ -715,6 +715,22 @@ mod tests {
         version: &str,
         reported_version: &str,
     ) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        let archive = archive(version, reported_version);
+        let digest = format!("{:x}", sha2::Sha256::digest(&archive));
+        let asset_name =
+            self_update::expected_asset_name(&semver::Version::parse(version).unwrap());
+        let checksums = format!("{}  {}\n", digest, asset_name);
+        local_release_with(version, archive, checksums, &digest)
+    }
+
+    /// Same loopback release, with caller-supplied artifact bytes and
+    /// `checksums.txt` body; the real release assets go through this.
+    fn local_release_with(
+        version: &str,
+        archive: Vec<u8>,
+        checksums: String,
+        api_digest: &str,
+    ) -> (String, std::thread::JoinHandle<Vec<String>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let tag = format!("v{}", version);
@@ -728,9 +744,6 @@ mod tests {
             "/Matts-lab69/CorkyTux-Launcher/releases/download/{}/checksums.txt",
             tag
         );
-        let archive = archive(version, reported_version);
-        let digest = format!("{:x}", sha2::Sha256::digest(&archive));
-        let checksums = format!("{}  {}\n", digest, asset_name);
         let api = serde_json::json!({
             "tag_name": tag,
             "name": tag,
@@ -741,7 +754,7 @@ mod tests {
                 {
                     "name": asset_name,
                     "browser_download_url": format!("{}{}", base, asset_path),
-                    "digest": format!("sha256:{}", digest),
+                    "digest": format!("sha256:{}", api_digest),
                     "size": archive.len()
                 },
                 {
@@ -875,5 +888,99 @@ mod tests {
         assert!(err.contains("wrong version"));
         let rolled_back = std::fs::read_to_string(snap.install_dir.join("corkytux")).unwrap();
         assert!(rolled_back.contains("corkytux 3.1.3"));
+    }
+
+    /// Opt-in: the release workflow points `CORKYTUX_REAL_TARBALL` at the
+    /// tarball it just built, so download → verify → extract → install
+    /// runs against the shipped bytes. A plain `cargo test` skips it.
+    #[test]
+    fn real_release_assets_update_and_bad_checksum() {
+        let Ok(tarball_path) = std::env::var("CORKYTUX_REAL_TARBALL") else {
+            eprintln!("CORKYTUX_REAL_TARBALL unset: skipping the artifact update");
+            return;
+        };
+        let tarball_path = PathBuf::from(tarball_path);
+        let checksums_path = std::env::var("CORKYTUX_REAL_CHECKSUMS")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| tarball_path.with_file_name("checksums.txt"));
+        let tarball = std::fs::read(&tarball_path).unwrap();
+        let checksums = std::fs::read_to_string(&checksums_path).unwrap();
+        let digest = format!("{:x}", sha2::Sha256::digest(&tarball));
+        assert!(
+            checksums.contains(&digest),
+            "{} does not list the tarball digest",
+            checksums_path.display()
+        );
+        let version = semver::Version::parse(
+            tarball_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_prefix("corkytux-"))
+                .and_then(|n| n.split("-linux-").next())
+                .expect("the tarball name carries the version"),
+        )
+        .unwrap();
+        assert_eq!(
+            tarball_path.file_name().unwrap().to_string_lossy(),
+            self_update::expected_asset_name(&version)
+        );
+
+        let _env = crate::test_env::lock();
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let home = std::env::temp_dir().join(format!(
+            "corky_real_update_{}_{}",
+            std::process::id(),
+            SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        let _temp_home = TempHome(home.clone());
+        let _home_env = EnvVarGuard::set("HOME", &home);
+        let xdg_data = home.join("xdg-data");
+        let xdg_config = home.join("xdg-config");
+        std::fs::create_dir_all(&xdg_data).unwrap();
+        std::fs::create_dir_all(&xdg_config).unwrap();
+        let _xdg_data_env = EnvVarGuard::set("XDG_DATA_HOME", &xdg_data);
+        let _xdg_config_env = EnvVarGuard::set("XDG_CONFIG_HOME", &xdg_config);
+        let mut snap = test_snapshot(&home);
+        snap.current = semver::Version::parse("3.2.0").unwrap();
+        let (tx, _rx) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+
+        // 1) A checksums.txt that disagrees with the API digest aborts
+        //    before anything is installed.
+        let wrong = format!(
+            "{}  {}\n",
+            "0".repeat(64),
+            tarball_path.file_name().unwrap().to_string_lossy()
+        );
+        let (api_url, server) =
+            local_release_with(&version.to_string(), tarball.clone(), wrong, &digest);
+        let info = fetch_release(api_url);
+        let err = download_and_install(&snap, &info, &tx, &cancel).unwrap_err();
+        assert_eq!(server.join().unwrap().len(), 3);
+        assert!(
+            err.contains("checksums.txt disagrees with the release digest"),
+            "got: {}",
+            err
+        );
+        let untouched = std::fs::read_to_string(snap.install_dir.join("corkytux")).unwrap();
+        assert!(untouched.contains("original v3.1.2 binary"));
+
+        // 2) The real assets install; the new binary answers --version
+        //    and the log reports that plugins were not replaced.
+        let (api_url, server) =
+            local_release_with(&version.to_string(), tarball, checksums, &digest);
+        let info = fetch_release(api_url);
+        let log = download_and_install(&snap, &info, &tx, &cancel).unwrap();
+        assert_eq!(server.join().unwrap().len(), 3);
+        self_update::health_check(&snap.install_dir.join("corkytux"), &version)
+            .expect("the installed binary must answer --version");
+        assert!(snap.install_dir.join("assets").is_dir());
+        assert!(
+            log.iter().any(|line| line.contains("Plugins were not updated")),
+            "log: {:?}",
+            log
+        );
     }
 }
