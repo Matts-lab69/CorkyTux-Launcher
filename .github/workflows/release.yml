@@ -42,6 +42,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Checkout the plugins
+        # The plugins are public, so the default token reads them. Pin the
+        # commit so a plugin push cannot change a release already in flight.
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Matts-lab69/CorkyTux-Plugins
+          ref: 3866528543ae7773dd46018ee9ebd3ac8b10de29
+          path: plugins-src
+
       - name: Resolve the tag
         id: tag
         env:
@@ -71,6 +80,22 @@ jobs:
             echo "The tag and Cargo.toml disagree; bump Cargo.toml first." >&2
             exit 1
           fi
+
+      - name: Extract the release notes
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          start="## [${version}]"
+          awk -v start="$start" '
+            index($0, start) == 1 { found=1 }
+            found && /^## \[/ && index($0, start) != 1 { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md
+          echo "=== release-notes.md"
+          cat release-notes.md
 
       - name: Install system dependencies
         run: |
@@ -119,6 +144,9 @@ jobs:
           # Optional shared SteamGridDB fallback embedded with option_env!.
           # An empty secret leaves it undefined and the build still works.
           CORKYTUX_SGDB_BUILTIN_KEY: ${{ secrets.CORKYTUX_SGDB_BUILTIN_KEY }}
+          # Same plugin checkout the local release uses: build-release.sh
+          # bundles the tracked files of the seven plugins from here.
+          CORKYTUX_PLUGINS_SOURCE: ${{ github.workspace }}/plugins-src
         run: ./release/build-release.sh "$TAG"
 
       - name: Check what was built
@@ -129,6 +157,10 @@ jobs:
           tar tzf "$tarball" | sed -n '1,12p'
           echo "=== sha256sum -c checksums.txt"
           sha256sum -c checksums.txt
+          echo "=== plugins in the tarball"
+          plugins="$(tar tzf "$tarball" | grep -cE '^corkytux-[^/]+/plugins/[^/]+/plugin\.json$' || true)"
+          echo "${plugins} plugins"
+          test "$plugins" -eq 7
           echo "=== glibc floor of the CI binary"
           objdump -T target/release/corkytux \
             | grep -o 'GLIBC_[0-9.]*' | sort -V -u | tail -3
@@ -141,6 +173,7 @@ jobs:
             corkytux-*.tar.gz
             checksums.txt
             SHA256SUMS
+            release-notes.md
           if-no-files-found: error
           retention-days: 7
 
@@ -175,4 +208,4 @@ jobs:
             --draft \
             --verify-tag \
             --title "CorkyTux ${TAG#v}" \
-            --generate-notes
+            --notes-file dist/release-notes.md
