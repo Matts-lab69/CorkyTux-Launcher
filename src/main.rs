@@ -706,6 +706,10 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     sidebar.widget.set_hexpand(false);
     sidebar.widget.set_halign(gtk::Align::Start);
     body.append(&sidebar.widget);
+    let panel_separator = gtk::Separator::new(gtk::Orientation::Vertical);
+    panel_separator.set_margin_start(12);
+    panel_separator.set_margin_end(12);
+    body.append(&panel_separator);
     {
         let sidebar_widget = sidebar.widget.clone();
         let toggle = sidebar_toggle.clone();
@@ -724,7 +728,16 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
 
     // Build center
     let center = ui::center::build_center(&state, &details_ref);
-    center_handle.borrow_mut().replace(center);
+    center_handle.borrow_mut().replace(center.clone());
+    {
+        let separator = panel_separator.clone();
+        let center = center.clone();
+        sidebar.widget.connect_visible_notify(move |sidebar_widget| {
+            let visible = sidebar_widget.is_visible();
+            separator.set_visible(visible);
+            center.set_sidebar_visible(visible);
+        });
+    }
 
     // Games / Minecraft / Stores pages inside the launcher (sidebar buttons).
     let mc_view = ui::minecraft_view::MinecraftView::new(&state, &window);

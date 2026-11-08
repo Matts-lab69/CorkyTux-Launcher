@@ -608,8 +608,8 @@ pub(crate) fn main_css_text(theme: &ThemeManager) -> String {
              .top-bar {{ background-color: {bg}; min-height: 52px; padding: 0 16px; }}\
              headerbar {{ background-color: {bg}; color: {text_main}; border-bottom: 1px solid {border}; }}\
              .sidebar {{ background-color: {bg}; min-width: 230px; }}\
-            .sidebar-card {{ border: 1px solid {accent}; border-radius: 8px; background-color: transparent; padding: 8px; }}\
-            .sidebar-frame {{ border: 1px solid {accent}; border-radius: 10px; background-color: transparent; padding: 4px; }}\
+            .sidebar-card {{ border: 1px solid {accent}; border-right: none; border-radius: 8px; background-color: transparent; padding: 8px; }}\
+            .sidebar-frame {{ border: 1px solid {accent}; border-right: none; border-radius: 10px; background-color: transparent; padding: 4px; }}\
              .filter-btn {{ background-color: {well}; color: {text_main}; border: 1px solid transparent; border-radius: 8px; padding: 6px 12px; font-weight: bold; font-size: 12px; min-height: 30px; }}\
              .filter-btn:hover {{ background-color: {hover}; }}\
              .filter-btn:checked {{ background-color: {hover}; color: {accent}; border-color: {accent}; font-weight: bold; }}\
@@ -654,7 +654,7 @@ pub(crate) fn main_css_text(theme: &ThemeManager) -> String {
             .warn-dot {{ color: {warn_dot}; font-size: 14px; }}\
             .error-dot {{ font-size: 14px; }}\
             .warn-game {{ color: {text_main}; font-weight: bold; font-size: 13px; }}\
-             .recent-frame {{ border: 1px solid {accent}; border-radius: 10px; background-color: transparent; padding: 16px; }}\
+             .recent-frame {{ border: 1px solid {accent}; border-left: none; border-radius: 10px; background-color: transparent; padding: 16px; }}\
              .recent-label {{ color: {text_main}; font-weight: bold; font-size: 24px; }}\
              .recent-empty {{ color: {text_sec}; font-size: 12px; }}\
              scrollbar {{ min-width: 2px; min-height: 2px; border: none; background: transparent; outline: none; padding: 0; margin: 0; }}\
