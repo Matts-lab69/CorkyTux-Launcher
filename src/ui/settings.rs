@@ -2553,6 +2553,21 @@ enum PluginTabMsg {
 }
 
 fn emulator_icon_path(name: &str) -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()));
+    emulator_icon_path_from_dir(dir, &home, name)
+}
+
+/// Resuelve el icono de un emulador: primero la carpeta de assets instalada
+/// junto al usuario (`home_dir/.local/share/corkytux/assets/icons/emulators/`),
+/// y como fallback para `cargo run`, caminando hacia arriba desde `exe_dir`
+/// hasta encontrar `assets/icons/emulators/<filename>`.
+///
+/// Nunca incrusta `CARGO_MANIFEST_DIR`, así que el binario de release no
+/// revela rutas de la máquina de compilación. `exe_dir` y `home_dir` son
+/// parámetros para poder probar ambos escenarios con directorios temporales.
+fn emulator_icon_path_from_dir(exe_dir: &Path, home_dir: &Path, name: &str) -> Option<String> {
     let key = name
         .chars()
         .filter(|c| c.is_ascii_alphanumeric())
@@ -2573,24 +2588,20 @@ fn emulator_icon_path(name: &str) -> Option<String> {
         "melonds" => "net.kuribo64.melonDS.svg",
         _ => return None,
     };
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    let installed = PathBuf::from(home)
+    let installed = PathBuf::from(home_dir)
         .join(".local/share/corkytux/assets/icons/emulators")
         .join(filename);
     if installed.is_file() {
         return Some(installed.to_string_lossy().into_owned());
     }
-    // Source-tree fallback for `cargo run`. It walks up from the running
-    // binary instead of embedding CARGO_MANIFEST_DIR, which would leak the
-    // build machine's checkout path into the shipped binary.
-    let exe = std::env::current_exe().ok()?;
-    let mut dir = exe.parent()?;
+    let mut dir = exe_dir.to_path_buf();
     for _ in 0..4 {
         let candidate = dir.join("assets/icons/emulators").join(filename);
         if candidate.is_file() {
             return Some(candidate.to_string_lossy().into_owned());
         }
-        dir = dir.parent()?;
+        let Some(parent) = dir.parent() else { break };
+        dir = parent.to_path_buf();
     }
     None
 }
@@ -4192,5 +4203,36 @@ mod tests {
             Some(want.as_str())
         );
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+        #[test]
+    fn emulator_icon_resolves_installed_layout_and_source_tree_layout() {
+        // home_dir vacío: ninguna ruta instalada interfere con el test.
+        let tmp_home = mktmp("corky_icon_home");
+        std::fs::create_dir_all(tmp_home.join(".local/share/corkytux/assets/icons/emulators")).unwrap();
+
+        // 1) Binario instalado: assets junto al ejecutable.
+        let install_root = mktmp("corky_icon_install");
+        std::fs::create_dir_all(install_root.join("assets/icons/emulators")).unwrap();
+        std::fs::write(install_root.join("assets/icons/emulators/azahar.svg"), "<svg/>").unwrap();
+        assert!(emulator_icon_path_from_dir(&install_root, &tmp_home, "azahar").is_some());
+        assert!(emulator_icon_path_from_dir(&install_root, &tmp_home, "nope").is_none());
+
+        // 2) Desde el repositorio: binario en target/debug, assets en la raiz.
+        let repo_root = mktmp("corky_icon_repo");
+        std::fs::create_dir_all(repo_root.join("assets/icons/emulators")).unwrap();
+        std::fs::write(repo_root.join("assets/icons/emulators/desmume.svg"), "<svg/>").unwrap();
+        let deep = repo_root.join("target/debug");
+        std::fs::create_dir_all(&deep).unwrap();
+        assert!(emulator_icon_path_from_dir(&deep, &tmp_home, "desmume").is_some());
+
+        // 3) Sin assets en ninguna parte -> None.
+        let empty = mktmp("corky_icon_empty");
+        assert!(emulator_icon_path_from_dir(&empty, &tmp_home, "azahar").is_none());
+
+        let _ = std::fs::remove_dir_all(&tmp_home);
+        let _ = std::fs::remove_dir_all(&install_root);
+        let _ = std::fs::remove_dir_all(&repo_root);
+        let _ = std::fs::remove_dir_all(&empty);
     }
 }
