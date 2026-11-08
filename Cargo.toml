@@ -1,6 +1,6 @@
 [package]
 name = "corkytux"
-version = "3.2.0"
+version = "3.2.1"
 edition = "2021"
 license-file = "LICENSE"
 
@@ -44,3 +44,5 @@ opt-level = 3
 lto = true
 strip = true
 codegen-units = 1
+# Build-machine paths are hidden with --remap-path-prefix in
+# release/build-release.sh: cargo 1.96 still rejects profile.trim-paths.
