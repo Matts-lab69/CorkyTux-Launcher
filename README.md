@@ -34,7 +34,6 @@
 </p>
 
 ---
-
 ## What is CorkyTux?
 
 CorkyTux is a Linux launcher built with **Rust + GTK4/libadwaita** to
@@ -53,7 +52,6 @@ Unified library, filters, search, recently played cards, favorites, playtime, pe
 Per-game Proton version and prefix, umu, EAC/BattlEye, EOS, Wine virtual desktop, environment variables, arguments, DLL overrides, Steam/Lutris/Heroic scans.
 
 ---
-
 ## Plugins
 
 Plugins are installed separately. See
@@ -69,7 +67,6 @@ binaries and guides.
 - `dll-overrides-automator`: manage `WINEDLLOVERRIDES`.
 
 ---
-
 ## Requirements
 
 The prebuilt tarball needs a 64-bit Linux system with:
@@ -106,7 +103,6 @@ optional runtime dependencies; `install.sh` warns about the ones it can check:
 | `curl` | Proton downloads | Proton downloads fail |
 
 ---
-
 ## Quick start
 
 ### Install from tarball
@@ -140,7 +136,6 @@ corkytux
 ```
 
 ---
-
 ## Build from source
 
 ### Prerequisites
@@ -230,7 +225,6 @@ Do not use `sudo`; `install.sh` writes under `$HOME`. Paths are listed in
 | `corkytux` is not in `PATH` | `~/.local/bin` is not on `PATH` | Add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile | Verified by `release/install.sh` |
 
 ---
-
 ## Installation
 
 ### Install from a release tarball
@@ -290,7 +284,6 @@ after a reinstall. It leaves unrelated plugins and plugin-created files alone;
 deleting game data, cache and configuration still requires explicit confirmation.
 
 ---
-
 ## Configuration and data paths
 
 | Path | Contents |
@@ -305,7 +298,6 @@ deleting game data, cache and configuration still requires explicit confirmation
 | `~/.cache/CorkyTux/modicons/` | Minecraft mod icon cache |
 
 ---
-
 ## Optional runtime tools
 
 | Tool | Feature |
@@ -320,7 +312,6 @@ deleting game data, cache and configuration still requires explicit confirmation
 | `gamemode`, `mangohud`, `zenity`/`kdialog`, `glxinfo` | optional launch helpers |
 
 ---
-
 ## SteamGridDB artwork
 
 Cover, banner and icon art fall back to SteamGridDB when a key is available.
@@ -345,7 +336,6 @@ and each user's own key always wins. See
 or without it.
 
 ---
-
 ## Game icons
 
 Windows `.exe` icons are extracted with `icoextract` and `ffmpeg`. When either
@@ -364,7 +354,6 @@ is missing, CorkyTux keeps the generic cover and logs one warning per run:
 - Scope: only copies installed by `install.sh` under `~/.local/share/corkytux` can self-update. Repository builds report that they must be updated manually.
 
 ---
-
 ## --version
 
 ```bash
@@ -375,7 +364,6 @@ Prints `corkytux X.Y.Z` and exits without opening a window. The flag is
 recognized only when it is the sole argument.
 
 ---
-
 ## Release
 
 1. Bump `version` in `Cargo.toml`.
@@ -405,8 +393,6 @@ builds with `cargo build --release --bins`, creates
 `corkytux-<version>-linux-<arch>.tar.gz`, and writes `checksums.txt`.
 
 ---
-
-
 ## Security
 
 - Epic Online Services exchange codes: games that use EOS authentication
@@ -452,7 +438,6 @@ plugins/<name>/                 separate repo (CorkyTux-Plugins): plugin binary 
 ```
 
 ---
-
 ## Credits
 
 See [CREDITS.md](CREDITS.md) for included code and artwork, optional runtimes,
@@ -465,7 +450,6 @@ Existing third-party copyright and license notices remain authoritative.
   used or inspired by this person's repositories.
 
 ---
-
 ## Gamepad
 
 Any controller with an SDL gamepad mapping works: DualShock 4, DualSense,
