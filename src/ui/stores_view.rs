@@ -3740,7 +3740,6 @@ fi
         assert_eq!(despues.filas_modal().len(), 3);
 
         // Drop restores HOME + CORKYTUX_LOGIN_HELPER (also on panic).
-        drop(_env);
         let _ = std::fs::remove_dir_all(&base);
     }
 
