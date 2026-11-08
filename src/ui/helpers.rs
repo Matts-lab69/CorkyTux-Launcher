@@ -607,7 +607,7 @@ pub(crate) fn main_css_text(theme: &ThemeManager) -> String {
              dialog.background {{ background-color: {dialog_bg}; color: {text_main}; border-radius: 12px; border: 1px solid {border}; }}\
              .top-bar {{ background-color: {bg}; min-height: 52px; padding: 0 16px; }}\
              headerbar {{ background-color: {bg}; color: {text_main}; border-bottom: 1px solid {border}; }}\
-             .sidebar {{ background-color: {bg}; min-width: 230px; }}\
+             .sidebar {{ background-color: {bg}; min-width: 230px; border-right: none; }}\
             .sidebar-card {{ border: 1px solid {accent}; border-right: none; border-radius: 8px; background-color: transparent; padding: 8px; }}\
             .sidebar-frame {{ border: 1px solid {accent}; border-right: none; border-radius: 10px; background-color: transparent; padding: 4px; }}\
              .filter-btn {{ background-color: {well}; color: {text_main}; border: 1px solid transparent; border-radius: 8px; padding: 6px 12px; font-weight: bold; font-size: 12px; min-height: 30px; }}\
@@ -956,6 +956,29 @@ mod tests {
                 chip_ratio >= 4.5,
                 "{:?} .loader-tag {} on {} = {:.2}:1",
                 mode.as_str(), chip_fg, chip_bg, chip_ratio
+            );
+        }
+    }
+
+    #[test]
+    fn sidebar_has_no_right_border_in_either_theme() {
+        use crate::backend::theme::ThemeMode;
+
+        for mode in [ThemeMode::Light, ThemeMode::Dark] {
+            let theme = ThemeManager::for_test(mode.clone());
+            let css = main_css_text(&theme);
+            let rule = css
+                .split(".sidebar {")
+                .nth(1)
+                .expect("sidebar rule exists")
+                .split('}')
+                .next()
+                .expect("sidebar rule closes");
+            assert!(
+                rule.split(';')
+                    .any(|declaration| declaration.trim() == "border-right: none"),
+                "{:?} sidebar rule must suppress its right border",
+                mode.as_str()
             );
         }
     }
