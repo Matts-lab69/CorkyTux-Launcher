@@ -1084,6 +1084,18 @@ pub fn extract_tarball_limited(
         }
         let target = staging.join(&clean);
         let name = clean.to_string_lossy().to_string();
+        // Charge every entry, skipped or not, before any branch: the
+        // reader decompresses through the payload to reach the next
+        // header, and `entry.size()` honors the PAX override that the
+        // raw header would hide.
+        let declared = entry.size();
+        if declared > limits.max_file_bytes {
+            return Err(format!("tarball file too large: {}", name));
+        }
+        total += declared;
+        if total > limits.max_total_bytes {
+            return Err("tarball too large when unpacked: refused".into());
+        }
         let plugin_root = name == "plugins";
         if plugin_root && !kind.is_dir() {
             return Err(format!("unexpected file in tarball: {}", name));
@@ -1094,21 +1106,6 @@ pub fn extract_tarball_limited(
             || SKIPPED_ROOT_FILES.contains(&name.as_str())
             || name.starts_with("plugins/");
         if skipped || plugin_root {
-            // Nothing is written, but the declared size still counts:
-            // the reader must decompress through the payload to reach
-            // the next header, so an unread entry could otherwise slip
-            // past the unpacked-size ceiling.
-            let declared = entry
-                .header()
-                .size()
-                .map_err(|e| format!("bad tarball entry: {}", e))?;
-            if declared > limits.max_file_bytes {
-                return Err(format!("tarball file too large: {}", name));
-            }
-            total += declared;
-            if total > limits.max_total_bytes {
-                return Err("tarball too large when unpacked: refused".into());
-            }
             if plugin_root || name.starts_with("plugins/") {
                 // Bundled plugins live in the XDG data dir and only
                 // `install.sh` refreshes them. Keep the installed set
@@ -1133,13 +1130,6 @@ pub fn extract_tarball_limited(
             _ if name == "assets" || name.starts_with("assets/") => None,
             _ => return Err(format!("unexpected file in tarball: {}", name)),
         };
-        let declared = entry
-            .header()
-            .size()
-            .map_err(|e| format!("bad tarball entry: {}", e))?;
-        if declared > limits.max_file_bytes {
-            return Err(format!("tarball file too large: {}", name));
-        }
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent).map_err(|e| format!("cannot stage {}: {}", name, e))?;
         }
@@ -1161,11 +1151,6 @@ pub fn extract_tarball_limited(
             }
             dst.write_all(&buf[..n])
                 .map_err(|e| format!("cannot stage {}: {}", name, e))?;
-        }
-        total += written;
-        if total > limits.max_total_bytes {
-            let _ = std::fs::remove_file(&target);
-            return Err("tarball too large when unpacked: refused".into());
         }
         match staged_kind {
             Some(set) => {
@@ -2912,6 +2897,47 @@ mod tests {
         let err = extract_tarball(&not_a_tree, &dir.join("stage2")).unwrap_err();
         assert!(
             err.contains("unexpected file in tarball: plugins"),
+            "got: {}",
+            err
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pax_size_override_cannot_hide_a_skipped_payload() {
+        let dir = std::env::temp_dir().join(format!("corky_upd_pax_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A PAX `size` record for the next entry: the raw ustar header
+        // says 0, the effective size is 2 MiB. The raw header must not
+        // be what the ceiling trusts.
+        let record = "size=2097152\n";
+        let mut len = record.len() + 2;
+        loop {
+            let next = record.len() + 1 + len.to_string().len();
+            if next == len {
+                break;
+            }
+            len = next;
+        }
+        let pax = format!("{} {}", len, record);
+        let tarball = typed_tar_gz(
+            &dir,
+            "pax.tar.gz",
+            &[
+                ("pkg/corkytux", b'0', b"bin"),
+                ("pkg/plugins/x", b'x', pax.as_bytes()),
+                ("pkg/plugins/huge.bin", b'0', b""),
+            ],
+        );
+        let tiny = ExtractLimits {
+            max_total_bytes: 4 * 1024 * 1024,
+            max_file_bytes: 1024 * 1024,
+            max_entries: 100,
+        };
+        let err = extract_tarball_limited(&tarball, &dir.join("stage"), &tiny).unwrap_err();
+        assert!(
+            err.contains("tarball file too large: plugins/huge.bin"),
             "got: {}",
             err
         );
