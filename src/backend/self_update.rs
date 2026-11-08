@@ -980,6 +980,9 @@ pub struct Staged {
     pub helper: Option<PathBuf>,
     pub assets_dir: Option<PathBuf>,
     pub icon: Option<PathBuf>,
+    /// The tarball carried the bundled plugin tree, which the in-app
+    /// update does not install; the install log says so.
+    pub plugins_skipped: bool,
 }
 
 /// Extraction bomb guards.
@@ -1000,9 +1003,23 @@ impl Default for ExtractLimits {
     }
 }
 
+/// Root entries in a release tarball that only a fresh `install.sh`
+/// run uses and the in-app update never installs: the packaged desktop
+/// entry, the license/credits/readme set, and the bundled plugins
+/// (installed under the XDG data dir, not next to the binary). They
+/// are skipped by exact name; any other unknown entry still aborts.
+const SKIPPED_ROOT_FILES: [&str; 5] = [
+    "com.corkytux.CorkyTux.desktop",
+    "LICENSE",
+    "README.md",
+    "CREDITS.md",
+    "THIRD-PARTY.md",
+];
+
 /// Unpack a release tarball into `staging` (created fresh).
-/// Only expected entries land on disk; install scripts and the
-/// desktop template are skipped, everything else aborts the run.
+/// Only expected entries land on disk; install scripts, the desktop
+/// template, the docs set and the plugin tree are skipped, everything
+/// else aborts the run.
 pub fn extract_tarball(archive: &Path, staging: &Path) -> Result<Staged, String> {
     extract_tarball_limited(archive, staging, &ExtractLimits::default())
 }
@@ -1067,7 +1084,34 @@ pub fn extract_tarball_limited(
         }
         let target = staging.join(&clean);
         let name = clean.to_string_lossy().to_string();
-        if name == "install.sh" || name == "uninstall.sh" || name == "corkytux.desktop.in" {
+        // Charge every entry, skipped or not, before any branch: the
+        // reader decompresses through the payload to reach the next
+        // header, and `entry.size()` honors the PAX override that the
+        // raw header would hide.
+        let declared = entry.size();
+        if declared > limits.max_file_bytes {
+            return Err(format!("tarball file too large: {}", name));
+        }
+        total += declared;
+        if total > limits.max_total_bytes {
+            return Err("tarball too large when unpacked: refused".into());
+        }
+        let plugin_root = name == "plugins";
+        if plugin_root && !kind.is_dir() {
+            return Err(format!("unexpected file in tarball: {}", name));
+        }
+        let skipped = name == "install.sh"
+            || name == "uninstall.sh"
+            || name == "corkytux.desktop.in"
+            || SKIPPED_ROOT_FILES.contains(&name.as_str())
+            || name.starts_with("plugins/");
+        if skipped || plugin_root {
+            if plugin_root || name.starts_with("plugins/") {
+                // Bundled plugins live in the XDG data dir and only
+                // `install.sh` refreshes them. Keep the installed set
+                // and say so in the install log instead of failing.
+                out.plugins_skipped = true;
+            }
             continue;
         }
         if kind.is_dir() {
@@ -1086,13 +1130,6 @@ pub fn extract_tarball_limited(
             _ if name == "assets" || name.starts_with("assets/") => None,
             _ => return Err(format!("unexpected file in tarball: {}", name)),
         };
-        let declared = entry
-            .header()
-            .size()
-            .map_err(|e| format!("bad tarball entry: {}", e))?;
-        if declared > limits.max_file_bytes {
-            return Err(format!("tarball file too large: {}", name));
-        }
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent).map_err(|e| format!("cannot stage {}: {}", name, e))?;
         }
@@ -1114,11 +1151,6 @@ pub fn extract_tarball_limited(
             }
             dst.write_all(&buf[..n])
                 .map_err(|e| format!("cannot stage {}: {}", name, e))?;
-        }
-        total += written;
-        if total > limits.max_total_bytes {
-            let _ = std::fs::remove_file(&target);
-            return Err("tarball too large when unpacked: refused".into());
         }
         match staged_kind {
             Some(set) => {
@@ -1662,6 +1694,9 @@ pub fn install_if_healthy(
     }
     // The install landed: apply backup retention. Any failure returned
     // above before this point, so a failed install never prunes.
+    if staged.plugins_skipped {
+        log.push("Plugins were not updated: re-run install.sh to refresh them.".into());
+    }
     prune_install_backups(dirs);
     Ok(log)
 }
@@ -2762,6 +2797,206 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// `(name, typeflag, content)` entries written verbatim, so a test
+    /// can lay out directories (`b'5'`) the way `tar` does.
+    fn typed_tar_gz(dir: &Path, name: &str, entries: &[(&str, u8, &[u8])]) -> PathBuf {
+        use std::io::Write;
+        let tar_path = dir.join(name);
+        let f = std::fs::File::create(&tar_path).unwrap();
+        let mut gz = flate2::write::GzEncoder::new(f, flate2::Compression::default());
+        for (n, t, c) in entries {
+            gz.write_all(&raw_entry_typed(n, *t, None, c)).unwrap();
+        }
+        gz.write_all(&[0u8; 1024]).unwrap();
+        gz.finish().unwrap();
+        tar_path
+    }
+
+    #[test]
+    fn release_layout_is_accepted_and_plugins_are_skipped() {
+        let dir = std::env::temp_dir().join(format!("corky_upd_layout_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // The real release tarball also carries the packaged desktop
+        // entry, the docs set, install.sh and the plugin tree; the
+        // updater installs only the binary, helper, icon and assets.
+        let tarball = typed_tar_gz(
+            &dir,
+            "layout.tar.gz",
+            &[
+                ("pkg/", b'5', b""),
+                ("pkg/corkytux", b'0', b"bin"),
+                ("pkg/webdriver_login", b'0', b"helper"),
+                ("pkg/corkytux.png", b'0', b"png"),
+                ("pkg/assets/", b'5', b""),
+                ("pkg/assets/icon.svg", b'0', b"svg"),
+                ("pkg/plugins/", b'5', b""),
+                ("pkg/plugins/heroic-store/", b'5', b""),
+                ("pkg/plugins/heroic-store/plugin.json", b'0', b"{}"),
+                (
+                    "pkg/com.corkytux.CorkyTux.desktop",
+                    b'0',
+                    b"[Desktop Entry]",
+                ),
+                ("pkg/LICENSE", b'0', b"MIT"),
+                ("pkg/README.md", b'0', b"readme"),
+                ("pkg/CREDITS.md", b'0', b"credits"),
+                ("pkg/THIRD-PARTY.md", b'0', b"third"),
+                ("pkg/install.sh", b'0', b"#!/bin/sh"),
+                ("pkg/uninstall.sh", b'0', b"#!/bin/sh"),
+                ("pkg/corkytux.desktop.in", b'0', b"[Desktop Entry]"),
+            ],
+        );
+        let staging = dir.join("stage");
+        let staged = extract_tarball(&tarball, &staging).unwrap();
+        assert_eq!(std::fs::read(&staged.binary).unwrap(), b"bin");
+        assert!(staged.helper.is_some());
+        assert!(staged.icon.is_some());
+        assert!(staged.assets_dir.is_some());
+        assert!(staged.plugins_skipped);
+        for skipped in [
+            "plugins",
+            "LICENSE",
+            "README.md",
+            "CREDITS.md",
+            "THIRD-PARTY.md",
+            "com.corkytux.CorkyTux.desktop",
+        ] {
+            assert!(!staging.join(skipped).exists(), "staged {}", skipped);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unknown_root_entry_still_aborts_the_update() {
+        let dir = std::env::temp_dir().join(format!("corky_upd_unknown_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tarball = typed_tar_gz(
+            &dir,
+            "unknown.tar.gz",
+            &[
+                ("pkg/corkytux", b'0', b"bin"),
+                ("pkg/plugins/", b'5', b""),
+                ("pkg/surprise.sh", b'0', b"evil"),
+            ],
+        );
+        let err = extract_tarball(&tarball, &dir.join("stage")).unwrap_err();
+        assert!(
+            err.contains("unexpected file in tarball: surprise.sh"),
+            "got: {}",
+            err
+        );
+        // A regular file named `plugins` is not the bundled tree: it is
+        // an unexpected entry, not something to skip.
+        let not_a_tree = typed_tar_gz(
+            &dir,
+            "not_a_tree.tar.gz",
+            &[("pkg/corkytux", b'0', b"bin"), ("pkg/plugins", b'0', b"x")],
+        );
+        let err = extract_tarball(&not_a_tree, &dir.join("stage2")).unwrap_err();
+        assert!(
+            err.contains("unexpected file in tarball: plugins"),
+            "got: {}",
+            err
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pax_size_override_cannot_hide_a_skipped_payload() {
+        let dir = std::env::temp_dir().join(format!("corky_upd_pax_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A PAX `size` record for the next entry: the raw ustar header
+        // says 0, the effective size is 2 MiB. The raw header must not
+        // be what the ceiling trusts.
+        let record = "size=2097152\n";
+        let mut len = record.len() + 2;
+        loop {
+            let next = record.len() + 1 + len.to_string().len();
+            if next == len {
+                break;
+            }
+            len = next;
+        }
+        let pax = format!("{} {}", len, record);
+        let tarball = typed_tar_gz(
+            &dir,
+            "pax.tar.gz",
+            &[
+                ("pkg/corkytux", b'0', b"bin"),
+                ("pkg/plugins/x", b'x', pax.as_bytes()),
+                ("pkg/plugins/huge.bin", b'0', b""),
+            ],
+        );
+        let tiny = ExtractLimits {
+            max_total_bytes: 4 * 1024 * 1024,
+            max_file_bytes: 1024 * 1024,
+            max_entries: 100,
+        };
+        let err = extract_tarball_limited(&tarball, &dir.join("stage"), &tiny).unwrap_err();
+        assert!(
+            err.contains("tarball file too large: plugins/huge.bin"),
+            "got: {}",
+            err
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn skipped_entries_still_count_against_the_size_limits() {
+        let dir = std::env::temp_dir().join(format!("corky_upd_skipbomb_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Nothing is written for `plugins/`, but the reader has to
+        // decompress through it, so the per-file ceiling must still
+        // apply.
+        let big = vec![0u8; 2 * 1024 * 1024];
+        let tarball = typed_tar_gz(
+            &dir,
+            "skipbomb.tar.gz",
+            &[
+                ("pkg/corkytux", b'0', b"bin"),
+                ("pkg/plugins/huge.bin", b'0', &big),
+            ],
+        );
+        let tiny = ExtractLimits {
+            max_total_bytes: 4 * 1024 * 1024,
+            max_file_bytes: 1024 * 1024,
+            max_entries: 100,
+        };
+        let err = extract_tarball_limited(&tarball, &dir.join("stage"), &tiny).unwrap_err();
+        assert!(
+            err.contains("tarball file too large: plugins/huge.bin"),
+            "got: {}",
+            err
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Runs only when the release workflow points it at the tarball it
+    /// just built, so the shipped artifact is checked by this very
+    /// extractor. `cargo test` in CI leaves it inert.
+    #[test]
+    fn real_release_tarball_extracts() {
+        let Ok(path) = std::env::var("CORKYTUX_REAL_TARBALL") else {
+            eprintln!("CORKYTUX_REAL_TARBALL unset: skipping the artifact check");
+            return;
+        };
+        let staging =
+            std::env::temp_dir().join(format!("corky_real_tarball_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&staging);
+        let staged = extract_tarball(Path::new(&path), &staging)
+            .unwrap_or_else(|e| panic!("the release tarball must extract: {}", e));
+        assert!(staged.binary.is_file());
+        assert!(
+            staged.plugins_skipped,
+            "the release tarball must bundle plugins"
+        );
+        let _ = std::fs::remove_dir_all(&staging);
+    }
+
     #[test]
     fn gzip_bomb_is_capped() {
         let dir = std::env::temp_dir().join("corky_upd_bomb");
@@ -2892,6 +3127,7 @@ mod tests {
             helper: Some(staging.join("webdriver_login")),
             assets_dir: Some(assets_new),
             icon: None,
+            plugins_skipped: false,
         };
         let dirs = InstallDirs {
             install_dir: install.clone(),
@@ -2936,6 +3172,7 @@ mod tests {
             helper: Some(staging.join("webdriver_login")),
             assets_dir: None,
             icon: None,
+            plugins_skipped: false,
         };
         let dirs = InstallDirs {
             install_dir: install.clone(),
@@ -2978,6 +3215,7 @@ mod tests {
             helper: Some(staging.join("webdriver_login")),
             assets_dir: Some(assets_new),
             icon: None,
+            plugins_skipped: false,
         };
         let dirs = InstallDirs {
             install_dir: install.clone(),
@@ -3021,6 +3259,7 @@ mod tests {
             helper: Some(staging.join("webdriver_login")),
             assets_dir: Some(assets_new),
             icon: None,
+            plugins_skipped: false,
         };
         let dirs = InstallDirs {
             install_dir: install.clone(),
@@ -3504,6 +3743,7 @@ mod tests {
             helper: None,
             assets_dir: None,
             icon: Some(staging.join("corkytux.png")),
+            plugins_skipped: false,
         };
         let dirs = InstallDirs {
             install_dir: install.clone(),

@@ -24,8 +24,21 @@ Release preparation for the 3.2.1 tarball. No plugin code changes.
   release, and attaches `SHA256SUMS`.
 - The changelog is now in English.
 
+### Fixed
+
+- The in-app updater accepts the real release tarball: the packaged
+  desktop entry, the license/credits/readme files and the bundled plugin
+  tree are skipped by exact name instead of aborting the extraction. The
+  install log reports that plugins were not replaced; any other
+  unexpected entry still aborts.
+- The release workflow now runs the updater extractor and the full
+  loopback install path against the tarball it just built, so this
+  mismatch cannot ship again.
+
 ### Known limitations
 
+- Updating from 3.2.0 needs one manual `install.sh` run: that release
+  shipped a stricter extractor that rejects the release tarball.
 - Ryujinx and Mupen64Plus catalog downloads are unavailable: their
   latest-release endpoints return HTTP 404.
 - Launch arguments for linked Flatpak emulators are not passed
