@@ -173,10 +173,19 @@ jobs:
         run: |
           set -euo pipefail
           tarball="$PWD/$(ls corkytux-*.tar.gz)"
-          CORKYTUX_REAL_TARBALL="$tarball" \
-            cargo test --locked real_release_tarball_extracts -- --nocapture
-          CORKYTUX_REAL_TARBALL="$tarball" \
-            cargo test --locked real_release_assets_update_and_bad_checksum -- --nocapture
+          run_gated() {
+            local out status
+            out="$(CORKYTUX_REAL_TARBALL="$tarball" \
+              cargo test --locked "$1" -- --nocapture 2>&1)" && status=0 || status=$?
+            printf '%s\n' "$out"
+            [ "$status" -eq 0 ] || { echo "cargo test failed for $1"; exit "$status"; }
+            # `cargo test <filter>` exits 0 when nothing matches, so a
+            # renamed test must fail the release, not silently skip it.
+            grep -q 'test result: ok\. 1 passed' <<<"$out" \
+              || { echo "no test ran for $1"; exit 1; }
+          }
+          run_gated real_release_tarball_extracts
+          run_gated real_release_assets_update_and_bad_checksum
 
       - name: Upload the artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 (4.6.2)

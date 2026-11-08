@@ -1084,17 +1084,37 @@ pub fn extract_tarball_limited(
         }
         let target = staging.join(&clean);
         let name = clean.to_string_lossy().to_string();
-        if name == "install.sh" || name == "uninstall.sh" || name == "corkytux.desktop.in" {
-            continue;
+        let plugin_root = name == "plugins";
+        if plugin_root && !kind.is_dir() {
+            return Err(format!("unexpected file in tarball: {}", name));
         }
-        if SKIPPED_ROOT_FILES.contains(&name.as_str()) {
-            continue;
-        }
-        if name == "plugins" || name.starts_with("plugins/") {
-            // Bundled plugins live in the XDG data dir and only
-            // `install.sh` refreshes them. Keep the installed set and
-            // say so in the install log instead of failing the update.
-            out.plugins_skipped = true;
+        let skipped = name == "install.sh"
+            || name == "uninstall.sh"
+            || name == "corkytux.desktop.in"
+            || SKIPPED_ROOT_FILES.contains(&name.as_str())
+            || name.starts_with("plugins/");
+        if skipped || plugin_root {
+            // Nothing is written, but the declared size still counts:
+            // the reader must decompress through the payload to reach
+            // the next header, so an unread entry could otherwise slip
+            // past the unpacked-size ceiling.
+            let declared = entry
+                .header()
+                .size()
+                .map_err(|e| format!("bad tarball entry: {}", e))?;
+            if declared > limits.max_file_bytes {
+                return Err(format!("tarball file too large: {}", name));
+            }
+            total += declared;
+            if total > limits.max_total_bytes {
+                return Err("tarball too large when unpacked: refused".into());
+            }
+            if plugin_root || name.starts_with("plugins/") {
+                // Bundled plugins live in the XDG data dir and only
+                // `install.sh` refreshes them. Keep the installed set
+                // and say so in the install log instead of failing.
+                out.plugins_skipped = true;
+            }
             continue;
         }
         if kind.is_dir() {
@@ -1690,7 +1710,7 @@ pub fn install_if_healthy(
     // The install landed: apply backup retention. Any failure returned
     // above before this point, so a failed install never prunes.
     if staged.plugins_skipped {
-        log.push("Plugins were not updated: reinstall to refresh them.".into());
+        log.push("Plugins were not updated: re-run install.sh to refresh them.".into());
     }
     prune_install_backups(dirs);
     Ok(log)
@@ -2879,6 +2899,50 @@ mod tests {
         let err = extract_tarball(&tarball, &dir.join("stage")).unwrap_err();
         assert!(
             err.contains("unexpected file in tarball: surprise.sh"),
+            "got: {}",
+            err
+        );
+        // A regular file named `plugins` is not the bundled tree: it is
+        // an unexpected entry, not something to skip.
+        let not_a_tree = typed_tar_gz(
+            &dir,
+            "not_a_tree.tar.gz",
+            &[("pkg/corkytux", b'0', b"bin"), ("pkg/plugins", b'0', b"x")],
+        );
+        let err = extract_tarball(&not_a_tree, &dir.join("stage2")).unwrap_err();
+        assert!(
+            err.contains("unexpected file in tarball: plugins"),
+            "got: {}",
+            err
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn skipped_entries_still_count_against_the_size_limits() {
+        let dir = std::env::temp_dir().join(format!("corky_upd_skipbomb_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Nothing is written for `plugins/`, but the reader has to
+        // decompress through it, so the per-file ceiling must still
+        // apply.
+        let big = vec![0u8; 2 * 1024 * 1024];
+        let tarball = typed_tar_gz(
+            &dir,
+            "skipbomb.tar.gz",
+            &[
+                ("pkg/corkytux", b'0', b"bin"),
+                ("pkg/plugins/huge.bin", b'0', &big),
+            ],
+        );
+        let tiny = ExtractLimits {
+            max_total_bytes: 4 * 1024 * 1024,
+            max_file_bytes: 1024 * 1024,
+            max_entries: 100,
+        };
+        let err = extract_tarball_limited(&tarball, &dir.join("stage"), &tiny).unwrap_err();
+        assert!(
+            err.contains("tarball file too large: plugins/huge.bin"),
             "got: {}",
             err
         );
