@@ -163,6 +163,13 @@ pub fn start(
     let (tx, rx) = async_channel::unbounded::<GamepadMessage>();
     spawn_thread(tx);
     let state = std::rc::Rc::new(std::cell::RefCell::new(NavState::default()));
+    let config = crate::backend::config::ConfigManager::new();
+    let repeat_delays = gamepad_nav::RepeatDelays::from_values(
+        config
+            .launcher_value("gamepadInitialRepeatDelay")
+            .as_deref(),
+        config.launcher_value("gamepadRepeatDelay").as_deref(),
+    );
 
     let motion = gtk::EventControllerMotion::new();
     {
@@ -221,7 +228,9 @@ pub fn start(
                     target.add_css_class("gamepad-mode");
                     help_c.set_visible(true);
                     let mut st = state.borrow_mut();
-                    if let Some(action) = gamepad_nav::map_event(input, &mut st, now_ms()) {
+                    if let Some(action) =
+                        gamepad_nav::map_event_with_delays(input, &mut st, now_ms(), repeat_delays)
+                    {
                         drop(st);
                         if action == NavAction::QuickAction {
                             quick_c();
