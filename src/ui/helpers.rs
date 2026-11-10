@@ -671,10 +671,10 @@ pub(crate) fn main_css_text(theme: &ThemeManager) -> String {
              scrollbar.vertical slider {{ background-color: alpha({text_muted}, 0.45); border-radius: 1px; min-width: 2px; min-height: 24px; border: none; padding: 0; margin: 0; }}\
              scrollbar.horizontal slider {{ background-color: alpha({text_muted}, 0.45); border-radius: 1px; min-height: 2px; min-width: 24px; border: none; padding: 0; margin: 0; }}\
              scrollbar.vertical slider:hover {{ background-color: {accent}; }}\
-             .sidebar-scroll scrollbar.vertical {{ min-width: 12px; }}\
-             .sidebar-scroll scrollbar.vertical > contents {{ min-width: 12px; }}\
-             .sidebar-scroll scrollbar.vertical trough {{ min-width: 12px; }}\
-             .sidebar-scroll scrollbar.vertical slider {{ min-width: 12px; border-radius: 6px; }}\
+             .sidebar-scroll scrollbar.vertical {{ min-width: 8px; }}\
+             .sidebar-scroll scrollbar.vertical > contents {{ min-width: 8px; }}\
+             .sidebar-scroll scrollbar.vertical trough {{ min-width: 8px; }}\
+             .sidebar-scroll scrollbar.vertical slider {{ min-width: 8px; border-radius: 6px; }}\
              .rail-scroll scrollbar.horizontal {{ min-height: 12px; background: transparent; }}\
              .rail-scroll scrollbar.horizontal trough {{ min-height: 12px; background-color: transparent; }}\
              .rail-scroll scrollbar.horizontal slider {{ min-height: 8px; min-width: 40px; border-radius: 4px; background-color: alpha({text_muted}, 0.6); }}\
@@ -1019,7 +1019,7 @@ mod tests {
     }
 
     #[test]
-    fn sidebar_list_scrollbar_slider_is_twelve_pixels() {
+    fn sidebar_list_scrollbar_slider_is_eight_pixels() {
         use crate::backend::theme::ThemeMode;
 
         for mode in [ThemeMode::Light, ThemeMode::Dark] {
@@ -1034,8 +1034,8 @@ mod tests {
                 .expect("rule closes");
             assert!(
                 rule.split(';')
-                    .any(|declaration| declaration.trim() == "min-width: 12px"),
-                "{:?} sidebar slider must be 12px wide",
+                    .any(|declaration| declaration.trim() == "min-width: 8px"),
+                "{:?} sidebar slider must be 8px wide",
                 mode.as_str()
             );
         }
