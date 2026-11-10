@@ -608,8 +608,8 @@ pub(crate) fn main_css_text(theme: &ThemeManager) -> String {
              .top-bar {{ background-color: {bg}; min-height: 52px; padding: 0 16px; }}\
              headerbar {{ background-color: {bg}; color: {text_main}; border-bottom: 1px solid {border}; }}\
              .sidebar {{ background-color: {bg}; min-width: 230px; border-right: none; }}\
-            .sidebar-card {{ border: 1px solid {accent}; border-right: none; border-radius: 8px; background-color: transparent; padding: 8px; }}\
-            .sidebar-frame {{ border: 1px solid {accent}; border-right: none; border-radius: 10px; background-color: transparent; padding: 4px; }}\
+            .sidebar-card {{ border: 1px solid {accent}; border-radius: 8px; background-color: transparent; padding: 8px; }}\
+            .sidebar-frame {{ border: 1px solid {accent}; border-radius: 10px; background-color: transparent; padding: 4px; }}\
              .filter-btn {{ background-color: {well}; color: {text_main}; border: 1px solid transparent; border-radius: 8px; padding: 6px 12px; font-weight: bold; font-size: 12px; min-height: 30px; }}\
              .filter-btn:hover {{ background-color: {hover}; }}\
              .filter-btn:checked {{ background-color: {hover}; color: {accent}; border-color: {accent}; font-weight: bold; }}\
@@ -654,7 +654,7 @@ pub(crate) fn main_css_text(theme: &ThemeManager) -> String {
             .warn-dot {{ color: {warn_dot}; font-size: 14px; }}\
             .error-dot {{ font-size: 14px; }}\
             .warn-game {{ color: {text_main}; font-weight: bold; font-size: 13px; }}\
-             .recent-frame {{ border: 1px solid {accent}; border-left: none; border-radius: 10px; background-color: transparent; padding: 16px; }}\
+             .recent-frame {{ border: 1px solid {accent}; border-radius: 10px; background-color: transparent; padding: 16px; }}\
              .recent-label {{ color: {text_main}; font-weight: bold; font-size: 24px; }}\
              .recent-empty {{ color: {text_sec}; font-size: 12px; }}\
              scrollbar {{ min-width: 2px; min-height: 2px; border: none; background: transparent; outline: none; padding: 0; margin: 0; }}\
@@ -671,6 +671,10 @@ pub(crate) fn main_css_text(theme: &ThemeManager) -> String {
              scrollbar.vertical slider {{ background-color: alpha({text_muted}, 0.45); border-radius: 1px; min-width: 2px; min-height: 24px; border: none; padding: 0; margin: 0; }}\
              scrollbar.horizontal slider {{ background-color: alpha({text_muted}, 0.45); border-radius: 1px; min-height: 2px; min-width: 24px; border: none; padding: 0; margin: 0; }}\
              scrollbar.vertical slider:hover {{ background-color: {accent}; }}\
+             .sidebar-scroll scrollbar.vertical {{ min-width: 12px; }}\
+             .sidebar-scroll scrollbar.vertical > contents {{ min-width: 12px; }}\
+             .sidebar-scroll scrollbar.vertical trough {{ min-width: 12px; }}\
+             .sidebar-scroll scrollbar.vertical slider {{ min-width: 12px; border-radius: 6px; }}\
              .rail-scroll scrollbar.horizontal {{ min-height: 12px; background: transparent; }}\
              .rail-scroll scrollbar.horizontal trough {{ min-height: 12px; background-color: transparent; }}\
              .rail-scroll scrollbar.horizontal slider {{ min-height: 8px; min-width: 40px; border-radius: 4px; background-color: alpha({text_muted}, 0.6); }}\
@@ -978,6 +982,60 @@ mod tests {
                 rule.split(';')
                     .any(|declaration| declaration.trim() == "border-right: none"),
                 "{:?} sidebar rule must suppress its right border",
+                mode.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn framed_panels_keep_all_four_borders() {
+        use crate::backend::theme::ThemeMode;
+
+        for mode in [ThemeMode::Light, ThemeMode::Dark] {
+            let theme = ThemeManager::for_test(mode.clone());
+            let css = main_css_text(&theme);
+            for selector in [".sidebar-card {", ".sidebar-frame {", ".recent-frame {"] {
+                let rule = css
+                    .split(selector)
+                    .nth(1)
+                    .unwrap_or_else(|| panic!("{:?} {} rule exists", mode.as_str(), selector))
+                    .split('}')
+                    .next()
+                    .expect("rule closes");
+                assert!(
+                    rule.contains("border: 1px solid"),
+                    "{:?} {} must keep a full border",
+                    mode.as_str(),
+                    selector
+                );
+                assert!(
+                    !rule.contains("border-right: none") && !rule.contains("border-left: none"),
+                    "{:?} {} must not suppress a side border",
+                    mode.as_str(),
+                    selector
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sidebar_list_scrollbar_slider_is_twelve_pixels() {
+        use crate::backend::theme::ThemeMode;
+
+        for mode in [ThemeMode::Light, ThemeMode::Dark] {
+            let theme = ThemeManager::for_test(mode.clone());
+            let css = main_css_text(&theme);
+            let rule = css
+                .split(".sidebar-scroll scrollbar.vertical slider {")
+                .nth(1)
+                .expect("sidebar scrollbar slider rule exists")
+                .split('}')
+                .next()
+                .expect("rule closes");
+            assert!(
+                rule.split(';')
+                    .any(|declaration| declaration.trim() == "min-width: 12px"),
+                "{:?} sidebar slider must be 12px wide",
                 mode.as_str()
             );
         }

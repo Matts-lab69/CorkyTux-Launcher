@@ -167,6 +167,7 @@ impl Sidebar {
 
         let scrolled = gtk::ScrolledWindow::new();
         scrolled.set_vexpand(true);
+        scrolled.add_css_class("sidebar-scroll");
         scrolled.set_hscrollbar_policy(gtk::PolicyType::Never);
         // No default gray frame around the viewport (that was the stray bar).
         scrolled.set_has_frame(false);
