@@ -30,4 +30,6 @@ pub mod import_manager;
 pub mod update_dialog;
 pub mod gamepad;
 pub mod gamepad_nav;
+mod gamepad_controls;
+mod minecraft_ram;
 pub mod tray;

@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use gtk::prelude::*;
 
+use super::gamepad_controls::{self, ControlState};
 use super::gamepad_nav::{
     self, Dir, NavAction, NavRect, NavState, PadButton, PadInfo, PadInput, PadMapping, PadStamp,
     DEDUPE_WINDOW_MS,
@@ -204,6 +205,7 @@ pub fn start(
     let help_c = help.clone();
     let toasts_c = toasts.clone();
     let quick_c = quick.clone();
+    let mut controls = ControlState::default();
     glib::timeout_add_local(Duration::from_millis(16), move || {
         let setting = crate::backend::config::ConfigManager::new()
             .launcher_value("controllerSupport")
@@ -235,7 +237,7 @@ pub fn start(
                         if action == NavAction::QuickAction {
                             quick_c();
                         } else {
-                            apply_action(&target, action);
+                            apply_action(&target, action, &mut controls);
                         }
                     }
                 }
@@ -255,23 +257,31 @@ pub fn start(
     });
 }
 
-fn apply_action(window: &gtk::Window, action: NavAction) {
+fn apply_action(window: &gtk::Window, action: NavAction, controls: &mut ControlState) {
+    if controls.handle(window, action) {
+        return;
+    }
+    let root = navigation_root(window);
     match action {
         NavAction::Move(dir) => move_focus(window, dir),
         NavAction::Activate => {
             if let Some(focus) = gtk::prelude::GtkWindowExt::focus(window) {
-                activate(&focus);
+                if focus == root || focus.is_ancestor(&root) {
+                    activate(&focus);
+                } else {
+                    root.child_focus(gtk::DirectionType::TabForward);
+                }
             }
         }
         NavAction::Back => close_top_modal(window),
         NavAction::TabPrev => {
-            window.child_focus(gtk::DirectionType::TabBackward);
+            root.child_focus(gtk::DirectionType::TabBackward);
         }
         NavAction::TabNext => {
-            window.child_focus(gtk::DirectionType::TabForward);
+            root.child_focus(gtk::DirectionType::TabForward);
         }
         NavAction::Search => {
-            if let Some(entry) = find_search(window.upcast_ref()) {
+            if let Some(entry) = find_search(&root) {
                 entry.grab_focus();
             }
         }
@@ -279,7 +289,14 @@ fn apply_action(window: &gtk::Window, action: NavAction) {
         // would install it, but the card only exposes its own click: tracked
         // in its issue for a dedicated play/install action.
         NavAction::QuickAction => {}
-        NavAction::Context | NavAction::Menu => {}
+        NavAction::Context => {
+            if let Some(focus) = gtk::prelude::GtkWindowExt::focus(window) {
+                if focus == root || focus.is_ancestor(&root) {
+                    let _ = focus.activate_action("gamepad.context", None);
+                }
+            }
+        }
+        NavAction::Menu => {}
     }
 }
 
@@ -297,12 +314,13 @@ fn move_focus(window: &gtk::Window, dir: Dir) {
             Dir::Left => gtk::DirectionType::Left,
             Dir::Right => gtk::DirectionType::Right,
         };
-        window.child_focus(direction);
+        navigation_root(window).child_focus(direction);
         if let Some(focus) = gtk::prelude::GtkWindowExt::focus(window) {
             ensure_visible(&focus);
         }
         return;
     };
+    let current = gamepad_controls::owner(&current);
     let Some(current_rect) = widget_rect(&current, window) else {
         return;
     };
@@ -310,17 +328,83 @@ fn move_focus(window: &gtk::Window, dir: Dir) {
     let root = navigation_root(window);
     let mut candidates: Vec<(gtk::Widget, NavRect)> = Vec::new();
     collect_nav_targets(&root, window, &mut candidates);
-    let rects: Vec<NavRect> = candidates.iter().map(|(_, rect)| *rect).collect();
-    if let Some(index) = gamepad_nav::best_in_direction(current_rect, &rects, dir) {
-        let target = candidates[index].0.clone();
-        target.grab_focus();
-        ensure_visible(&target);
+    candidates.retain(|(widget, _)| widget != &current);
+    let mut scopes = Vec::new();
+    let mut parent = current.parent();
+    while let Some(node) = parent {
+        if let Some(scroller) = node.downcast_ref::<gtk::ScrolledWindow>() {
+            let adjustment = match dir {
+                Dir::Up | Dir::Down => scroller.vadjustment(),
+                Dir::Left | Dir::Right => scroller.hadjustment(),
+            };
+            if adjustment.upper() - adjustment.lower() > adjustment.page_size() + 1.0 {
+                scopes.push(node.clone());
+            }
+        }
+        parent = node.parent();
     }
+    loop {
+        let mut index = None;
+        for scope in &scopes {
+            let scoped: Vec<_> = candidates
+                .iter()
+                .map(|(widget, rect)| {
+                    (
+                        *rect,
+                        widget.is_ancestor(scope) && unclipped_except(widget, &scopes),
+                        false,
+                    )
+                })
+                .collect();
+            if let Some(found) = pick_nav_target(&current, current_rect, &candidates, &scoped, dir) {
+                index = Some(found);
+                break;
+            }
+        }
+        if index.is_none() {
+            let rects: Vec<_> = candidates
+                .iter()
+                .map(|(widget, rect)| (*rect, false, unclipped_except(widget, &[])))
+                .collect();
+            index = pick_nav_target(&current, current_rect, &candidates, &rects, dir);
+        }
+        let Some(index) = index else { return };
+        let (target, _) = candidates.remove(index);
+        if !target.grab_focus() {
+            continue;
+        }
+        ensure_visible(&target);
+        return;
+    }
+}
+
+fn pick_nav_target(
+    current: &gtk::Widget,
+    current_rect: NavRect,
+    candidates: &[(gtk::Widget, NavRect)],
+    eligibility: &[(NavRect, bool, bool)],
+    dir: Dir,
+) -> Option<usize> {
+    if gamepad_controls::is_form_control(current) {
+        let fields: Vec<_> = candidates.iter().zip(eligibility)
+            .map(|((widget, _), (rect, inside, visible))| {
+                let field = gamepad_controls::is_control(widget);
+                (*rect, *inside && field, *visible && field)
+            }).collect();
+        let selected = gamepad_nav::best_form_in_scope(current_rect, &fields, dir);
+        if selected.is_some() || matches!(dir, Dir::Left | Dir::Right) {
+            return selected;
+        }
+    }
+    gamepad_nav::best_in_scope(current_rect, eligibility, dir)
 }
 
 /// The widget tree that owns the current focus: the visible embedded dialog,
 /// when there is one, so a pad cannot jump to the dimmed window behind it.
 fn navigation_root(window: &gtk::Window) -> gtk::Widget {
+    if let Some(popover) = gamepad_controls::visible_popover(window.upcast_ref()) {
+        return popover.upcast();
+    }
     if let Some(app_win) = window.downcast_ref::<adw::ApplicationWindow>() {
         use adw::prelude::AdwApplicationWindowExt;
         if let Some(dialog) = app_win.visible_dialog() {
@@ -356,6 +440,9 @@ fn collect_nav_targets(
             out.push((root.clone(), rect));
         }
     }
+    if gamepad_controls::is_control(root) {
+        return;
+    }
     let mut child = root.first_child();
     while let Some(next) = child {
         collect_nav_targets(&next, reference, out);
@@ -367,6 +454,9 @@ fn collect_nav_targets(
 /// are focusable containers: focusing them would only land on a row by
 /// accident and skip the geometry that picks the right one.
 fn is_nav_target(widget: &gtk::Widget) -> bool {
+    if gamepad_controls::is_control(widget) {
+        return gamepad_controls::is_control_target(widget);
+    }
     if !widget.is_focusable() {
         return false;
     }
@@ -393,6 +483,8 @@ fn has_focusable_child(widget: &gtk::Widget) -> bool {
 /// Buttons and rows activate themselves; a card's inner button is the usual
 /// focus target. FlowBoxChild and ListBoxRow have their own activate signal.
 fn activate(widget: &gtk::Widget) {
+    let semantic = gamepad_controls::owner(widget);
+    let widget = &semantic;
     if let Some(child) = widget.downcast_ref::<gtk::FlowBoxChild>() {
         // Library cards put the click handler on the inner game-card button;
         // the flow box only focuses the wrapper, so activating the wrapper
@@ -420,30 +512,91 @@ fn activate(widget: &gtk::Widget) {
     }
 }
 
-/// Scrolls the focused widget into its nearest ScrolledWindow.
+/// Reveal both axes, from the innermost viewport through every scroll ancestor.
 fn ensure_visible(widget: &gtk::Widget) {
     let mut parent = widget.parent();
+    let mut revealed: Option<(gtk::Widget, NavRect)> = None;
     while let Some(p) = parent {
         if let Some(scrolled) = p.downcast_ref::<gtk::ScrolledWindow>() {
-            if let Some(bounds) = widget.compute_bounds(scrolled) {
-                let height = scrolled.height() as f32;
-                let adj = scrolled.vadjustment();
-                if bounds.y() < 0.0 {
-                    let next = (adj.value() + bounds.y() as f64).max(adj.lower());
-                    adj.set_value(next);
-                } else if bounds.y() + bounds.height() > height {
-                    let delta = (bounds.y() + bounds.height() - height) as f64;
-                    let max = (adj.upper() - adj.page_size()).max(adj.lower());
-                    adj.set_value((adj.value() + delta).min(max));
+            let bounds = if let Some((anchor, rect)) = &revealed {
+                let point = gtk::graphene::Point::new(rect.x as f32, rect.y as f32);
+                anchor
+                    .compute_point(scrolled, &point)
+                    .map(|point| NavRect::new(point.x() as f64, point.y() as f64, rect.w, rect.h))
+            } else {
+                widget.compute_bounds(scrolled).map(|bounds| {
+                    NavRect::new(
+                        bounds.x() as f64,
+                        bounds.y() as f64,
+                        bounds.width() as f64,
+                        bounds.height() as f64,
+                    )
+                })
+            };
+            if let Some(mut bounds) = bounds {
+                let mut deltas = [0.0; 2];
+                for (axis, (adj, start, size)) in [
+                    (scrolled.hadjustment(), bounds.x, bounds.w),
+                    (scrolled.vadjustment(), bounds.y, bounds.h),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let value = gamepad_nav::reveal_value(
+                        adj.value(),
+                        adj.lower(),
+                        adj.upper(),
+                        adj.page_size(),
+                        start,
+                        size,
+                    );
+                    deltas[axis] = value - adj.value();
+                    adj.set_value(value);
                 }
+                // Carry the planned position, not stale allocations awaiting GTK's next frame.
+                bounds.x -= deltas[0];
+                bounds.y -= deltas[1];
+                revealed = Some((p.clone(), bounds));
             }
-            return;
         }
         parent = p.parent();
     }
 }
 
+fn unclipped_except(widget: &gtk::Widget, allowed: &[gtk::Widget]) -> bool {
+    let mut parent = widget.parent();
+    while let Some(node) = parent {
+        if let Some(scroller) = node.downcast_ref::<gtk::ScrolledWindow>() {
+            if allowed.contains(&node) {
+                parent = node.parent();
+                continue;
+            }
+            let Some(bounds) = widget.compute_bounds(scroller) else {
+                return false;
+            };
+            if bounds.x() + bounds.width() <= 0.0
+                || bounds.y() + bounds.height() <= 0.0
+                || bounds.x() >= scroller.hadjustment().page_size() as f32
+                || bounds.y() >= scroller.vadjustment().page_size() as f32
+            {
+                return false;
+            }
+        }
+        parent = node.parent();
+    }
+    true
+}
+
 fn close_top_modal(window: &gtk::Window) {
+    if let Some(popover) = gamepad_controls::visible_popover(window.upcast_ref()) {
+        popover.popdown();
+        return;
+    }
+    if let Some(message) = window.downcast_ref::<adw::MessageDialog>() {
+        use adw::prelude::MessageDialogExt;
+        message.response(&message.close_response());
+        return;
+    }
     // Embedded AdwDialogs are not toplevels and never appear in
     // `application().windows()`; this is the only handle on them.
     if let Some(app_win) = window.downcast_ref::<adw::ApplicationWindow>() {

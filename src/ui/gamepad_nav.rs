@@ -49,6 +49,12 @@ pub struct NavState {
     pub next_repeat_ms: u64,
 }
 
+impl NavState {
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
+
 /// Analog sticks below this magnitude do not move the focus.
 pub const DEADZONE: f32 = 0.5;
 /// First repeat delay while a direction is held.
@@ -264,8 +270,7 @@ impl NavRect {
 /// and Up reach the header buttons.
 pub fn best_in_direction(current: NavRect, candidates: &[NavRect], dir: Dir) -> Option<usize> {
     let (cx, cy) = current.center();
-    // (off the row/column, score, primary, perpendicular, index)
-    let mut best: Option<(bool, f64, f64, f64, usize)> = None;
+    let mut best: Option<(f64, f64, f64, usize)> = None;
     // When nothing lies mostly along `dir`, fall back to the widget that is
     // closest to the movement axis. Up from a Recently Played card has only
     // the sidebar filters above it, so it still needs to go somewhere.
@@ -294,18 +299,96 @@ pub fn best_in_direction(current: NavRect, candidates: &[NavRect], dir: Dir) -> 
         if primary < perpendicular * 0.5 {
             continue;
         }
-        // The header row spans the whole window: Right from Add game must
-        // reach Settings even though a sidebar button is nearer. Same-row and
-        // same-column targets therefore win over every off-axis one.
-        let score = primary + perpendicular * if aligned { 0.25 } else { 2.0 };
-        let entry = (!aligned, score, primary, perpendicular, i);
+        // Alignment is worth at most a tenfold distance advantage. This keeps
+        // header traversal without letting arbitrarily distant aligned items win.
+        let score = if aligned {
+            primary * 0.1 + perpendicular * 0.25
+        } else {
+            primary + perpendicular * 2.0
+        };
+        let entry = (score, primary, perpendicular, i);
         if best.map(|b| entry < b).unwrap_or(true) {
             best = Some(entry);
         }
     }
 
-    best.map(|(_, _, _, _, i)| i)
+    best.map(|(_, _, _, i)| i)
         .or_else(|| fallback.map(|(_, _, i)| i))
+}
+
+/// Exhaust a scrolling scope before considering visible targets outside it.
+pub fn best_in_scope(
+    current: NavRect,
+    candidates: &[(NavRect, bool, bool)],
+    dir: Dir,
+) -> Option<usize> {
+    best_in_scope_using(current, candidates, dir, best_in_direction)
+}
+
+pub fn best_form_in_scope(
+    current: NavRect,
+    candidates: &[(NavRect, bool, bool)],
+    dir: Dir,
+) -> Option<usize> {
+    best_in_scope_using(current, candidates, dir, best_in_form)
+}
+
+/// Form fields move horizontally within their row, vertically to the next row.
+pub fn best_in_form(current: NavRect, candidates: &[NavRect], dir: Dir) -> Option<usize> {
+    let (cx, cy) = current.center();
+    let horizontal = matches!(dir, Dir::Left | Dir::Right);
+    let eligible: Vec<(usize, NavRect)> = candidates.iter().copied().enumerate()
+        .filter(|(_, rect)| {
+            let (x, y) = rect.center();
+            match dir {
+                Dir::Left => current.overlaps_y(*rect) && x < cx - 0.5,
+                Dir::Right => current.overlaps_y(*rect) && x > cx + 0.5,
+                Dir::Up => !current.overlaps_y(*rect) && y < cy,
+                Dir::Down => !current.overlaps_y(*rect) && y > cy,
+            }
+        }).collect();
+    if horizontal {
+        return eligible.iter().min_by(|a, b| {
+            (a.1.center().0 - cx).abs().total_cmp(&(b.1.center().0 - cx).abs())
+        }).map(|(index, _)| *index);
+    }
+    let frontier = eligible.iter().min_by(|a, b| {
+        (a.1.center().1 - cy).abs().total_cmp(&(b.1.center().1 - cy).abs())
+    })?.1;
+    eligible.iter().filter(|(_, rect)| rect.overlaps_y(frontier))
+        .min_by(|a, b| {
+            (a.1.center().0 - cx).abs().total_cmp(&(b.1.center().0 - cx).abs())
+        }).map(|(index, _)| *index)
+}
+
+fn best_in_scope_using(
+    current: NavRect,
+    candidates: &[(NavRect, bool, bool)],
+    dir: Dir,
+    choose: fn(NavRect, &[NavRect], Dir) -> Option<usize>,
+) -> Option<usize> {
+    for scoped in [true, false] {
+        let eligible: Vec<(usize, NavRect)> = candidates
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, inside, visible))| if scoped { *inside } else { *visible })
+            .map(|(i, (rect, _, _))| (i, *rect))
+            .collect();
+        let rects: Vec<_> = eligible.iter().map(|(_, rect)| *rect).collect();
+        if let Some(i) = choose(current, &rects, dir) {
+            return Some(eligible[i].0);
+        }
+    }
+    None
+}
+
+pub fn reveal_value(value: f64, lower: f64, upper: f64, page: f64, start: f64, size: f64) -> f64 {
+    let delta = if start < 0.0 || size > page {
+        start
+    } else {
+        (start + size - page).max(0.0)
+    };
+    (value + delta).clamp(lower, (upper - page).max(lower))
 }
 
 fn stick_dir(x: f32, y: f32) -> Option<Dir> {
@@ -390,9 +473,101 @@ pub fn map_event_with_delays(
     }
 }
 
+/// Drive held directions even when gilrs emits no more events for a steady axis.
+pub fn repeat(state: &mut NavState, now_ms: u64) -> Option<NavAction> {
+    repeat_with_delays(state, now_ms, RepeatDelays::default())
+}
+
+/// Keep held-axis polling consistent with the configured input-event delays.
+pub fn repeat_with_delays(
+    state: &mut NavState,
+    now_ms: u64,
+    delays: RepeatDelays,
+) -> Option<NavAction> {
+    let dir = effective(state);
+    step(dir, dir, state, now_ms, delays)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn held_direction_preserves_configured_repeat_delays() {
+        let mut state = NavState::default();
+        let delays = RepeatDelays::from_values(Some("500"), Some("75"));
+        assert_eq!(
+            map_event_with_delays(PadInput::Dpad(Dir::Right, true), &mut state, 0, delays),
+            Some(NavAction::Move(Dir::Right))
+        );
+        assert_eq!(repeat_with_delays(&mut state, 499, delays), None);
+        assert_eq!(
+            repeat_with_delays(&mut state, 500, delays),
+            Some(NavAction::Move(Dir::Right))
+        );
+        assert_eq!(repeat_with_delays(&mut state, 574, delays), None);
+        assert_eq!(
+            repeat_with_delays(&mut state, 575, delays),
+            Some(NavAction::Move(Dir::Right))
+        );
+        assert_eq!(
+            map_event_with_delays(PadInput::Dpad(Dir::Right, false), &mut state, 576, delays),
+            None
+        );
+        assert_eq!(repeat_with_delays(&mut state, 1000, delays), None);
+    }
+
+    #[test]
+    fn gamepad_form_one_two_one_fields_never_skip_a_row() {
+        let top = NavRect::new(0.0, 0.0, 300.0, 40.0);
+        let left = NavRect::new(0.0, 60.0, 140.0, 40.0);
+        let right = NavRect::new(160.0, 60.0, 140.0, 40.0);
+        let bottom = NavRect::new(0.0, 120.0, 300.0, 40.0);
+        let fields = [top, left, right, bottom];
+        assert_eq!(best_in_form(top, &fields, Dir::Down), Some(1));
+        assert_eq!(best_in_form(left, &fields, Dir::Right), Some(2));
+        assert_eq!(best_in_form(right, &fields, Dir::Left), Some(1));
+        assert_eq!(best_in_form(right, &fields, Dir::Up), Some(0));
+        assert_eq!(best_in_form(right, &fields, Dir::Down), Some(3));
+        assert_eq!(best_in_form(bottom, &fields, Dir::Up), Some(1));
+        assert_eq!(best_in_form(right, &fields, Dir::Right), None);
+        assert_eq!(best_in_form(top, &fields, Dir::Up), None);
+    }
+
+    #[test]
+    fn gamepad_held_direction_repeats_without_new_device_events() {
+        let mut state = NavState::default();
+        assert_eq!(map_event(PadInput::Dpad(Dir::Right, true), &mut state, 0), Some(NavAction::Move(Dir::Right)));
+        assert_eq!(repeat(&mut state, 399), None);
+        assert_eq!(repeat(&mut state, 400), Some(NavAction::Move(Dir::Right)));
+        assert_eq!(repeat(&mut state, 400), None);
+        assert_eq!(repeat(&mut state, 520), Some(NavAction::Move(Dir::Right)));
+        map_event(PadInput::Dpad(Dir::Right, false), &mut state, 521);
+        assert_eq!(repeat(&mut state, 800), None);
+        assert_eq!(map_event(PadInput::Stick { x: -1.0, y: 0.0 }, &mut state, 900), Some(NavAction::Move(Dir::Left)));
+        assert_eq!(repeat(&mut state, 1300), Some(NavAction::Move(Dir::Left)));
+        state.reset();
+        assert_eq!(repeat(&mut state, 1600), None);
+    }
+
+    #[test]
+    fn disconnect_reset_releases_all_held_directions_and_repeat_deadline() {
+        let mut state = NavState {
+            dpad: Some(Dir::Left),
+            stick: Some(Dir::Up),
+            next_repeat_ms: 900,
+        };
+        state.reset();
+        assert_eq!(state, NavState::default());
+        assert_eq!(
+            map_event(PadInput::Stick { x: 0.0, y: 0.0 }, &mut state, 1000),
+            None
+        );
+        assert_eq!(
+            map_event(PadInput::Dpad(Dir::Left, true), &mut state, 1001),
+            Some(NavAction::Move(Dir::Left))
+        );
+    }
 
     #[test]
     fn deadzone_ignores_small_sticks() {
@@ -708,6 +883,67 @@ mod tests {
             best_in_direction(add_game, &[sidebar_icon, settings], Dir::Right),
             Some(1)
         );
+    }
+
+    #[test]
+    fn nearby_directional_target_beats_distant_aligned_target() {
+        let current = rect(0.0, 0.0, 40.0, 40.0);
+        let nearby = rect(60.0, 45.0, 40.0, 40.0);
+        let distant = rect(5000.0, 0.0, 40.0, 40.0);
+        assert_eq!(
+            best_in_direction(current, &[distant, nearby], Dir::Right),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn scrolling_scope_prefers_hidden_content_and_allows_exit_when_exhausted() {
+        let current = rect(0.0, 0.0, 40.0, 40.0);
+        let candidates = [
+            (rect(0.0, 500.0, 40.0, 40.0), true, false),
+            (rect(0.0, 60.0, 40.0, 40.0), false, true),
+        ];
+        assert_eq!(best_in_scope(current, &candidates, Dir::Down), Some(0));
+        assert_eq!(
+            best_in_scope(candidates[0].0, &candidates, Dir::Up),
+            Some(1)
+        );
+        assert_eq!(
+            best_in_scope(current, &[(candidates[0].0, false, false)], Dir::Down),
+            None
+        );
+    }
+
+    #[test]
+    fn horizontal_scroll_scope_allows_lateral_exit_after_last_item() {
+        let current = rect(200.0, 0.0, 40.0, 40.0);
+        let inside = rect(0.0, 0.0, 40.0, 40.0);
+        let outside = rect(260.0, 0.0, 40.0, 40.0);
+        assert_eq!(
+            best_in_scope(
+                current,
+                &[(inside, true, false), (outside, false, true)],
+                Dir::Right
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            best_in_scope(
+                current,
+                &[(inside, true, false), (outside, false, true)],
+                Dir::Left
+            ),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn reveal_clamps_each_axis_and_keeps_oversized_targets_leading_edge() {
+        assert_eq!(reveal_value(100.0, 0.0, 1000.0, 200.0, -40.0, 30.0), 60.0);
+        assert_eq!(reveal_value(100.0, 0.0, 1000.0, 200.0, 190.0, 40.0), 130.0);
+        assert_eq!(reveal_value(100.0, 0.0, 1000.0, 200.0, 10.0, 400.0), 110.0);
+        assert_eq!(reveal_value(790.0, 0.0, 1000.0, 200.0, 190.0, 100.0), 800.0);
+        assert_eq!(reveal_value(0.0, 0.0, 100.0, 200.0, -50.0, 40.0), 0.0);
     }
 
     #[test]
