@@ -2204,59 +2204,15 @@ impl MinecraftView {
             });
         }
         {
-            let l = view.set_ram_lbl.clone();
-            let e = view.set_ram_entry.clone();
-            view.set_ram.connect_value_changed(move |s| {
-                let mb = s.value() as u32;
-                l.set_text(&format!("{} MB", mb));
-                e.set_text(&mb.to_string());
-            });
-            // Disk write only on release/confirm (see modal slider above).
-            let sv = view.clone();
-            let rs = view.set_ram.clone();
-            let release = gtk::EventControllerLegacy::new();
-            release.connect_event(move |_, event| {
-                if event.event_type() == gtk::gdk::EventType::ButtonRelease {
-                    let id = sv.detail_id.borrow().clone();
-                    if !id.is_empty() {
-                        sv.set_inst_cfg(&id, "Ram", &(rs.value() as u32).to_string());
-                    }
-                }
-                glib::Propagation::Proceed
-            });
-            view.set_ram.add_controller(release);
-        }
-        {
+            let id = view.detail_id.clone();
             let v = view.clone();
-            // typed MB (Enter or focus-leave) <-> slider, saved live
-            let entry = v.set_ram_entry.clone();
-            entry.connect_activate(move |e| {
-                let raw = e.text().to_string().trim().to_string();
-                if let Ok(mb) = raw.parse::<f64>() {
-                    let mb = mb.clamp(512.0, 16384.0);
-                    v.set_ram.set_value(mb);
-                    let id = v.detail_id.borrow().clone();
-                    if !id.is_empty() {
-                        v.set_inst_cfg(&id, "Ram", &(mb as u32).to_string());
-                    }
-                } else {
-                    e.set_text(&format!("{}", v.set_ram.value() as u32));
-                }
-            });
-            let v2 = view.clone();
-            let focus = gtk::EventControllerFocus::new();
-            focus.connect_leave(move |_| {
-                let raw = v2.set_ram_entry.text().to_string().trim().to_string();
-                if let Ok(mb) = raw.parse::<f64>() {
-                    let mb = mb.clamp(512.0, 16384.0);
-                    v2.set_ram.set_value(mb);
-                    let id = v2.detail_id.borrow().clone();
-                    if !id.is_empty() {
-                        v2.set_inst_cfg(&id, "Ram", &(mb as u32).to_string());
-                    }
-                }
-            });
-            view.set_ram_entry.add_controller(focus);
+            super::minecraft_ram::bind(
+                &view.set_ram,
+                &view.set_ram_entry,
+                &view.set_ram_lbl,
+                move || id.borrow().clone(),
+                move |id, mb| v.set_inst_cfg(id, "Ram", &mb.to_string()),
+            );
         }
         {
             let v = view.clone();
@@ -2570,32 +2526,61 @@ impl MinecraftView {
             tile.set_child(Some(&tile_overlay));
             let v = self.clone();
             let id = inst.id.clone();
+            tile.connect_activate(move |_| v.open_detail(&id));
+            let v = self.clone();
+            let id = inst.id.clone();
+            let weak_tile = tile.downgrade();
             let gesture = gtk::GestureClick::new();
             gesture.set_button(0);
             gesture.connect_pressed(move |g, _n, x, y| {
                 if g.current_button() == 3 {
-                    v.show_tile_menu(&id, x, y);
+                    g.set_state(gtk::EventSequenceState::Claimed);
+                    if let Some(tile) = weak_tile.upgrade() {
+                        v.show_tile_menu(&id, tile.upcast_ref(), x, y);
+                    }
                 } else if g.current_button() == 1 {
-                    v.open_detail(&id);
+                    g.set_state(gtk::EventSequenceState::Claimed);
+                    if let Some(tile) = weak_tile.upgrade() {
+                        tile.emit_activate();
+                    }
                 }
             });
             tile.add_controller(gesture);
-            let vk = self.clone();
-            let idk = inst.id.clone();
+            let weak_tile = tile.downgrade();
             let key = gtk::EventControllerKey::new();
+            key.set_propagation_phase(gtk::PropagationPhase::Capture);
             key.connect_key_pressed(move |_, keyval, _, _| {
                 if keyval == gtk::gdk::Key::Return || keyval == gtk::gdk::Key::KP_Enter || keyval == gtk::gdk::Key::space {
-                    vk.open_detail(&idk);
+                    if let Some(tile) = weak_tile.upgrade() {
+                        tile.emit_activate();
+                    }
                     return glib::Propagation::Stop;
                 }
                 glib::Propagation::Proceed
             });
             tile.add_controller(key);
+            let actions = gio::SimpleActionGroup::new();
+            let context = gio::SimpleAction::new("context", None);
+            let v = self.clone();
+            let id = inst.id.clone();
+            let weak_tile = tile.downgrade();
+            context.connect_activate(move |_, _| {
+                if let Some(tile) = weak_tile.upgrade() {
+                    v.show_tile_menu(
+                        &id,
+                        tile.upcast_ref(),
+                        (tile.width() / 2) as f64,
+                        (tile.height() / 2) as f64,
+                    );
+                }
+            });
+            actions.add_action(&context);
+            tile.insert_action_group("gamepad", Some(&actions));
             self.flow.insert(&tile, -1);
         }
     }
 
-    fn show_tile_menu(&self, id: &str, x: f64, y: f64) {
+    fn show_tile_menu(&self, id: &str, anchor: &gtk::Widget, x: f64, y: f64) {
         let is_vanilla = self.get_inst(id).map(|i| i.loader == "vanilla").unwrap_or(false);
         let pop = gtk::Popover::new();
         let box_ = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -2649,9 +2634,9 @@ impl MinecraftView {
             box_.append(&b);
         }
         pop.set_child(Some(&box_));
-        if let Some(child) = self.flow.first_child() {
+        {
             let rect = gdk::Rectangle::new(x as i32, y as i32, 1, 1);
-            pop.set_parent(&child);
+            pop.set_parent(anchor);
             pop.set_pointing_to(Some(&rect));
             let popc = pop.clone();
             pop.connect_closed(move |_| {
@@ -3048,6 +3033,9 @@ impl MinecraftView {
         self.set_prehook.set_text(&self.inst_cfg(&inst.id, "PreHook"));
         let ram = self.inst_ram(&inst.id);
         self.set_ram.set_value(ram as f64);
+        self.set_ram_entry
+            .set_text(&(self.set_ram.value() as u32).to_string());
+        super::minecraft_ram::rebase(&self.set_ram);
         self.set_ram_lbl.set_text(&format!("{} MB", ram));
         self.set_java.set_text(&self.inst_cfg(&inst.id, "Java"));
         self.render_addons();
@@ -7062,50 +7050,14 @@ impl MinecraftView {
             });
         }
         {
-            let l = ram_lbl.clone();
-            let re = ram_entry.clone();
-            ram.connect_value_changed(move |s| {
-                let mb = s.value() as u32;
-                l.set_text(&format!("{} MB", mb));
-                re.set_text(&mb.to_string());
-            });
-            // Disk write only on release/confirm: saving the whole INI on
-            // every drag tick stalls the main loop (lag + oscillation).
-            let sv = self.clone();
-            let rs = ram.clone();
-            let release = gtk::EventControllerLegacy::new();
-            release.connect_event(move |_, event| {
-                if event.event_type() == gtk::gdk::EventType::ButtonRelease {
-                    sv.set_cfg("McRam", &(rs.value() as u32).to_string());
-                }
-                glib::Propagation::Proceed
-            });
-            ram.add_controller(release);
             let v = self.clone();
-            let rr = ram.clone();
-            ram_entry.connect_activate(move |e| {
-                let raw = e.text().to_string().trim().to_string();
-                if let Ok(mb) = raw.parse::<f64>() {
-                    let mb = mb.clamp(512.0, 16384.0);
-                    rr.set_value(mb);
-                    v.set_cfg("McRam", &(mb as u32).to_string());
-                } else {
-                    e.set_text(&format!("{}", rr.value() as u32));
-                }
-            });
-            let v2 = self.clone();
-            let rr2 = ram.clone();
-            let re2 = ram_entry.clone();
-            let rfocus = gtk::EventControllerFocus::new();
-            rfocus.connect_leave(move |_| {
-                let raw = re2.text().to_string().trim().to_string();
-                if let Ok(mb) = raw.parse::<f64>() {
-                    let mb = mb.clamp(512.0, 16384.0);
-                    rr2.set_value(mb);
-                    v2.set_cfg("McRam", &(mb as u32).to_string());
-                }
-            });
-            ram_entry.add_controller(rfocus);
+            super::minecraft_ram::bind(
+                &ram,
+                &ram_entry,
+                &ram_lbl,
+                || "global".to_string(),
+                move |_, mb| v.set_cfg("McRam", &mb.to_string()),
+            );
         }
         {
             let gs = gen_save.clone();

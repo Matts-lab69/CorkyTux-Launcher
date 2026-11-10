@@ -601,6 +601,14 @@ Why 48 px (requested range 48-56): it is the thumbnail size of Prism/Modrinth co
 - **`.add-btn:disabled` not implemented**: the matrix of this section specifies that `Installing…` use `.add-btn` + `.add-btn:disabled` at 96 px, but `helpers.rs` only defines `.add-btn` and `.add-btn:hover`. Today a disabled `Install` during installation falls back to the GTK default style and breaks the consistency of the accent capsule. The specified rule would be the same as `.emu-link-action:disabled` (8% accent fill, `{text_muted}` border and text). I do not implement it in this iteration: it touches the plugin catalog and its verification is visual.
 - **96 px widths not implemented**: the matrix reserves 96 px for `Installing…` and for `Retry` in error recovery, but `rebuild_emu_rows` sets 80 px for `Install`/`Remove` and 120 px for the pin. I have to decide the real width of the transient states so the text is not clipped and the column does not jump; it stays pending in the visual matrix.
 
+## Gamepad semantic focus and playtime
+
+Horizontal sliders adjust immediately with Left/Right and commit on confirm or
+leaving the slider; Up/Down navigate to adjacent rows. Entry/SearchEntry/TextView
+are single semantic targets, never separate internal GtkText destinations. Form
+navigation prefers the immediately adjacent row before matching horizontal
+position. Held directions repeat at 400/120 ms even without new device events.
+
 ## Recorded open items (out of scope)
 
 - **`System`/`Linked` badge contrast:** the same risk resolved by the "3:1 contrast" section pre-exists in the state vocabulary: the badge text and border use `{accent}` and, with light accents in the light theme, fall below 3:1 (yellow darkened 22%: 2.01:1 against `#FFFFFF`). I do not fix it in this iteration; it stays recorded for a future task on badge vocabulary contrast.
