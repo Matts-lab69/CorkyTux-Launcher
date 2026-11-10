@@ -23,6 +23,7 @@ pub mod markdown;
 pub mod mcx_theme;
 pub mod minecraft_view;
 pub mod stores_view;
+mod rail_loader;
 #[path = "policies/dialog.rs"]
 pub mod dialog;
 pub mod import_manager;
