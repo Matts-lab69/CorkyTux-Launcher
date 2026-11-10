@@ -1005,6 +1005,7 @@ impl StoresView {
             rails_box: gtk::Box::new(gtk::Orientation::Vertical, 8),
             rail_rows: Rc::new(RefCell::new(Vec::new())),
             rails_loaded: Rc::new(std::cell::Cell::new(false)),
+            rail_scheduler: Rc::new(RefCell::new(super::rail_loader::Scheduler::default())),
             last_logged: Rc::new(std::cell::Cell::new(false)),
             loaded: Rc::new(std::cell::Cell::new(false)),
             desc_killer: Rc::new(RefCell::new(None)),
@@ -1328,6 +1329,7 @@ struct StorePageHandle {
     rails_box: gtk::Box,
     rail_rows: Rc<RefCell<Vec<RailRow>>>,
     rails_loaded: Rc<std::cell::Cell<bool>>,
+    rail_scheduler: Rc<RefCell<super::rail_loader::Scheduler>>,
     // I remember my last session state from refresh_auth: I tell "no session"
     // apart from "logged in but empty library" in empty-state messages.
     last_logged: Rc<std::cell::Cell<bool>>,
@@ -2036,48 +2038,74 @@ impl StorePageHandle {
         }
     }
 
-    /// I load my 3 rails on a thread (sequential): I honor my TTL cache, no
-    /// network when fresh. `force` (Refresh) bypasses my plugin cache.
+    /// Each rail publishes independently, with one running and one coalesced request.
     fn load_rails(&self, force: bool) {
-        let (tx, rx) = std::sync::mpsc::channel::<
-            Vec<(String, Vec<RailItem>, bool, String)>,
-        >();
+        let jobs = self.rail_scheduler.borrow_mut().request(force);
+        for job in jobs {
+            self.start_rail(job);
+        }
+    }
+
+    fn start_rail(&self, job: super::rail_loader::Job) {
+        let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let mut out: Vec<(String, Vec<RailItem>, bool, String)> = Vec::new();
-            for list in ["sale", "new", "free"] {
-                match StoreManager::gog_rail(list, force) {
-                    Ok(d) => {
-                        let items = d
-                            .get("items")
-                            .and_then(|x| x.as_array())
-                            .cloned()
-                            .unwrap_or_default()
-                            .into_iter()
-                            .filter_map(|o| parse_rail_item(&o))
-                            .collect::<Vec<_>>();
-                        let partial =
-                            d.get("partial").and_then(|x| x.as_bool()).unwrap_or(false);
-                        let warn = d
-                            .get("warning")
-                            .and_then(|x| x.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        out.push((list.to_string(), items, partial, warn));
-                    }
-                    Err(e) => out.push((list.to_string(), Vec::new(), true, e.to_string())),
+            let list = super::rail_loader::RAILS[job.rail];
+            let result = match StoreManager::gog_rail(list, job.force) {
+                Ok(d) => {
+                    let items = d
+                        .get("items")
+                        .and_then(|x| x.as_array())
+                        .cloned()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter_map(|o| parse_rail_item(&o))
+                        .collect::<Vec<_>>();
+                    let partial = d.get("partial").and_then(|x| x.as_bool()).unwrap_or(false);
+                    let warn = d
+                        .get("warning")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    (list.to_string(), items, partial, warn)
                 }
-            }
-            let _ = tx.send(out);
+                Err(e) => (list.to_string(), Vec::new(), true, e.to_string()),
+            };
+            let _ = tx.send(result);
         });
         let vh = self.clone();
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
-            Ok(rails) => {
-                vh.render_rails(&rails);
+            Ok(rail) => {
+                vh.finish_rail(job, rail);
                 glib::ControlFlow::Break
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-            Err(_) => glib::ControlFlow::Break,
+            Err(_) => {
+                vh.finish_rail(
+                    job,
+                    (
+                        super::rail_loader::RAILS[job.rail].to_string(),
+                        Vec::new(),
+                        true,
+                        "Rail worker disconnected".to_string(),
+                    ),
+                );
+                glib::ControlFlow::Break
+            }
         });
+    }
+
+    fn finish_rail(
+        &self,
+        job: super::rail_loader::Job,
+        rail: (String, Vec<RailItem>, bool, String),
+    ) {
+        let (publish, next) = self.rail_scheduler.borrow_mut().complete(job);
+        if publish {
+            self.render_rails(&[rail]);
+        }
+        if let Some(next) = next {
+            self.start_rail(next);
+        }
     }
 
     /// I paint each rail: cards, or a dim note on failure/empty. I never
@@ -2093,6 +2121,7 @@ impl StorePageHandle {
             }
             *sec.items.borrow_mut() = items.clone();
             if items.is_empty() {
+                sec.pager.set_visible(false);
                 let texto = if *partial {
                     format!(
                         "Couldn't load this rail{}.",
