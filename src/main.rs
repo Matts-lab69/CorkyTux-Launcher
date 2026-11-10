@@ -1,12 +1,6 @@
 mod backend;
 mod ui;
 
-// Sidebar/center layout probe (fixed window widths). `#[ignore]`: needs a
-// live display; never runs in CI or default suites.
-#[cfg(test)]
-#[path = "ui/layout_probe.rs"]
-mod layout_probe_tests;
-
 /// Test-only process-env guard. Rust runs tests in threads of ONE process,
 /// so two tests touching env race: stores_view swaps HOME while isolation
 /// reads it (flake ~1/8). Every test that writes OR reads HOME takes this
