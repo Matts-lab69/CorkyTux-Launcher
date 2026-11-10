@@ -229,6 +229,85 @@ pub fn should_handle(window_active: bool, window_visible: bool, setting: bool) -
     window_active && window_visible && setting
 }
 
+/// A widget rectangle in window coordinates, used for spatial focus moves.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NavRect {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+impl NavRect {
+    pub fn new(x: f64, y: f64, w: f64, h: f64) -> Self {
+        Self { x, y, w, h }
+    }
+
+    fn center(self) -> (f64, f64) {
+        (self.x + self.w / 2.0, self.y + self.h / 2.0)
+    }
+
+    fn overlaps_x(self, other: Self) -> bool {
+        self.x < other.x + other.w && other.x < self.x + self.w
+    }
+
+    fn overlaps_y(self, other: Self) -> bool {
+        self.y < other.y + other.h && other.y < self.y + self.h
+    }
+}
+
+/// Picks the closest focus target in `dir` from the widget rectangles.
+///
+/// GTK's own arrow-key move only tries the branch that already holds the
+/// focus, so a FlowBox (Recently Played) traps the pad forever. Choosing from
+/// every visible focusable widget lets Left leave the cards for the sidebar
+/// and Up reach the header buttons.
+pub fn best_in_direction(current: NavRect, candidates: &[NavRect], dir: Dir) -> Option<usize> {
+    let (cx, cy) = current.center();
+    // (off the row/column, score, primary, perpendicular, index)
+    let mut best: Option<(bool, f64, f64, f64, usize)> = None;
+    // When nothing lies mostly along `dir`, fall back to the widget that is
+    // closest to the movement axis. Up from a Recently Played card has only
+    // the sidebar filters above it, so it still needs to go somewhere.
+    let mut fallback: Option<(f64, f64, usize)> = None;
+
+    for (i, candidate) in candidates.iter().enumerate() {
+        let (x, y) = candidate.center();
+        let dx = x - cx;
+        let dy = y - cy;
+        let (primary, perpendicular, aligned) = match dir {
+            Dir::Up => (-dy, dx.abs(), current.overlaps_x(*candidate)),
+            Dir::Down => (dy, dx.abs(), current.overlaps_x(*candidate)),
+            Dir::Left => (-dx, dy.abs(), current.overlaps_y(*candidate)),
+            Dir::Right => (dx, dy.abs(), current.overlaps_y(*candidate)),
+        };
+        if primary <= 0.5 {
+            continue;
+        }
+        let off_axis = (perpendicular, primary, i);
+        if fallback.map(|b| off_axis < b).unwrap_or(true) {
+            fallback = Some(off_axis);
+        }
+        // A widget in the same row is not "above" just because its centre is
+        // a few pixels higher. Require the move to point mostly along `dir`,
+        // so Left reaches the sidebar instead of Up grabbing its row.
+        if primary < perpendicular * 0.5 {
+            continue;
+        }
+        // The header row spans the whole window: Right from Add game must
+        // reach Settings even though a sidebar button is nearer. Same-row and
+        // same-column targets therefore win over every off-axis one.
+        let score = primary + perpendicular * if aligned { 0.25 } else { 2.0 };
+        let entry = (!aligned, score, primary, perpendicular, i);
+        if best.map(|b| entry < b).unwrap_or(true) {
+            best = Some(entry);
+        }
+    }
+
+    best.map(|(_, _, _, _, i)| i)
+        .or_else(|| fallback.map(|(_, _, i)| i))
+}
+
 fn stick_dir(x: f32, y: f32) -> Option<Dir> {
     if x.abs() < DEADZONE && y.abs() < DEADZONE {
         return None;
@@ -580,4 +659,89 @@ mod tests {
         assert_eq!(quick_action_target("minecraft", false, true, true, false), QuickTarget::None);
     }
 
+    fn rect(x: f64, y: f64, w: f64, h: f64) -> NavRect {
+        NavRect::new(x, y, w, h)
+    }
+
+    #[test]
+    fn spatial_move_leaves_the_recently_played_flow() {
+        // One card in Recently Played, the sidebar row at the same height and
+        // the header buttons above it.
+        let card = rect(400.0, 300.0, 200.0, 140.0);
+        let sidebar_row = rect(10.0, 340.0, 210.0, 40.0);
+        let filter = rect(20.0, 120.0, 90.0, 30.0);
+        let settings = rect(900.0, 20.0, 100.0, 30.0);
+        let candidates = [filter, sidebar_row, settings];
+        assert_eq!(best_in_direction(card, &candidates, Dir::Left), Some(1));
+        assert_eq!(best_in_direction(card, &candidates, Dir::Up), Some(0));
+        assert_eq!(best_in_direction(card, &candidates, Dir::Down), None);
+        assert_eq!(best_in_direction(card, &candidates, Dir::Right), Some(2));
+    }
+
+    #[test]
+    fn spatial_move_reaches_the_filters_from_a_card() {
+        // Real window coordinates: the filters sit far to the left of the
+        // Recently Played row, so no widget is directly above a card.
+        let card = rect(587.0, 173.0, 206.0, 146.0);
+        let filter = rect(17.0, 144.0, 107.0, 44.0);
+        let add_game = rect(17.0, 0.0, 100.0, 44.0);
+        let settings = rect(1611.0, 0.0, 140.0, 44.0);
+        assert_eq!(
+            best_in_direction(card, &[filter, add_game, settings], Dir::Up),
+            Some(0)
+        );
+        // Nothing sits below the cards.
+        assert_eq!(
+            best_in_direction(card, &[filter, add_game, settings], Dir::Down),
+            None
+        );
+    }
+
+    #[test]
+    fn spatial_move_keeps_the_header_row() {
+        // Right from Add game must reach Settings across the window header,
+        // not the nearer sidebar icon below it.
+        let add_game = rect(6.0, 6.0, 110.0, 38.0);
+        let settings = rect(1611.0, 3.0, 140.0, 44.0);
+        let sidebar_icon = rect(163.0, 85.0, 34.0, 34.0);
+        assert_eq!(
+            best_in_direction(add_game, &[sidebar_icon, settings], Dir::Right),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn spatial_move_prefers_the_same_row() {
+        let card = rect(400.0, 300.0, 200.0, 140.0);
+        let next_card = rect(620.0, 300.0, 200.0, 140.0);
+        let close_but_off_axis = rect(620.0, 80.0, 200.0, 140.0);
+        assert_eq!(
+            best_in_direction(card, &[close_but_off_axis, next_card], Dir::Right),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn spatial_move_ignores_the_widget_under_the_focus() {
+        // FlowBoxChild and its inner game-card button share the same bounds.
+        let child = rect(400.0, 300.0, 200.0, 140.0);
+        let inner = rect(400.0, 300.0, 200.0, 140.0);
+        assert_eq!(best_in_direction(child, &[inner], Dir::Right), None);
+    }
+
+    #[test]
+    fn sidebar_row_does_not_jump_to_a_filter_on_the_right() {
+        let row = rect(10.0, 340.0, 210.0, 40.0);
+        let filter = rect(137.0, 197.0, 90.0, 30.0);
+        let card = rect(400.0, 300.0, 200.0, 140.0);
+        assert_eq!(best_in_direction(row, &[filter, card], Dir::Right), Some(1));
+    }
+
+    #[test]
+    fn spatial_move_reaches_the_header_from_a_sidebar_row() {
+        let row = rect(10.0, 340.0, 210.0, 40.0);
+        let add = rect(20.0, 20.0, 100.0, 30.0);
+        let settings = rect(900.0, 20.0, 100.0, 30.0);
+        assert_eq!(best_in_direction(row, &[add, settings], Dir::Up), Some(0));
+    }
 }

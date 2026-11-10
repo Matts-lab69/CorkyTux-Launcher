@@ -9,7 +9,7 @@ use std::time::Duration;
 use gtk::prelude::*;
 
 use super::gamepad_nav::{
-    self, Dir, NavAction, NavState, PadButton, PadInfo, PadInput, PadMapping, PadStamp,
+    self, Dir, NavAction, NavRect, NavState, PadButton, PadInfo, PadInput, PadMapping, PadStamp,
     DEDUPE_WINDOW_MS,
 };
 
@@ -257,18 +257,7 @@ pub fn start(
 
 fn apply_action(window: &gtk::Window, action: NavAction) {
     match action {
-        NavAction::Move(dir) => {
-            let direction = match dir {
-                Dir::Up => gtk::DirectionType::Up,
-                Dir::Down => gtk::DirectionType::Down,
-                Dir::Left => gtk::DirectionType::Left,
-                Dir::Right => gtk::DirectionType::Right,
-            };
-            window.child_focus(direction);
-            if let Some(focus) = gtk::prelude::GtkWindowExt::focus(window) {
-                ensure_visible(&focus);
-            }
-        }
+        NavAction::Move(dir) => move_focus(window, dir),
         NavAction::Activate => {
             if let Some(focus) = gtk::prelude::GtkWindowExt::focus(window) {
                 activate(&focus);
@@ -292,6 +281,113 @@ fn apply_action(window: &gtk::Window, action: NavAction) {
         NavAction::QuickAction => {}
         NavAction::Context | NavAction::Menu => {}
     }
+}
+
+/// Moves the focus to the closest visible focusable widget in `dir`.
+///
+/// `gtk_widget_child_focus()` only walks the branch that already holds the
+/// focus. Recently Played is a FlowBox, so the pad could move between cards
+/// but never reach the filters, the library list or the header buttons.
+fn move_focus(window: &gtk::Window, dir: Dir) {
+    let Some(current) = gtk::prelude::GtkWindowExt::focus(window) else {
+        // Nothing focused yet: keep GTK's first-widget choice.
+        let direction = match dir {
+            Dir::Up => gtk::DirectionType::Up,
+            Dir::Down => gtk::DirectionType::Down,
+            Dir::Left => gtk::DirectionType::Left,
+            Dir::Right => gtk::DirectionType::Right,
+        };
+        window.child_focus(direction);
+        if let Some(focus) = gtk::prelude::GtkWindowExt::focus(window) {
+            ensure_visible(&focus);
+        }
+        return;
+    };
+    let Some(current_rect) = widget_rect(&current, window) else {
+        return;
+    };
+
+    let root = navigation_root(window);
+    let mut candidates: Vec<(gtk::Widget, NavRect)> = Vec::new();
+    collect_nav_targets(&root, window, &mut candidates);
+    let rects: Vec<NavRect> = candidates.iter().map(|(_, rect)| *rect).collect();
+    if let Some(index) = gamepad_nav::best_in_direction(current_rect, &rects, dir) {
+        let target = candidates[index].0.clone();
+        target.grab_focus();
+        ensure_visible(&target);
+    }
+}
+
+/// The widget tree that owns the current focus: the visible embedded dialog,
+/// when there is one, so a pad cannot jump to the dimmed window behind it.
+fn navigation_root(window: &gtk::Window) -> gtk::Widget {
+    if let Some(app_win) = window.downcast_ref::<adw::ApplicationWindow>() {
+        use adw::prelude::AdwApplicationWindowExt;
+        if let Some(dialog) = app_win.visible_dialog() {
+            return dialog.upcast();
+        }
+    }
+    window.clone().upcast()
+}
+
+fn widget_rect(widget: &gtk::Widget, reference: &gtk::Window) -> Option<NavRect> {
+    if !widget.is_visible() || !widget.is_mapped() || !widget.is_sensitive() {
+        return None;
+    }
+    let bounds = widget.compute_bounds(reference)?;
+    if bounds.width() <= 0.0 || bounds.height() <= 0.0 {
+        return None;
+    }
+    Some(NavRect::new(
+        bounds.x() as f64,
+        bounds.y() as f64,
+        bounds.width() as f64,
+        bounds.height() as f64,
+    ))
+}
+
+fn collect_nav_targets(
+    root: &gtk::Widget,
+    reference: &gtk::Window,
+    out: &mut Vec<(gtk::Widget, NavRect)>,
+) {
+    if is_nav_target(root) {
+        if let Some(rect) = widget_rect(root, reference) {
+            out.push((root.clone(), rect));
+        }
+    }
+    let mut child = root.first_child();
+    while let Some(next) = child {
+        collect_nav_targets(&next, reference, out);
+        child = next.next_sibling();
+    }
+}
+
+/// Focusable widgets that make sense as pad targets. The list and flow boxes
+/// are focusable containers: focusing them would only land on a row by
+/// accident and skip the geometry that picks the right one.
+fn is_nav_target(widget: &gtk::Widget) -> bool {
+    if !widget.is_focusable() {
+        return false;
+    }
+    if widget.is::<gtk::ListBox>() || widget.is::<gtk::FlowBox>() || widget.is::<gtk::Window>() {
+        return false;
+    }
+    // The scrolled library and similar containers are focusable, but taking
+    // the focus themselves moves nothing: their focusable children are the
+    // real targets.
+    !has_focusable_child(widget)
+}
+
+fn has_focusable_child(widget: &gtk::Widget) -> bool {
+    let mut child = widget.first_child();
+    while let Some(next) = child {
+        if next.is_focusable() || has_focusable_child(&next) {
+            return true;
+        }
+        child = next.next_sibling();
+    }
+    false
 }
 
 /// Buttons and rows activate themselves; a card's inner button is the usual
