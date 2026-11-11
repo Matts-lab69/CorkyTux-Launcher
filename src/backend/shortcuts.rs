@@ -144,12 +144,12 @@ fn build_entry(name: &str) -> Result<String, String> {
         let executable = game.get("executable").map(String::as_str).unwrap_or("");
         if let Some(found) = super::icon_sources::game_icon_candidates(&home, &roots, name, executable)
             .into_iter().find(|path| {
-                if !path.is_file() {
+                let Some(bytes) = super::icon_io::read_icon_bytes(path) else {
                     return false;
-                }
+                };
                 #[cfg(test)]
                 tests::after_icon_validation();
-                gdk_pixbuf::Pixbuf::from_file(path).is_ok()
+                super::icon_io::decode_icon_bytes(&bytes).is_some()
             })
         {
             icon = found.to_string_lossy().into_owned();
