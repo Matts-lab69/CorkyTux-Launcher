@@ -143,7 +143,14 @@ fn build_entry(name: &str) -> Result<String, String> {
         let roots = super::icon_sources::data_roots(&home);
         let executable = game.get("executable").map(String::as_str).unwrap_or("");
         if let Some(found) = super::icon_sources::game_icon_candidates(&home, &roots, name, executable)
-            .into_iter().find(|path| path.is_file() && gdk_pixbuf::Pixbuf::from_file(path).is_ok())
+            .into_iter().find(|path| {
+                if !path.is_file() {
+                    return false;
+                }
+                #[cfg(test)]
+                tests::after_icon_validation();
+                gdk_pixbuf::Pixbuf::from_file(path).is_ok()
+            })
         {
             icon = found.to_string_lossy().into_owned();
         }
@@ -245,6 +252,42 @@ mod tests {
     use super::desktop_escape;
     use crate::test_env::lock;
     use std::path::PathBuf;
+
+    thread_local! {
+        static ICON_VALIDATION_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
+    pub(super) fn after_icon_validation() {
+        let hook = ICON_VALIDATION_HOOK.with(|slot| slot.borrow_mut().take());
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+
+    #[test]
+    fn shortcut_icon_uses_validated_bytes_after_path_replacement() {
+        let root = std::env::temp_dir().join(format!("shortcut-icon-race-{}", std::process::id()));
+        let _home = crate::test_env::HomeGuard::set(&root);
+        let cache = root.join(".config/CorkyTux/icons/race-safe.png");
+        std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
+        std::fs::write(&cache, include_bytes!("../../assets/star_gray.png")).unwrap();
+        let cfg = super::ConfigManager::new();
+        cfg.set_game_value("Race Safe", "Executable", "/bin/true");
+        cfg.set_game_value("Race Safe", "Description", "Offline icon race fixture");
+        let replaced = cache.clone();
+        ICON_VALIDATION_HOOK.with(|slot| {
+            *slot.borrow_mut() = Some(Box::new(move || {
+                std::fs::rename(&replaced, replaced.with_extension("original")).unwrap();
+                std::fs::write(&replaced, b"replacement is not an image").unwrap();
+            }));
+        });
+        let entry = super::build_entry("Race Safe").unwrap();
+        assert_eq!(std::fs::read(&cache).unwrap(), b"replacement is not an image");
+        assert!(entry.contains(&format!("Icon={}\n", cache.display())),
+                "icon validation must decode the original checked bytes, not reopen the replaced path");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn app_menu_dir_honours_xdg_data_home() {
