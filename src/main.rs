@@ -429,7 +429,7 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         it.set_search_path(&refs);
     }
 
-    // Settings needs 720x520 logical pixels plus dialog insets; restore within that budget.
+    // Restore saved dimensions within the independent main-window minimum policy.
     let saved_w: i32 = state.config.launcher_value("CkWinW").and_then(|s| s.parse().ok()).unwrap_or(1200).clamp(ui::layout::WINDOW_MIN_WIDTH, 10000);
     let saved_h: i32 = state.config.launcher_value("CkWinH").and_then(|s| s.parse().ok()).unwrap_or(700).clamp(ui::layout::WINDOW_MIN_HEIGHT, 10000);
     let window = adw::ApplicationWindow::builder()
@@ -450,7 +450,6 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     let tray_ok = tray_handle.is_some();
     {
         let state_c = state.clone();
-        let win_for_dialog = window.clone();
         let watcher_live = watcher_alive.clone();
         window.connect_close_request(move |win| {
             let a = win.allocation();
@@ -461,61 +460,16 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
             if state_c.proton.is_game_running() {
                 state_c.proton.ledger_checkpoint();
             }
-            let setting = state_c
-                .config
-                .launcher_value("closeToTray")
-                .map(|v| v == "1")
-                .unwrap_or(false);
-            let remembered = state_c.config.launcher_value("closeToTrayChoice");
             // The host can vanish while the window is hidden: then the X
             // must close, never hide into nothing.
             let tray_now = tray_ok && watcher_live.load(std::sync::atomic::Ordering::Relaxed);
-            match ui::tray::should_hide_on_close(tray_now, setting, remembered.as_deref()) {
+            match ui::tray::window_close_action(tray_now) {
                 ui::tray::CloseAction::Hide => {
                     win.set_visible(false);
                     glib::Propagation::Stop
                 }
-                ui::tray::CloseAction::Quit => {
+                ui::tray::CloseAction::Quit | ui::tray::CloseAction::Ask => {
                     quit_app(&state_c, win);
-                    glib::Propagation::Stop
-                }
-                ui::tray::CloseAction::Ask => {
-                    let dlg = adw::MessageDialog::new(
-                        Some(&win_for_dialog),
-                        Some("Keep running in background?"),
-                        Some("CorkyTux can keep your play time up to date from the system tray."),
-                    );
-                    dlg.add_response("background", "Keep running in background");
-                    dlg.add_response("quit", "Quit");
-                    dlg.set_response_appearance("quit", adw::ResponseAppearance::Destructive);
-                    dlg.set_default_response(Some("background"));
-                    let remember_btn = gtk::CheckButton::with_label("Remember my choice");
-                    dlg.set_extra_child(Some(&remember_btn));
-                    let win_c = win_for_dialog.clone();
-                    let state_d = state_c.clone();
-                    let remember_c = remember_btn.clone();
-                    let watcher_response = watcher_live.clone();
-                    dlg.connect_response(None, move |dlg: &adw::MessageDialog, resp: &str| {
-                        let remember = remember_c.is_active();
-                        match resp {
-                            "background" => {
-                                let available = tray_ok && watcher_response.load(std::sync::atomic::Ordering::Relaxed);
-                                if remember && available {
-                                    state_d.config.set_launcher_value("closeToTrayChoice", "tray");
-                                }
-                                if available { win_c.set_visible(false); } else { win_c.present(); }
-                            }
-                            "quit" => {
-                                if remember {
-                                    state_d.config.set_launcher_value("closeToTrayChoice", "quit");
-                                }
-                                quit_app(&state_d, &win_c);
-                            }
-                            _ => {}
-                        }
-                        dlg.close();
-                    });
-                    dlg.present();
                     glib::Propagation::Stop
                 }
             }

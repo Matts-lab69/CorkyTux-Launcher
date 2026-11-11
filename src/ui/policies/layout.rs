@@ -3,9 +3,9 @@
 
 pub const SETTINGS_WIDTH: i32 = 720;
 pub const SETTINGS_HEIGHT: i32 = 520;
-// Settings content plus 40 px of breathing room on each side for dialog chrome.
-pub const WINDOW_MIN_WIDTH: i32 = SETTINGS_WIDTH + 80;
-pub const WINDOW_MIN_HEIGHT: i32 = SETTINGS_HEIGHT + 80;
+// Main-window policy; Settings keeps its independent 720x520 preferred size.
+pub const WINDOW_MIN_WIDTH: i32 = 900;
+pub const WINDOW_MIN_HEIGHT: i32 = 650;
 
 /// FlowBox columns that fit `width_sp` with 150 px cards and 8 px gaps.
 /// The FlowBox already wraps; setting the per-line cap from the real width
@@ -55,10 +55,18 @@ mod tests {
     use super::{columns_for_width, grid_columns, layout_mode, DetailsMode};
 
     #[test]
+    fn window_minimum_is_900_by_650_without_resizing_settings() {
+        assert_eq!(super::WINDOW_MIN_WIDTH, 900);
+        assert_eq!(super::WINDOW_MIN_HEIGHT, 650);
+        assert_eq!((super::SETTINGS_WIDTH, super::SETTINGS_HEIGHT), (720, 520));
+        assert!(super::WINDOW_MIN_WIDTH > 700);
+    }
+
+    #[test]
     fn gamepad_window_minimum_contains_settings_and_dialog_insets() {
-        assert_eq!((super::WINDOW_MIN_WIDTH, super::WINDOW_MIN_HEIGHT), (800, 600));
-        assert_eq!(super::WINDOW_MIN_WIDTH - super::SETTINGS_WIDTH, 80);
-        assert_eq!(super::WINDOW_MIN_HEIGHT - super::SETTINGS_HEIGHT, 80);
+        assert_eq!((super::WINDOW_MIN_WIDTH, super::WINDOW_MIN_HEIGHT), (900, 650));
+        assert_eq!(super::WINDOW_MIN_WIDTH - super::SETTINGS_WIDTH, 180);
+        assert_eq!(super::WINDOW_MIN_HEIGHT - super::SETTINGS_HEIGHT, 130);
     }
 
     #[test]
