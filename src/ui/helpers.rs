@@ -887,6 +887,50 @@ mod tests {
     use crate::backend::theme::ThemeManager;
 
     #[test]
+    fn inferred_fifo_cache_is_rejected_without_a_writer() {
+        const CHILD_ROOT: &str = "CORKYTUX_ICON_FIFO_TEST_ROOT";
+        if let Some(root) = std::env::var_os(CHILD_ROOT) {
+            let root = std::path::PathBuf::from(root);
+            std::fs::write(root.join("ready"), b"calling icon loader").unwrap();
+            assert!(load_game_icon("Fifo", "/apps/fifo.AppImage", "").is_none());
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("icon-fifo-{}", std::process::id()));
+        let cache = root.join(".config/CorkyTux/icons");
+        std::fs::create_dir_all(&cache).unwrap();
+        let fifo = cache.join("fifo-appimage.png");
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        // SAFETY: path is a live NUL-terminated string; mkfifo retains no pointer.
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "ui::helpers::tests::inferred_fifo_cache_is_rejected_without_a_writer",
+                "--nocapture",
+            ])
+            .env("HOME", &root)
+            .env("XDG_DATA_DIRS", "")
+            .env(CHILD_ROOT, &root)
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break Some(status);
+            }
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                break None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert!(root.join("ready").is_file(), "child did not reach the icon loader");
+        assert!(status.is_some_and(|s| s.success()), "inferred FIFO blocked waiting for a writer or child failed");
+    }
+
+    #[test]
     fn gamepad_icon_fallback_decodes_cache_after_an_invalid_explicit_icon() {
         let root = std::env::temp_dir()
             .join(format!("gamepad-icon-decode-{}", std::process::id()));
