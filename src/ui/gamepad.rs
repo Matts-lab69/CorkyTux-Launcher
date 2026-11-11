@@ -27,6 +27,20 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+#[cfg(test)]
+mod lifecycle_tests {
+    #[test]
+    fn device_topology_changes_reset_navigation_before_focus_gating() {
+        let source = include_str!("gamepad.rs");
+        let start = source.find("glib::timeout_add_local(Duration::from_millis(16), move || {").unwrap();
+        let handler = &source[start..];
+        let reset = handler.find("reset_navigation_for_topology_change(")
+            .expect("topology reset must run even while the launcher is inactive");
+        let gating = handler.find("if !gamepad_nav::should_handle").unwrap();
+        assert!(reset < gating, "focus gating must not discard topology resets");
+    }
+}
+
 fn button_input(button: gilrs::Button, pressed: bool) -> Option<PadInput> {
     use gilrs::Button;
     Some(match button {
