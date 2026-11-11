@@ -3,9 +3,9 @@
 
 pub const SETTINGS_WIDTH: i32 = 720;
 pub const SETTINGS_HEIGHT: i32 = 520;
-// Settings content plus 40 px of breathing room on each side for dialog chrome.
-pub const WINDOW_MIN_WIDTH: i32 = SETTINGS_WIDTH + 80;
-pub const WINDOW_MIN_HEIGHT: i32 = SETTINGS_HEIGHT + 80;
+// Main-window policy; Settings keeps its independent 720x520 preferred size.
+pub const WINDOW_MIN_WIDTH: i32 = 900;
+pub const WINDOW_MIN_HEIGHT: i32 = 650;
 
 /// FlowBox columns that fit `width_sp` with 150 px cards and 8 px gaps.
 /// The FlowBox already wraps; setting the per-line cap from the real width
