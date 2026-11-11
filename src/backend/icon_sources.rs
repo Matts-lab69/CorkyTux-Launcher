@@ -118,6 +118,19 @@ mod tests {
     use super::{game_icon_candidates, game_icon_stems, icon_search_paths};
 
     #[test]
+    fn cache_aliases_match_writer_normalization() {
+        let home = std::path::Path::new("/home/example");
+        for (name, expected) in [
+            ("Example: -- Game", "example-game-appimage.png"),
+            ("İCON", "i-con-appimage.png"),
+        ] {
+            let paths = game_icon_candidates(home, &[], name, "/apps/launcher.AppImage");
+            let cached = home.join(".config/CorkyTux/icons").join(expected);
+            assert!(paths.contains(&cached), "missing writer-normalized alias: {cached:?}");
+        }
+    }
+
+    #[test]
     fn gamepad_openchamber_uses_stable_cache_and_matching_desktop_icon() {
         let root = std::env::temp_dir()
             .join(format!("gamepad-icon-{}", std::process::id()));
