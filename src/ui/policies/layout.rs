@@ -55,6 +55,14 @@ mod tests {
     use super::{columns_for_width, grid_columns, layout_mode, DetailsMode};
 
     #[test]
+    fn window_minimum_is_900_by_650_without_resizing_settings() {
+        assert_eq!(super::WINDOW_MIN_WIDTH, 900);
+        assert_eq!(super::WINDOW_MIN_HEIGHT, 650);
+        assert_eq!((super::SETTINGS_WIDTH, super::SETTINGS_HEIGHT), (720, 520));
+        assert!(super::WINDOW_MIN_WIDTH > 700);
+    }
+
+    #[test]
     fn gamepad_window_minimum_contains_settings_and_dialog_insets() {
         assert_eq!((super::WINDOW_MIN_WIDTH, super::WINDOW_MIN_HEIGHT), (900, 650));
         assert_eq!(super::WINDOW_MIN_WIDTH - super::SETTINGS_WIDTH, 180);
