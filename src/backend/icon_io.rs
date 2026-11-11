@@ -116,4 +116,26 @@ mod tests {
         );
         assert!(decode_ico_pixbuf(b"invalid").is_none());
     }
+
+    #[test]
+    fn fifo_with_image_data_is_not_a_regular_file() {
+        use std::io::Write;
+        use std::os::unix::ffi::OsStrExt;
+        let root = std::env::temp_dir().join(format!("icon-fifo-data-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("image.png");
+        let name = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: name is a live NUL-terminated path; mkfifo retains no pointer.
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        let mut keeper = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
+            .open(&path)
+            .unwrap();
+        keeper.write_all(PNG).unwrap();
+        symlink("image.png", root.join("linked.png")).unwrap();
+        assert!(read_icon_bytes(&path).is_none());
+        assert!(read_icon_bytes(&root.join("linked.png")).is_none());
+    }
 }

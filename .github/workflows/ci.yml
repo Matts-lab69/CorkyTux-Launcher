@@ -108,6 +108,37 @@ jobs:
           echo "clippy summary: warnings=$warnings errors=$errors exit=$status"
           exit $status
 
+      - name: Record icon loader environment
+        run: |
+          pkg-config --modversion gtk4 libadwaita-1 gdk-pixbuf-2.0
+          python3 - <<'PY'
+          import ctypes
+          import ctypes.util
+          import os
+          for key in ("HOME", "XDG_DATA_HOME", "XDG_DATA_DIRS", "GDK_PIXBUF_MODULE_FILE", "GDK_PIXBUF_MODULEDIR"):
+              print(f"{key}={os.environ.get(key, '<unset>')}", flush=True)
+          class Node(ctypes.Structure):
+              pass
+          Node._fields_ = [("data", ctypes.c_void_p), ("next", ctypes.POINTER(Node))]
+          pixbuf = ctypes.CDLL(ctypes.util.find_library("gdk_pixbuf-2.0"))
+          glib = ctypes.CDLL(ctypes.util.find_library("glib-2.0"))
+          pixbuf.gdk_pixbuf_get_formats.restype = ctypes.POINTER(Node)
+          pixbuf.gdk_pixbuf_format_get_name.argtypes = [ctypes.c_void_p]
+          pixbuf.gdk_pixbuf_format_get_name.restype = ctypes.c_void_p
+          glib.g_free.argtypes = [ctypes.c_void_p]
+          glib.g_slist_free.argtypes = [ctypes.POINTER(Node)]
+          formats = pixbuf.gdk_pixbuf_get_formats()
+          node = formats
+          names = []
+          while node:
+              name = pixbuf.gdk_pixbuf_format_get_name(node.contents.data)
+              names.append(ctypes.string_at(name).decode())
+              glib.g_free(name)
+              node = node.contents.next
+          glib.g_slist_free(formats)
+          print("GdkPixbuf formats:", ", ".join(sorted(names)), flush=True)
+          PY
+
       - name: cargo test
         # The suite is hermetic: no display, no installed plugin and no
         # network. It runs on a bare runner.
