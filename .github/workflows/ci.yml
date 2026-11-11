@@ -40,7 +40,38 @@ jobs:
             libgtk-4-dev \
             libudev-dev \
             libadwaita-1-dev \
-            libglib2.0-dev
+            libglib2.0-dev \
+            librsvg2-common
+
+      - name: Verify registered GdkPixbuf SVG format
+        # Ubuntu noble's librsvg2-common supplies the GdkPixbuf SVG loader:
+        # https://launchpad.net/ubuntu/noble/amd64/librsvg2-common
+        # Query the runtime API, not just installed files or a generated cache.
+        run: |
+          set -euo pipefail
+          dpkg-query -W -f='${Package} ${Version}\n' librsvg2-common
+          cat > "$RUNNER_TEMP/gdk-pixbuf-formats.c" <<'EOF'
+          #include <gdk-pixbuf/gdk-pixbuf.h>
+          #include <stdio.h>
+          int main(void) {
+              GSList *formats = gdk_pixbuf_get_formats();
+              gboolean enabled_svg = FALSE;
+              for (GSList *item = formats; item != NULL; item = item->next) {
+                  GdkPixbufFormat *format = item->data;
+                  gchar *name = gdk_pixbuf_format_get_name(format);
+                  gboolean disabled = gdk_pixbuf_format_is_disabled(format);
+                  printf("GdkPixbuf format: %s disabled=%d\n", name, disabled);
+                  if (g_strcmp0(name, "svg") == 0 && !disabled) enabled_svg = TRUE;
+                  g_free(name);
+              }
+              g_slist_free(formats);
+              printf("GdkPixbuf enabled SVG registered: %s\n", enabled_svg ? "yes" : "no");
+              return enabled_svg ? 0 : 1;
+          }
+          EOF
+          cc "$RUNNER_TEMP/gdk-pixbuf-formats.c" -o "$RUNNER_TEMP/gdk-pixbuf-formats" \
+            $(pkg-config --cflags --libs gdk-pixbuf-2.0)
+          "$RUNNER_TEMP/gdk-pixbuf-formats"
 
       - name: shellcheck the release scripts
         # Blocking only on errors (SC1xxx); style notes stay as a log.
