@@ -50,10 +50,9 @@ fn game_icon_stems(name: &str, executable: &str) -> Vec<String> {
                 .then_some(index)
         });
         for value in [raw, &raw[..version.unwrap_or(raw.len())]] {
-            let slug = value.chars().map(|ch| {
-                if ch.is_ascii_alphanumeric() { ch.to_ascii_lowercase() } else { '-' }
-            }).collect::<String>();
-            let slug = slug.trim_matches('-').to_string();
+            // Use the cache writer's exact normalization, including lowercase
+            // expansion and collapsing consecutive separators.
+            let slug = super::integration::slugify(value);
             if !slug.is_empty() && !stems.contains(&slug) {
                 stems.push(slug);
             }
