@@ -20,6 +20,16 @@ pub enum GamepadMessage {
     Disconnected(String),
 }
 
+fn reset_navigation_for_topology_change(messages: &[GamepadMessage], state: &mut NavState) -> bool {
+    let changed = messages.iter().any(|message| matches!(
+        message, GamepadMessage::Connected(_) | GamepadMessage::Disconnected(_)
+    ));
+    if changed {
+        state.reset();
+    }
+    changed
+}
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -29,6 +39,21 @@ fn now_ms() -> u64 {
 
 #[cfg(test)]
 mod lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn steam_connection_drops_retained_direction_and_repeat_deadline() {
+        let mut state = NavState::default();
+        gamepad_nav::map_event(PadInput::Dpad(Dir::Right, true), &mut state, 100);
+        let messages = [GamepadMessage::Connected("Steam Virtual Gamepad".into())];
+        assert!(reset_navigation_for_topology_change(&messages, &mut state));
+        assert_eq!(gamepad_nav::repeat(&mut state, 1000), None);
+        assert!(reset_navigation_for_topology_change(
+            &[GamepadMessage::Disconnected("Steam Virtual Gamepad".into())], &mut state
+        ));
+        assert_eq!(gamepad_nav::repeat(&mut state, 2000), None);
+    }
+
     #[test]
     fn device_topology_changes_reset_navigation_before_focus_gating() {
         let source = include_str!("gamepad.rs");
@@ -96,6 +121,8 @@ fn spawn_thread(tx: async_channel::Sender<GamepadMessage>) {
                             let usable = gamepad_nav::is_gamepad(info);
                             pads.insert(ev.id, (info, usable));
                             if usable {
+                                sticks.clear();
+                                recent.clear();
                                 let _ = tx.send_blocking(GamepadMessage::Connected(name));
                             } else {
                                 eprintln!("[gamepad] ignored non-gamepad device: {}", name);
@@ -103,7 +130,8 @@ fn spawn_thread(tx: async_channel::Sender<GamepadMessage>) {
                             continue;
                         }
                         gilrs::EventType::Disconnected => {
-                            sticks.remove(&ev.id);
+                            sticks.clear();
+                            recent.clear();
                             pads.remove(&ev.id);
                             let _ = tx.send_blocking(GamepadMessage::Disconnected(name));
                             continue;
@@ -221,6 +249,11 @@ pub fn start(
     let quick_c = quick.clone();
     let mut controls = ControlState::default();
     glib::timeout_add_local(Duration::from_millis(16), move || {
+        let messages: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        let changed = reset_navigation_for_topology_change(&messages, &mut state.borrow_mut());
+        if changed {
+            controls.clear();
+        }
         let setting = crate::backend::config::ConfigManager::new()
             .launcher_value("controllerSupport")
             .map(|v| v != "0")
@@ -235,12 +268,16 @@ pub fn start(
             .unwrap_or_else(|| win.clone().upcast());
         if !gamepad_nav::should_handle(target.is_active(), target.is_visible(), setting) {
             // D3: discard while a game has the focus, so nothing queues up.
-            while rx.try_recv().is_ok() {}
             return glib::ControlFlow::Continue;
         }
-        while let Ok(msg) = rx.try_recv() {
+        for msg in messages {
             match msg {
                 GamepadMessage::Input(input) => {
+                    // Old and new device input can share a drain batch. Drop
+                    // that batch's input rather than rearming a masked hold.
+                    if changed {
+                        continue;
+                    }
                     target.add_css_class("gamepad-mode");
                     help_c.set_visible(true);
                     let mut st = state.borrow_mut();
