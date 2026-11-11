@@ -295,16 +295,10 @@ impl Sidebar {
 
         let icon = gtk::Image::new();
         icon.set_pixel_size(24);
-        if let Some(icon_path) = cfg.game_value(name, "Icon") {
-            if !icon_path.is_empty() {
-                if let Some(texture) = helpers::load_texture(&icon_path) {
-                    icon.set_paintable(Some(&texture));
-                } else {
-                    icon.set_icon_name(Some("corkytux-application-x-executable-symbolic"));
-                }
-            } else {
-                icon.set_icon_name(Some("corkytux-application-x-executable-symbolic"));
-            }
+        let configured = cfg.game_value(name, "Icon").unwrap_or_default();
+        let executable = cfg.game_value(name, "Executable").unwrap_or_default();
+        if let Some(texture) = helpers::load_game_icon(name, &executable, &configured) {
+            icon.set_paintable(Some(&texture));
         } else {
             icon.set_icon_name(Some("corkytux-application-x-executable-symbolic"));
         }

@@ -114,6 +114,19 @@ pub fn parse_rgba(color: &str) -> gdk::RGBA {
     gdk::RGBA::new(0.0, 0.0, 0.0, 1.0)
 }
 
+/// Resolve existing artwork only; never extract an executable on the GTK thread.
+pub fn load_game_icon(name: &str, executable: &str, configured: &str) -> Option<gdk::Texture> {
+    if !configured.is_empty() {
+        if let Some(texture) = load_texture(configured) {
+            return Some(texture);
+        }
+    }
+    let home = std::path::PathBuf::from(std::env::var_os("HOME")?);
+    let roots = super::icons::data_roots(&home);
+    super::icons::game_icon_candidates(&home, &roots, name, executable)
+        .iter().find_map(|path| load_texture(&path.to_string_lossy()))
+}
+
 pub fn load_texture(path: &str) -> Option<gdk::Texture> {
     let path = path.replace("~", &std::env::var("HOME").unwrap_or_default());
     if !std::path::Path::new(&path).exists() {
@@ -872,6 +885,30 @@ pub fn source_link(state: &crate::AppState, label: &str, url: Option<String>, to
 mod tests {
     use super::*;
     use crate::backend::theme::ThemeManager;
+
+    #[test]
+    fn gamepad_icon_fallback_decodes_cache_after_an_invalid_explicit_icon() {
+        let root = std::env::temp_dir()
+            .join(format!("gamepad-icon-decode-{}", std::process::id()));
+        let cache = root.join(".config/CorkyTux/icons");
+        std::fs::create_dir_all(&cache).unwrap();
+        let broken = root.join("broken.png");
+        std::fs::write(&broken, b"invalid icon").unwrap();
+        let cached = cache.join("openchamber.png");
+        // Content sniffing also supports SVGs emitted under a PNG output filename.
+        std::fs::write(&cached, include_bytes!("../../assets/icons/hicolor/symbolic/ui/corkytux-window-close-symbolic.svg")).unwrap();
+        let mut candidates = vec![broken];
+        candidates.extend(crate::ui::icons::game_icon_candidates(
+            &root, &[], "OpenChamber-2.5.2-linux-x86_64",
+            "/apps/OpenChamber-2.5.2-linux-x86_64.AppImage",
+        ));
+        let (path, image) = candidates.iter().find_map(|path| {
+            load_pixbuf(&path.to_string_lossy()).map(|image| (path, image))
+        }).expect("cached icon must survive a missing/invalid configured icon");
+        assert_eq!(path, &cached);
+        assert!(image.width() > 0 && image.height() > 0);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     fn hex_luminance(hex: &str) -> f64 {
         let c = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0) as f64 / 255.0;

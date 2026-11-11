@@ -603,6 +603,13 @@ Why 48 px (requested range 48-56): it is the thumbnail size of Prism/Modrinth co
 
 ## Gamepad semantic focus and playtime
 
+Local game icon display tries configured artwork first, then extraction/artwork
+cache aliases and executable-matching desktop metadata. Stable AppImage names
+are accepted alongside versioned labels. This only reads existing images and
+does not extract executables or rewrite user configuration/desktop entries.
+New menu shortcuts reuse the same backend source policy if their configured Icon
+is empty; existing shortcuts are not regenerated automatically.
+
 Horizontal sliders adjust immediately with Left/Right and commit on confirm or
 leaving the slider; Up/Down navigate to adjacent rows. Entry/SearchEntry/TextView
 are single semantic targets, never separate internal GtkText destinations. Form
