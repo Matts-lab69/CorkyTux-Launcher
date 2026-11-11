@@ -429,7 +429,7 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         it.set_search_path(&refs);
     }
 
-    // Settings needs 720x520 logical pixels plus dialog insets; restore within that budget.
+    // Restore saved dimensions within the independent main-window minimum policy.
     let saved_w: i32 = state.config.launcher_value("CkWinW").and_then(|s| s.parse().ok()).unwrap_or(1200).clamp(ui::layout::WINDOW_MIN_WIDTH, 10000);
     let saved_h: i32 = state.config.launcher_value("CkWinH").and_then(|s| s.parse().ok()).unwrap_or(700).clamp(ui::layout::WINDOW_MIN_HEIGHT, 10000);
     let window = adw::ApplicationWindow::builder()
