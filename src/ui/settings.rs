@@ -1515,7 +1515,13 @@ pub fn show_settings_modal(
     };
 
     misc_inner.append(&misc_switch("controllerSupport", "Controller support", true, true, state));
-    misc_inner.append(&misc_switch("closeToTray", "Close to tray", false, true, state));
+    let tray_hint = gtk::Label::new(Some(
+        "Closing the window keeps CorkyTux in the system tray. Use Quit in the tray menu to exit. Without a tray host, closing exits the app.",
+    ));
+    tray_hint.add_css_class("info-value");
+    tray_hint.set_halign(gtk::Align::Start);
+    tray_hint.set_wrap(true);
+    misc_inner.append(&tray_hint);
     {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.set_margin_top(4);
