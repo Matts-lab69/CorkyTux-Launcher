@@ -255,6 +255,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn window_close_does_not_depend_on_legacy_background_preferences() {
+        let source = include_str!("../main.rs");
+        let start = source.find("window.connect_close_request(move |win| {").unwrap();
+        let end = source[start..].find("let handle_c = tray_handle.clone();").unwrap() + start;
+        let close_handler = &source[start..end];
+        assert!(
+            !close_handler.contains("closeToTray"),
+            "window close must depend on current host availability, not old close-to-tray preferences"
+        );
+        assert!(close_handler.contains("ui::tray::window_close_action(tray_now)"));
+        assert!(!close_handler.contains("MessageDialog"));
+    }
+
+    #[test]
     fn tray_toggle_never_hides_a_window_without_a_host() {
         assert!(!show_on_toggle(true, true));
         assert!(show_on_toggle(false, true));
