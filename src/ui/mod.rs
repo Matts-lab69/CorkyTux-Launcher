@@ -11,8 +11,7 @@ pub mod add_game;
 pub mod remove_modal;
 pub mod settings;
 pub mod center;
-#[path = "policies/icons.rs"]
-pub mod icons;
+pub use crate::backend::icon_sources as icons;
 pub mod log_modal;
 pub mod warnings;
 pub mod proton_modal;

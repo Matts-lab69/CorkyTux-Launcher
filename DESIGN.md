@@ -613,6 +613,13 @@ Store compact-mode breakpoint crossings coalesce for 150 ms before rebuilding.
 The retained 700px sidebar breakpoint is unreachable by resizing a window with
 this 800px minimum; its existing behavior and threshold remain unchanged.
 
+Local game icon display tries configured artwork first, then extraction/artwork
+cache aliases and executable-matching desktop metadata. Stable AppImage names
+are accepted alongside versioned labels. This only reads existing images and
+does not extract executables or rewrite user configuration/desktop entries.
+New menu shortcuts reuse the same backend source policy if their configured Icon
+is empty; existing shortcuts are not regenerated automatically.
+
 Horizontal sliders adjust immediately with Left/Right and commit on confirm or
 leaving the slider; Up/Down navigate to adjacent rows. Entry/SearchEntry/TextView
 are single semantic targets, never separate internal GtkText destinations. Form

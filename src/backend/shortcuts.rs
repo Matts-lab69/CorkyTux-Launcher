@@ -137,16 +137,26 @@ fn build_entry(name: &str) -> Result<String, String> {
     let exe = std::env::current_exe()
         .map(|p| p.display().to_string())
         .map_err(|e| format!("Cannot resolve launcher path: {}", e))?;
-    let icon = game.get("icon").cloned().unwrap_or_default();
+    let mut icon = game.get("icon").cloned().unwrap_or_default();
+    if icon.is_empty() {
+        let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+        let roots = super::icon_sources::data_roots(&home);
+        let executable = game.get("executable").map(String::as_str).unwrap_or("");
+        if let Some(found) = super::icon_sources::game_icon_candidates(&home, &roots, name, executable)
+            .into_iter().find(|path| path.is_file() && gdk_pixbuf::Pixbuf::from_file(path).is_ok())
+        {
+            icon = found.to_string_lossy().into_owned();
+        }
+    }
     let banner = game.get("banner").cloned().unwrap_or_default();
     let icon_line = if icon.is_empty() {
         if banner.is_empty() {
             String::new()
         } else {
-            format!("Icon={}\n", banner)
+            format!("Icon={}\n", desktop_escape(&banner))
         }
     } else {
-        format!("Icon={}\n", icon)
+        format!("Icon={}\n", desktop_escape(&icon))
     };
     let comment = description_for(name, &cfg);
     let mut entry = String::new();
