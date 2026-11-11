@@ -538,8 +538,8 @@ pub fn show_settings_modal(
     state.proton.refresh_installed();
     let dialog = adw::Dialog::new();
     dialog.set_title("Settings");
-    dialog.set_content_width(720);
-    dialog.set_content_height(520);
+    dialog.set_content_width(crate::ui::layout::SETTINGS_WIDTH);
+    dialog.set_content_height(crate::ui::layout::SETTINGS_HEIGHT);
 
     let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
     outer.add_css_class("modal-bg");
@@ -573,13 +573,22 @@ pub fn show_settings_modal(
 
     let page_stack = gtk::Stack::new();
     page_stack.set_vexpand(true);
+    page_stack.set_hhomogeneous(false);
+    page_stack.set_vhomogeneous(false);
+    let scroll_page = |page: &gtk::Box| {
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scroll.set_vexpand(true);
+        scroll.set_child(Some(page));
+        scroll
+    };
 
     // Visuals page
     let visuals_page = gtk::Box::new(gtk::Orientation::Vertical, 12);
     visuals_page.set_margin_top(12);
     visuals_page.set_margin_bottom(12);
-    visuals_page.set_margin_start(40);
-    visuals_page.set_margin_end(40);
+    visuals_page.set_margin_start(20);
+    visuals_page.set_margin_end(20);
     visuals_page.set_halign(gtk::Align::Fill);
 
     let theme_label = gtk::Label::new(Some("Theme Mode"));
@@ -708,13 +717,13 @@ pub fn show_settings_modal(
     }
     for btn in &accent_btns[1..] { btn.set_group(Some(&accent_btns[0])); }
     visuals_page.append(&accent_grid);
-    page_stack.add_titled(&visuals_page, Some("visuals"), "Visuals");
+    page_stack.add_titled(&scroll_page(&visuals_page), Some("visuals"), "Visuals");
 
     // Paths page (C++ parity: protons/2/3 + shared)
     let paths_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
     paths_page.set_margin_top(12);
-    paths_page.set_margin_start(40);
-    paths_page.set_margin_end(40);
+    paths_page.set_margin_start(20);
+    paths_page.set_margin_end(20);
     let paths_title = gtk::Label::new(Some("Paths"));
     paths_title.set_halign(gtk::Align::Center);
     paths_title.add_css_class("settings-title");
@@ -735,6 +744,7 @@ pub fn show_settings_modal(
         lbl.add_css_class("time-label");
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let entry = gtk::Entry::new();
+        entry.set_width_chars(1);
         let custom = state.config.launcher_value(config_key).unwrap_or_default();
         let shown = if !custom.trim().is_empty() {
             custom.trim().to_string()
@@ -913,8 +923,8 @@ pub fn show_settings_modal(
     // Protons page (C++ parity: default, filter, installed, available inline)
     let protons_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
     protons_page.set_margin_top(12);
-    protons_page.set_margin_start(40);
-    protons_page.set_margin_end(40);
+    protons_page.set_margin_start(20);
+    protons_page.set_margin_end(20);
     let protons_title = gtk::Label::new(Some("Protons"));
     protons_title.set_halign(gtk::Align::Center);
     protons_title.add_css_class("settings-title");
@@ -926,7 +936,8 @@ pub fn show_settings_modal(
     let default_lbl = gtk::Label::new(Some("Default Proton for new games:"));
     default_lbl.add_css_class("time-label");
     default_lbl.set_halign(gtk::Align::Start);
-    default_lbl.set_width_chars(26);
+    default_lbl.set_wrap(true);
+    default_lbl.set_max_width_chars(24);
     let installed_names = state.proton.installed_protons();
     let default_proton = gtk::DropDown::new(None::<gtk::StringList>, None::<gtk::Expression>);
     let def_sl = gtk::StringList::new(&["(none)"]);
@@ -939,6 +950,30 @@ pub fn show_settings_modal(
             .unwrap_or(0),
     );
     default_proton.set_hexpand(true);
+    let proton_factory = gtk::SignalListItemFactory::new();
+    proton_factory.connect_setup(|_, object| {
+        if let Some(item) = object.downcast_ref::<gtk::ListItem>() {
+            let label = gtk::Label::new(None);
+            label.set_xalign(0.0);
+            label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            label.set_width_chars(1);
+            label.set_max_width_chars(28);
+            item.set_child(Some(&label));
+        }
+    });
+    proton_factory.connect_bind(|_, object| {
+        if let Some(item) = object.downcast_ref::<gtk::ListItem>() {
+            if let (Some(value), Some(label)) = (
+                item.item().and_then(|obj| obj.downcast::<gtk::StringObject>().ok()),
+                item.child().and_then(|obj| obj.downcast::<gtk::Label>().ok()),
+            ) {
+                label.set_text(&value.string());
+                label.set_tooltip_text(Some(&value.string()));
+            }
+        }
+    });
+    default_proton.set_factory(Some(&proton_factory));
+    default_proton.set_enable_search(true);
     let rebuilding: Rc<Cell<bool>> = Rc::new(Cell::new(false));
     {
         let state_c = state.clone();
@@ -1424,8 +1459,8 @@ pub fn show_settings_modal(
     // Misc page (C++ parity: gamesUses* keys, "1"/"0", status texts)
     let misc_page = gtk::Box::new(gtk::Orientation::Vertical, 12);
     misc_page.set_margin_top(12);
-    misc_page.set_margin_start(40);
-    misc_page.set_margin_end(40);
+    misc_page.set_margin_start(20);
+    misc_page.set_margin_end(20);
     let misc_title = gtk::Label::new(Some("Miscellaneous"));
     misc_title.set_halign(gtk::Align::Center);
     misc_title.add_css_class("settings-title");
@@ -1517,6 +1552,7 @@ pub fn show_settings_modal(
     misc_inner.append(&misc_switch("gamesUsesSteamRuntime", "Use Steam Runtime for Proton games", true, true, state));
     let runtime_note = gtk::Label::new(Some("Provides 32-bit audio/video libs on pure 64-bit systems"));
     runtime_note.set_halign(gtk::Align::Start);
+    runtime_note.set_wrap(true);
     
     runtime_note.add_css_class("time-label");
     misc_inner.append(&runtime_note);
@@ -1537,6 +1573,7 @@ pub fn show_settings_modal(
         &crate::backend::proton::ProtonManager::component_status_text(&gm_comp, "GameMode"),
     ));
     gm_status.set_halign(gtk::Align::Start);
+    gm_status.set_wrap(true);
     
     gm_status.add_css_class("time-label");
     misc_inner.append(&gm_status);
@@ -1545,6 +1582,7 @@ pub fn show_settings_modal(
         &crate::backend::proton::ProtonManager::component_status_text(&mh_comp, "MangoHud"),
     ));
     mh_status.set_halign(gtk::Align::Start);
+    mh_status.set_wrap(true);
     
     mh_status.add_css_class("time-label");
     misc_inner.append(&mh_status);
@@ -1570,8 +1608,8 @@ pub fn show_settings_modal(
     // Plugins page (C++ parity: installed w/ delete, emulator-manager, registry)
     let plugins_page = gtk::Box::new(gtk::Orientation::Vertical, 12);
     plugins_page.set_margin_top(12);
-    plugins_page.set_margin_start(40);
-    plugins_page.set_margin_end(40);
+    plugins_page.set_margin_start(20);
+    plugins_page.set_margin_end(20);
     let plugins_title = gtk::Label::new(Some("Plugins"));
     plugins_title.set_halign(gtk::Align::Center);
     plugins_title.add_css_class("settings-title");
@@ -2018,8 +2056,8 @@ pub fn show_settings_modal(
     // Integrations page (C++ parity: descriptions + Steam prefix import)
     let integrations_page = gtk::Box::new(gtk::Orientation::Vertical, 12);
     integrations_page.set_margin_top(12);
-    integrations_page.set_margin_start(40);
-    integrations_page.set_margin_end(40);
+    integrations_page.set_margin_start(20);
+    integrations_page.set_margin_end(20);
     let int_title = gtk::Label::new(Some("Integrations"));
     int_title.set_halign(gtk::Align::Center);
     int_title.add_css_class("settings-title");
@@ -2394,7 +2432,7 @@ pub fn show_settings_modal(
             });
         }
     }
-    page_stack.add_titled(&integrations_page, Some("integrations"), "Integrations");
+    page_stack.add_titled(&scroll_page(&integrations_page), Some("integrations"), "Integrations");
 
     // About page
     let about_page = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -2449,7 +2487,7 @@ pub fn show_settings_modal(
     }
     about_page.append(&update_btn);
 
-    page_stack.add_titled(&about_page, Some("about"), "About");
+    page_stack.add_titled(&scroll_page(&about_page), Some("about"), "About");
 
     outer.append(&page_stack);
 
@@ -2531,7 +2569,12 @@ pub fn show_settings_modal(
         });
     }
 
-    tab_bar_frame.set_child(Some(&tab_bar));
+    let tab_scroll = gtk::ScrolledWindow::new();
+    tab_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
+    tab_scroll.set_propagate_natural_height(true);
+    tab_scroll.set_min_content_height(60);
+    tab_scroll.set_child(Some(&tab_bar));
+    tab_bar_frame.set_child(Some(&tab_scroll));
     outer.append(&tab_bar_frame);
 
     dialog.set_child(Some(&outer));

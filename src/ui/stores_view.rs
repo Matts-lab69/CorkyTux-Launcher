@@ -1002,6 +1002,7 @@ impl StoresView {
             gog_sort: Rc::new(std::cell::Cell::new(0)),
             epic_games: Rc::new(RefCell::new(Vec::new())),
             compact: Rc::new(std::cell::Cell::new(false)),
+            compact_src: Rc::new(RefCell::new(None)),
             rails_box: gtk::Box::new(gtk::Orientation::Vertical, 8),
             rail_rows: Rc::new(RefCell::new(Vec::new())),
             rails_loaded: Rc::new(std::cell::Cell::new(false)),
@@ -1324,6 +1325,7 @@ struct StorePageHandle {
     epic_games: Rc<RefCell<Vec<StoreGame>>>,
     /// Tarjetas compactas en ventana angosta (breakpoint 900px).
     compact: Rc<std::cell::Cell<bool>>,
+    compact_src: Rc<RefCell<Option<glib::SourceId>>>,
     // I keep my rails (GOG tab only): a container I hide with a blocked tab,
     // sections with their items, and a first-load flag.
     rails_box: gtk::Box,
@@ -2458,14 +2460,23 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
             return;
         }
         self.compact.set(compact);
-        if self.store == "gog" {
-            if !self.all_games.borrow().is_empty() {
-                self.render_filtered();
-            }
-        } else if !self.epic_games.borrow().is_empty() {
-            let g = self.epic_games.borrow().clone();
-            self.render_games(&g);
+        if let Some(previous) = self.compact_src.borrow_mut().take() {
+            previous.remove();
         }
+        // Coalesce rapid crossings of the 900 px breakpoint before rebuilding covers.
+        let view = self.clone();
+        let source = glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
+            view.compact_src.borrow_mut().take();
+            if view.store == "gog" {
+                if !view.all_games.borrow().is_empty() {
+                    view.render_filtered();
+                }
+            } else if !view.epic_games.borrow().is_empty() {
+                let games = view.epic_games.borrow().clone();
+                view.render_games(&games);
+            }
+        });
+        *self.compact_src.borrow_mut() = Some(source);
     }
 
     fn render_games(&self, games: &[StoreGame]) {

@@ -603,6 +603,16 @@ Why 48 px (requested range 48-56): it is the thumbnail size of Prism/Modrinth co
 
 ## Gamepad semantic focus and playtime
 
+The base window budget is 800x600 logical pixels: Settings' preferred 720x520
+content plus 40 px of dialog breathing room on each side. Settings does not use
+homogeneous Stack requisitions; all pages scroll vertically, side margins are
+20 px, the Proton label wraps and its selection text ellipsizes. The footer can
+scroll horizontally rather than imposing all seven tab widths on the window.
+Store compact-mode breakpoint crossings coalesce for 150 ms before rebuilding.
+
+The retained 700px sidebar breakpoint is unreachable by resizing a window with
+this 800px minimum; its existing behavior and threshold remain unchanged.
+
 Horizontal sliders adjust immediately with Left/Right and commit on confirm or
 leaving the slider; Up/Down navigate to adjacent rows. Entry/SearchEntry/TextView
 are single semantic targets, never separate internal GtkText destinations. Form
