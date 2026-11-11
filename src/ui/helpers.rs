@@ -136,23 +136,25 @@ pub fn load_texture(path: &str) -> Option<gdk::Texture> {
         if let Some(tex) = tex_cache_get(&key) {
             return Some(tex);
         }
-        // Fast path: PNG/JPEG/etc. straight to texture.
-        if let Ok(tex) = gdk::Texture::from_filename(&path) {
+        let data = crate::backend::icon_io::read_icon_bytes(std::path::Path::new(&path))?;
+        // Keep native texture decoding, but never reopen the checked pathname.
+        if let Ok(tex) = gdk::Texture::from_bytes(&data) {
             tex_cache_put(key, &tex);
             return Some(tex);
         }
         // Fallback chain: pixbuf loaders, then manual ICO extraction.
-        if let Some(pb) = load_pixbuf(&path) {
+        if let Some(pb) = crate::backend::icon_io::decode_icon_bytes(&data) {
             let tex = gdk::Texture::for_pixbuf(&pb);
             tex_cache_put(key, &tex);
             return Some(tex);
         }
         return None;
     }
-    if let Ok(tex) = gdk::Texture::from_filename(&path) {
+    let data = crate::backend::icon_io::read_icon_bytes(std::path::Path::new(&path))?;
+    if let Ok(tex) = gdk::Texture::from_bytes(&data) {
         return Some(tex);
     }
-    load_pixbuf(&path).map(|pb| gdk::Texture::for_pixbuf(&pb))
+    crate::backend::icon_io::decode_icon_bytes(&data).map(|pb| gdk::Texture::for_pixbuf(&pb))
 }
 
 /// Full pixbuf load chain: gdk-pixbuf loaders (PNG, JPEG, ICO, BMP,
@@ -160,12 +162,8 @@ pub fn load_texture(path: &str) -> Option<gdk::Texture> {
 /// of Windows .ico containers (pixbuf's ico loader rejects those with
 /// "Compressed icons are not supported").
 fn load_pixbuf(path: &str) -> Option<gdk_pixbuf::Pixbuf> {
-    if let Ok(file) = std::fs::File::open(path) {
-        if let Ok(pb) = gdk_pixbuf::Pixbuf::from_read(file) {
-            return Some(pb);
-        }
-    }
-    load_ico_pixbuf(path)
+    let data = crate::backend::icon_io::read_icon_bytes(std::path::Path::new(path))?;
+    crate::backend::icon_io::decode_icon_bytes(&data)
 }
 
 /// Scaled-down texture for small previews (game settings icon/banner).
@@ -223,52 +221,6 @@ pub fn load_card_banner(path: &str, target_w: i32, target_h: i32) -> Option<gdk:
     let oy = ((scaled.height() - target_h) / 2).max(0);
     scaled.copy_area(ox, oy, target_w, target_h, &dest, 0, 0);
     Some(gdk::Texture::for_pixbuf(&dest))
-}
-
-/// Parse a Windows .ico container and decode its largest PNG entry.
-fn load_ico_pixbuf(path: &str) -> Option<gdk_pixbuf::Pixbuf> {
-    let data = std::fs::read(path).ok()?;
-    if data.len() < 6 || data[0..4] != [0, 0, 1, 0] {
-        return None;
-    }
-    let count = u16::from_le_bytes([data[4], data[5]]) as usize;
-    let mut best: Option<(u32, usize, usize)> = None;
-    for i in 0..count.min(64) {
-        let off = 6 + i * 16;
-        if data.len() < off + 16 {
-            break;
-        }
-        let w = data[off] as u32;
-        let h = data[off + 1] as u32;
-        let size = u32::from_le_bytes([
-            data[off + 8],
-            data[off + 9],
-            data[off + 10],
-            data[off + 11],
-        ]) as usize;
-        let ofs = u32::from_le_bytes([
-            data[off + 12],
-            data[off + 13],
-            data[off + 14],
-            data[off + 15],
-        ]) as usize;
-        if ofs + size > data.len() || size < 8 {
-            continue;
-        }
-        if data[ofs..].starts_with(&[0x89, b'P', b'N', b'G']) {
-            let wv = if w == 0 { 256 } else { w };
-            let hv = if h == 0 { 256 } else { h };
-            let area = wv * hv;
-            if best.map(|(a, _, _)| area > a).unwrap_or(true) {
-                best = Some((area, ofs, size));
-            }
-        }
-    }
-    let (_, ofs, len) = best?;
-    let loader = gdk_pixbuf::PixbufLoader::with_type("png").ok()?;
-    loader.write(&data[ofs..ofs + len]).ok()?;
-    loader.close().ok()?;
-    loader.pixbuf()
 }
 
 pub fn load_themed_icon(name: &str, is_dark: bool) -> Option<gdk::Texture> {
