@@ -42,6 +42,17 @@ mod lifecycle_tests {
     use super::*;
 
     #[test]
+    fn secondary_windows_receive_pointer_cancellation() {
+        let source = include_str!("gamepad.rs");
+        let start = source.find("\npub fn start(").unwrap();
+        let end = source[start..].find("\nfn apply_action(").unwrap() + start;
+        let driver = &source[start..end];
+        assert!(driver.contains("app.connect_window_added("), "future secondary windows need pointer cancellation");
+        assert!(driver.contains("for existing in app.windows()"), "existing secondary windows need pointer cancellation");
+        assert!(driver.contains("install_pointer_cancellation("));
+    }
+
+    #[test]
     fn steam_connection_drops_retained_direction_and_repeat_deadline() {
         let mut state = NavState::default();
         gamepad_nav::map_event(PadInput::Dpad(Dir::Right, true), &mut state, 100);
