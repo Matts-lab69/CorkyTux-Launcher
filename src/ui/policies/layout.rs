@@ -56,9 +56,9 @@ mod tests {
 
     #[test]
     fn gamepad_window_minimum_contains_settings_and_dialog_insets() {
-        assert_eq!((super::WINDOW_MIN_WIDTH, super::WINDOW_MIN_HEIGHT), (800, 600));
-        assert_eq!(super::WINDOW_MIN_WIDTH - super::SETTINGS_WIDTH, 80);
-        assert_eq!(super::WINDOW_MIN_HEIGHT - super::SETTINGS_HEIGHT, 80);
+        assert_eq!((super::WINDOW_MIN_WIDTH, super::WINDOW_MIN_HEIGHT), (900, 650));
+        assert_eq!(super::WINDOW_MIN_WIDTH - super::SETTINGS_WIDTH, 180);
+        assert_eq!(super::WINDOW_MIN_HEIGHT - super::SETTINGS_HEIGHT, 130);
     }
 
     #[test]
