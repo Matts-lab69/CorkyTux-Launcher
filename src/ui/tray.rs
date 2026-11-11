@@ -46,6 +46,13 @@ pub fn should_hide_on_close(
     }
 }
 
+/// Window close always requests background mode when a live tray is available.
+/// Keep the legacy preference-policy helper intact for its existing callers and
+/// regression table, but do not let old preferences override this window policy.
+pub fn window_close_action(tray_available: bool) -> CloseAction {
+    should_hide_on_close(tray_available, true, Some("tray"))
+}
+
 /// Exec line for the autostart file. An AppImage's `current_exe()` points at
 /// the temporary mount, so `APPIMAGE` wins when it is set.
 pub fn build_autostart_exec(appimage_env: Option<&str>, current_exe: &Path) -> String {
@@ -266,6 +273,21 @@ mod tests {
         );
         assert!(close_handler.contains("ui::tray::window_close_action(tray_now)"));
         assert!(!close_handler.contains("MessageDialog"));
+    }
+
+    #[test]
+    fn window_close_tracks_host_availability_without_a_dialog() {
+        for (host_available, expected) in [
+            (true, CloseAction::Hide),
+            (false, CloseAction::Quit),
+            (true, CloseAction::Hide),
+            (false, CloseAction::Quit),
+        ] {
+            assert_eq!(window_close_action(host_available), expected);
+        }
+        let source = include_str!("../main.rs");
+        assert!(source.contains("tray_ok && watcher_live.load"));
+        assert!(source.contains("ui::tray::TrayMsg::Quit =>"));
     }
 
     #[test]
