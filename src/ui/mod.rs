@@ -7,6 +7,9 @@ pub mod details_panel;
 pub mod game_card;
 #[path = "policies/svg.rs"]
 pub mod svg_assets;
+#[cfg(test)]
+#[path = "policies/input_prompts.rs"]
+mod input_prompts_contract;
 pub mod add_game;
 pub mod remove_modal;
 pub mod settings;
