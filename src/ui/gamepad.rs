@@ -30,6 +30,48 @@ fn reset_navigation_for_topology_change(messages: &[GamepadMessage], state: &mut
     changed
 }
 
+fn pointer_has_moved(previous: Option<(f64, f64)>, x: f64, y: f64) -> bool {
+    previous.map(|(lx, ly)| (x - lx).abs() > 3.0 || (y - ly).abs() > 3.0).unwrap_or(true)
+}
+
+fn install_pointer_cancellation(
+    window: &gtk::Window,
+    help: &gtk::Label,
+    state: &std::rc::Rc<std::cell::RefCell<NavState>>,
+    controls: &std::rc::Rc<std::cell::RefCell<ControlState>>,
+) {
+    let motion = gtk::EventControllerMotion::new();
+    // See child events even when a secondary dialog consumes them, without
+    // stopping propagation or changing keyboard-emulated controller events.
+    motion.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let last = std::cell::Cell::new(None::<(f64, f64)>);
+    let weak_window = window.downgrade();
+    let weak_help = help.downgrade();
+    let state = state.clone();
+    let controls = controls.clone();
+    motion.connect_motion(move |_, x, y| {
+        let moved = pointer_has_moved(last.get(), x, y);
+        last.set(Some((x, y)));
+        if !moved {
+            return;
+        }
+        state.borrow_mut().reset();
+        controls.borrow_mut().clear();
+        if let Some(window) = weak_window.upgrade() {
+            window.remove_css_class("gamepad-mode");
+            if let Some(app) = window.application() {
+                for sibling in app.windows() {
+                    sibling.remove_css_class("gamepad-mode");
+                }
+            }
+        }
+        if let Some(help) = weak_help.upgrade() {
+            help.set_visible(false);
+        }
+    });
+    window.add_controller(motion);
+}
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -40,6 +82,15 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+
+    #[test]
+    fn pointer_threshold_preserves_layout_motion_but_accepts_real_movement() {
+        assert!(pointer_has_moved(None, 10.0, 10.0));
+        assert!(!pointer_has_moved(Some((10.0, 10.0)), 10.0, 10.0));
+        assert!(!pointer_has_moved(Some((10.0, 10.0)), 13.0, 13.0));
+        assert!(pointer_has_moved(Some((10.0, 10.0)), 14.0, 10.0));
+        assert!(pointer_has_moved(Some((10.0, 10.0)), 10.0, 6.0));
+    }
 
     #[test]
     fn secondary_windows_receive_pointer_cancellation() {
@@ -225,27 +276,22 @@ pub fn start(
         config.launcher_value("gamepadRepeatDelay").as_deref(),
     );
 
-    let motion = gtk::EventControllerMotion::new();
-    {
-        // GTK synthesizes a motion event whenever the layout changes under a
-        // still pointer, and showing the help bar does exactly that. Only a
-        // real pointer movement may drop the pad ring.
-        let last = std::rc::Rc::new(std::cell::Cell::new(None::<(f64, f64)>));
-        let w = window.clone();
-        let help_c = help.clone();
-        motion.connect_motion(move |_, x, y| {
-            let moved = last
-                .get()
-                .map(|(lx, ly)| (x - lx).abs() > 3.0 || (y - ly).abs() > 3.0)
-                .unwrap_or(true);
-            last.set(Some((x, y)));
-            if moved {
-                w.remove_css_class("gamepad-mode");
-                help_c.set_visible(false);
+    let controls = std::rc::Rc::new(std::cell::RefCell::new(ControlState::default()));
+    if let Some(app) = window.application() {
+        for existing in app.windows() {
+            install_pointer_cancellation(&existing, help, &state, &controls);
+        }
+        let weak_help = help.downgrade();
+        let pointer_state = state.clone();
+        let pointer_controls = controls.clone();
+        app.connect_window_added(move |_, added| {
+            if let Some(help) = weak_help.upgrade() {
+                install_pointer_cancellation(added, &help, &pointer_state, &pointer_controls);
             }
         });
+    } else {
+        install_pointer_cancellation(window.upcast_ref(), help, &state, &controls);
     }
-    window.add_controller(motion);
 
     // Keys do not clear the pad ring: controllers that emulate a keyboard
     // would otherwise remove it on the same press that set it. A real mouse
@@ -258,12 +304,11 @@ pub fn start(
     let help_c = help.clone();
     let toasts_c = toasts.clone();
     let quick_c = quick.clone();
-    let mut controls = ControlState::default();
     glib::timeout_add_local(Duration::from_millis(16), move || {
         let messages: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
         let changed = reset_navigation_for_topology_change(&messages, &mut state.borrow_mut());
         if changed {
-            controls.clear();
+            controls.borrow_mut().clear();
         }
         let setting = crate::backend::config::ConfigManager::new()
             .launcher_value("controllerSupport")
@@ -299,7 +344,7 @@ pub fn start(
                         if action == NavAction::QuickAction {
                             quick_c();
                         } else {
-                            apply_action(&target, action, &mut controls);
+                            apply_action(&target, action, &mut controls.borrow_mut());
                         }
                     }
                 }
