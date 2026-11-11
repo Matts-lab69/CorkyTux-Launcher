@@ -1,6 +1,12 @@
 //! Shared width policy: how many columns a FlowBox fits, and how the details
 //! panel coexists with the library at each width.
 
+pub const SETTINGS_WIDTH: i32 = 720;
+pub const SETTINGS_HEIGHT: i32 = 520;
+// Settings content plus 40 px of breathing room on each side for dialog chrome.
+pub const WINDOW_MIN_WIDTH: i32 = SETTINGS_WIDTH + 80;
+pub const WINDOW_MIN_HEIGHT: i32 = SETTINGS_HEIGHT + 80;
+
 /// FlowBox columns that fit `width_sp` with 150 px cards and 8 px gaps.
 /// The FlowBox already wraps; setting the per-line cap from the real width
 /// keeps the last row from stretching over the whole viewport.
@@ -47,6 +53,13 @@ pub fn layout_mode(width: i32, panel_open: bool) -> DetailsMode {
 #[cfg(test)]
 mod tests {
     use super::{columns_for_width, grid_columns, layout_mode, DetailsMode};
+
+    #[test]
+    fn gamepad_window_minimum_contains_settings_and_dialog_insets() {
+        assert_eq!((super::WINDOW_MIN_WIDTH, super::WINDOW_MIN_HEIGHT), (800, 600));
+        assert_eq!(super::WINDOW_MIN_WIDTH - super::SETTINGS_WIDTH, 80);
+        assert_eq!(super::WINDOW_MIN_HEIGHT - super::SETTINGS_HEIGHT, 80);
+    }
 
     #[test]
     fn grid_columns_stay_between_two_and_six() {

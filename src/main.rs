@@ -405,15 +405,14 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         it.set_search_path(&refs);
     }
 
-    // Restored size lets Cinnamon/Muffin tile freely; small minimum
-    // so corner/side snapping is never blocked by our min size.
-    let saved_w: i32 = state.config.launcher_value("CkWinW").and_then(|s| s.parse().ok()).unwrap_or(1200).clamp(640, 10000);
-    let saved_h: i32 = state.config.launcher_value("CkWinH").and_then(|s| s.parse().ok()).unwrap_or(700).clamp(400, 10000);
+    // Settings needs 720x520 logical pixels plus dialog insets; restore within that budget.
+    let saved_w: i32 = state.config.launcher_value("CkWinW").and_then(|s| s.parse().ok()).unwrap_or(1200).clamp(ui::layout::WINDOW_MIN_WIDTH, 10000);
+    let saved_h: i32 = state.config.launcher_value("CkWinH").and_then(|s| s.parse().ok()).unwrap_or(700).clamp(ui::layout::WINDOW_MIN_HEIGHT, 10000);
     let window = adw::ApplicationWindow::builder()
         .application(app).title("CorkyTux")
         .default_width(saved_w).default_height(saved_h)
         .build();
-    window.set_size_request(640, 400);
+    window.set_size_request(ui::layout::WINDOW_MIN_WIDTH, ui::layout::WINDOW_MIN_HEIGHT);
     // Tray: the StatusNotifierItem service lives on its own thread and never
     // touches GTK; menu events come back through an async channel.
     let playing = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
