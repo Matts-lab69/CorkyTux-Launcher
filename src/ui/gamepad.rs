@@ -32,7 +32,7 @@ mod lifecycle_tests {
     #[test]
     fn device_topology_changes_reset_navigation_before_focus_gating() {
         let source = include_str!("gamepad.rs");
-        let start = source.find("glib::timeout_add_local(Duration::from_millis(16), move || {").unwrap();
+        let start = source.find("\n    glib::timeout_add_local(Duration::from_millis(16), move || {").unwrap();
         let handler = &source[start..];
         let reset = handler.find("reset_navigation_for_topology_change(")
             .expect("topology reset must run even while the launcher is inactive");
