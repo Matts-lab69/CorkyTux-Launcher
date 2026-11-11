@@ -117,6 +117,48 @@ mod tests {
     use super::{game_icon_candidates, game_icon_stems, icon_search_paths};
 
     #[test]
+    fn desktop_metadata_fifo_and_symlink_never_wait_for_a_writer() {
+        const CHILD_ROOT: &str = "CORKYTUX_DESKTOP_FIFO_REGRESSION_ROOT";
+        const TEST: &str = "backend::icon_sources::tests::desktop_metadata_fifo_and_symlink_never_wait_for_a_writer";
+        if let Some(root) = std::env::var_os(CHILD_ROOT) {
+            let root = std::path::PathBuf::from(root);
+            let paths = game_icon_candidates(&root, &[root.join("data")], "Pipe Game", "/bin/true");
+            assert!(paths.iter().all(|path| path.starts_with(root.join(".config"))));
+            return;
+        }
+        use std::os::unix::ffi::OsStrExt;
+        use std::time::{Duration, Instant};
+        let root = std::env::temp_dir().join(format!("desktop-fifo-regression-{}", std::process::id()));
+        let applications = root.join("data/applications");
+        std::fs::create_dir_all(&applications).unwrap();
+        let fifo = applications.join("pipe-game.desktop");
+        let name = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        // SAFETY: name is a live NUL-terminated pathname; mkfifo keeps no pointer.
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        std::os::unix::fs::symlink("pipe-game.desktop", applications.join("corkytux-pipe-game.desktop")).unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", TEST, "--nocapture"])
+            .env(CHILD_ROOT, &root)
+            .stdout(std::process::Stdio::null())
+            .spawn().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break Some(status);
+            }
+            if Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                break None;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(status.is_some_and(|status| status.success()),
+                "desktop metadata lookup blocked on a FIFO with no writer or child failed");
+    }
+
+    #[test]
     fn cache_aliases_match_writer_normalization() {
         let home = std::path::Path::new("/home/example");
         for (name, expected) in [
