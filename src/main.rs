@@ -126,7 +126,30 @@ pub(crate) mod test_env {
 
         #[test]
         fn home_guard_restores_on_panic() {
+            check_home_guard_restores_on_panic(|| {});
+        }
+
+        // Observe the exact snapshot and comparison boundaries without sleeps
+        // or relying on the scheduler to produce a concurrent HOME change.
+        #[test]
+        fn home_guard_panic_check_holds_lock_during_observation() {
+            check_home_guard_restores_on_panic(|| {
+                let excluded = std::thread::spawn(|| {
+                    matches!(
+                        super::ENV_LOCK.try_lock(),
+                        Err(std::sync::TryLockError::WouldBlock)
+                    )
+                })
+                .join()
+                .unwrap();
+                assert!(excluded, "HOME observation must exclude concurrent writers");
+            });
+        }
+
+        fn check_home_guard_restores_on_panic(observe: impl Fn()) {
+            let _guard = super::lock();
             let prev = std::env::var("HOME").ok();
+            observe();
             let dir = std::env::temp_dir().join("home-guard-panic");
             let _ = std::fs::create_dir_all(&dir);
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -135,6 +158,7 @@ pub(crate) mod test_env {
                 panic!("boom");
             }));
             assert!(r.is_err());
+            observe();
             assert_eq!(std::env::var("HOME").ok(), prev);
             let _ = std::fs::remove_dir_all(&dir);
         }
