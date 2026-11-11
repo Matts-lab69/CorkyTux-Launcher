@@ -69,6 +69,16 @@ fn desktop_executable(app: &gio::DesktopAppInfo) -> Option<std::path::PathBuf> {
     args.into_iter().next().map(std::path::PathBuf::from)
 }
 
+/// Parse only bytes read from a checked nonblocking regular-file descriptor.
+/// Building from a key file avoids reopening a replaceable desktop pathname.
+fn read_desktop_metadata(path: &std::path::Path) -> Option<gio::DesktopAppInfo> {
+    let bytes = super::icon_io::read_icon_bytes(path)?;
+    let text = std::str::from_utf8(bytes.as_ref()).ok()?;
+    let key_file = glib::KeyFile::new();
+    key_file.load_from_data(text, glib::KeyFileFlags::NONE).ok()?;
+    gio::DesktopAppInfo::from_keyfile(&key_file)
+}
+
 pub fn game_icon_candidates(
     home: &std::path::Path,
     data_dirs: &[std::path::PathBuf],
@@ -85,7 +95,7 @@ pub fn game_icon_candidates(
     for root in data_dirs {
         for stem in &stems {
             for desktop in [format!("{stem}.desktop"), format!("corkytux-{stem}.desktop")] {
-                let Some(app) = gio::DesktopAppInfo::from_filename(root.join("applications").join(desktop)) else { continue };
+                let Some(app) = read_desktop_metadata(&root.join("applications").join(desktop)) else { continue };
                 if desktop_executable(&app).as_deref() != Some(std::path::Path::new(executable))
                     && app.string("X-CorkyTux-Game").as_deref() != Some(name)
                 {
