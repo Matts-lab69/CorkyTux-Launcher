@@ -2340,6 +2340,8 @@ impl ProtonManager {
             return super::session_ledger::FinishOutcome::NoLedger;
         };
         let clock = super::session_ledger::SystemClock;
+        #[cfg(test)]
+        let clock = tests::close_clock(clock);
         let outcome = super::session_ledger::finish_outcome(&dir, pid, &clock, &mut |g, d| {
             Self::ledger_credit(g, d)
         });
@@ -4479,6 +4481,43 @@ mod tests {
     use glib::subclass::prelude::*;
     use std::fs;
 
+    thread_local! {
+        static TEST_CLOSE_TIME: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+    }
+
+    // Thread-local and panic-safe: unrelated tests keep their real clock.
+    struct TestCloseClockGuard(Option<u64>);
+
+    impl TestCloseClockGuard {
+        fn set(clock: &impl crate::backend::session_ledger::Clock) -> Self {
+            Self(TEST_CLOSE_TIME.with(|time| time.replace(Some(clock.now()))))
+        }
+    }
+
+    impl Drop for TestCloseClockGuard {
+        fn drop(&mut self) {
+            TEST_CLOSE_TIME.with(|time| time.set(self.0));
+        }
+    }
+
+    pub(super) struct TestCloseClock {
+        fixed: Option<u64>,
+        fallback: crate::backend::session_ledger::SystemClock,
+    }
+
+    pub(super) fn close_clock(fallback: crate::backend::session_ledger::SystemClock) -> TestCloseClock {
+        TestCloseClock {
+            fixed: TEST_CLOSE_TIME.with(|time| time.get()),
+            fallback,
+        }
+    }
+
+    impl crate::backend::session_ledger::Clock for TestCloseClock {
+        fn now(&self) -> u64 {
+            self.fixed.unwrap_or_else(|| self.fallback.now())
+        }
+    }
+
     fn wine_section() -> std::collections::HashMap<String, String> {
         [("executable".to_string(), "/g/G.exe".to_string())]
             .into_iter()
@@ -5823,26 +5862,41 @@ mod tests {
 
     #[test]
     fn adopted_600s_nine_checkpoints_check_finished() {
+        let now = {
+            use crate::backend::session_ledger::Clock;
+            crate::backend::session_ledger::SystemClock.now()
+        };
+        check_adopted_600s_nine_checkpoints_check_finished(now);
+    }
+
+    #[test]
+    fn adopted_600s_close_uses_the_injected_epoch() {
+        // A deliberately historical epoch makes an accidental SystemClock
+        // close exceed the existing 600..=605 assertion without any sleep.
+        assert_eq!(
+            check_adopted_600s_nine_checkpoints_check_finished(1_000_000),
+            600
+        );
+    }
+
+    fn check_adopted_600s_nine_checkpoints_check_finished(now: u64) -> u64 {
         let base = std::env::temp_dir().join("pm-adopt-9cp-check");
+        let _home = crate::test_env::HomeGuard::set(&base);
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&base).unwrap();
-        let _home = crate::test_env::HomeGuard::set(&base);
 
         let pm = ProtonManager::new();
         // Dead pid: with the proc_tree root the session must be gone.
         let pid = 0u32;
         let tick = 7u64;
         let dir = crate::backend::session_ledger::sessions_dir(&base);
-        let now = {
-            use crate::backend::session_ledger::Clock;
-            crate::backend::session_ledger::SystemClock.now()
-        };
         let start = now - 600;
         crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, start).unwrap();
         struct Fixed(u64);
         impl crate::backend::session_ledger::Clock for Fixed {
             fn now(&self) -> u64 { self.0 }
         }
+        let _clock = TestCloseClockGuard::set(&Fixed(now));
         for i in 1..=9u64 {
             crate::backend::session_ledger::checkpoint(
                 &dir, pid, &Fixed(start + i * 60), &mut |g, d| {
@@ -5865,10 +5919,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
 
         assert_eq!(secs, 0);
-        // The 9 checkpoints and the temp dir take a couple of seconds; the
-        // close uses SystemClock, so allow that overhead.
+        // Keep the existing bound; the injected close now produces exactly 600.
         assert!((600..=605).contains(&stored), "credited once, got {}", stored);
         assert!(deleted);
+        stored
     }
 
     #[test]
