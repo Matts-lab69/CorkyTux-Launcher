@@ -12,7 +12,13 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrayMsg {
     Show,
+    Toggle,
     Quit,
+}
+
+/// A stale tray click must never hide the only usable window after host loss.
+pub fn show_on_toggle(window_visible: bool, watcher_available: bool) -> bool {
+    !window_visible || !watcher_available
 }
 
 /// Close-to-tray decision (D1): hide only when a tray exists and the user
@@ -159,6 +165,10 @@ pub struct CorkyTray {
 }
 
 impl ksni::Tray for CorkyTray {
+    fn activate(&mut self, _x: i32, _y: i32) {
+        let _ = self.tx.try_send(TrayMsg::Toggle);
+    }
+
     fn id(&self) -> String {
         "corkytux".to_string()
     }
@@ -191,9 +201,9 @@ impl ksni::Tray for CorkyTray {
         use ksni::menu::{MenuItem, StandardItem};
         let mut items = Vec::new();
         items.push(MenuItem::Standard(StandardItem {
-            label: "Show CorkyTux".to_string(),
+            label: "Show / Hide CorkyTux".to_string(),
             activate: Box::new(|tray: &mut Self| {
-                let _ = tray.tx.try_send(TrayMsg::Show);
+                let _ = tray.tx.try_send(TrayMsg::Toggle);
             }),
             ..Default::default()
         }));
@@ -221,6 +231,10 @@ impl ksni::Tray for CorkyTray {
 /// without AppIndicator, headless sessions): the X must close for real then.
 pub fn spawn(shared: TrayShared) -> Option<ksni::blocking::Handle<CorkyTray>> {
     use ksni::blocking::TrayMethods;
+    let watcher_alive = shared.watcher_alive.clone();
+    // Initial registration success does not emit watcher_online in ksni 0.3.
+    // Set this before spawning so a racing offline callback cannot be overwritten.
+    watcher_alive.store(true, Ordering::Relaxed);
     let tray = CorkyTray {
         playing: shared.playing,
         watcher_alive: shared.watcher_alive,
@@ -229,6 +243,7 @@ pub fn spawn(shared: TrayShared) -> Option<ksni::blocking::Handle<CorkyTray>> {
     match tray.spawn() {
         Ok(handle) => Some(handle),
         Err(e) => {
+            watcher_alive.store(false, Ordering::Relaxed);
             eprintln!("[tray] no StatusNotifierWatcher: {} (close to tray disabled)", e);
             None
         }
@@ -238,6 +253,46 @@ pub fn spawn(shared: TrayShared) -> Option<ksni::blocking::Handle<CorkyTray>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tray_toggle_never_hides_a_window_without_a_host() {
+        assert!(!show_on_toggle(true, true));
+        assert!(show_on_toggle(false, true));
+        assert!(show_on_toggle(true, false));
+        assert!(show_on_toggle(false, false));
+    }
+
+    #[test]
+    fn tray_click_and_menu_route_toggle_and_quit() {
+        let (tx, rx) = async_channel::unbounded();
+        let mut tray = CorkyTray {
+            playing: Arc::new(Mutex::new(Some("Test game".into()))),
+            watcher_alive: Arc::new(AtomicBool::new(true)),
+            tx,
+        };
+        ksni::Tray::activate(&mut tray, 0, 0);
+        assert_eq!(rx.try_recv().unwrap(), TrayMsg::Toggle);
+        let menu = ksni::Tray::menu(&tray);
+        let ksni::MenuItem::Standard(toggle) = &menu[0] else { panic!("missing show/hide item") };
+        (toggle.activate)(&mut tray);
+        assert_eq!(rx.try_recv().unwrap(), TrayMsg::Toggle);
+        let ksni::MenuItem::Standard(playing) = &menu[1] else { panic!("missing playing item") };
+        assert!(!playing.enabled);
+        let ksni::MenuItem::Standard(quit) = menu.last().unwrap() else { panic!("missing quit item") };
+        (quit.activate)(&mut tray);
+        assert_eq!(rx.try_recv().unwrap(), TrayMsg::Quit);
+    }
+
+    #[test]
+    fn tray_embedded_icon_has_complete_argb_pixels_without_a_theme() {
+        let icons = icon_pixmap();
+        assert_eq!(icons.len(), 1);
+        let icon = &icons[0];
+        assert!(icon.width > 0 && icon.width <= 64);
+        assert!(icon.height > 0 && icon.height <= 64);
+        assert_eq!(icon.data.len(), (icon.width * icon.height * 4) as usize);
+        assert!(icon.data.chunks_exact(4).any(|pixel| pixel[0] > 0 && pixel[1..].iter().any(|value| *value > 0 && *value < 255)));
+    }
 
     #[test]
     fn should_hide_on_close_table() {
