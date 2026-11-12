@@ -5,6 +5,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[cfg(test)]
+#[path = "integration_user_key_tests.rs"]
+mod user_key_tests;
+
 fn home_dir() -> Option<PathBuf> {
     let home = home_dir_from(std::env::var_os("HOME"));
     if home.is_none() {
