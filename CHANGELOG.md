@@ -18,7 +18,8 @@ named here when they ship the same day as a launcher release.
   absolute XDG data roots. GOG rails load independently with coalesced refreshes.
 - SteamGridDB: use only a personal key from the environment, private file or
   saved IntegrationApiKey setting; enforce private-file permissions of 0600.
-- Packaging: keep the same archive layout and seven pinned bundled plugins.
+- Packaging: keep the same archive layout and seven pinned bundled plugins;
+  record the exact source commit in both executables as read-only metadata.
 
 ### Fixed
 

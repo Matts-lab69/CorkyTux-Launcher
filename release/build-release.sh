@@ -27,6 +27,10 @@ if [[ "$EXPECTED" != "$VERSION" ]]; then
   exit 1
 fi
 
+# Provenance describes the exact committed source, not local tracked edits.
+SOURCE_COMMIT="$(git rev-parse --verify 'HEAD^{commit}')"
+git diff --quiet HEAD --
+
 echo "=== Building CorkyTux v${VERSION} (release) ==="
 
 # Keep build-machine paths out of the binaries: panic locations and debug
@@ -70,6 +74,12 @@ cp "$BIN" "$PKGDIR/corkytux"
 cp "$HELPER" "$PKGDIR/webdriver_login"
 cp release/install.sh release/uninstall.sh "$PKGDIR/"
 chmod +x "$PKGDIR/corkytux" "$PKGDIR/webdriver_login" "$PKGDIR/install.sh" "$PKGDIR/uninstall.sh"
+# Add non-loaded metadata to staged copies only; Cargo outputs stay unchanged.
+printf '%s\n' "$SOURCE_COMMIT" > "$STAGE/source-commit.txt"
+for packaged_binary in "$PKGDIR/corkytux" "$PKGDIR/webdriver_login"; do
+  objcopy --add-section ".corkytux.commit=$STAGE/source-commit.txt" \
+    --set-section-flags .corkytux.commit=readonly "$packaged_binary"
+done
 cp release/corkytux.png "$PKGDIR/" 2>/dev/null || cp assets/corkytux.png "$PKGDIR/corkytux.png"
 cp release/corkytux.desktop.in "$PKGDIR/com.corkytux.CorkyTux.desktop"
 cp LICENSE README.md CREDITS.md "$PKGDIR/"
