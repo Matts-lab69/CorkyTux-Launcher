@@ -107,8 +107,7 @@ To include the plugins from a clean, local checkout without network downloads:
 CORKYTUX_PLUGINS_SOURCE=/path/to/CorkyTux-Plugins ./release/build-release.sh v3.2.0
 ```
 
-The exported `CORKYTUX_SGDB_BUILTIN_KEY`, if supplied securely, is inherited by
-this command without being printed. The tarball has one root directory,
+The tarball has one root directory,
 `corkytux-3.2.0/`, containing the binaries, assets, bundled plugins, installers,
 desktop entry, icon, LICENSE, README, CREDITS and THIRD-PARTY documentation.
 The packaged desktop entry is `com.corkytux.CorkyTux.desktop`; its `Icon` and
