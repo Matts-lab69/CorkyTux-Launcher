@@ -321,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn niega_base_home_raiz_y_relativos() {
+    fn denies_base_home_root_and_relative_paths() {
         let d = deny();
         let none: Option<&[String]> = None;
         let empty: Vec<String> = vec![];
@@ -345,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn exige_exe_directo() {
+    fn requires_executable_validation() {
         let dir = mktmp("corky_rm_test");
         let d = deny();
         let empty: Vec<String> = vec![];
@@ -368,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn aprueba_juego_por_carpeta() {
+    fn allows_folder_based_game() {
         // RPG Maker folder-based game: Executable == MainPath (a directory).
         let dir = mktmp("corky_rm_folder");
         let d = deny();
@@ -384,7 +384,7 @@ mod tests {
     }
 
     #[test]
-    fn puntos_no_burlan_deny() {
+    fn dot_components_do_not_bypass_deny_list() {
         // main = <tmp>/Games/sub/.. → canonical = <tmp>/Games (denegado).
         let base = mktmp("corky_rm_dotdot");
         let games = base.join("Games");
@@ -398,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn symlink_a_base_no_pasa() {
+    fn symlink_to_base_is_denied() {
         let base = mktmp("corky_rm_link");
         let real = base.join("Heroic");
         std::fs::create_dir_all(&real).unwrap();
@@ -413,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    fn solape_con_otro_install_niega() {
+    fn overlap_with_other_install_is_denied() {
         let base = mktmp("corky_rm_overlap");
         let outer = base.join("J");
         let inner = outer.join("J");
@@ -435,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    fn plugin_solo_dentro_de_main_niega() {
+    fn plugin_install_inside_main_is_denied() {
         // installs.json with another install's path inside main: overlap, so deny.
         let base = mktmp("corky_rm_plugin");
         let main = base.join("J");
@@ -450,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn misma_ruta_ficha_y_plugin_permite() {
+    fn same_card_and_plugin_path_is_allowed() {
         // After excluding itself only others remain: the direct exe decides.
         let base = mktmp("corky_rm_self");
         std::fs::write(base.join("J.exe"), b"x").unwrap();
@@ -462,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn installs_ausente_vacio_corrupto_none() {
+    fn missing_empty_or_corrupt_installs_returns_none() {
         use super::plugin_install_paths_at;
         let base = mktmp("corky_rm_reg");
         let cfg = base.join("cfg");
@@ -480,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn bases_nuevas_y_legacy_se_niegan() {
+    fn new_and_legacy_bases_are_denied() {
         use super::store_deny_roots;
         let d = store_deny_roots("/h/Games", "/h");
         assert!(d.contains(&"/h/Games/Epic-Games".to_string()));
@@ -495,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn exe_con_puntos_que_escapa_niega() {
+    fn executable_escaping_with_dot_components_is_denied() {
         let base = mktmp("corky_rm_escape");
         let outer = base.join("J");
         std::fs::create_dir_all(outer.join("sub")).unwrap();
@@ -509,17 +509,17 @@ mod tests {
     }
 
     #[test]
-    fn flag_sin_mayusculas_ni_espacios() {
+    fn flag_accepts_case_and_whitespace_variants() {
         for v in ["true", "True", "TRUE", " true ", "TrUe", "1"] {
-            assert!(use_shared_prefix_on(v), "debe valer: {:?}", v);
+            assert!(use_shared_prefix_on(v), "must be accepted: {:?}", v);
         }
         for v in ["", "false", "False", "0", "yes", "2"] {
-            assert!(!use_shared_prefix_on(v), "no debe valer: {:?}", v);
+            assert!(!use_shared_prefix_on(v), "must be rejected: {:?}", v);
         }
     }
 
     #[test]
-    fn prefix_propio_se_permite() {
+    fn own_prefix_is_allowed() {
         let base = mktmp("corky_pfx_own");
         let shared = base.join("shared-proton-x");
         let own = base.join("prefixes").join("My Game");
@@ -532,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn prefix_igual_a_la_base_se_niega() {
+    fn prefix_equal_to_base_is_denied() {
         let base = mktmp("corky_pfx_base");
         let shared = base.join("shared-proton-x");
         std::fs::create_dir_all(&shared).unwrap();
@@ -545,7 +545,7 @@ mod tests {
     }
 
     #[test]
-    fn prefix_dentro_de_la_base_se_niega() {
+    fn prefix_inside_base_is_denied() {
         // The real-world case: PrefixPath = <shared>/pfx.
         let base = mktmp("corky_pfx_inside");
         let shared = base.join("shared-proton-x");
@@ -558,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn ancestro_de_la_base_se_niega() {
+    fn ancestor_of_base_is_denied() {
         let base = mktmp("corky_pfx_parent");
         let shared = base.join("prefixes").join("shared-proton-x");
         std::fs::create_dir_all(&shared).unwrap();
@@ -571,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn symlink_y_puntos_hacia_la_base_se_niegan() {
+    fn symlink_and_dot_components_to_base_are_denied() {
         let base = mktmp("corky_pfx_trick");
         let shared = base.join("shared-proton-x");
         std::fs::create_dir_all(shared.join("pfx")).unwrap();
@@ -589,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn prefix_de_otro_juego_se_niega() {
+    fn another_games_prefix_is_denied() {
         let base = mktmp("corky_pfx_other");
         let mine = base.join("Mine");
         let other = base.join("Other");
@@ -655,7 +655,7 @@ mod tests {
     }
 
     #[test]
-    fn prefix_inexistente_y_relativo_se_niegan() {
+    fn missing_and_relative_prefixes_are_denied() {
         let base = mktmp("corky_pfx_missing");
         let shared_s: Vec<String> = vec![];
         let empty: Vec<String> = vec![];
@@ -669,7 +669,7 @@ mod tests {
     // ---------- Hardening probes: deletion-path guards ----------
 
     #[test]
-    fn removal_target_home_real_se_niega() {
+    fn removal_target_real_home_is_denied() {
         // HOME is in the deny list (store_deny_roots), so this is expected to pass.
         let _g = crate::test_env::lock();
         let home = std::env::var("HOME").unwrap_or_default();
@@ -679,13 +679,13 @@ mod tests {
         let deny = store_deny_roots(&format!("{}/Games", home), &home);
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
-        assert!(!removal_target_safe(&home, "", &deny, some), "HOME debe negarse");
+        assert!(!removal_target_safe(&home, "", &deny, some), "HOME must be denied");
         assert!(!removal_target_safe(&format!("{}/", home), "", &deny, some),
-            "HOME con barra final también");
+            "HOME with a trailing slash must also be denied");
     }
 
     #[test]
-    fn removal_target_ancestro_de_home_se_niega() {
+    fn removal_target_ancestor_of_home_is_denied() {
         // Models /home relative to /home/user: store_deny_roots adds HOME's
         // ancestor, and the guard denies when main is an ancestor of a
         // protected root (resolved.starts_with(main)).
@@ -697,12 +697,12 @@ mod tests {
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
         assert!(!removal_target_safe(&root.display().to_string(), "", &deny, some),
-            "un ancestro de HOME ({}) no debe ser borrable", root.display());
+            "an ancestor of HOME ({}) must not be deletable", root.display());
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn removal_target_xdg_user_dirs_se_niegan() {
+    fn removal_target_xdg_user_directories_are_denied() {
         // Synthetic tree to avoid touching the real HOME; models ~/Documents, etc.
         // store_deny_roots adds XDG directories relative to HOME.
         let root = mktmp("corky_guard_home");
@@ -717,13 +717,13 @@ mod tests {
         let some = Some(empty.as_slice());
         for d in ["Documents", "Downloads", "Desktop"] {
             assert!(!removal_target_safe(&home.join(d).display().to_string(), "", &deny, some),
-                "{} no debe ser borrable", d);
+                "{} must not be deletable", d);
         }
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn removal_target_raiz_biblioteca_con_un_juego_se_niega_pero_el_juego_no() {
+    fn removal_target_library_root_is_denied_but_its_game_is_allowed() {
         // The library root (~/Games) is denied even with only one game inside;
         // the game with a direct executable is allowed.
         let root = mktmp("corky_guard_lib");
@@ -736,29 +736,29 @@ mod tests {
         let empty: Vec<String> = vec![];
         assert!(!removal_target_safe(&games.display().to_string(), "", &deny,
                                      Some(empty.as_slice())),
-            "la raíz de la biblioteca no se borra");
+            "the library root is not deleted");
         assert!(removal_target_safe(&gamea.display().to_string(), "A.exe", &deny,
                                     Some(empty.as_slice())),
-            "el juego con exe dentro sí se aprueba");
+            "the game with an executable inside is allowed");
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn prefix_raiz_y_tilde_se_niegan() {
+    fn root_and_tilde_prefixes_are_denied() {
         let empty: Vec<String> = vec![];
-        assert!(!prefix_path_safe("/", &empty, &empty), "\"/\" no es prefijo borrable");
-        assert!(!prefix_path_safe("~", &empty, &empty), "\"~\" es relativo: no se aprueba");
+        assert!(!prefix_path_safe("/", &empty, &empty), "\"/\" is not a deletable prefix");
+        assert!(!prefix_path_safe("~", &empty, &empty), "\"~\" is relative and must not be allowed");
     }
 
     #[test]
-    fn prefix_home_real_se_niega() {
+    fn real_home_prefix_is_denied() {
         let _g = crate::test_env::lock();
         let home = std::env::var("HOME").unwrap_or_default();
         if home.is_empty() {
             return;
         }
         let empty: Vec<String> = vec![];
-        assert!(!prefix_path_safe(&home, &empty, &empty), "HOME no es prefijo borrable");
+        assert!(!prefix_path_safe(&home, &empty, &empty), "HOME is not a deletable prefix");
         assert!(!prefix_path_safe(&format!("{}/", home), &empty, &empty));
     }
 
@@ -780,7 +780,7 @@ mod tests {
     }
 
     #[test]
-    fn symlink_a_destino_fuera_prefix_sigue_permitido() {
+    fn prefix_symlink_to_external_target_remains_allowed() {
         // prefix_path_safe is unchanged: it canonicalizes and compares against
         // shared/other paths, but does not require an allowed root; a symlink
         // to an unrelated directory is still allowed (documented prefix-guard gap).
@@ -793,13 +793,13 @@ mod tests {
             let link = base.join("link").display().to_string();
             let empty: Vec<String> = vec![];
             assert!(prefix_path_safe(&link, &empty, &empty),
-                "documentado: prefix_path_safe APRUEBA symlink a destino fuera de deny/otros");
+                "documented: prefix_path_safe ALLOWS a symlink outside denied and other paths");
         }
         let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
-    fn removal_target_symlink_como_main_se_niega() {
+    fn removal_target_symlink_as_main_is_denied() {
         // New guard: a symlink used as main_path is denied before canonicalization.
         let base = mktmp("corky_guard_main_link");
         let real = base.join("real");
@@ -811,13 +811,13 @@ mod tests {
             let d = vec!["/".to_string()];
             let empty: Vec<String> = vec![];
             assert!(!removal_target_safe(&link, "", &d, Some(empty.as_slice())),
-                "un symlink como main_path nunca se borra");
+                "a symlink used as main_path is never deleted");
         }
         let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
-    fn removal_target_dos_componentes_se_niega() {
+    fn removal_target_two_components_is_denied() {
         // Shallow paths (/, /home, /tmp) are never game folders: fewer than 3
         // components means RootDir plus at most one name.
         let d = vec!["/".to_string()];
@@ -826,12 +826,12 @@ mod tests {
         assert!(!removal_target_safe("/", "", &d, some));
         if let Some(two) = two_component_dir() {
             assert!(!removal_target_safe(&two.display().to_string(), "", &d, some),
-                "una ruta de 2 componentes ({}) no debe ser borrable", two.display());
+                "a two-component path ({}) must not be deletable", two.display());
         }
     }
 
     #[test]
-    fn removal_target_exe_absoluto_fuera_de_main_niega() {
+    fn removal_target_absolute_executable_outside_main_is_denied() {
         // An absolute exe_rel must be within main; merely existing is not enough.
         let base = mktmp("corky_guard_exe_abs");
         let main = base.join("J");
@@ -842,7 +842,7 @@ mod tests {
         let some = Some(empty.as_slice());
         let evil = base.join("evil.exe").display().to_string();
         assert!(!removal_target_safe(&main.display().to_string(), &evil, &d, some),
-            "un exe absoluto fuera de main no se aprueba");
+            "an absolute executable outside main is not allowed");
         // The same executable is allowed when it is inside main.
         std::fs::write(main.join("ok.exe"), b"x").unwrap();
         let ok = main.join("ok.exe").display().to_string();
@@ -851,7 +851,7 @@ mod tests {
     }
 
     #[test]
-    fn removal_target_juego_de_tres_componentes_permitido() {
+    fn removal_target_three_component_game_is_allowed() {
         // Models a legitimate game path such as /mnt/games/X: depth alone does not deny it.
         let top = mktmp("corky_mnt");
         let game = top.join("X");
@@ -860,19 +860,19 @@ mod tests {
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
         assert!(removal_target_safe(&game.display().to_string(), "", &d, some),
-            "un juego con >=3 nombres debe permitirse");
+            "a game with at least three components must be allowed");
         // Exact boundary: 3 components (RootDir + 2 names), e.g. /tmp/foo.
         let three = std::env::temp_dir().join("corky_mnt_x");
         let _ = std::fs::remove_dir_all(&three);
         std::fs::create_dir_all(&three).unwrap();
         assert!(removal_target_safe(&three.display().to_string(), "", &d, some),
-            "3 componentes (RootDir+2) debe permitirse");
+            "three components (RootDir+2) must be allowed");
         let _ = std::fs::remove_dir_all(&three);
         let _ = std::fs::remove_dir_all(&top);
     }
 
     #[test]
-    fn removal_target_juego_dentro_de_games_sigue_permitido() {
+    fn removal_target_game_inside_games_remains_allowed() {
         // ~/Games/FNAF (shared folder): deny the ~/Games root, but not a game
         // inside it.
         let root = mktmp("corky_guard_fnaf");
@@ -884,14 +884,14 @@ mod tests {
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
         assert!(!removal_target_safe(&games.display().to_string(), "", &deny, some),
-            "la raíz de la biblioteca no se borra");
+            "the library root is not deleted");
         assert!(removal_target_safe(&fnaf.display().to_string(), "", &deny, some),
-            "un juego dentro de ~/Games sí se aprueba");
+            "a game inside ~/Games is allowed");
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn confirm_files_removal_niega_con_motivo() {
+    fn confirm_files_removal_denies_with_reason() {
         // The else-branch decision (the handler's redirect) is pure and testable.
         let d = vec!["/".to_string()];
         let empty: Vec<String> = vec![];

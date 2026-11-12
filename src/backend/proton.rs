@@ -5646,7 +5646,7 @@ mod tests {
     }
 
     #[test]
-    fn rpg_decide_seen_cierra_al_segundo_fallo() {
+    fn rpg_decide_seen_closes_on_second_failure() {
         use crate::backend::external::RpgSessionStatus as S;
         use super::{rpg_poll_decide, RpgPollAction, RPG_STATUS_MAX_UNKNOWNS};
         assert_eq!(RPG_STATUS_MAX_UNKNOWNS, 2);
@@ -5668,7 +5668,7 @@ mod tests {
     }
 
     #[test]
-    fn rpg_decide_no_visto_respeta_piso_30s() {
+    fn rpg_decide_unseen_respects_30s_floor() {
         use crate::backend::external::RpgSessionStatus as S;
         use super::{rpg_poll_decide, RpgPollAction, RPG_STATUS_UNSEEN_FLOOR_SECS};
         assert_eq!(RPG_STATUS_UNSEEN_FLOOR_SECS, 30);
@@ -5685,7 +5685,7 @@ mod tests {
     }
 
     #[test]
-    fn rpg_decide_timeout_nunca_cierra() {
+    fn rpg_decide_timeout_never_closes() {
         use crate::backend::external::RpgSessionStatus as S;
         use super::{rpg_poll_decide, RpgPollAction};
         // A hundred timeouts in a row change nothing.

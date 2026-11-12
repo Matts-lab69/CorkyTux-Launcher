@@ -1782,7 +1782,7 @@ mod tests {
 
         let m = IntegrationManager::new();
         m.remove_dir_recursive(&base.display().to_string()).unwrap();
-        assert!(!base.exists(), "el árbol temporal debe borrarse por completo");
+        assert!(!base.exists(), "the temporary tree must be removed completely");
 
         // Removing an absent path is idempotent and does not fail.
         m.remove_dir_recursive(&base.display().to_string()).unwrap();

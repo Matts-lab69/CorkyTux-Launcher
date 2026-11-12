@@ -1157,7 +1157,7 @@ mod tests {
         let pairs = vec![
             ("Linked".to_string(), shared.join("pfx").display().to_string()),
             ("Empty".to_string(), String::new()),
-            ("Solo".to_string(), indiv.display().to_string()),
+            ("Individual".to_string(), indiv.display().to_string()),
         ];
         assert_eq!(
             ConfigManager::shared_prefix_users(&shared, &pairs),
@@ -1178,7 +1178,7 @@ mod tests {
             Vec::<String>::new()
         );
         assert_eq!(
-            cleared.iter().find(|(n, _)| n == "Solo").map(|(_, p)| p.clone()),
+            cleared.iter().find(|(n, _)| n == "Individual").map(|(_, p)| p.clone()),
             Some(indiv.display().to_string())
         );
         assert_eq!(
