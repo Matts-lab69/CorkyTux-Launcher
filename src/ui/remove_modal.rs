@@ -509,7 +509,7 @@ mod tests {
     }
 
     #[test]
-    fn flag_rejects_uppercase_and_whitespace() {
+    fn flag_accepts_case_and_whitespace_variants() {
         for v in ["true", "True", "TRUE", " true ", "TrUe", "1"] {
             assert!(use_shared_prefix_on(v), "must be accepted: {:?}", v);
         }
