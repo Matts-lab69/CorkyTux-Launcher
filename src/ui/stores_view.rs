@@ -116,33 +116,33 @@ impl StoresView {
     /// re-entering always surfaces it.
     pub fn chequear_dependencias(&self) {
         let vista = self.clone();
-        let (tx, rx) = std::sync::mpsc::channel::<Chequeo>();
+        let (tx, rx) = std::sync::mpsc::channel::<DependencyCheck>();
         std::thread::spawn(move || {
-            let pre = precheck_actual();
-            if pre.hay_algo() {
-                let _ = tx.send(Chequeo::Falta(faltantes_actuales()));
+            let pre = current_dependency_precheck();
+            if pre.has_missing() {
+                let _ = tx.send(DependencyCheck::Missing(current_missing_dependencies()));
             } else {
-                let _ = tx.send(Chequeo::TodoBien);
+                let _ = tx.send(DependencyCheck::Ready);
             }
         });
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
-            Ok(Chequeo::TodoBien) => {
+            Ok(DependencyCheck::Ready) => {
                 // I found everything present: normal UI. If something was blocked
                 // and got restored externally, I load what the block had held back.
                 for h in vista.handles.borrow().iter() {
-                    h.aplicar_faltantes(&Faltantes::default());
+                    h.apply_missing_dependencies(&MissingDependencies::default());
                     if !h.bloqueado.get() {
                         h.ensure_loaded();
                     }
                 }
                 glib::ControlFlow::Break
             }
-            Ok(Chequeo::Falta(f)) => {
+            Ok(DependencyCheck::Missing(f)) => {
                 for h in vista.handles.borrow().iter() {
-                    h.aplicar_faltantes(&f);
+                    h.apply_missing_dependencies(&f);
                 }
-                if f.hay_algo() {
-                    let filas = f.filas_modal();
+                if f.has_missing() {
+                    let filas = f.modal_rows();
                     let helper = login_helper_path().ok();
                     let v = vista.clone();
                     let padre = v.widget.clone();
@@ -935,7 +935,7 @@ impl StoresView {
         page.append(&lib_frame);
 
         // I cover the tab with "Setup incomplete" when my binary is missing.
-        // I hide it by default; `aplicar_faltantes` shows it.
+        // I hide it by default; `apply_missing_dependencies` shows it.
         let incomplete_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
         incomplete_box.set_halign(gtk::Align::Center);
         incomplete_box.set_valign(gtk::Align::Center);
@@ -1432,10 +1432,10 @@ impl StorePageHandle {
     /// I apply my dependency state to the tab: I show "Setup incomplete" when
     /// my binary is missing (no login, no library), or block only login when
     /// my browser is missing. With nothing missing I show normal UI.
-    fn aplicar_faltantes(&self, f: &Faltantes) {
+    fn apply_missing_dependencies(&self, f: &MissingDependencies) {
         let nombre = if self.store == "epic" { "Epic" } else { "GOG" };
-        if f.tab_bloqueado(&self.store) {
-            let pendientes = f.para_tienda(&self.store).join(", ");
+        if f.tab_blocked(&self.store) {
+            let pendientes = f.for_store(&self.store).join(", ");
             self.incomplete_text.set_text(&format!(
                 "{} needs: {}. Log in and library are unavailable until installation completes.",
                 nombre, pendientes
@@ -1451,7 +1451,7 @@ impl StorePageHandle {
             self.auth_frame.set_visible(true);
             self.lib_frame.set_visible(true);
             self.rails_box.set_visible(true);
-            let sin_browser = f.login_bloqueado();
+            let sin_browser = f.login_blocked();
             self.login_btn.set_visible(!sin_browser);
             self.browser_row.set_visible(sin_browser);
             self.bloqueado.set(false);
@@ -3380,15 +3380,15 @@ fn login_helper_log_path() -> PathBuf {
 
 /// I model my Stores entry check: cheap pre-check first, full check only
 /// when my pre-check flags something.
-enum Chequeo {
-    TodoBien,
-    Falta(Faltantes),
+enum DependencyCheck {
+    Ready,
+    Missing(MissingDependencies),
 }
 
 /// I track which tools Stores lacks. I decide my whole modal, trigger, and
 /// "Setup incomplete" state from this; I keep no session flags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-struct Faltantes {
+struct MissingDependencies {
     /// I miss my Epic binary (legendary).
     legendary: bool,
     /// I miss my GOG binary (gogdl).
@@ -3397,17 +3397,17 @@ struct Faltantes {
     chromium: bool,
 }
 
-impl Faltantes {
+impl MissingDependencies {
     /// I show my modal if and only if something is missing. I keep no memory:
     /// skipping leaves no mark, so re-entering Stores with something pending
     /// shows it again.
-    fn hay_algo(&self) -> bool {
+    fn has_missing(&self) -> bool {
         self.legendary || self.gogdl || self.chromium
     }
 
     /// I name what one store ("epic"/"gog") shows: its binary when missing,
     /// plus my browser when missing. I keep a fixed order: binary, browser.
-    fn para_tienda(&self, store: &str) -> Vec<&'static str> {
+    fn for_store(&self, store: &str) -> Vec<&'static str> {
         let mut v = Vec::new();
         if store == "epic" && self.legendary {
             v.push("legendary");
@@ -3422,17 +3422,17 @@ impl Faltantes {
     }
 
     /// Without a binary I show nothing in the tab: neither login nor library.
-    fn tab_bloqueado(&self, store: &str) -> bool {
+    fn tab_blocked(&self, store: &str) -> bool {
         (store == "epic" && self.legendary) || (store == "gog" && self.gogdl)
     }
 
     /// Without a browser I block only login; what is already logged in keeps working.
-    fn login_bloqueado(&self) -> bool {
+    fn login_blocked(&self) -> bool {
         self.chromium
     }
 
     /// I list my modal rows in DEPS order: only the missing ones.
-    fn filas_modal(&self) -> Vec<DepId> {
+    fn modal_rows(&self) -> Vec<DepId> {
         let mut v = Vec::new();
         if self.legendary {
             v.push(DepId::Legendary);
@@ -3469,7 +3469,7 @@ fn probe_chrome_cached() -> Option<bool> {
 
 /// I gather what is missing: my plugin bins (`status` without `--quick`, a real
     /// check skipping my 60 s cache) + my Chromium cache (`--probe`). I reimplement nothing.
-fn faltantes_actuales() -> Faltantes {
+fn current_missing_dependencies() -> MissingDependencies {
     let (leg_ok, gog_ok) = match StoreManager::status(false) {
         Ok(st) => {
             let bins = st.get("bins");
@@ -3486,7 +3486,7 @@ fn faltantes_actuales() -> Faltantes {
         // When status fails I cannot claim they exist: I offer them.
         Err(_) => (false, false),
     };
-    Faltantes {
+    MissingDependencies {
         legendary: !leg_ok,
         gogdl: !gog_ok,
         chromium: match probe_chrome_cached() {
@@ -3500,7 +3500,7 @@ fn faltantes_actuales() -> Faltantes {
     /// `bins` subcommand, filesystem only) + my Chromium cache (`--probe`,
     /// filesystem only). This is all I run on every entry; my full networked
     /// check follows only when this flags something.
-fn precheck_actual() -> Faltantes {
+fn current_dependency_precheck() -> MissingDependencies {
     let (leg_ok, gog_ok) = match StoreManager::bins() {
         Ok(v) => {
             let bins = v.get("bins");
@@ -3517,7 +3517,7 @@ fn precheck_actual() -> Faltantes {
         // When even `bins` stays silent I cannot claim they exist: I offer them.
         Err(_) => (false, false),
     };
-    Faltantes {
+    MissingDependencies {
         legendary: !leg_ok,
         gogdl: !gog_ok,
         chromium: match probe_chrome_cached() {
@@ -3616,71 +3616,71 @@ fi
     /// GOG solo sin login.
     #[test]
     fn granularidad_falta_solo_legendary() {
-        let f = Faltantes { legendary: true, gogdl: false, chromium: true };
-        assert!(f.hay_algo());
-        assert!(f.tab_bloqueado("epic"));
-        assert!(!f.tab_bloqueado("gog"));
-        assert!(f.login_bloqueado());
-        assert_eq!(f.para_tienda("epic"), vec!["legendary", "login browser"]);
-        assert_eq!(f.para_tienda("gog"), vec!["login browser"]);
-        assert_eq!(f.filas_modal(), vec![DepId::Legendary, DepId::Chromium]);
+        let f = MissingDependencies { legendary: true, gogdl: false, chromium: true };
+        assert!(f.has_missing());
+        assert!(f.tab_blocked("epic"));
+        assert!(!f.tab_blocked("gog"));
+        assert!(f.login_blocked());
+        assert_eq!(f.for_store("epic"), vec!["legendary", "login browser"]);
+        assert_eq!(f.for_store("gog"), vec!["login browser"]);
+        assert_eq!(f.modal_rows(), vec![DepId::Legendary, DepId::Chromium]);
     }
 
     /// I cover missing gogdl only: mirror of my Epic case.
     #[test]
     fn granularidad_falta_solo_gogdl() {
-        let f = Faltantes { legendary: false, gogdl: true, chromium: true };
-        assert!(!f.tab_bloqueado("epic"));
-        assert!(f.tab_bloqueado("gog"));
-        assert_eq!(f.para_tienda("epic"), vec!["login browser"]);
-        assert_eq!(f.para_tienda("gog"), vec!["gogdl", "login browser"]);
-        assert_eq!(f.filas_modal(), vec![DepId::Gogdl, DepId::Chromium]);
+        let f = MissingDependencies { legendary: false, gogdl: true, chromium: true };
+        assert!(!f.tab_blocked("epic"));
+        assert!(f.tab_blocked("gog"));
+        assert_eq!(f.for_store("epic"), vec!["login browser"]);
+        assert_eq!(f.for_store("gog"), vec!["gogdl", "login browser"]);
+        assert_eq!(f.modal_rows(), vec![DepId::Gogdl, DepId::Chromium]);
     }
 
     /// I cover missing Chromium only: I block no tab, only login. My
     /// biblioteca de lo ya logueado sigue visible.
     #[test]
     fn granularidad_falta_solo_chromium() {
-        let f = Faltantes { legendary: false, gogdl: false, chromium: true };
-        assert!(f.hay_algo());
-        assert!(!f.tab_bloqueado("epic"));
-        assert!(!f.tab_bloqueado("gog"));
-        assert!(f.login_bloqueado());
-        assert_eq!(f.filas_modal(), vec![DepId::Chromium]);
+        let f = MissingDependencies { legendary: false, gogdl: false, chromium: true };
+        assert!(f.has_missing());
+        assert!(!f.tab_blocked("epic"));
+        assert!(!f.tab_blocked("gog"));
+        assert!(f.login_blocked());
+        assert_eq!(f.modal_rows(), vec![DepId::Chromium]);
     }
 
     /// I cover everything missing: I block both tabs, three rows in order.
     #[test]
     fn granularidad_falta_todo() {
-        let f = Faltantes { legendary: true, gogdl: true, chromium: true };
-        assert!(f.tab_bloqueado("epic"));
-        assert!(f.tab_bloqueado("gog"));
-        assert_eq!(f.filas_modal(), vec![DepId::Legendary, DepId::Gogdl, DepId::Chromium]);
+        let f = MissingDependencies { legendary: true, gogdl: true, chromium: true };
+        assert!(f.tab_blocked("epic"));
+        assert!(f.tab_blocked("gog"));
+        assert_eq!(f.modal_rows(), vec![DepId::Legendary, DepId::Gogdl, DepId::Chromium]);
     }
 
     /// I cover ONLY gogdl missing (legendary and Chromium present): one row, GOG
     /// blocked, Epic intact with login.
     #[test]
     fn granularidad_falta_solo_gogdl_sin_nada_mas() {
-        let f = Faltantes { legendary: false, gogdl: true, chromium: false };
-        assert!(f.hay_algo());
-        assert!(!f.tab_bloqueado("epic"));
-        assert!(f.tab_bloqueado("gog"));
-        assert!(!f.login_bloqueado());
-        assert_eq!(f.para_tienda("epic"), Vec::<&str>::new());
-        assert_eq!(f.para_tienda("gog"), vec!["gogdl"]);
-        assert_eq!(f.filas_modal(), vec![DepId::Gogdl]);
+        let f = MissingDependencies { legendary: false, gogdl: true, chromium: false };
+        assert!(f.has_missing());
+        assert!(!f.tab_blocked("epic"));
+        assert!(f.tab_blocked("gog"));
+        assert!(!f.login_blocked());
+        assert_eq!(f.for_store("epic"), Vec::<&str>::new());
+        assert_eq!(f.for_store("gog"), vec!["gogdl"]);
+        assert_eq!(f.modal_rows(), vec![DepId::Gogdl]);
     }
 
     /// I cover ONLY legendary missing: mirror of my GOG case.
     #[test]
     fn granularidad_falta_solo_legendary_sin_nada_mas() {
-        let f = Faltantes { legendary: true, gogdl: false, chromium: false };
-        assert!(f.tab_bloqueado("epic"));
-        assert!(!f.tab_bloqueado("gog"));
-        assert!(!f.login_bloqueado());
-        assert_eq!(f.para_tienda("epic"), vec!["legendary"]);
-        assert_eq!(f.filas_modal(), vec![DepId::Legendary]);
+        let f = MissingDependencies { legendary: true, gogdl: false, chromium: false };
+        assert!(f.tab_blocked("epic"));
+        assert!(!f.tab_blocked("gog"));
+        assert!(!f.login_blocked());
+        assert_eq!(f.for_store("epic"), vec!["legendary"]);
+        assert_eq!(f.modal_rows(), vec![DepId::Legendary]);
     }
 
     /// I cycle failure->skip->re-entry->modal: skipping leaves no persistent
@@ -3688,14 +3688,14 @@ fi
     /// completing (nothing missing) silences it.
     #[test]
     fn ciclo_skip_no_silencia_el_modal() {
-        let pendiente = Faltantes { legendary: false, gogdl: true, chromium: true };
-        assert!(pendiente.hay_algo(), "antes del skip: modal");
+        let pendiente = MissingDependencies { legendary: false, gogdl: true, chromium: true };
+        assert!(pendiente.has_missing(), "antes del skip: modal");
         // I mutate nothing persistent on skip: same value, same modal.
         let tras_skip = pendiente;
-        assert!(tras_skip.hay_algo(), "tras el skip: modal de nuevo al reentrar");
-        let completo = Faltantes::default();
-        assert!(!completo.hay_algo(), "complete: never again");
-        assert!(completo.filas_modal().is_empty());
+        assert!(tras_skip.has_missing(), "tras el skip: modal de nuevo al reentrar");
+        let completo = MissingDependencies::default();
+        assert!(!completo.has_missing(), "complete: never again");
+        assert!(completo.modal_rows().is_empty());
     }
 
     /// I replay my trigger bug: all installed -> files vanish
@@ -3753,9 +3753,9 @@ fi
         std::env::set_var("CORKYTUX_LOGIN_HELPER", &helper);
 
         // I start with all installed -> no modal.
-        let antes = precheck_actual();
+        let antes = current_dependency_precheck();
         assert!(
-            !antes.hay_algo(),
+            !antes.has_missing(),
             "with everything present there is no modal: {:?}",
             antes
         );
@@ -3766,18 +3766,18 @@ fi
         std::fs::remove_file(&chrome).unwrap();
 
         // I re-check: I detect all three gaps -> modal.
-        let despues = precheck_actual();
+        let despues = current_dependency_precheck();
         assert!(
-            despues.hay_algo(),
+            despues.has_missing(),
             "after the external deletion there is a modal: {:?}",
             despues
         );
         assert_eq!(
             despues,
-            Faltantes { legendary: true, gogdl: true, chromium: true },
+            MissingDependencies { legendary: true, gogdl: true, chromium: true },
             "all three gaps detected"
         );
-        assert_eq!(despues.filas_modal().len(), 3);
+        assert_eq!(despues.modal_rows().len(), 3);
 
         // Drop restores HOME + CORKYTUX_LOGIN_HELPER (also on panic).
         let _ = std::fs::remove_dir_all(&base);
