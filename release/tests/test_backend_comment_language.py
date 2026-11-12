@@ -1,4 +1,4 @@
-"""Keep backend maintenance explanations in the project language."""
+"""Guard against reintroducing the specifically translated legacy phrases."""
 
 from pathlib import Path
 import unittest
@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class BackendCommentLanguage(unittest.TestCase):
-    def test_backend_maintenance_comments_are_english(self):
+    def test_translated_legacy_backend_comment_phrases_do_not_return(self):
         cases = {
             "proton.rs": ("Paridad con", "Aislamiento Bottles", "del usuario actual",
                           "Las bibliotecas", "Soporte 32/64", "Recorte del catalogo",
