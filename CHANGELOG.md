@@ -4,6 +4,36 @@ All notable changes to CorkyTux. The format follows Keep a Changelog and the
 project uses SemVer. The plugins are released from CorkyTux-Plugins and are
 named here when they ship the same day as a launcher release.
 
+## [3.2.2] - 2026-11-12
+
+### Changed
+
+- Window: use a 900x650 minimum, preserve the 720x520 Settings budget, and
+  refine sidebar borders and eight-pixel scrollbars.
+- Tray: hide on close only while a live tray host is available; keep explicit
+  Quit and host-loss safeguards.
+- Controllers: configurable repeat timing, spatial navigation, topology-state
+  reset, pointer cancellation in secondary windows, and normalized SVG assets.
+- Icons: consistent cache aliases, checked nonblocking descriptor reads, and
+  absolute XDG data roots. GOG rails load independently with coalesced refreshes.
+- SteamGridDB: use only a personal key from the environment, private file or
+  saved IntegrationApiKey setting; enforce private-file permissions of 0600.
+- Packaging: keep the same archive layout and seven pinned bundled plugins;
+  record the exact source commit in both executables as read-only metadata.
+
+### Fixed
+
+- Updater: reuse cached metadata for HTTP 304 and follow only supported
+  redirect statuses.
+
+### Upgrade notes
+
+- From 3.2.0 or 3.2.1, install 3.2.2 manually once: both versions mishandle
+  HTTP 304 update checks; 3.2.0 also rejects the current archive layout.
+- SteamGridDB requires a personal key in Settings, the environment or a private
+  file. Without one, SteamGridDB images are not downloaded; games and other
+  artwork sources still work.
+
 ## [3.2.1] - 2026-11-08
 
 Release preparation for the 3.2.1 tarball. No plugin code changes.
