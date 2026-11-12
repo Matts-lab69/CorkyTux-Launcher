@@ -423,14 +423,14 @@ mod tests {
         let ms_out = outer.display().to_string();
         let ms_in = inner.display().to_string();
         // Legacy behavior allows a nested executable when there is no overlap.
-        let solo: Vec<String> = vec![];
-        assert!(removal_target_safe(&ms_out, "J/J.exe", &d, Some(solo.as_slice())));
+        let no_others: Vec<String> = vec![];
+        assert!(removal_target_safe(&ms_out, "J/J.exe", &d, Some(no_others.as_slice())));
         // Another install inside main: deny.
-        let dentro = vec![ms_in.clone()];
-        assert!(!removal_target_safe(&ms_out, "J/J.exe", &d, Some(dentro.as_slice())));
+        let inside = vec![ms_in.clone()];
+        assert!(!removal_target_safe(&ms_out, "J/J.exe", &d, Some(inside.as_slice())));
         // Main inside another install: deny.
-        let fuera = vec![ms_out.clone()];
-        assert!(!removal_target_safe(&ms_in, "J.exe", &d, Some(fuera.as_slice())));
+        let outside = vec![ms_out.clone()];
+        assert!(!removal_target_safe(&ms_in, "J.exe", &d, Some(outside.as_slice())));
         let _ = std::fs::remove_dir_all(&base);
     }
 
