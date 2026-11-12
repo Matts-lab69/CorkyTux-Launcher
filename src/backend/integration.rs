@@ -1637,7 +1637,7 @@ fn norm_name(name: &str) -> String {
         .collect()
 }
 
-fn slugify(name: &str) -> String {
+pub(super) fn slugify(name: &str) -> String {
     let mut s: String = name
         .to_lowercase()
         .chars()

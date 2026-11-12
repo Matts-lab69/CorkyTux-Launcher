@@ -74,12 +74,8 @@ pub fn build_game_card(
             GameSource::Gog => "applications-games-symbolic",
             _ => "corkytux-application-x-executable-symbolic",
         };
-        if !entry.icon.is_empty() {
-            if let Some(tex) = helpers::load_texture(&entry.icon) {
-                icon.set_paintable(Some(&tex));
-            } else {
-                icon.set_icon_name(Some(fallback));
-            }
+        if let Some(tex) = helpers::load_game_icon(&entry.name, &entry.executable, &entry.icon) {
+            icon.set_paintable(Some(&tex));
         } else {
             icon.set_icon_name(Some(fallback));
         }

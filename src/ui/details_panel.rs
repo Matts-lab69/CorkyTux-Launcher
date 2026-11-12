@@ -682,9 +682,8 @@ impl DetailsPanel {
 
         // Load game icon into the header (tilde-aware)
         let icon_path = cfg.game_value(name, "Icon").unwrap_or_default();
-        if icon_path.is_empty() {
-            self.icon_image.set_icon_name(Some("corkytux-application-x-executable-symbolic"));
-        } else if let Some(texture) = helpers::load_texture(&shellexpand_tilde(&icon_path)) {
+        let executable = cfg.game_value(name, "Executable").unwrap_or_default();
+        if let Some(texture) = helpers::load_game_icon(name, &executable, &icon_path) {
             self.icon_image.set_paintable(Some(&texture));
         } else {
             self.icon_image.set_icon_name(Some("corkytux-application-x-executable-symbolic"));

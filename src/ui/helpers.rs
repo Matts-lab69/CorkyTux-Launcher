@@ -114,6 +114,19 @@ pub fn parse_rgba(color: &str) -> gdk::RGBA {
     gdk::RGBA::new(0.0, 0.0, 0.0, 1.0)
 }
 
+/// Resolve existing artwork only; never extract an executable on the GTK thread.
+pub fn load_game_icon(name: &str, executable: &str, configured: &str) -> Option<gdk::Texture> {
+    if !configured.is_empty() {
+        if let Some(texture) = load_texture(configured) {
+            return Some(texture);
+        }
+    }
+    let home = std::path::PathBuf::from(std::env::var_os("HOME")?);
+    let roots = super::icons::data_roots(&home);
+    super::icons::game_icon_candidates(&home, &roots, name, executable)
+        .iter().find_map(|path| load_texture(&path.to_string_lossy()))
+}
+
 pub fn load_texture(path: &str) -> Option<gdk::Texture> {
     let path = path.replace("~", &std::env::var("HOME").unwrap_or_default());
     if !std::path::Path::new(&path).exists() {
@@ -123,23 +136,25 @@ pub fn load_texture(path: &str) -> Option<gdk::Texture> {
         if let Some(tex) = tex_cache_get(&key) {
             return Some(tex);
         }
-        // Fast path: PNG/JPEG/etc. straight to texture.
-        if let Ok(tex) = gdk::Texture::from_filename(&path) {
+        let data = crate::backend::icon_io::read_icon_bytes(std::path::Path::new(&path))?;
+        // Keep native texture decoding, but never reopen the checked pathname.
+        if let Ok(tex) = gdk::Texture::from_bytes(&data) {
             tex_cache_put(key, &tex);
             return Some(tex);
         }
         // Fallback chain: pixbuf loaders, then manual ICO extraction.
-        if let Some(pb) = load_pixbuf(&path) {
+        if let Some(pb) = crate::backend::icon_io::decode_icon_bytes(&data) {
             let tex = gdk::Texture::for_pixbuf(&pb);
             tex_cache_put(key, &tex);
             return Some(tex);
         }
         return None;
     }
-    if let Ok(tex) = gdk::Texture::from_filename(&path) {
+    let data = crate::backend::icon_io::read_icon_bytes(std::path::Path::new(&path))?;
+    if let Ok(tex) = gdk::Texture::from_bytes(&data) {
         return Some(tex);
     }
-    load_pixbuf(&path).map(|pb| gdk::Texture::for_pixbuf(&pb))
+    crate::backend::icon_io::decode_icon_bytes(&data).map(|pb| gdk::Texture::for_pixbuf(&pb))
 }
 
 /// Full pixbuf load chain: gdk-pixbuf loaders (PNG, JPEG, ICO, BMP,
@@ -147,12 +162,8 @@ pub fn load_texture(path: &str) -> Option<gdk::Texture> {
 /// of Windows .ico containers (pixbuf's ico loader rejects those with
 /// "Compressed icons are not supported").
 fn load_pixbuf(path: &str) -> Option<gdk_pixbuf::Pixbuf> {
-    if let Ok(file) = std::fs::File::open(path) {
-        if let Ok(pb) = gdk_pixbuf::Pixbuf::from_read(file) {
-            return Some(pb);
-        }
-    }
-    load_ico_pixbuf(path)
+    let data = crate::backend::icon_io::read_icon_bytes(std::path::Path::new(path))?;
+    crate::backend::icon_io::decode_icon_bytes(&data)
 }
 
 /// Scaled-down texture for small previews (game settings icon/banner).
@@ -210,52 +221,6 @@ pub fn load_card_banner(path: &str, target_w: i32, target_h: i32) -> Option<gdk:
     let oy = ((scaled.height() - target_h) / 2).max(0);
     scaled.copy_area(ox, oy, target_w, target_h, &dest, 0, 0);
     Some(gdk::Texture::for_pixbuf(&dest))
-}
-
-/// Parse a Windows .ico container and decode its largest PNG entry.
-fn load_ico_pixbuf(path: &str) -> Option<gdk_pixbuf::Pixbuf> {
-    let data = std::fs::read(path).ok()?;
-    if data.len() < 6 || data[0..4] != [0, 0, 1, 0] {
-        return None;
-    }
-    let count = u16::from_le_bytes([data[4], data[5]]) as usize;
-    let mut best: Option<(u32, usize, usize)> = None;
-    for i in 0..count.min(64) {
-        let off = 6 + i * 16;
-        if data.len() < off + 16 {
-            break;
-        }
-        let w = data[off] as u32;
-        let h = data[off + 1] as u32;
-        let size = u32::from_le_bytes([
-            data[off + 8],
-            data[off + 9],
-            data[off + 10],
-            data[off + 11],
-        ]) as usize;
-        let ofs = u32::from_le_bytes([
-            data[off + 12],
-            data[off + 13],
-            data[off + 14],
-            data[off + 15],
-        ]) as usize;
-        if ofs + size > data.len() || size < 8 {
-            continue;
-        }
-        if data[ofs..].starts_with(&[0x89, b'P', b'N', b'G']) {
-            let wv = if w == 0 { 256 } else { w };
-            let hv = if h == 0 { 256 } else { h };
-            let area = wv * hv;
-            if best.map(|(a, _, _)| area > a).unwrap_or(true) {
-                best = Some((area, ofs, size));
-            }
-        }
-    }
-    let (_, ofs, len) = best?;
-    let loader = gdk_pixbuf::PixbufLoader::with_type("png").ok()?;
-    loader.write(&data[ofs..ofs + len]).ok()?;
-    loader.close().ok()?;
-    loader.pixbuf()
 }
 
 pub fn load_themed_icon(name: &str, is_dark: bool) -> Option<gdk::Texture> {
@@ -872,6 +837,74 @@ pub fn source_link(state: &crate::AppState, label: &str, url: Option<String>, to
 mod tests {
     use super::*;
     use crate::backend::theme::ThemeManager;
+
+    #[test]
+    fn inferred_fifo_cache_is_rejected_without_a_writer() {
+        const CHILD_ROOT: &str = "CORKYTUX_ICON_FIFO_TEST_ROOT";
+        if let Some(root) = std::env::var_os(CHILD_ROOT) {
+            let root = std::path::PathBuf::from(root);
+            std::fs::write(root.join("ready"), b"calling icon loader").unwrap();
+            assert!(load_game_icon("Fifo", "/apps/fifo.AppImage", "").is_none());
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("icon-fifo-{}", std::process::id()));
+        let cache = root.join(".config/CorkyTux/icons");
+        std::fs::create_dir_all(&cache).unwrap();
+        let fifo = cache.join("fifo-appimage.png");
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        // SAFETY: path is a live NUL-terminated string; mkfifo retains no pointer.
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "ui::helpers::tests::inferred_fifo_cache_is_rejected_without_a_writer",
+                "--nocapture",
+            ])
+            .env("HOME", &root)
+            .env("XDG_DATA_DIRS", "")
+            .env(CHILD_ROOT, &root)
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break Some(status);
+            }
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                break None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert!(root.join("ready").is_file(), "child did not reach the icon loader");
+        assert!(status.is_some_and(|s| s.success()), "inferred FIFO blocked waiting for a writer or child failed");
+    }
+
+    #[test]
+    fn gamepad_icon_fallback_decodes_cache_after_an_invalid_explicit_icon() {
+        let root = std::env::temp_dir()
+            .join(format!("gamepad-icon-decode-{}", std::process::id()));
+        let cache = root.join(".config/CorkyTux/icons");
+        std::fs::create_dir_all(&cache).unwrap();
+        let broken = root.join("broken.png");
+        std::fs::write(&broken, b"invalid icon").unwrap();
+        let cached = cache.join("openchamber.png");
+        // Content sniffing also supports SVGs emitted under a PNG output filename.
+        std::fs::write(&cached, include_bytes!("../../assets/icons/hicolor/symbolic/ui/corkytux-window-close-symbolic.svg")).unwrap();
+        let mut candidates = vec![broken];
+        candidates.extend(crate::ui::icons::game_icon_candidates(
+            &root, &[], "OpenChamber-2.5.2-linux-x86_64",
+            "/apps/OpenChamber-2.5.2-linux-x86_64.AppImage",
+        ));
+        let (path, image) = candidates.iter().find_map(|path| {
+            load_pixbuf(&path.to_string_lossy()).map(|image| (path, image))
+        }).expect("cached icon must survive a missing/invalid configured icon");
+        assert_eq!(path, &cached);
+        assert!(image.width() > 0 && image.height() > 0);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     fn hex_luminance(hex: &str) -> f64 {
         let c = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0) as f64 / 255.0;

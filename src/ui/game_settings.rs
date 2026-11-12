@@ -242,10 +242,11 @@ fn build_view_tab(
     icon_preview.set_content_fit(gtk::ContentFit::Contain);
     icon_preview.set_can_shrink(true);
     let current_icon = state.config.game_value(game_name, "Icon").unwrap_or_default();
-    if !current_icon.is_empty() {
-        if let Some(tex) = helpers::load_preview(&expand_tilde(&current_icon), 64, 64) {
-            icon_preview.set_paintable(Some(&tex));
-        }
+    let executable = state.config.game_value(game_name, "Executable").unwrap_or_default();
+    if let Some(tex) = helpers::load_preview(&expand_tilde(&current_icon), 64, 64)
+        .or_else(|| helpers::load_game_icon(game_name, &executable, &current_icon))
+    {
+        icon_preview.set_paintable(Some(&tex));
     }
     let icon_entry = gtk::Entry::new();
     icon_entry.set_text(&current_icon);

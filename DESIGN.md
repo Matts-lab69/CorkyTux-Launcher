@@ -616,6 +616,13 @@ this 900px minimum; its existing behavior and threshold remain unchanged. This
 700px breakpoint is retained, not moved to the new minimum. Actual GTK content
 requisitions can exceed the requested minimum; requested size is not allocation.
 
+Local game icon display tries configured artwork first, then extraction/artwork
+cache aliases and executable-matching desktop metadata. Stable AppImage names
+are accepted alongside versioned labels. This only reads existing images and
+does not extract executables or rewrite user configuration/desktop entries.
+New menu shortcuts reuse the same backend source policy if their configured Icon
+is empty; existing shortcuts are not regenerated automatically.
+
 Horizontal sliders adjust immediately with Left/Right and commit on confirm or
 leaving the slider; Up/Down navigate to adjacent rows. Entry/SearchEntry/TextView
 are single semantic targets, never separate internal GtkText destinations. Form
