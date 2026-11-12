@@ -42,19 +42,8 @@ Thumbs.db
 docs/ui-before/
 docs/ui-reference/
 
-# Local notes and process documents (not distributed)
-AGENTS.md
-PENDIENTES.md
+# Git archives
 *.bundle
-ai-notes/
-ai-notes-backup/
-
-# Internal planning and maintenance documents (not distributed)
-ROADMAP.md
-docs/BRANCH_PROTECTION.md
-docs/UPDATER_NOTES.md
-docs/perf-audit.md
-docs/RELEASE_3.2.0.md
 
 # Local verification records
 /verificacion-manual.md
