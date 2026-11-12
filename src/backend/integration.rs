@@ -1826,16 +1826,16 @@ mod tests {
     }
 
     #[test]
-    fn sgdb_credentials_prefer_environment_then_file_then_legacy_then_builtin() {
+    fn sgdb_credentials_prefer_environment_then_file_then_legacy() {
         let path = std::env::temp_dir().join(format!("corky-sgdb-sources-{}", std::process::id()));
         std::fs::write(&path, " file-value\n").unwrap();
         assert_eq!(IntegrationManager::sgdb_key_from_sources(Some(" env-value "), Some(&path), "legacy-value", Some("builtin-value")), Some("env-value".into()));
         assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "legacy-value", Some("builtin-value")), Some("file-value".into()));
         std::fs::write(&path, "  \n").unwrap();
         assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), " legacy-value ", Some("builtin-value")), Some("legacy-value".into()));
-        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some("builtin-value")), Some("builtin-value".into()));
+        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some("builtin-value")), None);
         std::fs::remove_file(&path).unwrap();
-        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some(" builtin-value ")), Some("builtin-value".into()));
+        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some(" builtin-value ")), None);
         assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some("   ")), None);
         assert_eq!(IntegrationManager::sgdb_key_from_sources(None, None, "", None), None);
     }
