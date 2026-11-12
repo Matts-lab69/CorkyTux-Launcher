@@ -345,7 +345,7 @@ official registry.
 - Removing or renaming a command requires a plugin major version and a
   deprecation window in the registry metadata.
 
-## 8. Security checklist for reviewers
+## 8. Security review checklist
 
 - Manifest id matches its directory.
 - `entry` is a regular file, not a symlink, and has no traversal.
