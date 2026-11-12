@@ -476,6 +476,10 @@ Wheels, flight sticks and devices without an SDL mapping are ignored.
   invalid or zero values use the defaults.
 - There is no on-screen keyboard yet, so search fields and paths cannot be
   typed with a controller (#88).
+- Guide/PS remains unbound. Steam/Game Bar or the desktop compositor may intercept
+  it before the application receives it; CorkyTux does not grab this button or
+  compete with host shortcuts. This conservative policy can be revisited later
+  without changing existing controller mappings or user configuration.
 
 ---
 
