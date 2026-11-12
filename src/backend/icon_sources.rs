@@ -127,6 +127,45 @@ mod tests {
     use super::{game_icon_candidates, game_icon_stems, icon_search_paths};
 
     #[test]
+    fn data_roots_ignore_empty_and_relative_xdg_paths() {
+        let _lock = crate::test_env::lock();
+        struct RestoreXdg(Vec<(&'static str, Option<std::ffi::OsString>)>);
+        impl Drop for RestoreXdg {
+            fn drop(&mut self) {
+                for (key, value) in &self.0 {
+                    match value {
+                        Some(value) => std::env::set_var(key, value),
+                        None => std::env::remove_var(key),
+                    }
+                }
+            }
+        }
+        let _restore = RestoreXdg(
+            ["XDG_DATA_HOME", "XDG_DATA_DIRS"].into_iter()
+                .map(|key| (key, std::env::var_os(key))).collect(),
+        );
+        let home = std::path::Path::new("/home/example");
+        for (data_home, data_dirs, expected) in [
+            (None, None, vec!["/home/example/.local/share", "/usr/local/share", "/usr/share"]),
+            (Some(""), Some(""), vec!["/home/example/.local/share", "/usr/local/share", "/usr/share"]),
+            (Some("relative/home"), Some("relative/data:.:.."), vec!["/home/example/.local/share", "/usr/local/share", "/usr/share"]),
+            (Some("/custom/data"), Some(":"), vec!["/custom/data", "/usr/local/share", "/usr/share"]),
+            (Some("/custom/data"), Some("/opt/data::relative:/usr/share"), vec!["/custom/data", "/opt/data", "/usr/share"]),
+            (Some(""), Some("/first:/second"), vec!["/home/example/.local/share", "/first", "/second"]),
+        ] {
+            for (key, value) in [("XDG_DATA_HOME", data_home), ("XDG_DATA_DIRS", data_dirs)] {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+            let expected: Vec<std::path::PathBuf> = expected.into_iter().map(Into::into).collect();
+            assert_eq!(super::data_roots(home), expected,
+                       "invalid XDG roots must never cause a current-directory metadata search");
+        }
+    }
+
+    #[test]
     fn desktop_metadata_fifo_and_symlink_never_wait_for_a_writer() {
         const CHILD_ROOT: &str = "CORKYTUX_DESKTOP_FIFO_REGRESSION_ROOT";
         const TEST: &str = "backend::icon_sources::tests::desktop_metadata_fifo_and_symlink_never_wait_for_a_writer";
