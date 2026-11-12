@@ -129,8 +129,8 @@ impl DetailsPanel {
         play_box.set_halign(gtk::Align::Center);
         let play_icon = gtk::Image::new();
         play_icon.set_pixel_size(16);
-        // Tamano 16 explicito: `pixel_size` no escala un paintable, asi que la
-        // textura se pide ya a esa medida (los PNG del bundle son de 20x20).
+        // Request a 16px texture explicitly: pixel_size does not scale a
+        // paintable, and the bundled PNGs are 20x20.
         if let Some(tex) = helpers::load_themed_icon_sized("play", is_dark, 16) {
             play_icon.set_paintable(Some(&tex));
         } else {
