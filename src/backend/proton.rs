@@ -163,7 +163,7 @@ fn steam_launch_environment(cmd: &Command) -> String {
 }
 
 /// Parseo de argsBefore/argsAfter respetando comillas simples y dobles.
-/// Paridad con ProtonManager.cpp (parser manual char-a-char, sin escapes).
+/// Parity with ProtonManager.cpp (manual character parser, without escapes).
 fn split_quoted_args(input: &str) -> Vec<String> {
     let mut parsed = Vec::new();
     let mut current = String::new();
@@ -570,9 +570,9 @@ impl ProtonManager {
         None
     }
 
-    /// Aislamiento Bottles-style (Fase 4): envuelve `cmd` en bwrap cuando
-    /// el juego lo pide (clave `Isolated`) o el global `IsolateNewPrefixes`
-    /// lo marca por defecto. `rw`: prefijo compat + carpeta del juego +
+    /// Bottles-style isolation (phase 4): wrap `cmd` in bwrap when requested
+    /// by the game (`Isolated`) or enabled by default through the global
+    /// `IsolateNewPrefixes`. `rw`: compatibility prefix + game directory +
     /// extras; `ro`: Proton/umu/runtimes/bins; `chdir`: sandbox cwd.
     /// Without bwrap I still launch, but loudly (log + Debug header):
     /// never a silent failure, never a silent downgrade.
@@ -870,8 +870,8 @@ impl ProtonManager {
         let mut found: Vec<PathBuf> = Vec::new();
         for root in Self::steam_roots(home) {
             for dir in ["ubuntu12_32", "ubuntu12_64"] {
-                // `is_file` y no `exists`: el `.so` suele ser un enlace, y lo
-                // que importa es que se pueda pre-cargar.
+                // Use `is_file`, not `exists`: the .so is often a symlink;
+                // what matters is that its target can be preloaded.
                 let so = root.join(dir).join("gameoverlayrenderer.so");
                 if so.is_file() && !found.contains(&so) {
                     found.push(so);
@@ -907,7 +907,7 @@ impl ProtonManager {
             .unwrap_or_else(|| home.join(".steam/steam"))
     }
 
-    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` del usuario actual.
+    /// The current user's `STEAM_COMPAT_CLIENT_INSTALL_PATH`.
     pub fn steam_client_path(&self) -> PathBuf {
         Self::steam_client_path_for(&home_dir().unwrap_or_default())
     }
@@ -1196,16 +1196,15 @@ impl ProtonManager {
             PathBuf::from("/lib"),
         ];
         if bits == 32 {
-            // Las bibliotecas de 32 bits viven en un subdirectorio con el
-            // sufijo del multiarch (`lib32`, `libx32`) en Fedora/openSUSE y en
-            // los multilib de Arch; en Debian lo hacen en el mismo multiarch,
-            // que ya esta en la lista.
+            // On Fedora/openSUSE and Arch multilib, 32-bit libraries live
+            // below the multiarch suffix (`lib32`, `libx32`). Debian keeps
+            // them in the same multiarch directory already listed above.
             let short = multiarch.split('-').next().unwrap_or("x86_64");
             dirs.push(base.join("lib32"));
             dirs.push(base.join("libx32"));
             dirs.push(base.join(format!("lib{}", short)));
         }
-        // `/run/current-system/sw/lib` es la biblioteca del sistema en NixOS.
+        // `/run/current-system/sw/lib` is the system library directory on NixOS.
         dirs.push(PathBuf::from("/run/current-system/sw/lib"));
         dirs
     }
@@ -1230,14 +1229,12 @@ impl ProtonManager {
         false
     }
 
-    /// Soporte 32/64 bits de un componente, derivado de la arquitectura del
-    /// host y de las rutas del sistema.
+    /// Component 32/64-bit support derived from host architecture and system paths.
     ///
-    /// `installed64`/`installed32` describen la **biblioteca**, no el
-    /// ejecutable. En aarch64 `installed32` es `false` por construccion: no hay
-    /// distribuciones ARM de 32 bits con las que contar, y fingir lo contrario
-    /// seria peor que no medirlo. En x86 y x86_64 si se busca de verdad, porque
-    /// ahi el soporte de 32 bits varia segun como se instalo el paquete.
+    /// `installed64`/`installed32` describe the **library**, not its executable.
+    /// On aarch64, `installed32` is false by policy: no 32-bit ARM distribution
+    /// is assumed available. On x86 and x86_64, probe the actual library paths
+    /// because 32-bit support depends on how the package was installed.
     fn component_bits(lib: &str) -> (bool, bool) {
         let arch = std::env::consts::ARCH;
         let host_is_64 = matches!(arch, "x86_64" | "aarch64" | "powerpc64" | "riscv64" | "s390x");
@@ -1250,10 +1247,10 @@ impl ProtonManager {
     /// C++ graphicsComponentStatus parity: availability + 64/32-bit install
     /// state + the game's own architecture (from its PE header).
     pub fn component_status(&self, which: &str, exe: &str) -> ComponentStatus {
-        // `gamemoderun` es el cliente que CorkyTux inyecta al lanzar el juego.
-        // `gamemoded` es el daemon: que este instalado no significa que GameMode
-        // se aplique, porque sin el socket de usuario activo no ocurre nada.
-        // Sondear el daemon hacia que las dos tarjetas de la UI discreparas.
+        // `gamemoderun` is the client injected when launching the game.
+        // An installed `gamemoded` daemon does not prove GameMode applies:
+        // it also requires an active user socket. Probing the daemon made
+        // the two UI cards disagree.
         let (bin, lib) = match which {
             "mangohud" => ("mangohud", "libMangoHud.so"),
             _ => ("gamemoderun", "libgamemodeauto.so"),
@@ -1473,8 +1470,8 @@ impl ProtonManager {
         let mut launch_args = game.get("launchargs").cloned().unwrap_or_default();
         let steam_overlay = game.get("steamoverlay").map(|v| v == "true").unwrap_or(false);
         let fake_steam_id = game.get("fakesteamid").cloned().unwrap_or_else(|| "480".to_string());
-        // Epic Online Services auth (Fall Guys & co. abort with "no se
-        // encontró un código de intercambio" without it). Same as Heroic: a
+        // Epic Online Services auth (Fall Guys and similar games abort with
+        // a missing exchange-code message without it). Same as Heroic: a
         // fresh exchange code passed as launch args. The explicit toggle wins;
         // otherwise it's auto-on for Heroic Epic games.
         let eos_on = match game.get("eosauth").map(|v| v.as_str()) {
@@ -1647,7 +1644,7 @@ impl ProtonManager {
             }
         }
 
-        // steamapps dir (para STEAM_COMPAT_LIBRARY_PATHS): padre de "common"
+        // steamapps directory for STEAM_COMPAT_LIBRARY_PATHS: parent of "common".
         let steamapps_dir = if !main_path.is_empty() {
             Path::new(&main_path).parent().and_then(|p| p.parent()).map(|p| p.to_path_buf())
         } else {
@@ -1710,7 +1707,7 @@ impl ProtonManager {
             final_cmd.env("STEAM_COMPAT_DATA_PATH", &compat_data_path);
             final_cmd.env("STEAM_COMPAT_CLIENT_INSTALL_PATH", &steam_client);
             final_cmd.env("STEAM_COMPAT_INSTALL_PATH", &install_path);
-            // CachyOS Proton solo da DXVK d3d8 si se pide en compat_config
+            // CachyOS Proton exposes DXVK d3d8 only when requested in compat_config.
             final_cmd.env("STEAM_COMPAT_CONFIG", "dxvkd3d8");
             if let Some(dir) = &steamapps_dir {
                 final_cmd.env("STEAM_COMPAT_LIBRARY_PATHS", dir);
@@ -1854,7 +1851,7 @@ impl ProtonManager {
             );
         }
 
-        // Sandbox Bottles-style (Fase 4): el flujo no aislado no cambia.
+        // Bottles-style sandbox (phase 4): leave the non-isolated flow unchanged.
         if let Some(rt) = &steam_rt_sh {
             if let Some(p) = rt.parent() {
                 if p.is_dir() {
@@ -2182,9 +2179,9 @@ impl ProtonManager {
         let proton_dir = self.imp().session_proton_dir.borrow().clone();
         if !prefix.is_empty() && !proton_dir.is_empty() {
             if let Some(ws) = find_wineserver(Path::new(&proton_dir)) {
-                // Limite en proceso: `timeout(1)` no esta garantizado en
-                // NixOS ni en contenedores minimos, y sin el no se ejecuta
-                // `wineserver -k`, con lo que el arbol de Wine sobrevive.
+                // Enforce the timeout in-process: `timeout(1)` is not guaranteed
+                // on NixOS or minimal containers. Depending on it could prevent
+                // `wineserver -k` from running and leave the Wine tree alive.
                 let _ = super::plugin_process::output_with_timeout(
                     Command::new(ws).arg("-k").env("WINEPREFIX", &prefix),
                     std::time::Duration::from_secs(5),
@@ -3249,8 +3246,8 @@ impl ProtonManager {
             }
             wrapped = gm;
         }
-        // Paridad con run_game / ProtonManager.cpp: MANGOHUD=1 por env var,
-        // no wrapper de proceso (evita romper el orden gamemoderun -> mangohud).
+        // Match run_game / ProtonManager.cpp: MANGOHUD=1 through the environment,
+        // not a process wrapper, preserving the gamemoderun -> mangohud order.
         if game.get("mangohud").map(|v| v == "true").unwrap_or(false) {
             wrapped.env("MANGOHUD", "1");
         }
@@ -3728,10 +3725,10 @@ impl ProtonManager {
             prefix.join("pfx")
         };
 
-        // C++ parity: los tools de Wine (winecfg/taskmgr/control/explorer/cmd)
-        // se ejecutan con el binario wine/wine64 real dentro del Proton,
-        // NO con el script "proton" (que no soporta esos subcomandos).
-        // Se busca en el dir instalado detectado + todos los proton paths.
+        // C++ parity: Wine tools (winecfg/taskmgr/control/explorer/cmd) use the
+        // actual wine/wine64 binary inside Proton, not the "proton" script,
+        // which does not support those subcommands. Search the detected install
+        // directory and every configured Proton path.
         let mut candidate_dirs: Vec<PathBuf> = self
             .installed_proton_entries()
             .iter()
@@ -3937,12 +3934,11 @@ impl ProtonManager {
             if tag.is_empty() {
                 continue;
             }
-            // Sabores por asset: CachyOS publica x86_64 y x86_64_v3 en el
-            // mismo release (verificado contra la API real). El codigo
-            // anterior se quedaba con el primero y el v3 no existia en el
-            // catalogo. El tag del v3 lleva sufijo para que la UI muestre
-            // dos filas distinguibles; la extraccion no colisiona porque
-            // cada tar trae su propio top-level distinto (verificado).
+            // Asset variants: CachyOS publishes x86_64 and x86_64_v3 in the same
+            // release (checked against the API). Previously only the first
+            // variant appeared in the catalog. Suffix the v3 tag so the UI can
+            // distinguish the two rows. Their archives have different top-level
+            // directories, so extraction paths do not collide.
             let mut dl_normal: Option<String> = None;
             let mut dl_v3: Option<String> = None;
             for asset in rel
@@ -3986,10 +3982,10 @@ impl ProtonManager {
         if releases.is_empty() {
             return Err("No downloadable releases found".into());
         }
-        // Recorte del catalogo. La API viene newest-first, asi que truncar
-        // es quedarse con lo mas reciente: 10 GE, 5 CachyOS + 5 v3. Las
-        // instaladas viven en otra lista (scan de disco) y no se tocan; el
-        // auto-install de GE toma .next() (la mas nueva) y no se afecta.
+        // Limit the newest-first catalog to the most recent releases:
+        // 10 GE, 5 CachyOS and 5 v3. Installed versions come from a separate
+        // filesystem list and are unaffected. GE automatic installation still
+        // takes .next(), the newest release.
         if source == "ge" {
             releases.truncate(10);
         } else if source == "cachyos" {

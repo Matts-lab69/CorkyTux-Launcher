@@ -1772,8 +1772,8 @@ mod tests {
 
     #[test]
     fn remove_dir_recursive_tempdir() {
-        // IntegrationManager::new() lee la config (HOME) en constructed(), así
-        // que tomo el lock de env como el resto de tests que tocan HOME.
+        // IntegrationManager::new() reads HOME configuration in constructed();
+        // take the environment lock like every other test that touches HOME.
         let _g = crate::test_env::lock();
         let base = std::env::temp_dir().join("corky_int_rm");
         let _ = std::fs::remove_dir_all(&base);
@@ -1784,7 +1784,7 @@ mod tests {
         m.remove_dir_recursive(&base.display().to_string()).unwrap();
         assert!(!base.exists(), "el árbol temporal debe borrarse por completo");
 
-        // Idempotente sobre una ruta inexistente (no error).
+        // Removing an absent path is idempotent and does not fail.
         m.remove_dir_recursive(&base.display().to_string()).unwrap();
         assert!(!base.exists());
     }
