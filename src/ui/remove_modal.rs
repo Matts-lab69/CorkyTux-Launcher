@@ -1004,9 +1004,9 @@ pub fn show_remove_modal(
 
     let chk_files = gtk::CheckButton::with_label("Remove game files from disk");
     inner.append(&chk_files);
-    // Guard: the folder must be the game's own folder (with its executable
-    // inside), never the shared base or an ancestor. If unsafe, deletion is
-    // blocked and Remove only unregisters the game.
+    // Guard: require safe paths and no overlap with protected roots or other
+    // installs. Validate the recorded executable when present, including games
+    // represented by their folder. If unsafe, Remove only unregisters the game.
     let warn_files = gtk::Label::new(None);
     warn_files.set_wrap(true);
     warn_files.set_halign(gtk::Align::Start);
