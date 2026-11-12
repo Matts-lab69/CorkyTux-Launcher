@@ -2332,6 +2332,10 @@ impl Drop for ApiUrlGuard {
 }
 
 #[cfg(test)]
+#[path = "self_update_http_status_tests.rs"]
+mod http_status_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
