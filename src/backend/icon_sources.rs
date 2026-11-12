@@ -30,10 +30,19 @@ pub fn icon_search_paths(
 }
 
 pub fn data_roots(home: &std::path::Path) -> Vec<std::path::PathBuf> {
-    let mut roots = vec![std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from)
-        .unwrap_or_else(|| home.join(".local/share"))];
-    roots.extend(std::env::split_paths(&std::env::var_os("XDG_DATA_DIRS")
-        .unwrap_or_else(|| "/usr/local/share:/usr/share".into())));
+    let data_home = std::env::var_os("XDG_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .unwrap_or_else(|| home.join(".local/share"));
+    let data_dirs = std::env::var_os("XDG_DATA_DIRS").unwrap_or_default();
+    let mut system_roots: Vec<_> = std::env::split_paths(&data_dirs)
+        .filter(|path| path.is_absolute())
+        .collect();
+    if system_roots.is_empty() {
+        system_roots.extend(["/usr/local/share", "/usr/share"].map(std::path::PathBuf::from));
+    }
+    let mut roots = vec![data_home];
+    roots.extend(system_roots);
     roots
 }
 
