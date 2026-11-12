@@ -141,9 +141,6 @@ jobs:
       - name: Build the tarball
         env:
           TAG: ${{ steps.tag.outputs.tag }}
-          # Optional shared SteamGridDB fallback embedded with option_env!.
-          # An empty secret leaves it undefined and the build still works.
-          CORKYTUX_SGDB_BUILTIN_KEY: ${{ secrets.CORKYTUX_SGDB_BUILTIN_KEY }}
           # Same plugin checkout the local release uses: build-release.sh
           # bundles the tracked files of the seven plugins from here.
           CORKYTUX_PLUGINS_SOURCE: ${{ github.workspace }}/plugins-src

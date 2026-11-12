@@ -426,9 +426,11 @@ pub fn present_sgdb_key_notice(
     let dialog = adw::AlertDialog::new(
         Some("SteamGridDB key not configured"),
         Some(
-            "Cover art from SteamGridDB is skipped while no API key is set.\n\n\
-             Add ~/.config/CorkyTux/steamgriddb.key or set \
-             CORKYTUX_STEAMGRIDDB_API_KEY. See README, Configuration.",
+            "SteamGridDB cover art is optional; games and other artwork sources still work.\n\n\
+             Obtain your own key at https://www.steamgriddb.com/profile/preferences/api. \
+             Save it in Settings > Integrations > SteamGridDB artwork, set \
+             CORKYTUX_STEAMGRIDDB_API_KEY, or use \
+             ~/.config/CorkyTux/steamgriddb.key with permissions 0600.",
         ),
     );
     dialog.add_response("close", "OK");

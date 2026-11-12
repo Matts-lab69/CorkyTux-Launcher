@@ -59,27 +59,19 @@ The build produces:
 `webdriver_login` is the Epic/GOG WebDriver login helper. The release
 profile enables LTO and strip.
 
-### Optional SteamGridDB fallback
+### SteamGridDB credentials
 
-The binary can embed a fallback SteamGridDB key for users who have none of
-their own. It is read at compile time and is entirely optional:
+Builds do not accept or embed a shared SteamGridDB credential:
 
 ```bash
 cargo build --release --locked --bins
 ```
 
-For a build with the shared fallback, supply `CORKYTUX_SGDB_BUILTIN_KEY` securely
-in the exported environment before that command. Do not put its value in a
-command, file, build flag or shell history.
-
-Leave the variable unset for a normal build: the launcher still compiles and
-simply skips SteamGridDB. `release/build-release.sh` inherits the variable when
-it is already exported, and `.github/workflows/release.yml` passes the
-`CORKYTUX_SGDB_BUILTIN_KEY` secret to the build step only. Never commit a key.
-A compiled fallback can be extracted from the binary, so treat it as a shared
-fallback rather than a secret. At runtime each user's
-`CORKYTUX_STEAMGRIDDB_API_KEY`, `steamgriddb.key` file or `IntegrationApiKey`
-setting wins over it.
+At runtime, credentials come from `CORKYTUX_STEAMGRIDDB_API_KEY`, the user's
+private `steamgriddb.key` file, or the saved `IntegrationApiKey` setting, in that
+order. Without one, only SteamGridDB artwork is skipped. No build secret or
+packaging option enables a shared fallback. See README, SteamGridDB artwork,
+for private-file permissions and personal-key setup.
 
 ## 5. Run without installing
 
@@ -115,8 +107,7 @@ To include the plugins from a clean, local checkout without network downloads:
 CORKYTUX_PLUGINS_SOURCE=/path/to/CorkyTux-Plugins ./release/build-release.sh v3.2.0
 ```
 
-The exported `CORKYTUX_SGDB_BUILTIN_KEY`, if supplied securely, is inherited by
-this command without being printed. The tarball has one root directory,
+The tarball has one root directory,
 `corkytux-3.2.0/`, containing the binaries, assets, bundled plugins, installers,
 desktop entry, icon, LICENSE, README, CREDITS and THIRD-PARTY documentation.
 The packaged desktop entry is `com.corkytux.CorkyTux.desktop`; its `Icon` and

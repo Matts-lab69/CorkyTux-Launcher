@@ -49,15 +49,9 @@ SHA-256/SHA-512 checksum file.
 
 ## SteamGridDB credentials
 
-The launcher compiles without a SteamGridDB key and works without one;
-SteamGridDB artwork is optional. A build may optionally embed a shared fallback
-key with `CORKYTUX_SGDB_BUILTIN_KEY` (see `docs/BUILD.md`). Such a key is
-extractable from the binary, so it is a shared fallback, never a private
-secret. Release 3.2.0 deliberately reverses PR #22's no-embedded-key policy:
-packagers can supply the fallback at compilation through the named environment
-variable. It remains extractable from the distributed binary. The local
-candidate compiled without the variable has no embedded fallback.
-Credentials are resolved at runtime in this order:
+SteamGridDB artwork is optional. Builds contain no shared credential and accept
+no compile-time credential input. User credentials are resolved at runtime in
+this order:
 
 1. `CORKYTUX_STEAMGRIDDB_API_KEY` environment variable, if nonblank.
 2. The private file named by `CORKYTUX_STEAMGRIDDB_KEY_FILE`, or by default
@@ -65,11 +59,12 @@ Credentials are resolved at runtime in this order:
    outside the repository, and restrict it to the account owner (`0600`).
 3. The existing `IntegrationApiKey` setting in the user's private `Launcher.ini`,
    for compatibility when no environment value or private key file exists.
-4. The fallback compiled into the binary, when the build embedded one.
 
 A missing or blank private file falls through to the next source, so an empty
-file cannot hide a working fallback. An unreadable private file warns without
-printing contents and also falls through. Whichever value is selected is
+file cannot hide a saved setting. The reader requires a user-owned regular file
+with one link and does not follow symlinks. It sets permissions to `0600` before
+reading; failures warn without printing contents and allow the saved setting
+to answer. Reads are limited to 4096 UTF-8 bytes. Whichever value is selected is
 registered with the redactor before use, so it cannot appear in logs or error
 messages. No credential belongs in source, build flags, commits or logs. Rotate
 credentials through the user's private configuration, not by changing a source

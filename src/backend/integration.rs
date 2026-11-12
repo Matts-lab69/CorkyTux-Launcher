@@ -5,6 +5,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[cfg(test)]
+#[path = "integration_user_key_tests.rs"]
+mod user_key_tests;
+
 fn home_dir() -> Option<PathBuf> {
     let home = home_dir_from(std::env::var_os("HOME"));
     if home.is_none() {
@@ -287,59 +291,84 @@ impl IntegrationManager {
         let _ = Command::new("xdg-open").arg(url).spawn();
     }
 
-    /// SteamGridDB credentials are resolved at runtime, with an optional
-    /// fallback compiled into the binary. Without any of them the artwork
-    /// lookup skips SteamGridDB instead of sending an empty bearer token and
-    /// failing silently.
+    /// SteamGridDB uses runtime user credentials only. Without one, artwork
+    /// lookup skips this provider without sending an empty bearer token.
     fn key_or_none(value: &str) -> Option<&str> {
         let value = value.trim();
         if value.is_empty() { None } else { Some(value) }
     }
 
-    /// Fallback key baked in by the packager. Absent unless the build exported
-    /// `CORKYTUX_SGDB_BUILTIN_KEY`; a compiled key is extractable from the
-    /// binary, so it is a shared fallback and never a user's private secret.
-    fn builtin_sgdb_key() -> Option<&'static str> {
-        option_env!("CORKYTUX_SGDB_BUILTIN_KEY").and_then(Self::key_or_none)
-    }
-
-    /// Reads the private key file. A missing or blank file means "not
-    /// configured here" and lets the next source answer, so a stray empty file
-    /// cannot hide a working builtin fallback. Read errors warn by name only.
+    /// Read a user-owned regular file through one descriptor, hardening its
+    /// permissions before reading. Missing or blank files allow the saved
+    /// setting to answer. Unsafe/unreadable files warn without exposing values.
     fn key_from_private_file(path: &Path) -> Option<String> {
-        match fs::read_to_string(path) {
-            Ok(value) => Self::key_or_none(&value).map(str::to_owned),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        use std::io::Read;
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+
+        let file = match fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
             Err(_) => {
                 eprintln!("SteamGridDB key file cannot be read; checking the next source");
-                None
+                return None;
             }
+        };
+        let metadata = match file.metadata() {
+            Ok(metadata) => metadata,
+            Err(_) => {
+                eprintln!("SteamGridDB key file metadata cannot be read; checking the next source");
+                return None;
+            }
+        };
+        // SAFETY: geteuid has no pointer arguments and only reads process identity.
+        let owner = unsafe { libc::geteuid() };
+        if !metadata.is_file() || metadata.uid() != owner || metadata.nlink() != 1 {
+            eprintln!("SteamGridDB key file must be a user-owned regular file with one link");
+            return None;
         }
+        if metadata.permissions().mode() & 0o7777 != 0o600
+            && file
+                .set_permissions(fs::Permissions::from_mode(0o600))
+                .is_err()
+        {
+            eprintln!(
+                "SteamGridDB key file permissions cannot be set to 0600; checking the next source"
+            );
+            return None;
+        }
+        let mut value = String::new();
+        if file.take(4097).read_to_string(&mut value).is_err() || value.len() > 4096 {
+            eprintln!("SteamGridDB key file must contain at most 4096 UTF-8 bytes");
+            return None;
+        }
+        Self::key_or_none(&value).map(str::to_owned)
     }
 
-    /// Order: environment, private file, Launcher.ini, compiled fallback.
-    /// The chosen value is registered with the redactor, so it can never reach
-    /// a log line or an error message even when a request echoes it back.
+    /// Order: environment, private file, Launcher.ini. Register the selected
+    /// credential for redaction. The fourth slot is ignored for compatibility
+    /// with existing callers; it cannot provide a credential in any build.
     fn sgdb_key_from_sources(
         environment: Option<&str>,
         private_file: Option<&Path>,
         legacy: &str,
-        builtin: Option<&str>,
+        _unused_source: Option<&str>,
     ) -> Option<String> {
         let selected = Self::key_or_none(environment.unwrap_or_default())
             .map(str::to_owned)
             .or_else(|| private_file.and_then(Self::key_from_private_file))
-            .or_else(|| Self::key_or_none(legacy).map(str::to_owned))
-            .or_else(|| builtin.and_then(Self::key_or_none).map(str::to_owned));
+            .or_else(|| Self::key_or_none(legacy).map(str::to_owned));
         if let Some(key) = selected.as_deref() {
             super::redact::register_secret(key);
         }
         selected
     }
 
-    /// Credentials are resolved at runtime; the compiled fallback only answers
-    /// when every runtime source is silent. The private file overrides the
-    /// older Launcher.ini setting without copying its value.
+    /// Credentials are resolved at runtime. The private file overrides the
+    /// saved Launcher.ini setting without copying its value.
     pub fn user_sgdb_key() -> Option<String> {
         let environment = std::env::var("CORKYTUX_STEAMGRIDDB_API_KEY").ok();
         let private_file = std::env::var_os("CORKYTUX_STEAMGRIDDB_KEY_FILE")
@@ -353,7 +382,7 @@ impl IntegrationManager {
             environment.as_deref(),
             private_file.as_deref(),
             &legacy,
-            Self::builtin_sgdb_key(),
+            None,
         )
     }
 
@@ -1797,16 +1826,16 @@ mod tests {
     }
 
     #[test]
-    fn sgdb_credentials_prefer_environment_then_file_then_legacy_then_builtin() {
+    fn sgdb_credentials_prefer_environment_then_file_then_legacy() {
         let path = std::env::temp_dir().join(format!("corky-sgdb-sources-{}", std::process::id()));
         std::fs::write(&path, " file-value\n").unwrap();
         assert_eq!(IntegrationManager::sgdb_key_from_sources(Some(" env-value "), Some(&path), "legacy-value", Some("builtin-value")), Some("env-value".into()));
         assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "legacy-value", Some("builtin-value")), Some("file-value".into()));
         std::fs::write(&path, "  \n").unwrap();
         assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), " legacy-value ", Some("builtin-value")), Some("legacy-value".into()));
-        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some("builtin-value")), Some("builtin-value".into()));
+        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some("builtin-value")), None);
         std::fs::remove_file(&path).unwrap();
-        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some(" builtin-value ")), Some("builtin-value".into()));
+        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some(" builtin-value ")), None);
         assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some("   ")), None);
         assert_eq!(IntegrationManager::sgdb_key_from_sources(None, None, "", None), None);
     }

@@ -110,24 +110,6 @@ fn registered_secrets() -> &'static RwLock<Vec<String>> {
     REGISTRY.get_or_init(|| RwLock::new(Vec::new()))
 }
 
-/// The built-in SteamGridDB key baked in at compile time, if any. Cached
-/// in an `OnceLock`; no IO beyond the compile-time environment the
-/// compiler sees.
-fn builtin_secret() -> Option<&'static str> {
-    static BUILTIN: OnceLock<Option<String>> = OnceLock::new();
-    BUILTIN
-        .get_or_init(|| {
-            let value = option_env!("CORKYTUX_SGDB_BUILTIN_KEY")?;
-            let trimmed = value.trim();
-            if trimmed.chars().count() >= MIN_SECRET_LEN {
-                Some(trimmed.to_string())
-            } else {
-                None
-            }
-        })
-        .as_deref()
-}
-
 /// Register one secret value to mask everywhere bare (without any
 /// label), as inside error messages. Idempotent and thread-safe. Values
 /// that are empty, blank or shorter than [`MIN_SECRET_LEN`] characters
@@ -164,12 +146,6 @@ pub fn redact_secrets(text: &str) -> String {
             Err(poisoned) => poisoned.into_inner(),
         };
         let mut list = list.clone();
-        if let Some(builtin) = builtin_secret() {
-            let builtin = builtin.to_string();
-            if !list.iter().any(|known| *known == builtin) {
-                list.push(builtin);
-            }
-        }
         // Longest first, so prefixes are masked in one pass.
         list.sort_by_key(|secret| Reverse(secret.chars().count()));
         list
