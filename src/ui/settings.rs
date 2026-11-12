@@ -2078,9 +2078,8 @@ pub fn show_settings_modal(
     int_status.add_css_class("time-label");
     integrations_page.append(&int_status);
 
-    // SteamGridDB needs a key. The user's own key always overrides any shared
-    // fallback the build may embed, and with no key at all the artwork lookup
-    // simply skips SteamGridDB; this label says so instead of failing silently.
+    // SteamGridDB uses the user's environment, private file or saved setting.
+    // With no key the artwork lookup skips this provider, not game launching.
     let art_card = gtk::Frame::new(None);
     art_card.add_css_class("page-card");
     let art_col = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -2094,8 +2093,9 @@ pub fn show_settings_modal(
     art_col.append(&art_title);
     let art_desc = gtk::Label::new(Some(
         "Covers and icons for games that Steam or Lutris do not provide. \
-         Your own key is stored in your user config and wins over any \
-         fallback the build may embed.",
+         Get your own key at steamgriddb.com/profile/preferences/api. \
+         The environment and private key file take priority over this saved setting. \
+         No shared key is included.",
     ));
     art_desc.set_halign(gtk::Align::Start);
     art_desc.set_wrap(true);

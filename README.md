@@ -322,18 +322,24 @@ CorkyTux resolves it in this order and stops at the first non-blank value:
    `~/.config/CorkyTux/steamgriddb.key` by default. Store only the key and keep
    the file readable by its owner alone (`0600`).
 3. `IntegrationApiKey` in `~/.config/CorkyTux/Launcher.ini`.
-4. A fallback key a packager embedded at build time, when the binary has one.
 
 A missing or blank file moves on to the next source. Without any key the
 launcher skips SteamGridDB, keeps the other artwork sources, and shows a
-one-time notice explaining where to add one. Release 3.2.0 restores a compile-time
-shared fallback, reversing the no-embedded-key policy of PR #22. Packagers supply
-it with `CORKYTUX_SGDB_BUILTIN_KEY`; builds without that variable still work
-without an embedded key. Anyone with the binary can extract an embedded key,
-so it is not a private secret,
-and each user's own key always wins. See
-[docs/BUILD.md](docs/BUILD.md#optional-steamgriddb-fallback) for building with
-or without it.
+one-time dismissible notice explaining where to add one. Game launching does
+not require SteamGridDB. No shared key or build-time credential is included.
+
+Obtain a personal key from your
+[SteamGridDB API preferences](https://www.steamgriddb.com/profile/preferences/api),
+then save it in **Settings > Integrations > SteamGridDB artwork**, or configure
+the environment/private-file source above. The saved field remains
+`IntegrationApiKey` in the private user configuration.
+
+The optional standalone file must be a regular file owned by the current user,
+not a symlink or hard link. Create it privately (for example, with `umask 077`)
+and store only the key. Before reading, CorkyTux corrects its permissions to
+`0600`; if that fails, it warns without printing the key and tries the saved
+setting. Missing files are not created automatically. Empty or invalid files
+do not prevent the rest of the application from working.
 
 ---
 ## Game icons

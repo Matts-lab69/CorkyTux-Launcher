@@ -601,6 +601,26 @@ Why 48 px (requested range 48-56): it is the thumbnail size of Prism/Modrinth co
 - **`.add-btn:disabled` not implemented**: the matrix of this section specifies that `Installing…` use `.add-btn` + `.add-btn:disabled` at 96 px, but `helpers.rs` only defines `.add-btn` and `.add-btn:hover`. Today a disabled `Install` during installation falls back to the GTK default style and breaks the consistency of the accent capsule. The specified rule would be the same as `.emu-link-action:disabled` (8% accent fill, `{text_muted}` border and text). I do not implement it in this iteration: it touches the plugin catalog and its verification is visual.
 - **96 px widths not implemented**: the matrix reserves 96 px for `Installing…` and for `Retry` in error recovery, but `rebuild_emu_rows` sets 80 px for `Install`/`Remove` and 120 px for the pin. I have to decide the real width of the transient states so the text is not clipped and the column does not jump; it stays pending in the visual matrix.
 
+## SteamGridDB user credentials
+
+SteamGridDB is an optional artwork provider, not a prerequisite for game
+launching. Credential precedence is environment, private key file, then the
+saved `IntegrationApiKey` field. Blank sources are skipped; there is no shared
+credential or build-time fallback. The selected runtime value is registered
+with the log redactor and never included in diagnostic messages.
+
+The optional standalone file is user-created. Its reader opens one descriptor
+without following symlinks or blocking on a FIFO, accepts only a user-owned
+regular file with one link, and sets permissions to `0600` before reading.
+Permission or format failures warn without exposing the value and allow the
+saved setting to answer. Reads are bounded to 4096 UTF-8 bytes. Missing files
+are not created, and no user key is copied between sources.
+
+Settings keeps its masked credential field and explains source precedence.
+The one-time dismissible notice links to the user's SteamGridDB API preferences
+and explains setup through Settings, the environment or a private file. Without
+a key, other artwork sources, cached images and game launching remain available.
+
 ## Gamepad semantic focus and playtime
 
 The base window budget is 900x650 logical pixels. Settings keeps its preferred

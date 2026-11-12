@@ -179,4 +179,12 @@ jobs:
         run: python3 -B -m unittest discover -s release/tests
 
       - name: cargo build --release
+        env:
+          # A fictional retired input must not appear in the executable.
+          CORKYTUX_SGDB_BUILTIN_KEY: SGDB_BUILD_CANARY_NOT_A_CREDENTIAL_20261112
         run: cargo build --release --locked
+
+      - name: Release credential policy
+        env:
+          CORKYTUX_RELEASE_BINARY: target/release/corkytux
+        run: python3 -B -m unittest discover -s release/tests -p test_sgdb_release_credentials.py

@@ -48,9 +48,6 @@ CARGO_ENCODED_RUSTFLAGS+=$'\x1f'"--remap-path-prefix=${HOME}/.rustup=/rustup"
 CARGO_ENCODED_RUSTFLAGS+=$'\x1f'"--remap-path-prefix=${REPO_ROOT}=/build"
 export CARGO_ENCODED_RUSTFLAGS
 
-# An already exported CORKYTUX_SGDB_BUILTIN_KEY is inherited by cargo and
-# embedded by option_env! in src/backend/integration.rs. Absent means a normal
-# build without the fallback. Never echo, log, persist or export the value here.
 cargo build --release --locked --bins
 
 TARGET_DIR="${CARGO_TARGET_DIR:-target}"
