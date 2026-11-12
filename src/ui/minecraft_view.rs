@@ -7802,15 +7802,15 @@ mod tests {
         // Mark beta builds in the dropdown; installation receives the actual
         // unmarked version ID.
         assert_eq!(lv_mark("26.3.0.51-beta"), "26.3.0.51-beta (beta)");
-        assert_eq!(lv_mark("0.19.5"), "0.19.5", "builds estables sin marca");
+        assert_eq!(lv_mark("0.19.5"), "0.19.5", "stable builds remain unmarked");
         assert_eq!(lv_mark("latest"), "latest");
         assert_eq!(lv_unmark("26.3.0.51-beta (beta)"), "26.3.0.51-beta");
-        assert_eq!(lv_unmark("0.19.5"), "0.19.5", "sin marca pasa igual");
+        assert_eq!(lv_unmark("0.19.5"), "0.19.5", "unmarked versions remain unchanged");
         assert_eq!(lv_unmark("latest"), "latest");
     }
 
     #[test]
-    fn legacy_ver_se_borra_en_home_temporal() {
+    fn legacy_version_is_removed_under_temporary_home() {
         // do_delete requires a GTK MinecraftView. Cover its legacy branch
         // (legacy_dir()/versions/<id>) at the path/filesystem primitive level:
         // remove the legacy copy while leaving the instances container intact.
@@ -7820,22 +7820,22 @@ mod tests {
         let leg = legacy_dir();
         assert_eq!(leg,
             root.join(".config/CorkyTux/plugins/minecraft-launcher/instances"),
-            "legacy_dir() debe colgar del HOME temporal");
+            "legacy_dir() must be under the temporary HOME");
         let id = "corky-legacy-inst";
         assert_eq!(inst_container(id, false), leg,
-            "un id no aislado vive en el contenedor legacy");
+            "a non-isolated ID uses the legacy container");
 
         let vdir = leg.join("versions").join(id);
         fs::create_dir_all(&vdir).unwrap();
         fs::write(vdir.join("f.jar"), b"x").unwrap();
 
-        // Rama legacy de do_delete: `if legacy_ver.exists() { remove_dir_all }`.
+        // Legacy branch of do_delete: if legacy_ver exists, remove its directory.
         let legacy_ver = legacy_dir().join("versions").join(id);
         if legacy_ver.exists() {
             fs::remove_dir_all(&legacy_ver).unwrap();
         }
-        assert!(!legacy_ver.exists(), "la copia legacy debe desaparecer");
-        assert!(leg.exists(), "el contenedor legacy NO se borra, sólo la versión");
+        assert!(!legacy_ver.exists(), "the legacy copy must disappear");
+        assert!(leg.exists(), "the legacy container remains; only the version is removed");
 
         let _ = fs::remove_dir_all(&root);
     }

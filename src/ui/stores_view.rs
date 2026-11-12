@@ -3602,7 +3602,7 @@ fi
 "#;
 
     #[test]
-    fn base_por_tienda() {
+    fn base_per_store() {
         let e = StorePageHandle::default_games_dir("epic");
         let g = StorePageHandle::default_games_dir("gog");
         let o = StorePageHandle::default_games_dir("otra");
@@ -3613,9 +3613,9 @@ fi
     }
 
     /// I cover missing legendary only: I block Epic (binary + browser pending),
-    /// GOG solo sin login.
+    /// GOG remains blocked only for login.
     #[test]
-    fn granularidad_falta_solo_legendary() {
+    fn missing_legendary_granularity() {
         let f = MissingDependencies { legendary: true, gogdl: false, chromium: true };
         assert!(f.has_missing());
         assert!(f.tab_blocked("epic"));
@@ -3628,7 +3628,7 @@ fi
 
     /// I cover missing gogdl only: mirror of my Epic case.
     #[test]
-    fn granularidad_falta_solo_gogdl() {
+    fn missing_gogdl_granularity() {
         let f = MissingDependencies { legendary: false, gogdl: true, chromium: true };
         assert!(!f.tab_blocked("epic"));
         assert!(f.tab_blocked("gog"));
@@ -3640,7 +3640,7 @@ fi
     /// I cover missing Chromium only: I block no tab, only login. My
     /// biblioteca de lo ya logueado sigue visible.
     #[test]
-    fn granularidad_falta_solo_chromium() {
+    fn missing_chromium_granularity() {
         let f = MissingDependencies { legendary: false, gogdl: false, chromium: true };
         assert!(f.has_missing());
         assert!(!f.tab_blocked("epic"));
@@ -3651,7 +3651,7 @@ fi
 
     /// I cover everything missing: I block both tabs, three rows in order.
     #[test]
-    fn granularidad_falta_todo() {
+    fn all_dependencies_missing_granularity() {
         let f = MissingDependencies { legendary: true, gogdl: true, chromium: true };
         assert!(f.tab_blocked("epic"));
         assert!(f.tab_blocked("gog"));
@@ -3661,7 +3661,7 @@ fi
     /// I cover ONLY gogdl missing (legendary and Chromium present): one row, GOG
     /// blocked, Epic intact with login.
     #[test]
-    fn granularidad_falta_solo_gogdl_sin_nada_mas() {
+    fn only_gogdl_missing_granularity() {
         let f = MissingDependencies { legendary: false, gogdl: true, chromium: false };
         assert!(f.has_missing());
         assert!(!f.tab_blocked("epic"));
@@ -3674,7 +3674,7 @@ fi
 
     /// I cover ONLY legendary missing: mirror of my GOG case.
     #[test]
-    fn granularidad_falta_solo_legendary_sin_nada_mas() {
+    fn only_legendary_missing_granularity() {
         let f = MissingDependencies { legendary: true, gogdl: false, chromium: false };
         assert!(f.tab_blocked("epic"));
         assert!(!f.tab_blocked("gog"));
@@ -3687,12 +3687,12 @@ fi
     /// mark, so re-entering with something pending asks for my modal again. Only
     /// completing (nothing missing) silences it.
     #[test]
-    fn ciclo_skip_no_silencia_el_modal() {
+    fn skip_cycle_does_not_silence_modal() {
         let pendiente = MissingDependencies { legendary: false, gogdl: true, chromium: true };
-        assert!(pendiente.has_missing(), "antes del skip: modal");
+        assert!(pendiente.has_missing(), "before skip: show modal");
         // I mutate nothing persistent on skip: same value, same modal.
         let tras_skip = pendiente;
-        assert!(tras_skip.has_missing(), "tras el skip: modal de nuevo al reentrar");
+        assert!(tras_skip.has_missing(), "after skip: show modal again on reentry");
         let completo = MissingDependencies::default();
         assert!(!completo.has_missing(), "complete: never again");
         assert!(completo.modal_rows().is_empty());
@@ -3708,7 +3708,7 @@ fi
     /// stub that answers `--probe`). The test must not depend on what the
     /// machine has installed.
     #[test]
-    fn precheck_detecta_borrado_externo_y_dispara_modal() {
+    fn precheck_detects_external_deletion_and_shows_modal() {
         use std::os::unix::fs::PermissionsExt;
 
         // Process env is shared by all test threads: hold the lock for the
@@ -3785,7 +3785,7 @@ fi
 
     /// I test meta_line: I hide each half when empty (optional fields).
     #[test]
-    fn meta_line_oculta_mitades_vacias() {
+    fn metadata_line_hides_empty_halves() {
         assert_eq!(
             super::StorePageHandle::meta_line("RPG", &["Windows".to_string()]),
             "RPG · Windows"
@@ -3806,7 +3806,7 @@ fi
 
     /// I test filtrar_ordenar: I filter by title/category + 3 orders.
     #[test]
-    fn filtrar_ordenar_filtra_y_ordena() {
+    fn filter_and_sort_filters_and_orders() {
         let g = |t: &str, c: &str, inst: bool| super::StoreGame {
             app_id: t.to_string(),
             title: t.to_string(),
@@ -3837,7 +3837,7 @@ fi
 
     /// I test parse_rail_item: full passes, empty drops, partial gets defaults.
     #[test]
-    fn parse_rail_item_completo_minimo_y_descarte() {
+    fn parse_rail_item_full_minimal_and_rejected() {
         let lleno = serde_json::json!({
             "id": "123", "title": "Knytt", "cover": "http://x/y.jpg",
             "price_base": "$9.99", "price_final": "$0.00", "discount": "-100%",
