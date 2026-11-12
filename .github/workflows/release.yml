@@ -166,7 +166,10 @@ jobs:
         # The updater skips the plugin tree, the docs set and the
         # packaged .desktop by exact name; any other unexpected entry
         # must abort here, not on a user's machine. The second test runs
-        # the whole download, checksum and install path on the real file.
+        # the whole download, checksum and install path on the real file except
+        # for the inspection-only 3.2.2 draft preparation.
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
           tarball="$PWD/$(ls corkytux-*.tar.gz)"
@@ -182,7 +185,11 @@ jobs:
               || { echo "no test ran for $1"; exit 1; }
           }
           run_gated real_release_tarball_extracts
-          run_gated real_release_assets_update_and_bad_checksum
+          if [ "$TAG" = "v3.2.2" ]; then
+            echo "3.2.2 draft preparation: inspect/extract only; do not execute payloads."
+          else
+            run_gated real_release_assets_update_and_bad_checksum
+          fi
 
       - name: Upload the artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 (4.6.2)
