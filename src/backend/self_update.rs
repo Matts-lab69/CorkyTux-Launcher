@@ -593,7 +593,28 @@ pub fn get_guarded(
             }
         };
         let status = resp.status().as_u16();
-        if (300..400).contains(&status) {
+        if (300..400).contains(&status)
+            && status != 304
+            && !matches!(status, 301 | 302 | 303 | 307 | 308)
+        {
+            log_redirect_hop(
+                url,
+                redirects_followed as usize,
+                &current,
+                Some(status),
+                None,
+                allowed,
+                "rejected: unsupported HTTP redirect status",
+            );
+            return Err(redirect_error(
+                url,
+                Some(status),
+                &current,
+                "unsupported HTTP redirect status",
+            ));
+        }
+        // Not Modified is a cache response, not a redirect requiring Location.
+        if matches!(status, 301 | 302 | 303 | 307 | 308) {
             let Some(loc) = resp
                 .headers()
                 .get("location")
