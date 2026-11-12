@@ -151,7 +151,7 @@ impl StoresView {
                         filas,
                         helper,
                         move |salida| match salida {
-                            crate::ui::deps_modal::InstallOutcome::TodoOk => {
+                            crate::ui::deps_modal::InstallOutcome::Ready => {
                                 // I re-check for real and refresh what installing unlocked.
                                 v.chequear_dependencias();
                                 for h in v.handles.borrow().iter() {
