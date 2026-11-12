@@ -24,13 +24,12 @@ fn capitalize(s: &str) -> String {
     }
 }
 
-/// Rutas ya movidas por el import permanente, indexadas por nombre de juego.
-/// Vacio en modo test, y con una entrada por juego movido en los modos
-/// permanentes.
+/// Paths already moved by permanent import, indexed by game name.
+/// Empty in test mode; permanent modes contain one entry per moved game.
 type MovedPaths = std::collections::HashMap<String, (PathBuf, Option<PathBuf>)>;
 
-/// Candidatos de move para los juegos de Lutris. `prefix_path` es el prefix
-/// REAL de Lutris: el unico caso donde puede estar compartido entre juegos.
+/// Move candidates for Lutris games. `prefix_path` is the real Lutris prefix,
+/// the only case where games may share it.
 fn lutris_candidates(
     entries: &[crate::backend::integration::IntegrationEntry],
     state: &AppState,
@@ -56,8 +55,8 @@ fn lutris_candidates(
         .collect()
 }
 
-/// Candidatos de move para el scan de Heroic. Sin prefix: el prefix_path que
-/// CorkyTux registra para los stores es suyo y no se mueve (decision D3).
+/// Move candidates from Heroic scans, without a prefix: CorkyTux owns the
+/// prefix_path registered for stores and does not move it (decision D3).
 fn heroic_candidates(doc: &serde_json::Value, state: &AppState) -> Vec<MoveCandidate> {
     doc.get("games")
         .and_then(|x| x.as_array())
@@ -97,9 +96,9 @@ fn heroic_candidates(doc: &serde_json::Value, state: &AppState) -> Vec<MoveCandi
         .collect()
 }
 
-/// Total real movido. En los planes simples `bytes` ya incluye su prefix; el
-/// prefix de un grupo se cuenta una sola vez aqui, y los miembros anidados
-/// valen 0 porque sus datos viajan dentro del prefix.
+/// Total planned move size. Single plans already include their prefix.
+/// Count a group's prefix once; nested members contribute zero because their
+/// data travels inside that prefix.
 fn moved_total(ep: &ExecPlan) -> u64 {
     let mut total: u64 = ep.singles.iter().map(|p| p.bytes).sum();
     for g in &ep.groups {
@@ -111,10 +110,9 @@ fn moved_total(ep: &ExecPlan) -> u64 {
     total
 }
 
-/// Import bulk con Import Manager delante. Devuelve el control cuando el
-/// usuario elige modo: `on_ready` recibe las rutas movidas y una nota para el
-/// status. El preflight y el move van en hilos aparte porque miden el arbol y
-/// lanzan `cp -a`.
+/// Bulk import through Import Manager. Continue after the user chooses a mode:
+/// `on_ready` receives moved paths and a status note. Preflight and movement
+/// run on worker threads because they measure the tree and invoke `cp -a`.
 fn bulk_import_via_manager<F>(
     parent: &adw::ApplicationWindow,
     label: &str,
@@ -123,8 +121,8 @@ fn bulk_import_via_manager<F>(
 ) where
     F: Fn(MovedPaths, String) + 'static,
 {
-    // Destino por tienda (igual que el import simple): la primera
-    // candidatura manda; el modal muestra el mismo dir.
+    // Match single-import destinations: the first candidate determines the
+    // store directory, which the modal also displays.
     let tag_dir = match cands.first().map(|c| c.store_tag.as_str()) {
         Some("epic") => "Epic",
         _ => "GOG",
@@ -137,8 +135,8 @@ fn bulk_import_via_manager<F>(
         let _ = tx.send(import_move::preflight(&wc, &wd));
     });
 
-    // Clones hechos ANTES de anidar closures: un Fn/FnMut no puede mover sus
-    // propias capturas hacia dentro.
+    // Clone before nesting closures: Fn/FnMut cannot move their own captures
+    // into an inner closure.
     let ready: Rc<F> = Rc::new(on_ready);
     let parent_poll = parent.clone();
     let label_poll = label.to_string();
@@ -152,10 +150,9 @@ fn bulk_import_via_manager<F>(
             let parent_a = parent_poll.clone();
             let cands_a = cands_poll.clone();
             let dir_a = dir_poll.clone();
-            // Clones para el closure: ask toma &parent_a/&pf como argumentos
-            // hermanos, asi que el closure move no puede duenar los
-            // originales; duena las copias y clona por invocacion para
-            // seguir siendo Fn.
+            // ask borrows &parent_a/&pf as sibling arguments, so its move
+            // closure must own copies, not the originals. Clone again per
+            // invocation to retain the Fn contract.
             let parent_a2 = parent_a.clone();
             let pf2 = pf.clone();
             let tag_a = tag_poll.clone();
@@ -237,8 +234,8 @@ fn bulk_import_via_manager<F>(
     });
 }
 
-/// Registra en la biblioteca lo que devuelve un scan de Steam o Lutris.
-/// `moved` lleva las rutas nuevas del import permanente; vacio = modo test.
+/// Register Steam or Lutris scan results in the library.
+/// `moved` contains permanent-import destinations and is empty in test mode.
 #[allow(clippy::too_many_arguments)]
 fn import_scanned_entries(
     entries: &[crate::backend::integration::IntegrationEntry],
@@ -267,8 +264,8 @@ fn import_scanned_entries(
         } else {
             String::new()
         };
-        // Import permanente: main_path y prefix_path vienen del plan ya
-        // ejecutado. En modo test siguen siendo los de Lutris.
+        // Permanent imports use main_path/prefix_path from the executed plan.
+        // Test mode retains the original Lutris paths.
         let (main_path, prefix_path) = match moved.get(&entry.name) {
             Some((p, pre)) => (
                 p.to_string_lossy().to_string(),
@@ -409,9 +406,9 @@ fn import_scanned_entries(
     ));
 }
 
-/// Registra en la biblioteca lo que devuelve el scan de Heroic. `moved` lleva
-/// las rutas nuevas del import permanente; vacio = modo test. El `prefix_path`
-/// sigue siendo el de CorkyTux, nunca se mueve (decision D3).
+/// Register Heroic scan results in the library. `moved` contains permanent
+/// import destinations and is empty in test mode. CorkyTux's prefix_path is never
+/// moved (decision D3).
 #[allow(clippy::too_many_arguments)]
 fn import_heroic_entries(
     doc: &serde_json::Value,
@@ -447,7 +444,7 @@ fn import_heroic_entries(
         }
         let exe = g.get("executable").and_then(|x| x.as_str()).unwrap_or("").to_string();
 
-        // Modo permanente: main_path y ejecutable vienen del plan ya ejecutado.
+        // Permanent mode takes main_path and executable from the executed plan.
         let (main_path, executable) = match moved.get(&title) {
             Some((p, _)) => {
                 let remapped = import_manager::remap_exe(&exe, &orig_ipath, p);
@@ -2187,8 +2184,8 @@ pub fn show_settings_modal(
             } else {
                 state_clone.integration.scan_lutris()
             };
-            // Lutris: el Import Manager decide el modo antes de registrar
-            // nada. Steam no se toca y sigue yendo directo al import.
+            // Lutris chooses its Import Manager mode before registration.
+            // Steam remains unchanged and goes directly through import.
             if source != "Steam" {
                 let label = format!("{} Lutris games", entries.len());
                 let cands = lutris_candidates(&entries, &state_clone);
@@ -2200,8 +2197,8 @@ pub fn show_settings_modal(
                 let dx = det_c.clone();
                 let srcx = source.clone();
                 let entsx = entries.clone();
-                // pc se usa como argumento (&pc) y dentro del closure (&pc2):
-                // el closure es move y necesita dueno, asi que se clona.
+                // pc is borrowed as an argument and captured by the closure;
+                // clone it so the move closure has an owned pc2.
                 let pc2 = pc.clone();
                 bulk_import_via_manager(&pc, &label, cands, move |moved, note| {
                     import_scanned_entries(
@@ -2260,8 +2257,8 @@ pub fn show_settings_modal(
         let sb_c = sidebar.clone();
         let ch_c = center.clone();
         let det_c = details.clone();
-        // Fuera del closure: un closure move que mencionara `parent` dentro
-        // capturaria la referencia y dejaria de ser 'static.
+        // Keep this outside: mentioning parent inside the move closure would
+        // capture its reference and violate the 'static lifetime requirement.
         let parent_cc = parent.clone();
         scan.connect_clicked(move |_| {
             status_c.set_text("Scanning Heroic…");
@@ -2608,14 +2605,14 @@ fn emulator_icon_path(name: &str) -> Option<String> {
     emulator_icon_path_from_dir(dir, &home, name)
 }
 
-/// Resuelve el icono de un emulador: primero la carpeta de assets instalada
-/// junto al usuario (`home_dir/.local/share/corkytux/assets/icons/emulators/`),
-/// y como fallback para `cargo run`, caminando hacia arriba desde `exe_dir`
-/// hasta encontrar `assets/icons/emulators/<filename>`.
+/// Resolve emulator artwork from the user-installed assets first
+/// (`home_dir/.local/share/corkytux/assets/icons/emulators/`). For `cargo run`,
+/// fall back to walking upward from exe_dir to locate
+/// `assets/icons/emulators/<filename>`.
 ///
-/// Nunca incrusta `CARGO_MANIFEST_DIR`, así que el binario de release no
-/// revela rutas de la máquina de compilación. `exe_dir` y `home_dir` son
-/// parámetros para poder probar ambos escenarios con directorios temporales.
+/// Never embed `CARGO_MANIFEST_DIR`, avoiding build-machine path disclosure
+/// in release binaries. Explicit exe_dir/home_dir parameters let tests cover
+/// both layouts using temporary directories.
 fn emulator_icon_path_from_dir(exe_dir: &Path, home_dir: &Path, name: &str) -> Option<String> {
     let key = name
         .chars()
@@ -2688,16 +2685,12 @@ fn rebuild_emu_rows(
         icon_slot.set_height_request(48);
         let icon_texture = emulator_icon_path(&emu.name).and_then(|path| helpers::load_texture(&path));
         if let Some(texture) = icon_texture {
-            // GtkPicture, no GtkImage. `GtkImage:pixel-size` solo actua sobre
-            // imagenes de tipo ICON_NAME (documentado en el GIR de GTK), asi
-            // que puesto sobre un *paintable* era un no-op. Los SVG de Papirus
-            // son de 48x48, de modo que la textura tenia su tamano natural
-            // completo y `set_size_request(40, 40)` —que fija un minimo, no un
-            // maximo— no podia encogerla: la imagen llenaba el slot y
-            // `Align::Center` se quedaba sin espacio donde actuar. Por eso el
-            // centrado no se notaba. `can_shrink` + `ContentFit::Contain` si
-            // respetan los 40x40, y al ser el paintable cuadrado se encaja sin
-            // deformarse.
+            // Use GtkPicture, not GtkImage. GtkImage:pixel-size affects only
+            // ICON_NAME images (per GTK GIR), not a paintable. Papirus SVGs
+            // therefore kept their natural 48x48 size: set_size_request(40,40)
+            // sets a minimum, not a maximum, leaving Align::Center no spare
+            // space. can_shrink + ContentFit::Contain fits the square paintable
+            // into 40x40 without distortion.
             let icon = gtk::Picture::for_paintable(&texture);
             icon.set_can_shrink(true);
             icon.set_content_fit(gtk::ContentFit::Contain);
@@ -2781,8 +2774,8 @@ fn rebuild_emu_rows(
         let is_appimage = emu.source == "appimage";
         let is_none = emu.source == "none" || emu.source.is_empty();
         let is_pin = emu.source == "system";
-        // `native` es el alias legacy de "linked" en backends antiguos que no
-        // devuelven `source`. Las dos formas tienen que abrir la misma puerta.
+        // Older backends without source use native as the legacy linked alias.
+        // Both representations must enable the same action.
         let is_linked = emu.source == "linked" || (emu.source.is_empty() && emu.native);
         let show_btn = if emu.source.is_empty() {
             !emu.native
@@ -2862,8 +2855,8 @@ fn rebuild_emu_rows(
                 let path2 = path_c.clone();
                 std::thread::spawn(move || {
                     let res = if is_linked {
-                        // Desenlazar, no instalar: el binario del sistema se
-                        // queda donde esta, solo se suelta el vinculo.
+                        // Unlink rather than install: leave the system binary
+                        // where it is and remove only its registration.
                         crate::backend::plugins::PluginManager::unlink_emulator_in(&dir, &name2)
                     } else if remove_c {
                         crate::backend::plugins::PluginManager::remove_emulator_in(&dir, &name2)
@@ -4256,7 +4249,7 @@ mod tests {
 
         #[test]
     fn emulator_icon_resolves_installed_layout_and_source_tree_layout() {
-        // home_dir vacío: ninguna ruta instalada interfere con el test.
+        // An empty home_dir fixture prevents installed-path interference.
         let tmp_home = mktmp("corky_icon_home");
         std::fs::create_dir_all(tmp_home.join(".local/share/corkytux/assets/icons/emulators")).unwrap();
 
@@ -4267,7 +4260,7 @@ mod tests {
         assert!(emulator_icon_path_from_dir(&install_root, &tmp_home, "azahar").is_some());
         assert!(emulator_icon_path_from_dir(&install_root, &tmp_home, "nope").is_none());
 
-        // 2) Desde el repositorio: binario en target/debug, assets en la raiz.
+        // 2) Source tree: binary in target/debug, assets in the repository root.
         let repo_root = mktmp("corky_icon_repo");
         std::fs::create_dir_all(repo_root.join("assets/icons/emulators")).unwrap();
         std::fs::write(repo_root.join("assets/icons/emulators/desmume.svg"), "<svg/>").unwrap();
