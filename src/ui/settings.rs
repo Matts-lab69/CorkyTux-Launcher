@@ -96,7 +96,7 @@ fn heroic_candidates(doc: &serde_json::Value, state: &AppState) -> Vec<MoveCandi
         .collect()
 }
 
-/// Total bytes actually moved. Single plans already include their prefix.
+/// Total planned move size. Single plans already include their prefix.
 /// Count a group's prefix once; nested members contribute zero because their
 /// data travels inside that prefix.
 fn moved_total(ep: &ExecPlan) -> u64 {
@@ -235,7 +235,7 @@ fn bulk_import_via_manager<F>(
 }
 
 /// Register Steam or Lutris scan results in the library.
-/// `moved` contains permanent-import destinations; empty means test mode.
+/// `moved` contains permanent-import destinations and is empty in test mode.
 #[allow(clippy::too_many_arguments)]
 fn import_scanned_entries(
     entries: &[crate::backend::integration::IntegrationEntry],
@@ -407,7 +407,7 @@ fn import_scanned_entries(
 }
 
 /// Register Heroic scan results in the library. `moved` contains permanent
-/// import destinations; empty means test mode. CorkyTux's prefix_path is never
+/// import destinations and is empty in test mode. CorkyTux's prefix_path is never
 /// moved (decision D3).
 #[allow(clippy::too_many_arguments)]
 fn import_heroic_entries(
