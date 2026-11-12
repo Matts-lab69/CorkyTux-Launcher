@@ -131,7 +131,7 @@ impl StoresView {
                 // and got restored externally, I load what the block had held back.
                 for h in vista.handles.borrow().iter() {
                     h.apply_missing_dependencies(&MissingDependencies::default());
-                    if !h.bloqueado.get() {
+                    if !h.blocked.get() {
                         h.ensure_loaded();
                     }
                 }
@@ -142,15 +142,15 @@ impl StoresView {
                     h.apply_missing_dependencies(&f);
                 }
                 if f.has_missing() {
-                    let filas = f.modal_rows();
+                    let rows = f.modal_rows();
                     let helper = login_helper_path().ok();
                     let v = vista.clone();
-                    let padre = v.widget.clone();
+                    let parent = v.widget.clone();
                     crate::ui::deps_modal::present(
-                        &padre,
-                        filas,
+                        &parent,
+                        rows,
                         helper,
-                        move |salida| match salida {
+                        move |outcome| match outcome {
                             crate::ui::deps_modal::InstallOutcome::Ready => {
                                 // I re-check for real and refresh what installing unlocked.
                                 v.chequear_dependencias();
@@ -994,7 +994,7 @@ impl StoresView {
             incomplete_box: incomplete_box.clone(),
             incomplete_text: incomplete_text.clone(),
             browser_row: browser_row.clone(),
-            bloqueado: Rc::new(std::cell::Cell::new(false)),
+            blocked: Rc::new(std::cell::Cell::new(false)),
             reabrir,
             all_games: Rc::new(RefCell::new(Vec::new())),
             shown_games: Rc::new(RefCell::new(Vec::new())),
@@ -1306,14 +1306,14 @@ struct StorePageHandle {
     acc_avatar: gtk::Label,
     // I cover the tab with "Setup incomplete" (`incomplete_box`) when my binary
     // is missing (no login, no library); `browser_row` covers only login when
-    // my browser is missing. I use `bloqueado` to stop useless plugin loads.
+    // my browser is missing. I use blocked to stop useless plugin loads.
     // StoresView sets `reabrir` to reopen my dependency modal.
     auth_frame: gtk::Frame,
     lib_frame: gtk::Frame,
     incomplete_box: gtk::Box,
     incomplete_text: gtk::Label,
     browser_row: gtk::Box,
-    bloqueado: Rc<std::cell::Cell<bool>>,
+    blocked: Rc<std::cell::Cell<bool>>,
     reabrir: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
     // I keep my GOG grid as full list + filtered/sorted in-memory view,
     // with toolbar query and sort mode (GOG tab only; I skip Epic).
@@ -1321,9 +1321,9 @@ struct StorePageHandle {
     shown_games: Rc<RefCell<Vec<StoreGame>>>,
     gog_query: Rc<RefCell<String>>,
     gog_sort: Rc<std::cell::Cell<u32>>,
-    /// Última lista Epic renderizada (para re-render compacto sin red).
+    /// Last rendered Epic list, allowing compact rerendering without network.
     epic_games: Rc<RefCell<Vec<StoreGame>>>,
-    /// Tarjetas compactas en ventana angosta (breakpoint 900px).
+    /// Compact cards in narrow windows (900px breakpoint).
     compact: Rc<std::cell::Cell<bool>>,
     compact_src: Rc<RefCell<Option<glib::SourceId>>>,
     // I keep my rails (GOG tab only): a container I hide with a blocked tab,
@@ -1417,7 +1417,7 @@ impl StorePageHandle {
     }
 
     fn ensure_loaded(&self) {
-        if self.loaded.get() || self.bloqueado.get() {
+        if self.loaded.get() || self.blocked.get() {
             return;
         }
         self.loaded.set(true);
@@ -1433,28 +1433,28 @@ impl StorePageHandle {
     /// my binary is missing (no login, no library), or block only login when
     /// my browser is missing. With nothing missing I show normal UI.
     fn apply_missing_dependencies(&self, f: &MissingDependencies) {
-        let nombre = if self.store == "epic" { "Epic" } else { "GOG" };
+        let name = if self.store == "epic" { "Epic" } else { "GOG" };
         if f.tab_blocked(&self.store) {
-            let pendientes = f.for_store(&self.store).join(", ");
+            let pending = f.for_store(&self.store).join(", ");
             self.incomplete_text.set_text(&format!(
                 "{} needs: {}. Log in and library are unavailable until installation completes.",
-                nombre, pendientes
+                name, pending
             ));
             self.incomplete_box.set_visible(true);
             self.auth_frame.set_visible(false);
             self.lib_frame.set_visible(false);
             self.rails_box.set_visible(false);
             self.browser_row.set_visible(false);
-            self.bloqueado.set(true);
+            self.blocked.set(true);
         } else {
             self.incomplete_box.set_visible(false);
             self.auth_frame.set_visible(true);
             self.lib_frame.set_visible(true);
             self.rails_box.set_visible(true);
-            let sin_browser = f.login_blocked();
-            self.login_btn.set_visible(!sin_browser);
-            self.browser_row.set_visible(sin_browser);
-            self.bloqueado.set(false);
+            let missing_browser = f.login_blocked();
+            self.login_btn.set_visible(!missing_browser);
+            self.browser_row.set_visible(missing_browser);
+            self.blocked.set(false);
         }
     }
 
@@ -1548,7 +1548,7 @@ impl StorePageHandle {
         }
     }
 
-    /// Login automatizado en un navegador real, sin paso manual.
+    /// Sign in through a browser helper instead of manual authorization-code entry.
     ///
     /// My plugin emits the URL (`auth` without code -> `auth_url` event) and
     /// then steps aside: I hand it to `webdriver_login`, which opens its own
@@ -1858,7 +1858,7 @@ impl StorePageHandle {
     fn render_filtered(&self) {
         let all = self.all_games.borrow().clone();
         let q = self.gog_query.borrow().clone();
-        let v = Self::filtrar_ordenar(&all, &q, self.gog_sort.get());
+        let v = Self::filter_and_sort(&all, &q, self.gog_sort.get());
         *self.shown_games.borrow_mut() = v.clone();
         self.render_gog_cards(&v, !all.is_empty());
     }
@@ -1996,9 +1996,9 @@ impl StorePageHandle {
     /// focusable horizontal row. I construct them once; content arrives via
     /// load_rails.
     fn build_rail_sections(&self) {
-        for (list, titulo) in [("sale", "On Sale"), ("new", "Discover"), ("free", "Free to Keep")] {
+        for (list, title) in [("sale", "On Sale"), ("new", "Discover"), ("free", "Free to Keep")] {
             let sec = gtk::Box::new(gtk::Orientation::Vertical, 4);
-            let head = gtk::Label::new(Some(titulo));
+            let head = gtk::Label::new(Some(title));
             head.set_halign(gtk::Align::Start);
             head.add_css_class("section-head");
             sec.append(&head);
@@ -2011,7 +2011,7 @@ impl StorePageHandle {
             scroll.set_min_content_height(288);
             scroll.add_css_class("rail-scroll");
             scroll.set_propagate_natural_height(true);
-            // Scrollbar siempre visible (no overlay): es el affordance de que
+            // Non-overlay scrollbar: keep the overflow affordance visible.
             // I hint that more content exists. I stay theme-native, zero new CSS.
             // I use Box, not FlowBox: FlowBox wrapped to 2 rows when my viewport
             // went narrower than the row (I saw it on On Sale), and I forbid
@@ -2124,7 +2124,7 @@ impl StorePageHandle {
             *sec.items.borrow_mut() = items.clone();
             if items.is_empty() {
                 sec.pager.set_visible(false);
-                let texto = if *partial {
+                let text = if *partial {
                     format!(
                         "Couldn't load this rail{}.",
                         if warning.is_empty() {
@@ -2139,7 +2139,7 @@ impl StorePageHandle {
                     "Nothing here right now.".to_string()
                 };
                 sec.note.set_visible(true);
-                sec.note.set_text(&texto);
+                sec.note.set_text(&text);
             } else {
                 sec.note.set_visible(false);
                 // I reset Refresh (same handler) to page 1 with a fresh pool.
@@ -2147,7 +2147,7 @@ impl StorePageHandle {
                 self.render_rail_page(sec);
                 if *partial {
                     sec.note.set_visible(true);
-                    let texto = format!(
+                    let text = format!(
                         "Partial results{}.",
                         if warning.is_empty() {
                             String::new()
@@ -2155,7 +2155,7 @@ impl StorePageHandle {
                             format!(" {}", warning.chars().take(80).collect::<String>())
                         }
                     );
-                    sec.note.set_text(&texto);
+                    sec.note.set_text(&text);
                 }
             }
         }
@@ -2332,7 +2332,7 @@ impl StorePageHandle {
 
     /// I build Discover variant B: full-bleed horizontal cover + overlapping card
     /// at -24px with title and year on one line. I use GtkPicture with a fixed box and
-    /// can_shrink(false): estable aunque el paintable llegue async.
+    /// can_shrink(false) keeps sizing stable while the paintable loads asynchronously.
     fn discover_card(&self, item: &RailItem) -> gtk::Button {
         let tile = gtk::Button::new();
         tile.add_css_class("flat");
@@ -2354,27 +2354,27 @@ impl StorePageHandle {
             );
             outer.append(&pic);
         }
-        let ficha = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        ficha.set_halign(gtk::Align::Center);
-        ficha.set_margin_top(-24);
-        ficha.set_margin_start(8);
-        ficha.set_margin_end(8);
-        ficha.add_css_class("page-card");
-        let titulo = gtk::Label::new(Some(&item.title));
-        titulo.set_halign(gtk::Align::Start);
-        titulo.set_hexpand(true);
-        titulo.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        titulo.set_lines(1);
-        titulo.add_css_class("details-title");
-        ficha.append(&titulo);
+        let card = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        card.set_halign(gtk::Align::Center);
+        card.set_margin_top(-24);
+        card.set_margin_start(8);
+        card.set_margin_end(8);
+        card.add_css_class("page-card");
+        let title = gtk::Label::new(Some(&item.title));
+        title.set_halign(gtk::Align::Start);
+        title.set_hexpand(true);
+        title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        title.set_lines(1);
+        title.add_css_class("details-title");
+        card.append(&title);
         if !item.year.is_empty() {
-            let anio = gtk::Label::new(Some(&item.year));
-            anio.set_valign(gtk::Align::BaselineCenter);
-            anio.set_opacity(0.6);
-            anio.add_css_class("time-label");
-            ficha.append(&anio);
+            let year = gtk::Label::new(Some(&item.year));
+            year.set_valign(gtk::Align::BaselineCenter);
+            year.set_opacity(0.6);
+            year.add_css_class("time-label");
+            card.append(&year);
         }
-        outer.append(&ficha);
+        outer.append(&card);
         let overlay = gtk::Overlay::new();
         overlay.set_child(Some(&outer));
         let ext = gtk::Label::new(Some("↗"));
@@ -2416,9 +2416,9 @@ fn meta_line(category: &str, systems: &[String]) -> String {
 
 /// Title/category filter plus in-memory sort for the GOG grid. Pure and
 /// testable: the UI just applies it and renders.
-fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame> {
+fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame> {
     let q = query.trim().to_lowercase();
-    let mut v: Vec<StoreGame> = juegos
+    let mut v: Vec<StoreGame> = games
         .iter()
         .filter(|g| {
             q.is_empty()
@@ -2436,7 +2436,7 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
                 .cmp(&a.installed)
                 .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
         }),
-        // Title A–Z (default, 0 y cualquier otro).
+        // Title A–Z (default: 0 and any unrecognized value).
         _ => v.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
     }
     v
@@ -2818,7 +2818,7 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
     }
 
     /// I own my per-store install base (single origin; my plugin uses the
-    /// --path que se le pasa). ~/Games/Heroic queda como legacy ajeno.
+    /// supplied --path). ~/Games/Heroic remains an external legacy location.
     fn default_games_dir(store: &str) -> String {
         let base = std::env::var("HOME").unwrap_or_default();
         if store == "epic" {
@@ -3257,11 +3257,11 @@ fn filtrar_ordenar(juegos: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGam
 
 /// I run `webdriver_login` and return its code, or my failure reason.
 ///
-/// Vive en un hilo propio porque el helper puede tardar hasta 180 s: el hilo
-/// se queda esperando en `output()` y el bucle de GTK sigue respondiendo igual.
+/// Run on a worker because the helper may take up to 180 seconds. The worker
+/// waits in output() while the GTK loop remains responsive.
 ///
-/// La causa de que el proceso se quede colgado sin escribir nada la cubre el
-/// watchdog del llamador, no este `wait()`.
+/// The caller's watchdog handles a process that hangs without output;
+/// this blocking wait does not enforce that deadline itself.
 fn spawn_login_helper(
     url: String,
 ) -> std::sync::mpsc::Receiver<Result<String, (String, String)>> {
@@ -3605,7 +3605,7 @@ fi
     fn base_per_store() {
         let e = StorePageHandle::default_games_dir("epic");
         let g = StorePageHandle::default_games_dir("gog");
-        let o = StorePageHandle::default_games_dir("otra");
+        let o = StorePageHandle::default_games_dir("other");
         assert!(e.ends_with("/Games/Epic-Games"), "{}", e);
         assert!(g.ends_with("/Games/GOG-Games"), "{}", g);
         assert!(o.ends_with("/Games/GOG-Games"), "{}", o);
@@ -3688,14 +3688,14 @@ fi
     /// completing (nothing missing) silences it.
     #[test]
     fn skip_cycle_does_not_silence_modal() {
-        let pendiente = MissingDependencies { legendary: false, gogdl: true, chromium: true };
-        assert!(pendiente.has_missing(), "before skip: show modal");
+        let pending = MissingDependencies { legendary: false, gogdl: true, chromium: true };
+        assert!(pending.has_missing(), "before skip: show modal");
         // I mutate nothing persistent on skip: same value, same modal.
-        let tras_skip = pendiente;
-        assert!(tras_skip.has_missing(), "after skip: show modal again on reentry");
-        let completo = MissingDependencies::default();
-        assert!(!completo.has_missing(), "complete: never again");
-        assert!(completo.modal_rows().is_empty());
+        let after_skip = pending;
+        assert!(after_skip.has_missing(), "after skip: show modal again on reentry");
+        let complete = MissingDependencies::default();
+        assert!(!complete.has_missing(), "complete: never again");
+        assert!(complete.modal_rows().is_empty());
     }
 
     /// I replay my trigger bug: all installed -> files vanish
@@ -3746,18 +3746,18 @@ fi
         let chrome = base.join(
             ".local/share/corkytux/chrome-154.0.8037.57/chrome-linux64/chrome",
         );
-        std::fs::create_dir_all(chrome.parent().expect("padre de chrome")).unwrap();
+        std::fs::create_dir_all(chrome.parent().expect("parent of chrome")).unwrap();
         std::fs::write(&chrome, b"x").unwrap();
 
         std::env::set_var("HOME", &base);
         std::env::set_var("CORKYTUX_LOGIN_HELPER", &helper);
 
         // I start with all installed -> no modal.
-        let antes = current_dependency_precheck();
+        let before = current_dependency_precheck();
         assert!(
-            !antes.has_missing(),
+            !before.has_missing(),
             "with everything present there is no modal: {:?}",
-            antes
+            before
         );
 
         // I delete externally, bypassing my modal (my bug scenario).
@@ -3766,18 +3766,18 @@ fi
         std::fs::remove_file(&chrome).unwrap();
 
         // I re-check: I detect all three gaps -> modal.
-        let despues = current_dependency_precheck();
+        let after = current_dependency_precheck();
         assert!(
-            despues.has_missing(),
+            after.has_missing(),
             "after the external deletion there is a modal: {:?}",
-            despues
+            after
         );
         assert_eq!(
-            despues,
+            after,
             MissingDependencies { legendary: true, gogdl: true, chromium: true },
             "all three gaps detected"
         );
-        assert_eq!(despues.modal_rows().len(), 3);
+        assert_eq!(after.modal_rows().len(), 3);
 
         // Drop restores HOME + CORKYTUX_LOGIN_HELPER (also on panic).
         let _ = std::fs::remove_dir_all(&base);
@@ -3804,7 +3804,7 @@ fi
         );
     }
 
-    /// I test filtrar_ordenar: I filter by title/category + 3 orders.
+    /// I test filter_and_sort: I filter by title/category + 3 orders.
     #[test]
     fn filter_and_sort_filters_and_orders() {
         let g = |t: &str, c: &str, inst: bool| super::StoreGame {
@@ -3820,35 +3820,35 @@ fi
             cover: String::new(),
             description: String::new(),
         };
-        let juegos = vec![g("Zeta", "RPG", false), g("alpha", "Adv", true), g("Mid", "RPG", false)];
+        let games = vec![g("Zeta", "RPG", false), g("alpha", "Adv", true), g("Mid", "RPG", false)];
         // I check empty + default: all A-Z case-insensitive.
-        let v = super::StorePageHandle::filtrar_ordenar(&juegos, "", 0);
+        let v = super::StorePageHandle::filter_and_sort(&games, "", 0);
         assert_eq!(v.iter().map(|x| x.title.as_str()).collect::<Vec<_>>(), vec!["alpha", "Mid", "Zeta"]);
         // I match my filter on title or category.
-        let v = super::StorePageHandle::filtrar_ordenar(&juegos, "rpg", 0);
+        let v = super::StorePageHandle::filter_and_sort(&games, "rpg", 0);
         assert_eq!(v.len(), 2);
         // Z–A.
-        let v = super::StorePageHandle::filtrar_ordenar(&juegos, "", 1);
+        let v = super::StorePageHandle::filter_and_sort(&games, "", 1);
         assert_eq!(v[0].title, "Zeta");
         // Instalados primero.
-        let v = super::StorePageHandle::filtrar_ordenar(&juegos, "", 2);
+        let v = super::StorePageHandle::filter_and_sort(&games, "", 2);
         assert!(v[0].installed);
     }
 
     /// I test parse_rail_item: full passes, empty drops, partial gets defaults.
     #[test]
     fn parse_rail_item_full_minimal_and_rejected() {
-        let lleno = serde_json::json!({
+        let full = serde_json::json!({
             "id": "123", "title": "Knytt", "cover": "http://x/y.jpg",
             "price_base": "$9.99", "price_final": "$0.00", "discount": "-100%",
             "year": "2013", "free": true, "store_url": "https://x"
         });
-        let r = super::parse_rail_item(&lleno).expect("completo");
+        let r = super::parse_rail_item(&full).expect("complete item");
         assert_eq!(r.id, "123");
         assert_eq!(r.price_final, "$0.00");
         assert!(r.free);
-        let minimo = serde_json::json!({"id": "9", "title": "T"});
-        let r = super::parse_rail_item(&minimo).expect("minimal item");
+        let minimal = serde_json::json!({"id": "9", "title": "T"});
+        let r = super::parse_rail_item(&minimal).expect("minimal item");
         assert_eq!(r.cover, "");
         assert!(!r.free);
         assert!(super::parse_rail_item(
