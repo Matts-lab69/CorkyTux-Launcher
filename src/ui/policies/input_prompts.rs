@@ -1,4 +1,4 @@
-//! Asset-only recovery contract; this does not enable controller polling or UI.
+//! Asset integrity contract; this does not enable controller polling or UI.
 
 use sha2::{Digest, Sha256};
 use std::path::Path;
