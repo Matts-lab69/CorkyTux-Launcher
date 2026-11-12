@@ -116,8 +116,8 @@ cd corkytux-*/
 ./install.sh
 ```
 
-For example, the current version produces
-`corkytux-3.2.0-linux-x86_64.tar.gz` and extracts to `corkytux-3.2.0/`.
+For example, the current source version produces
+`corkytux-3.2.2-linux-x86_64.tar.gz` and extracts to `corkytux-3.2.2/`.
 
 ### Build from source
 
@@ -359,7 +359,7 @@ is missing, CorkyTux keeps the generic cover and logs one warning per run:
 - Rollback: every replaced file is backed up and restored on failure; backups are pruned after a successful install.
 - Restart: the launcher quits and a detached sleeper starts the new binary after the old process exits.
 - Scope: only copies installed by `install.sh` under `~/.local/share/corkytux` can self-update. Repository builds report that they must be updated manually.
-- From 3.2.0: that release shipped a stricter extractor that rejects the release tarball, so a 3.2.0 install needs one manual `install.sh` run. From 3.2.1 the in-app update works.
+- From 3.2.0 or 3.2.1: install 3.2.2 manually once. Both older versions misclassify HTTP 304 responses during update checks; 3.2.0 also rejects the release tarball with its stricter extractor. The 3.2.2 updater handles cached metadata correctly.
 
 ---
 ## --version

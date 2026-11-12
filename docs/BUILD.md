@@ -104,11 +104,11 @@ creates:
 To include the plugins from a clean, local checkout without network downloads:
 
 ```bash
-CORKYTUX_PLUGINS_SOURCE=/path/to/CorkyTux-Plugins ./release/build-release.sh v3.2.0
+CORKYTUX_PLUGINS_SOURCE=/path/to/CorkyTux-Plugins ./release/build-release.sh v3.2.2
 ```
 
 The tarball has one root directory,
-`corkytux-3.2.0/`, containing the binaries, assets, bundled plugins, installers,
+`corkytux-3.2.2/`, containing the binaries, assets, bundled plugins, installers,
 desktop entry, icon, LICENSE, README, CREDITS and THIRD-PARTY documentation.
 The packaged desktop entry is `com.corkytux.CorkyTux.desktop`; its `Icon` and
 `StartupWMClass` match the GTK app ID. The installer places the matching PNG in
@@ -122,8 +122,8 @@ plugins untouched. Uninstall removes only plugin code recorded by the
 installer; unrelated plugins and runtime files are preserved unless the user
 explicitly requests deletion of their data. No plugin dependencies are fetched.
 
-For example, version `3.2.0` on x86_64 produces
-`corkytux-3.2.0-linux-x86_64.tar.gz`. The architecture comes from `uname -m`
+For example, version `3.2.2` on x86_64 produces
+`corkytux-3.2.2-linux-x86_64.tar.gz`. The architecture comes from `uname -m`
 (`x86_64`, `aarch64`, ...). The tarball contains `corkytux`,
 `webdriver_login`, `install.sh`, `uninstall.sh`, `corkytux.png`,
 `corkytux.desktop.in`, and `assets/`.
