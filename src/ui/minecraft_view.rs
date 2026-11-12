@@ -4412,9 +4412,9 @@ impl MinecraftView {
                             if still {
                                 match res {
                                     Ok(probe) => {
-                                        // solo respuestas limpias entran a la
-                                        // cache de sesion: probes con errores
-                                        // por-loader re-sondean la proxima vez
+                                        // Cache only clean session responses;
+                                        // per-loader errors require another
+                                        // probe on the next selection.
                                         cache_probe(&cache_b, &ver_s, &probe);
                                         apply_b(&probe, &prev_b);
                                     }
@@ -7689,8 +7689,8 @@ mod tests {
 
     #[test]
     fn parse_loader_probe_reads_batch_response() {
-        // Response del verbo por lote: un entry por loader pedido, orden
-        // preservado, unsupported con versiones vacias, errors separados.
+        // Batch command response: one entry per requested loader, in order;
+        // unsupported loaders have empty versions, with errors kept separate.
         let doc = serde_json::json!({
             "type": "done", "ok": true, "mc_version": "26.3",
             "loaders": [
@@ -7738,8 +7738,8 @@ mod tests {
 
     #[test]
     fn probe_state_gates_dropdown_and_status() {
-        // "Vanilla deshabilitado" mientras la sonda corre/promete:
-        // solo Detecting deja el dropdown insensible y muestra la nota.
+        // While probing, only Detecting disables the dropdown and shows
+        // the detection status note.
         assert!(!probe_ready(&ProbeState::Detecting), "loading state disables the dropdown");
         assert_eq!(probe_status_text(&ProbeState::Detecting), "Detecting modloader support…");
         assert!(probe_ready(&ProbeState::Ready));
@@ -7752,8 +7752,8 @@ mod tests {
 
     #[test]
     fn probe_cache_avoids_second_subprocess() {
-        // Contrato de do_probe: version cacheada no relanza ni el probe de
-        // loaders ni el lookup de java; otra version sigue sondando.
+        // do_probe contract: a cached version skips both the loader probe
+        // and Java lookup; a different version still requires probing.
         let mut cache: ProbeCache = HashMap::new();
         let mut probe_spawns = 0usize;
         let mut java_spawns = 0usize;
@@ -7779,9 +7779,9 @@ mod tests {
 
     #[test]
     fn probe_with_errors_is_not_cached() {
-        // Contrato de cache del handler idle (cache_probe): un probe con
-        // errores por-loader es transitorio, no se cachea; la proxima
-        // seleccion re-sondea. Solo una respuesta limpia entra a la cache.
+        // Idle handler cache contract (cache_probe): per-loader errors are
+        // transient and not cached; the next selection probes again.
+        // Only a clean response enters the cache.
         let cache: Rc<RefCell<ProbeCache>> = Rc::new(RefCell::new(HashMap::new()));
         cache_probe(&cache, "26.3", &LoaderProbe {
             loaders: vec![("fabric".into(), true, vec!["0.19.5".into()])],
@@ -7799,8 +7799,8 @@ mod tests {
 
     #[test]
     fn lv_mark_labels_beta_and_unmark_recovers_id() {
-        // la UI marca el build beta en el dropdown; el id real (sin marcar)
-        // es el que viaja al install
+        // Mark beta builds in the dropdown; installation receives the actual
+        // unmarked version ID.
         assert_eq!(lv_mark("26.3.0.51-beta"), "26.3.0.51-beta (beta)");
         assert_eq!(lv_mark("0.19.5"), "0.19.5", "builds estables sin marca");
         assert_eq!(lv_mark("latest"), "latest");
@@ -7811,12 +7811,12 @@ mod tests {
 
     #[test]
     fn legacy_ver_se_borra_en_home_temporal() {
-        // do_delete no es invocable sin una MinecraftView GTK; cubro a nivel de
-        // ruta + primitiva fs su rama legacy (legacy_dir()/versions/<id>): se
-        // borra la copia legacy y el contenedor `instances` queda intacto.
+        // do_delete requires a GTK MinecraftView. Cover its legacy branch
+        // (legacy_dir()/versions/<id>) at the path/filesystem primitive level:
+        // remove the legacy copy while leaving the instances container intact.
         let _g = crate::test_env::lock();
         let root = tmproot("legacy-del");
-        std::env::set_var("HOME", &root); // test_env restaura HOME al soltar
+        std::env::set_var("HOME", &root); // test_env restores HOME when dropped.
         let leg = legacy_dir();
         assert_eq!(leg,
             root.join(".config/CorkyTux/plugins/minecraft-launcher/instances"),
