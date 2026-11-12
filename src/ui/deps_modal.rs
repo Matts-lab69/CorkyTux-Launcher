@@ -23,70 +23,70 @@ pub enum DepId {
 /// Each dependency's card: name, description and measured size.
 pub struct DepInfo {
     pub id: DepId,
-    pub nombre: &'static str,
-    pub descripcion: &'static str,
-    pub peso: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub size: &'static str,
 }
 
 pub const DEPS: [DepInfo; 3] = [
     DepInfo {
         id: DepId::Legendary,
-        nombre: "legendary",
-        descripcion: "Epic Games client: library and sign-in.",
-        peso: "~3 MB",
+        name: "legendary",
+        description: "Epic Games client: library and sign-in.",
+        size: "~3 MB",
     },
     DepInfo {
         id: DepId::Gogdl,
-        nombre: "gogdl",
-        descripcion: "GOG client: library and sign-in.",
-        peso: "~1.5 MB",
+        name: "gogdl",
+        description: "GOG client: library and sign-in.",
+        size: "~1.5 MB",
     },
     DepInfo {
         id: DepId::Chromium,
-        nombre: "Login browser",
-        descripcion: "Isolated Chromium for sign-in only. It never touches your own browser.",
-        peso: "~188 MB",
+        name: "Login browser",
+        description: "Isolated Chromium for sign-in only. It never touches your own browser.",
+        size: "~188 MB",
     },
 ];
 
 /// How the modal ended (it always closes through one of these two ways).
 pub enum InstallOutcome {
     /// All ready: the caller refreshes and the modal already closed itself.
-    TodoOk,
+    Ready,
     /// Out without installing: show "Setup incomplete".
     Skip,
 }
 
-/// Mensajes del hilo instalador al hilo de GTK.
-enum Avance {
-    FilaActiva(usize),
-    FilaProgreso(usize, u8, u64),
-    FilaLista(usize),
-    FilaFallo(usize, String),
-    Terminado,
+/// Messages from the installer thread to the GTK thread.
+enum InstallProgress {
+    RowActive(usize),
+    RowProgress(usize, u8, u64),
+    RowReady(usize),
+    RowFailed(usize, String),
+    Finished,
 }
 
 #[derive(Clone)]
-struct FilaWidgets {
+struct RowWidgets {
     spin: gtk::Spinner,
-    estado: gtk::Label,
+    status: gtk::Label,
 }
 
 /// Logical state of a row, mirrored from the widget for GTK-free decisions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FilaEstado {
-    Espera,
-    Activa,
-    Lista,
-    Fallo,
+enum RowState {
+    Waiting,
+    Active,
+    Ready,
+    Failed,
 }
 
 /// The "Skip for now" link shows as soon as ANY row is Failed, whatever the
 /// other rows do (in progress, success, another failure). It doesn't wait for
 /// all of them: that wait was the bug (a row in progress blocked the link even
 /// after another one had already failed).
-fn mostrar_skip(estados: &[FilaEstado]) -> bool {
-    estados.iter().any(|s| *s == FilaEstado::Fallo)
+fn show_skip(states: &[RowState]) -> bool {
+    states.iter().any(|s| *s == RowState::Failed)
 }
 
 /// Fixed neon green for "Ready": hardcoded on purpose, it does NOT follow the
@@ -94,10 +94,10 @@ fn mostrar_skip(estados: &[FilaEstado]) -> bool {
 /// provider, so no theme change can touch it.
 const READY_CSS: &str = ".deps-ready { color: #39FF14; }";
 
-fn asegurar_css_ready() {
+fn ensure_ready_css() {
     use std::sync::OnceLock;
-    static LISTO: OnceLock<()> = OnceLock::new();
-    LISTO.get_or_init(|| {
+    static READY: OnceLock<()> = OnceLock::new();
+    READY.get_or_init(|| {
         if let Some(display) = gdk::Display::default() {
             let p = gtk::CssProvider::new();
             p.load_from_string(READY_CSS);
@@ -111,14 +111,13 @@ fn asegurar_css_ready() {
 }
 /// Maps a free-form backend error to a short English reason for the row.
 ///
-/// `cmd_setup` texts are unformatted Python exceptions and `--prefetch` ones
-/// are human messages in Spanish, so I classify them by keyword and, when
-/// nothing matches, show the raw text truncated. I never invent a diagnosis.
-/// The Spanish keywords below are the plugin's own wording — they stay on
-/// purpose, that's what the tool actually prints.
-pub fn motivo_corto(origen: &str, texto: &str) -> String {
-    let t = format!("{} {}", origen, texto).to_lowercase();
-    for clave in [
+/// Backend exceptions and helper diagnostics may include messages from
+/// external tools in a Spanish locale. Keep those compatibility patterns;
+/// current plugin/helper messages are English, not intrinsically Spanish.
+/// Unmatched messages remain raw and truncated rather than inventing a cause.
+pub fn short_reason(source: &str, text: &str) -> String {
+    let t = format!("{} {}", source, text).to_lowercase();
+    for keyword in [
         "temporary failure",
         "name or service",
         "urlerror",
@@ -128,74 +127,73 @@ pub fn motivo_corto(origen: &str, texto: &str) -> String {
         "unreachable",
         "cut off",
         "rejected the download",
-        // Plugin wording: heroic-store and the RPG runtime still answer in
-        // Spanish, so I keep matching their own words.
+        // Compatibility with external tools in a Spanish locale.
         "red al conectar",
         "conexi",
         "cortó",
         "rechazo la descarga",
     ] {
-        if t.contains(clave) {
+        if t.contains(keyword) {
             return "no connection".to_string();
         }
     }
-    for clave in ["no space", "disk space", "errno 28", "espacio en disco", "sin espacio"] {
-        if t.contains(clave) {
+    for keyword in ["no space", "disk space", "errno 28", "espacio en disco", "sin espacio"] {
+        if t.contains(keyword) {
             return "no disk space".to_string();
         }
     }
-    let crudo: String = texto.trim().chars().take(90).collect();
-    if crudo.is_empty() {
+    let raw: String = text.trim().chars().take(90).collect();
+    if raw.is_empty() {
         "unknown error".to_string()
     } else {
-        crudo
+        raw
     }
 }
 
 /// Installs what's pending in its own thread: legendary/gogdl first through
 /// `cmd_setup` (which skips whatever is already there), then Chromium through
 /// `webdriver_login --prefetch` with JSON progress on stdout.
-fn instalar(
-    pendientes: Vec<DepId>,
+fn install_pending(
+    pending: Vec<DepId>,
     helper: Option<std::path::PathBuf>,
-    tx: std::sync::mpsc::Sender<Avance>,
+    tx: std::sync::mpsc::Sender<InstallProgress>,
 ) {
-    let enviar = |m: Avance| {
+    let send = |m: InstallProgress| {
         let _ = tx.send(m);
     };
-    let idx_de = |id: DepId| pendientes.iter().position(|x| *x == id);
+    let index_of = |id: DepId| pending.iter().position(|x| *x == id);
 
-    let hay_leg = pendientes.contains(&DepId::Legendary);
-    let hay_gog = pendientes.contains(&DepId::Gogdl);
-    if hay_leg || hay_gog {
+    let needs_legendary = pending.contains(&DepId::Legendary);
+    let needs_gogdl = pending.contains(&DepId::Gogdl);
+    if needs_legendary || needs_gogdl {
         for id in [DepId::Legendary, DepId::Gogdl] {
-            if let Some(i) = idx_de(id) {
-                enviar(Avance::FilaActiva(i));
+            if let Some(i) = index_of(id) {
+                send(InstallProgress::RowActive(i));
             }
         }
         match crate::backend::external::StoreManager::setup() {
             Ok(v) => {
-                let fallos = v
+                let failures = v
                     .get("failed")
                     .and_then(|x| x.as_array())
                     .map(|a| {
                         a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
-                for (id, nombre) in [(DepId::Legendary, "legendary"), (DepId::Gogdl, "gogdl")] {
-                    // `idx_de` only returns `Some` for a pending item.
-                    let Some(i) = idx_de(id) else { continue };
-                    match fallos.iter().find(|e| e.starts_with(nombre)) {
-                        Some(e) => enviar(Avance::FilaFallo(i, motivo_corto("setup", e))),
-                        None => enviar(Avance::FilaLista(i)),
+                for (id, name) in [(DepId::Legendary, "legendary"), (DepId::Gogdl, "gogdl")] {
+                    // index_of only returns Some for a pending item.
+                    let Some(i) = index_of(id) else { continue };
+                    match failures.iter().find(|e| e.starts_with(name)) {
+                        Some(e) => send(InstallProgress::RowFailed(i, short_reason("setup", e))),
+                        None => send(InstallProgress::RowReady(i)),
                     }
                 }
             }
             Err(e) => {
                 for id in [DepId::Legendary, DepId::Gogdl] {
-                    if let Some(i) = idx_de(id) {
-                        if pendientes.contains(&id) {
-                            enviar(Avance::FilaFallo(i, motivo_corto("setup", &e)));
+                    if let Some(i) = index_of(id) {
+                        if pending.contains(&id) {
+                            send(InstallProgress::RowFailed(i, short_reason("setup", &e)));
                         }
                     }
                 }
@@ -203,18 +201,18 @@ fn instalar(
         }
     }
 
-    if pendientes.contains(&DepId::Chromium) {
-        let Some(i) = idx_de(DepId::Chromium) else {
-            enviar(Avance::Terminado);
+    if pending.contains(&DepId::Chromium) {
+        let Some(i) = index_of(DepId::Chromium) else {
+            send(InstallProgress::Finished);
             return;
         };
-        enviar(Avance::FilaActiva(i));
+        send(InstallProgress::RowActive(i));
         let Some(bin) = helper else {
-            enviar(Avance::FilaFallo(i, "login helper missing".to_string()));
-            enviar(Avance::Terminado);
+            send(InstallProgress::RowFailed(i, "login helper missing".to_string()));
+            send(InstallProgress::Finished);
             return;
         };
-        let mut hijo = match std::process::Command::new(&bin)
+        let mut child = match std::process::Command::new(&bin)
             .arg("--prefetch")
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
@@ -223,73 +221,73 @@ fn instalar(
         {
             Ok(c) => c,
             Err(e) => {
-                enviar(Avance::FilaFallo(i, motivo_corto("chrome", &e.to_string())));
-                enviar(Avance::Terminado);
+                send(InstallProgress::RowFailed(i, short_reason("chrome", &e.to_string())));
+                send(InstallProgress::Finished);
                 return;
             }
         };
         use std::io::{BufRead, Read};
-        let mut visto_done = false;
-        if let Some(salida) = hijo.stdout.take() {
-            for linea in std::io::BufReader::new(salida).lines() {
-                let Ok(linea) = linea else { break };
-                let Ok(v) = serde_json::from_str::<serde_json::Value>(&linea) else {
+        let mut saw_done = false;
+        if let Some(output) = child.stdout.take() {
+            for line in std::io::BufReader::new(output).lines() {
+                let Ok(line) = line else { break };
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
                     continue;
                 };
                 match v.get("type").and_then(|x| x.as_str()) {
                     Some("chrome_progress") => {
                         let pct = v.get("percent").and_then(|x| x.as_u64()).unwrap_or(0) as u8;
                         let mb = v.get("mb").and_then(|x| x.as_u64()).unwrap_or(0);
-                        enviar(Avance::FilaProgreso(i, pct, mb));
+                        send(InstallProgress::RowProgress(i, pct, mb));
                     }
                     Some("chrome_done") => {
-                        visto_done = true;
-                        enviar(Avance::FilaLista(i));
+                        saw_done = true;
+                        send(InstallProgress::RowReady(i));
                     }
                     _ => {}
                 }
             }
         }
-        let mut resto = String::new();
-        if let Some(mut err) = hijo.stderr.take() {
-            let _ = err.read_to_string(&mut resto);
+        let mut remaining = String::new();
+        if let Some(mut err) = child.stderr.take() {
+            let _ = err.read_to_string(&mut remaining);
         }
-        match hijo.wait() {
+        match child.wait() {
             Ok(st) if st.success() => {
-                if !visto_done {
-                    enviar(Avance::FilaLista(i));
+                if !saw_done {
+                    send(InstallProgress::RowReady(i));
                 }
             }
             _ => {
-                let msg = resto
+                let msg = remaining
                     .lines()
                     .rev()
                     .find(|l| l.contains("ERRO:"))
                     .map(|l| {
                         l.splitn(3, ':').nth(2).unwrap_or(l).trim().to_string()
                     })
-                    .unwrap_or_else(|| resto.trim().to_string());
-                enviar(Avance::FilaFallo(i, motivo_corto("chrome", &msg)));
+                    .unwrap_or_else(|| remaining.trim().to_string());
+                send(InstallProgress::RowFailed(i, short_reason("chrome", &msg)));
             }
         }
-        enviar(Avance::Terminado);
+        send(InstallProgress::Finished);
     } else {
-        enviar(Avance::Terminado);
+        send(InstallProgress::Finished);
     }
 }
 
-/// Abre el modal con las filas pendientes (`pendientes` en orden DEPS).
+/// Open the modal with pending rows in DEPS order.
 ///
 /// No X and no close button: the only exits are total success (auto-close +
-/// `InstallOutcome::TodoOk`) and the "Skip for now" link, which only shows
+/// `InstallOutcome::Ready`) and the "Skip for now" link, which only shows
 /// after ≥1 failed attempt (`InstallOutcome::Skip`).
 pub fn present(
     parent: &impl IsA<gtk::Widget>,
-    pendientes: Vec<DepId>,
+    pending: Vec<DepId>,
     helper: Option<std::path::PathBuf>,
-    terminado: impl Fn(InstallOutcome) + 'static,
+    on_finished: impl Fn(InstallOutcome) + 'static,
 ) {
-    if pendientes.is_empty() {
+    if pending.is_empty() {
         return;
     }
     let dialog = adw::Dialog::new();
@@ -316,13 +314,13 @@ pub fn present(
     content.append(&inner);
 
     // Header without X: same title and separator as `modal_header`.
-    let titulo = gtk::Label::new(Some("Install dependencies"));
-    titulo.add_css_class("modal-title");
-    titulo.set_halign(gtk::Align::Start);
-    titulo.set_margin_start(24);
-    titulo.set_margin_end(16);
-    titulo.set_margin_top(16);
-    inner.append(&titulo);
+    let title = gtk::Label::new(Some("Install dependencies"));
+    title.add_css_class("modal-title");
+    title.set_halign(gtk::Align::Start);
+    title.set_margin_start(24);
+    title.set_margin_end(16);
+    title.set_margin_top(16);
+    inner.append(&title);
     let sep = gtk::Separator::new(gtk::Orientation::Horizontal);
     sep.set_halign(gtk::Align::Fill);
     inner.append(&sep);
@@ -333,54 +331,54 @@ pub fn present(
     intro.add_css_class("info-value");
     inner.append(&intro);
 
-    let lista = gtk::ListBox::new();
-    lista.set_selection_mode(gtk::SelectionMode::None);
-    inner.append(&lista);
+    let list = gtk::ListBox::new();
+    list.set_selection_mode(gtk::SelectionMode::None);
+    inner.append(&list);
 
-    let mut filas: Vec<FilaWidgets> = Vec::new();
-    for id in &pendientes {
-        let info = DEPS.iter().find(|d| d.id == *id).expect("DepId cubierto por DEPS");
-        let fila = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        fila.set_margin_top(4);
-        fila.set_margin_bottom(4);
-        fila.set_margin_start(4);
-        fila.set_margin_end(4);
-        let textos = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        textos.set_hexpand(true);
-        let nombre = gtk::Label::new(Some(info.nombre));
-        nombre.set_halign(gtk::Align::Start);
-        textos.append(&nombre);
-        let desc = gtk::Label::new(Some(info.descripcion));
+    let mut rows: Vec<RowWidgets> = Vec::new();
+    for id in &pending {
+        let info = DEPS.iter().find(|d| d.id == *id).expect("DepId covered by DEPS");
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        row.set_margin_top(4);
+        row.set_margin_bottom(4);
+        row.set_margin_start(4);
+        row.set_margin_end(4);
+        let texts = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        texts.set_hexpand(true);
+        let name = gtk::Label::new(Some(info.name));
+        name.set_halign(gtk::Align::Start);
+        texts.append(&name);
+        let desc = gtk::Label::new(Some(info.description));
         desc.set_halign(gtk::Align::Start);
         desc.set_wrap(true);
         desc.add_css_class("dim-label");
-        textos.append(&desc);
-        fila.append(&textos);
-        let peso = gtk::Label::new(Some(info.peso));
-        peso.set_halign(gtk::Align::End);
-        peso.set_valign(gtk::Align::Center);
-        peso.add_css_class("dim-label");
-        fila.append(&peso);
+        texts.append(&desc);
+        row.append(&texts);
+        let size = gtk::Label::new(Some(info.size));
+        size.set_halign(gtk::Align::End);
+        size.set_valign(gtk::Align::Center);
+        size.add_css_class("dim-label");
+        row.append(&size);
         let spin = gtk::Spinner::new();
         spin.set_valign(gtk::Align::Center);
-        fila.append(&spin);
-        let estado = gtk::Label::new(Some("Waiting…"));
-        estado.set_valign(gtk::Align::Center);
-        estado.add_css_class("dim-label");
-        fila.append(&estado);
-        lista.append(&fila);
-        filas.push(FilaWidgets { spin, estado });
+        row.append(&spin);
+        let status = gtk::Label::new(Some("Waiting…"));
+        status.set_valign(gtk::Align::Center);
+        status.add_css_class("dim-label");
+        row.append(&status);
+        list.append(&row);
+        rows.push(RowWidgets { spin, status });
     }
 
-    let barra = gtk::ProgressBar::new();
-    barra.set_show_text(true);
-    barra.set_text(Some("0 of 0"));
-    inner.append(&barra);
+    let progress_bar = gtk::ProgressBar::new();
+    progress_bar.set_show_text(true);
+    progress_bar.set_text(Some("0 of 0"));
+    inner.append(&progress_bar);
 
-    let instalar_btn = gtk::Button::with_label("Install All");
-    instalar_btn.add_css_class("suggested-action");
-    instalar_btn.set_hexpand(true);
-    inner.append(&instalar_btn);
+    let install_button = gtk::Button::with_label("Install All");
+    install_button.add_css_class("suggested-action");
+    install_button.set_hexpand(true);
+    inner.append(&install_button);
 
     // Escape valve: a small link, only after ≥1 failed attempt. It doesn't
     // compete with "Install All" and never shows on the first render.
@@ -392,91 +390,91 @@ pub fn present(
     inner.append(&skip);
 
     dialog.set_child(Some(&content));
-    asegurar_css_ready();
+    ensure_ready_css();
 
-    let terminado = Rc::new(terminado);
-    let dlg_vivo: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(true));
+    let on_finished = Rc::new(on_finished);
+    let dialog_alive: Rc<std::cell::Cell<bool>> = Rc::new(std::cell::Cell::new(true));
     {
-        let vivo = dlg_vivo.clone();
+        let alive = dialog_alive.clone();
         dialog.connect_closed(move |_| {
-            vivo.set(false);
+            alive.set(false);
         });
     }
-    let (tx, rx) = std::sync::mpsc::channel::<Avance>();
+    let (tx, rx) = std::sync::mpsc::channel::<InstallProgress>();
     let rx = Rc::new(std::cell::RefCell::new(rx));
 
-    // Estado compartido con el poller.
-    struct Estado {
-        filas: Vec<FilaWidgets>,
-        estados: Vec<FilaEstado>,
-        barra: gtk::ProgressBar,
-        instalar_btn: gtk::Button,
+    // State shared with the poller.
+    struct ModalState {
+        rows: Vec<RowWidgets>,
+        states: Vec<RowState>,
+        progress_bar: gtk::ProgressBar,
+        install_button: gtk::Button,
         skip: gtk::Button,
-        listas: usize,
+        ready_count: usize,
         total: usize,
-        fallos_acumulados: u32,
-        instalando: bool,
+        accumulated_failures: u32,
+        installing: bool,
     }
-    let estado = Rc::new(std::cell::RefCell::new(Estado {
-        filas,
-        estados: vec![FilaEstado::Espera; pendientes.len()],
-        barra: barra.clone(),
-        instalar_btn: instalar_btn.clone(),
+    let state = Rc::new(std::cell::RefCell::new(ModalState {
+        rows,
+        states: vec![RowState::Waiting; pending.len()],
+        progress_bar: progress_bar.clone(),
+        install_button: install_button.clone(),
         skip: skip.clone(),
-        listas: 0,
-        total: pendientes.len(),
-        fallos_acumulados: 0,
-        instalando: false,
+        ready_count: 0,
+        total: pending.len(),
+        accumulated_failures: 0,
+        installing: false,
     }));
 
-    let lanzar = {
-        let estado = estado.clone();
-        let pendientes = pendientes.clone();
+    let start = {
+        let state = state.clone();
+        let pending = pending.clone();
         let helper = helper.clone();
         move || {
-            let mut e = estado.borrow_mut();
-            if e.instalando {
+            let mut e = state.borrow_mut();
+            if e.installing {
                 return;
             }
-            e.instalando = true;
-            e.listas = 0;
-            e.instalar_btn.set_sensitive(false);
-            for i in 0..e.filas.len() {
-                if let Some(f) = e.filas.get(i) {
+            e.installing = true;
+            e.ready_count = 0;
+            e.install_button.set_sensitive(false);
+            for i in 0..e.rows.len() {
+                if let Some(f) = e.rows.get(i) {
                     f.spin.stop();
                     f.spin.set_visible(false);
-                    f.estado.remove_css_class("deps-ready");
-                    f.estado.set_text("Waiting…");
+                    f.status.remove_css_class("deps-ready");
+                    f.status.set_text("Waiting…");
                 }
-                // Intento fresco, estados frescos. El link de skip NO se
-                // oculta: una vez ganado por un fallo anterior, queda.
-                if let Some(s) = e.estados.get_mut(i) {
-                    *s = FilaEstado::Espera;
+                // Reset attempt states, but never hide the skip link once a
+                // previous failure made it available.
+                if let Some(s) = e.states.get_mut(i) {
+                    *s = RowState::Waiting;
                 }
             }
-            e.barra.set_fraction(0.0);
-            e.barra.set_text(Some(&format!("0 of {}", e.total)));
-            let tx_hilo = tx.clone();
-            let pendientes_hilo = pendientes.clone();
-            let helper_hilo = helper.clone();
+            e.progress_bar.set_fraction(0.0);
+            e.progress_bar.set_text(Some(&format!("0 of {}", e.total)));
+            let thread_tx = tx.clone();
+            let thread_pending = pending.clone();
+            let thread_helper = helper.clone();
             drop(e);
             std::thread::spawn(move || {
-                instalar(pendientes_hilo, helper_hilo, tx_hilo);
+                install_pending(thread_pending, thread_helper, thread_tx);
             });
         }
     };
-    let lanzar = Rc::new(lanzar);
+    let start = Rc::new(start);
     {
-        let l = lanzar.clone();
-        instalar_btn.connect_clicked(move |_| {
+        let l = start.clone();
+        install_button.connect_clicked(move |_| {
             l();
         });
     }
     // No autostart: installing begins ONLY on pressing "Install All". (An
-    // earlier version called `lanzar()` here, so the modal installed itself on
+    // earlier version called start() here, so the modal installed itself on
     // open — which also made the skip link appear before any attempt.)
     {
-        let t = terminado.clone();
+        let t = on_finished.clone();
         let d = dialog.clone();
         skip.connect_clicked(move |_| {
             d.force_close();
@@ -487,16 +485,16 @@ pub fn present(
     // Poller like ProtonModal's: drains the channel every 100 ms and dies with
     // the dialog.
     {
-        let estado = estado.clone();
+        let state = state.clone();
         let rx_poll = rx.clone();
-        let vivo_poll = dlg_vivo.clone();
-        let t = terminado.clone();
+        let alive_poll = dialog_alive.clone();
+        let t = on_finished.clone();
         let d = dialog.clone();
         glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
-            if !vivo_poll.get() {
+            if !alive_poll.get() {
                 return glib::ControlFlow::Break;
             }
-            let mensajes: Vec<Avance> = {
+            let messages: Vec<InstallProgress> = {
                 let r = rx_poll.borrow();
                 let mut v = Vec::new();
                 while let Ok(m) = r.try_recv() {
@@ -504,61 +502,61 @@ pub fn present(
                 }
                 v
             };
-            for m in mensajes {
-                let mut e = estado.borrow_mut();
+            for m in messages {
+                let mut e = state.borrow_mut();
                 match m {
-                    Avance::FilaActiva(i) => {
-                        if let Some(f) = e.filas.get(i) {
+                    InstallProgress::RowActive(i) => {
+                        if let Some(f) = e.rows.get(i) {
                             f.spin.set_visible(true);
                             f.spin.start();
-                            f.estado.remove_css_class("deps-ready");
-                            f.estado.set_text("Downloading…");
+                            f.status.remove_css_class("deps-ready");
+                            f.status.set_text("Downloading…");
                         }
-                        if let Some(s) = e.estados.get_mut(i) {
-                            *s = FilaEstado::Activa;
-                        }
-                    }
-                    Avance::FilaProgreso(i, pct, mb) => {
-                        if let Some(f) = e.filas.get(i) {
-                            f.estado.set_text(&format!("{}% ({} MB)", pct, mb));
+                        if let Some(s) = e.states.get_mut(i) {
+                            *s = RowState::Active;
                         }
                     }
-                    Avance::FilaLista(i) => {
-                        if let Some(f) = e.filas.get(i) {
+                    InstallProgress::RowProgress(i, pct, mb) => {
+                        if let Some(f) = e.rows.get(i) {
+                            f.status.set_text(&format!("{}% ({} MB)", pct, mb));
+                        }
+                    }
+                    InstallProgress::RowReady(i) => {
+                        if let Some(f) = e.rows.get(i) {
                             f.spin.stop();
                             f.spin.set_visible(false);
-                            f.estado.set_text("Ready");
-                            f.estado.add_css_class("deps-ready");
+                            f.status.set_text("Ready");
+                            f.status.add_css_class("deps-ready");
                         }
-                        if let Some(s) = e.estados.get_mut(i) {
-                            *s = FilaEstado::Lista;
+                        if let Some(s) = e.states.get_mut(i) {
+                            *s = RowState::Ready;
                         }
-                        e.listas += 1;
-                        e.barra.set_fraction(e.listas as f64 / e.total.max(1) as f64);
-                        e.barra.set_text(Some(&format!("{} of {}", e.listas, e.total)));
+                        e.ready_count += 1;
+                        e.progress_bar.set_fraction(e.ready_count as f64 / e.total.max(1) as f64);
+                        e.progress_bar.set_text(Some(&format!("{} of {}", e.ready_count, e.total)));
                     }
-                    Avance::FilaFallo(i, motivo) => {
-                        if let Some(f) = e.filas.get(i) {
+                    InstallProgress::RowFailed(i, reason) => {
+                        if let Some(f) = e.rows.get(i) {
                             f.spin.stop();
                             f.spin.set_visible(false);
-                            f.estado.remove_css_class("deps-ready");
-                            f.estado.set_text(&format!("Failed: {}", motivo));
+                            f.status.remove_css_class("deps-ready");
+                            f.status.set_text(&format!("Failed: {}", reason));
                         }
-                        if let Some(s) = e.estados.get_mut(i) {
-                            *s = FilaEstado::Fallo;
+                        if let Some(s) = e.states.get_mut(i) {
+                            *s = RowState::Failed;
                         }
                         // Timing fix: the link shows on the first failure,
                         // without waiting for the rest. Monotonic: once visible
                         // it never hides (rule I settled on).
-                        if mostrar_skip(&e.estados) {
+                        if show_skip(&e.states) {
                             e.skip.set_visible(true);
                         }
                     }
-                    Avance::Terminado => {
-                        e.instalando = false;
-                        e.instalar_btn.set_sensitive(true);
-                        if e.listas >= e.total {
-                            e.barra.set_text(Some("All dependencies installed."));
+                    InstallProgress::Finished => {
+                        e.installing = false;
+                        e.install_button.set_sensitive(true);
+                        if e.ready_count >= e.total {
+                            e.progress_bar.set_text(Some("All dependencies installed."));
                             // Total success: auto-close. It's the only clean
                             // exit; staying open with nothing left to do is
                             // the trap this design avoids. `force_close`:
@@ -570,14 +568,14 @@ pub fn present(
                                 std::time::Duration::from_millis(900),
                                 move || {
                                     dd.force_close();
-                                    tt(InstallOutcome::TodoOk);
+                                    tt(InstallOutcome::Ready);
                                 },
                             );
                         } else {
-                            e.fallos_acumulados += 1;
-                            e.barra.set_text(Some("Press Install All to retry."));
+                            e.accumulated_failures += 1;
+                            e.progress_bar.set_text(Some("Press Install All to retry."));
                             // The link already showed on the first failure
-                            // (`mostrar_skip` rule); nothing is decided here.
+                            // (show_skip rule); nothing is decided here.
                         }
                     }
                 }
@@ -595,56 +593,56 @@ mod tests {
     use super::*;
 
     #[test]
-    fn motivo_corto_detecta_sin_conexion() {
-        assert_eq!(motivo_corto("setup", "gogdl: <urlopen error [Errno -2] Name or service not known>"), "no connection");
-        // Plugin wording, still matched.
-        assert_eq!(motivo_corto("chrome", "fallo de red al conectar: bla"), "no connection");
-        assert_eq!(motivo_corto("chrome", "la descarga se cortó o falló tras 4 intentos"), "no connection");
+    fn short_reason_detects_no_connection() {
+        assert_eq!(short_reason("setup", "gogdl: <urlopen error [Errno -2] Name or service not known>"), "no connection");
+        // Compatibility fixtures for external diagnostics in a Spanish locale.
+        assert_eq!(short_reason("chrome", "fallo de red al conectar: bla"), "no connection");
+        assert_eq!(short_reason("chrome", "la descarga se cortó o falló tras 4 intentos"), "no connection");
         // The login helper's own English wording.
-        assert_eq!(motivo_corto("chrome", "the download was cut off or failed after 4 attempts"), "no connection");
-        assert_eq!(motivo_corto("chrome", "the server rejected the download: 403"), "no connection");
+        assert_eq!(short_reason("chrome", "the download was cut off or failed after 4 attempts"), "no connection");
+        assert_eq!(short_reason("chrome", "the server rejected the download: 403"), "no connection");
     }
 
     #[test]
-    fn motivo_corto_detecta_sin_espacio() {
-        assert_eq!(motivo_corto("setup", "gogdl: [Errno 28] No space left on device"), "no disk space");
-        assert_eq!(motivo_corto("chrome", "could not write to disk: no space left"), "no disk space");
-        // Plugin wording, still matched.
-        assert_eq!(motivo_corto("chrome", "no se pudo escribir en disco: sin espacio"), "no disk space");
+    fn short_reason_detects_no_disk_space() {
+        assert_eq!(short_reason("setup", "gogdl: [Errno 28] No space left on device"), "no disk space");
+        assert_eq!(short_reason("chrome", "could not write to disk: no space left"), "no disk space");
+        // Compatibility fixture for external diagnostics in a Spanish locale.
+        assert_eq!(short_reason("chrome", "no se pudo escribir en disco: sin espacio"), "no disk space");
     }
 
     #[test]
-    fn motivo_corto_muestra_crudo_si_no_clasifica() {
-        assert_eq!(motivo_corto("setup", "gogdl: permiso denegado"), "gogdl: permiso denegado");
-        assert_eq!(motivo_corto("setup", "   "), "unknown error");
+    fn short_reason_preserves_unclassified_text() {
+        assert_eq!(short_reason("setup", "gogdl: permiso denegado"), "gogdl: permiso denegado");
+        assert_eq!(short_reason("setup", "   "), "unknown error");
     }
 
     #[test]
-    fn las_tres_deps_estan_fichadas() {
+    fn all_three_dependencies_have_metadata() {
         assert_eq!(DEPS.len(), 3);
-        assert!(DEPS.iter().any(|d| d.id == DepId::Chromium && d.peso == "~188 MB"));
+        assert!(DEPS.iter().any(|d| d.id == DepId::Chromium && d.size == "~188 MB"));
     }
 
     /// The reported bug: row A Failed, row B still in progress (neither
     /// success nor failure) → the link must already be visible, without
     /// waiting for B.
     #[test]
-    fn mostrar_skip_con_un_fallo_y_otra_en_progreso() {
-        assert!(mostrar_skip(&[FilaEstado::Fallo, FilaEstado::Activa]));
+    fn show_skip_with_failure_and_active_row() {
+        assert!(show_skip(&[RowState::Failed, RowState::Active]));
     }
 
     /// With no failure there's no link, in no intermediate or final state.
     #[test]
-    fn mostrar_skip_sin_fallos_oculto() {
-        assert!(!mostrar_skip(&[FilaEstado::Espera, FilaEstado::Espera]));
-        assert!(!mostrar_skip(&[FilaEstado::Activa, FilaEstado::Espera]));
-        assert!(!mostrar_skip(&[FilaEstado::Lista, FilaEstado::Lista]));
-        assert!(!mostrar_skip(&[]));
+    fn show_skip_without_failures_stays_hidden() {
+        assert!(!show_skip(&[RowState::Waiting, RowState::Waiting]));
+        assert!(!show_skip(&[RowState::Active, RowState::Waiting]));
+        assert!(!show_skip(&[RowState::Ready, RowState::Ready]));
+        assert!(!show_skip(&[]));
     }
 
     /// A failure next to a success also shows the link (rest ignored).
     #[test]
-    fn mostrar_skip_con_fallo_y_exito() {
-        assert!(mostrar_skip(&[FilaEstado::Lista, FilaEstado::Fallo]));
+    fn show_skip_with_failure_and_success() {
+        assert!(show_skip(&[RowState::Ready, RowState::Failed]));
     }
 }
