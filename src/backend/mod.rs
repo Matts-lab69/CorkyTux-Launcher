@@ -1,3 +1,4 @@
+pub mod bepinex;
 pub mod config;
 pub mod download_integrity;
 pub mod ext_bin;
