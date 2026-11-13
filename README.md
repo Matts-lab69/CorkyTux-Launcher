@@ -520,6 +520,16 @@ Wheels, flight sticks and devices without an SDL mapping are ignored.
 
 ---
 
+## First-use tutorial
+
+The first visible window offers up to six short, widget-relative hints. Every
+step has **Skip**; Escape, controller Back or hiding the window also dismisses
+the tour. Completed, skipped and interrupted tours do not appear automatically
+again. Reopen it with **Settings → View tutorial**. Missing or hidden targets
+are skipped. Progress is stored as `FirstUseTutorialState` in `Launcher.ini`.
+Hints use standard GTK buttons and the existing controller navigation; no
+full-window overlay or fixed screen coordinates are used.
+
 ## License
 
 AGPL-3.0 — see [LICENSE](LICENSE).

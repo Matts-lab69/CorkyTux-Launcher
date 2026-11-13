@@ -1395,6 +1395,24 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     toast_overlay.set_child(Some(&main_box));
     window.set_content(Some(&toast_overlay));
 
+    let mut tutorial_targets = vec![
+        (
+            backend::tutorial::Step::Library,
+            content_stack.clone().upcast::<gtk::Widget>(),
+        ),
+        (backend::tutorial::Step::Add, add_btn.clone().upcast()),
+        (
+            backend::tutorial::Step::Controller,
+            settings_btn.clone().upcast(),
+        ),
+        (backend::tutorial::Step::Tray, title_box.clone().upcast()),
+        (backend::tutorial::Step::Help, settings_btn.clone().upcast()),
+    ];
+    if let Some(button) = details.get_action_button("Settings") {
+        tutorial_targets.push((backend::tutorial::Step::GameSettings, button.upcast()));
+    }
+    let tutorial = ui::tutorial::Controller::attach(&window, &state.config, tutorial_targets);
+
     // Session poller (C++ onGameFinished parity): bank play time when the
     // child exits on its own, and keep the Play/Stop label in sync.
     {
@@ -1577,7 +1595,11 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     let quick_view = content_stack.clone();
     let _quick_body = body.clone();
     let quick_window = window.clone();
+    let quick_tutorial = tutorial.clone();
     let quick = std::rc::Rc::new(move || {
+        if quick_tutorial.is_active() {
+            return;
+        }
         let selected_game = quick_state.selected_game.borrow().clone();
         let selected = !selected_game.is_empty();
         let running = quick_state.proton.is_game_running()
@@ -1618,10 +1640,14 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     // Explain it once, after the window is mapped, in a dialog the gamepad can
     // dismiss. The dismissed flag lives in Launcher.ini so it never nags.
     if !background && ui::helpers::sgdb_key_notice_pending(&state.config) {
-        let notice_window = window.clone();
+        let notice_window = window.downgrade();
         let notice_config = state.config.clone();
         glib::timeout_add_local_once(std::time::Duration::from_millis(1200), move || {
-            ui::helpers::present_sgdb_key_notice(&notice_window, &notice_config);
+            tutorial.when_inactive(move || {
+                if let Some(window) = notice_window.upgrade() {
+                    ui::helpers::present_sgdb_key_notice(&window, &notice_config);
+                }
+            });
         });
     }
 
