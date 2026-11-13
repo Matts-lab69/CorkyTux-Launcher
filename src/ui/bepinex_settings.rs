@@ -23,9 +23,8 @@ struct Binding {
     entry: Rc<RefCell<Option<gtk::Entry>>>,
 }
 
-pub(super) fn key(state: &AppState, game: &str) -> &'static str {
-    // Prefer the canonical setting when present; retain legacy compatibility.
-    bepinex::override_key(&state.config.game_section(game))
+fn key(_state: &AppState, _game: &str) -> &'static str {
+    crate::backend::dll_overrides::KEY
 }
 
 impl Binding {

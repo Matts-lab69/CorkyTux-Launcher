@@ -1545,10 +1545,6 @@ impl ProtonManager {
         };
         let steam_id = game.get("steamid").cloned().unwrap_or_default();
         let use_umu = game.get("useumu").map(|v| v == "true").unwrap_or(false);
-        let overrides = game
-            .get(&super::bepinex::override_key(&game).to_ascii_lowercase())
-            .cloned()
-            .unwrap_or_default();
         let use_shared_prefix = game
             .get("usesharedprefix")
             .map(|v| v == "true")
@@ -1696,6 +1692,7 @@ impl ProtonManager {
                 &real_prefix,
                 (&environment, &args_before, &args_after, &launch_args),
             ) {
+                super::dll_overrides::apply(&mut leg_cmd, &game)?;
                 if mango_hud {
                     leg_cmd.env("MANGOHUD", "1");
                 }
@@ -1826,9 +1823,6 @@ impl ProtonManager {
             }
         } else {
             final_cmd = Command::new(&proton_bin);
-            if !overrides.is_empty() {
-                final_cmd.env("WINEDLLOVERRIDES", &overrides);
-            }
             // err+all: wine errors stay visible for the Debug log
             // (plain -all hid every err: line the legend mentions).
             final_cmd.env("WINEDEBUG", "err+all");
@@ -1969,6 +1963,8 @@ impl ProtonManager {
                 }
             }
         }
+
+        super::dll_overrides::apply(&mut final_cmd, &game)?;
 
         // Wrapper GameMode (gamemoderun antepuesto al programa completo)
         let mut wrapped_cmd = if game_mode {

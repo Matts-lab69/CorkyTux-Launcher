@@ -51,6 +51,16 @@ Unified library, filters, search, recently played cards, favorites, playtime, pe
 ### Proton/Wine
 Per-game Proton version and prefix, umu, EAC/BattlEye, EOS, Wine virtual desktop, environment variables, arguments, DLL overrides, Steam/Lutris/Heroic scans.
 
+**Custom DLL overrides:** edit the per-game field under Launch options using
+`WINEDLLOVERRIDES` syntax, for example `winhttp=n,b;version=b`. Separate DLL
+groups with semicolons; use `n`/`native`, `b`/`builtin`, or an empty load order
+to disable a DLL. Invalid edits are marked and are not saved. Clear the field
+to remove its overrides. The setting uses `custom_dll_overrides`; existing
+`Overrides` values migrate once without removing the old value or other keys.
+The explicit field takes precedence over the same variable in Environment
+for direct Proton, umu and Legendary launches. Steam-managed launches continue
+to use Steam's own launch options. No presets or DLL files are installed.
+
 ### Mods (BepInEx)
 
 The per-game Launch options switch is off by default. It detects Windows Unity
