@@ -106,7 +106,8 @@ jobs:
             libgtk-4-dev \
             libudev-dev \
             libadwaita-1-dev \
-            libglib2.0-dev
+            libglib2.0-dev \
+            librsvg2-common
 
       - name: Check GTK versions
         run: |
