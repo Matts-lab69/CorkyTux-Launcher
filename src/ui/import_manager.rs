@@ -18,7 +18,8 @@ use crate::ui::helpers;
 /// Description of "Permanent import". I keep it worded per my spec.
 const DESC_PERMANENT: &str = "Your games will be imported into the launcher and also moved to a Games folder in your home directory (only install_path and prefix_path are moved). This avoids warnings or bugs caused by unregistered paths or lost executables.";
 
-const DESC_TEST: &str = "Registers the game with its current paths, as they are. No files are moved.";
+const DESC_TEST: &str =
+    "Registers the game with its current paths, as they are. No files are moved.";
 
 /// Opens the Import Manager and hands the chosen mode to `on_done`.
 ///
@@ -27,8 +28,13 @@ const DESC_TEST: &str = "Registers the game with its current paths, as they are.
 ///
 /// `pf` was already computed by the caller (`import_move::preflight`), which
 /// only reads: nothing here touches the disk or rechecks anything.
-pub fn ask<F>(parent: &adw::ApplicationWindow, label: &str, store_tag: &str, pf: &Preflight, on_done: F)
-where
+pub fn ask<F>(
+    parent: &adw::ApplicationWindow,
+    label: &str,
+    store_tag: &str,
+    pf: &Preflight,
+    on_done: F,
+) where
     F: Fn(Option<ImportMode>) + 'static,
 {
     let space_blocked = pf
@@ -81,8 +87,10 @@ where
     head.add_css_class("title-label");
     body.append(&head);
 
-    let dest = format!("~/Games/{}-Games",
-        if store_tag == "epic" { "Epic" } else { "GOG" });
+    let dest = format!(
+        "~/Games/{}-Games",
+        if store_tag == "epic" { "Epic" } else { "GOG" }
+    );
     let lead = gtk::Label::new(Some(&format!(
         "Choose how it is registered. Import test does not move any files. Permanent moves into {}.",
         dest)));
@@ -106,7 +114,12 @@ where
     body.append(&test);
 
     // Mode 2: permanent, with the colour dot.
-    let permanent = mode_toggle("Permanent import", DESC_PERMANENT, DotColor::Red, Some(&test));
+    let permanent = mode_toggle(
+        "Permanent import",
+        DESC_PERMANENT,
+        DotColor::Red,
+        Some(&test),
+    );
     permanent.set_sensitive(can_permanent);
     if !can_permanent && !space_blocked {
         let why = gtk::Label::new(Some("No games can be moved in this selection."));
@@ -127,7 +140,12 @@ where
             shared.len(),
             if shared.len() == 1 { "" } else { "s" }
         );
-        let group = mode_toggle("Move the shared-prefix group", &desc, DotColor::Red, Some(&test));
+        let group = mode_toggle(
+            "Move the shared-prefix group",
+            &desc,
+            DotColor::Red,
+            Some(&test),
+        );
         group.set_sensitive(can_permanent);
         body.append(&group);
 
@@ -357,12 +375,10 @@ fn shared_labels(blockers: &[Blocker]) -> Vec<String> {
 }
 
 fn space_blocker_message(blockers: &[Blocker]) -> Option<String> {
-    blockers
-        .iter()
-        .find_map(|b| match b {
-            Blocker::NotEnoughSpace { .. } => Some(b.message()),
-            _ => None,
-        })
+    blockers.iter().find_map(|b| match b {
+        Blocker::NotEnoughSpace { .. } => Some(b.message()),
+        _ => None,
+    })
 }
 
 /// Convenience for callers: the Games root the move writes into.
@@ -376,7 +392,9 @@ mod tests {
 
     #[test]
     fn import_description_does_not_hardcode_home() {
-        assert!(!DESC_PERMANENT.contains("/home"),
-                "import text must not hardcode /home (wrong on /var/home)");
+        assert!(
+            !DESC_PERMANENT.contains("/home"),
+            "import text must not hardcode /home (wrong on /var/home)"
+        );
     }
 }

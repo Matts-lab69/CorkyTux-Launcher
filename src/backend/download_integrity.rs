@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const GE_TAG: &str = "GE-Proton11-12";
-pub const GE_API_URL: &str = "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/tags/GE-Proton11-12";
+pub const GE_API_URL: &str =
+    "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/tags/GE-Proton11-12";
 pub const GE_URL: &str = "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-12/GE-Proton11-12-x86_64.tar.gz";
 // Published SHA-512, read on 2026-11-04 from the release's official sidecar:
 // https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-12/GE-Proton11-12-x86_64.sha512sum
@@ -39,7 +40,8 @@ impl DownloadArchive {
         for _ in 0..32 {
             let path = directory.join(format!(
                 ".corkytux-download-{}-{}.part",
-                std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
             ));
             let mut options = OpenOptions::new();
             options.write(true).create_new(true);
@@ -65,12 +67,17 @@ impl DownloadArchive {
         if expected.len() != 128 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Err("Invalid SHA-512 checksum metadata; installation aborted".into());
         }
-        let mut file = File::open(&self.path).map_err(|error| format!("Cannot verify archive: {error}"))?;
+        let mut file =
+            File::open(&self.path).map_err(|error| format!("Cannot verify archive: {error}"))?;
         let mut hasher = Sha512::new();
         let mut buffer = [0u8; 64 * 1024];
         loop {
-            let count = file.read(&mut buffer).map_err(|error| format!("Cannot verify archive: {error}"))?;
-            if count == 0 { break; }
+            let count = file
+                .read(&mut buffer)
+                .map_err(|error| format!("Cannot verify archive: {error}"))?;
+            if count == 0 {
+                break;
+            }
             hasher.update(&buffer[..count]);
         }
         let actual = format!("{:x}", hasher.finalize());
@@ -99,7 +106,14 @@ mod tests {
         assert!(ge_checksum("GE-Proton-old", GE_URL).is_err());
         assert!(ge_checksum(GE_TAG, "https://example.invalid/archive.tar.gz").is_err());
         assert!(ge_checksum("different-name", GE_URL).is_err());
-        assert_eq!(ge_checksum("proton-cachyos", "https://github.com/CachyOS/Proton-CachyOS/releases/download/test/archive.tar.gz").unwrap(), None);
+        assert_eq!(
+            ge_checksum(
+                "proton-cachyos",
+                "https://github.com/CachyOS/Proton-CachyOS/releases/download/test/archive.tar.gz"
+            )
+            .unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -110,7 +124,10 @@ mod tests {
         file.write_all(b"corrupt bytes").unwrap();
         drop(file);
         let trusted = format!("{:x}", Sha512::digest(b"trusted bytes"));
-        assert!(archive.verify_sha512(&trusted).unwrap_err().contains("checksum mismatch"));
+        assert!(archive
+            .verify_sha512(&trusted)
+            .unwrap_err()
+            .contains("checksum mismatch"));
         drop(archive);
         assert!(!path.exists());
     }
@@ -137,7 +154,9 @@ mod tests {
         // SHA-512 must be exactly 128 lowercase hex digits
         assert_eq!(GE_SHA512.len(), 128, "GE_SHA512 must be 128 hex chars");
         assert!(
-            GE_SHA512.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')),
+            GE_SHA512
+                .bytes()
+                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')),
             "GE_SHA512 must be lowercase hex"
         );
     }

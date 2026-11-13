@@ -33,9 +33,7 @@ pub fn is_control_target(widget: &gtk::Widget) -> bool {
 }
 
 pub fn is_form_control(widget: &gtk::Widget) -> bool {
-    is_control(widget)
-        && !widget.is::<gtk::Button>()
-        && !widget.is::<gtk::MenuButton>()
+    is_control(widget) && !widget.is::<gtk::Button>() && !widget.is::<gtk::MenuButton>()
 }
 
 pub fn owner(widget: &gtk::Widget) -> gtk::Widget {
@@ -314,7 +312,10 @@ impl ControlState {
     pub fn handle(&mut self, window: &gtk::Window, action: NavAction) -> bool {
         self.validate(window);
         let focus = gtk::prelude::GtkWindowExt::focus(window).map(|focus| owner(&focus));
-        if let Some(scale) = focus.as_ref().and_then(|widget| widget.downcast_ref::<gtk::Scale>()) {
+        if let Some(scale) = focus
+            .as_ref()
+            .and_then(|widget| widget.downcast_ref::<gtk::Scale>())
+        {
             match action {
                 NavAction::Move(dir) => {
                     if scale_move(scale.orientation() == gtk::Orientation::Horizontal, dir)

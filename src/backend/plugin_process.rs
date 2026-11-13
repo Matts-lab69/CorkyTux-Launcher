@@ -125,15 +125,50 @@ impl ProcessKiller {
 /// launcher tokens, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `PYTHONPATH`,
 /// `PYTHONHOME`, shell startup hooks and SSH/Git credentials.
 const PLUGIN_ENV_ALLOWLIST: &[&str] = &[
-    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TZ", "TERM",
-    "COLORTERM", "TMPDIR", "TMP", "TEMP", "DISPLAY", "WAYLAND_DISPLAY",
-    "WAYLAND_SOCKET", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR",
-    "PULSE_SERVER", "PULSE_COOKIE", "PIPEWIRE_RUNTIME_DIR", "PIPEWIRE_REMOTE",
-    "PIPEWIRE_NODE", "JAVA_HOME", "PROTONPATH", "GAMEID", "MANGOHUD",
-    "WINEDLLOVERRIDES", "WINEFSYNC", "WINEESYNC", "DESKTOP_SESSION",
-    "XDG_CURRENT_DESKTOP", "SSL_CERT_FILE", "SSL_CERT_DIR",
-    "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "HTTP_PROXY", "HTTPS_PROXY",
-    "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "ALL_PROXY",
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "LANG",
+    "LANGUAGE",
+    "TZ",
+    "TERM",
+    "COLORTERM",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "WAYLAND_SOCKET",
+    "XAUTHORITY",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "XDG_RUNTIME_DIR",
+    "PULSE_SERVER",
+    "PULSE_COOKIE",
+    "PIPEWIRE_RUNTIME_DIR",
+    "PIPEWIRE_REMOTE",
+    "PIPEWIRE_NODE",
+    "JAVA_HOME",
+    "PROTONPATH",
+    "GAMEID",
+    "MANGOHUD",
+    "WINEDLLOVERRIDES",
+    "WINEFSYNC",
+    "WINEESYNC",
+    "DESKTOP_SESSION",
+    "XDG_CURRENT_DESKTOP",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "ALL_PROXY",
     "all_proxy",
 ];
 
@@ -164,24 +199,58 @@ pub fn apply_plugin_env(cmd: &mut Command) {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ProtocolMode {
-    SingleJson,
-    JsonLines,
+#[derive(Clone)]
+pub enum PluginEvent {
+    Progress {
+        stage: Option<String>,
+        percent: Option<f64>,
+        extra: serde_json::Value,
+    },
+    Done(serde_json::Value),
+    Error {
+        message: String,
+        exit_code: Option<i32>,
+        code: Option<i32>,
+    },
+    Custom(serde_json::Value),
 }
 
-#[derive(Debug, Clone)]
-pub enum PluginEvent {
-    Progress { stage: Option<String>, percent: Option<f64>, extra: serde_json::Value },
-    Done(serde_json::Value),
-    Error { message: String, exit_code: Option<i32>, code: Option<i32> },
-    Custom(serde_json::Value),
+impl std::fmt::Debug for PluginEvent {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Progress {
+                stage,
+                percent,
+                extra,
+            } => formatter
+                .debug_struct("Progress")
+                .field("stage", stage)
+                .field("percent", percent)
+                .field("extra", extra)
+                .finish(),
+            Self::Done(value) => formatter.debug_tuple("Done").field(value).finish(),
+            Self::Error {
+                message,
+                exit_code,
+                code,
+            } => formatter
+                .debug_struct("Error")
+                .field("message", message)
+                .field("exit_code", exit_code)
+                .field("code", code)
+                .finish(),
+            Self::Custom(value) => formatter.debug_tuple("Custom").field(value).finish(),
+        }
+    }
 }
 
 pub fn classify(value: serde_json::Value) -> PluginEvent {
     match value.get("type").and_then(|t| t.as_str()) {
         Some("progress") => PluginEvent::Progress {
-            stage: value.get("stage").and_then(|v| v.as_str()).map(str::to_string),
+            stage: value
+                .get("stage")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
             percent: value.get("percent").and_then(|v| v.as_f64()),
             extra: value,
         },
@@ -232,7 +301,11 @@ pub fn plugins_base_dir() -> PathBuf {
         }
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".local").join("share").join("CorkyTux").join("plugins")
+    PathBuf::from(home)
+        .join(".local")
+        .join("share")
+        .join("CorkyTux")
+        .join("plugins")
 }
 
 pub fn plugin_exe(plugin_id: &str, entry: &str) -> PathBuf {
@@ -363,7 +436,11 @@ pub fn output_with_timeout_full(
 
     own_process_group(cmd);
     let mut child = cmd
-        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -520,10 +597,18 @@ fn run_single_json_inner(
     let body = output.stdout;
     if let Some(doc) = parse_final_doc(&body) {
         if doc.get("type").and_then(|t| t.as_str()) == Some("error") {
-            return Err(doc.get("message").and_then(|m| m.as_str()).unwrap_or("plugin error").to_string());
+            return Err(doc
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("plugin error")
+                .to_string());
         }
         if doc.get("ok").and_then(|o| o.as_bool()) == Some(false) {
-            return Err(doc.get("message").and_then(|m| m.as_str()).unwrap_or("operation failed").to_string());
+            return Err(doc
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("operation failed")
+                .to_string());
         }
         return Ok(doc);
     }
@@ -549,7 +634,11 @@ pub fn spawn_streaming(exe: PathBuf, args: Vec<String>) -> mpsc::Receiver<Plugin
 /// Streaming variant that registers the child in a `ProcessKiller` so a
 /// background batch can be cancelled with SIGTERM. Returned alongside the
 /// event channel.
-pub fn spawn_streaming_managed(exe: PathBuf, args: Vec<String>, killer: &ProcessKiller) -> mpsc::Receiver<PluginEvent> {
+pub fn spawn_streaming_managed(
+    exe: PathBuf,
+    args: Vec<String>,
+    killer: &ProcessKiller,
+) -> mpsc::Receiver<PluginEvent> {
     spawn_streaming_inner(exe, args, Some(killer.clone()))
 }
 
@@ -597,7 +686,7 @@ fn spawn_streaming_inner(
         });
         if let Some(stdout) = child.stdout.take() {
             let reader = BufReader::new(stdout);
-            for line in reader.lines().flatten() {
+            for line in reader.lines().map_while(Result::ok) {
                 let line = line.trim().to_string();
                 if line.is_empty() {
                     continue;
@@ -740,7 +829,6 @@ where
     });
 }
 
-
 #[cfg(test)]
 mod event_tests {
     use super::*;
@@ -797,7 +885,10 @@ mod event_tests {
             .collect();
         // The download key survives once, at its last position; error and
         // custom keep their relative order.
-        assert_eq!(kinds, vec!["error", "download", "custom", "install", "done"]);
+        assert_eq!(
+            kinds,
+            vec!["error", "download", "custom", "install", "done"]
+        );
     }
 
     #[test]
@@ -834,7 +925,10 @@ mod tests {
     fn one_shot_commands_have_bounded_deadlines() {
         assert_eq!(single_timeout(&["install"]), LONG_TIMEOUT);
         assert_eq!(single_timeout(&["scan", "/tmp"]), SCAN_TIMEOUT);
-        assert_eq!(single_timeout(&["run", "/tmp/game"]), std::time::Duration::from_secs(60));
+        assert_eq!(
+            single_timeout(&["run", "/tmp/game"]),
+            std::time::Duration::from_secs(60)
+        );
         assert_eq!(single_timeout(&["status"]), DEFAULT_SINGLE_TIMEOUT);
         assert!(LONG_TIMEOUT > SCAN_TIMEOUT);
         assert!(SCAN_TIMEOUT > DEFAULT_SINGLE_TIMEOUT);
@@ -852,7 +946,11 @@ mod tests {
             std::time::Duration::from_millis(200),
         )
         .expect_err("sleep must be terminated");
-        assert!(err.contains("terminated") || err.contains("limit"), "{}", err);
+        assert!(
+            err.contains("terminated") || err.contains("limit"),
+            "{}",
+            err
+        );
         assert!(
             started.elapsed() < std::time::Duration::from_secs(5),
             "timeout took too long: {:?}",
@@ -975,7 +1073,11 @@ mod tests {
             std::time::Duration::from_millis(400),
         )
         .expect_err("the plugin must time out");
-        assert!(err.contains("terminated") || err.contains("limit"), "{}", err);
+        assert!(
+            err.contains("terminated") || err.contains("limit"),
+            "{}",
+            err
+        );
 
         let pid = wait_for_pid(&pidfile);
         // SIGKILL delivery is asynchronous; give the kernel a bounded moment.
@@ -1006,7 +1108,11 @@ mod tests {
             std::time::Duration::from_millis(400),
         )
         .expect_err("the plugin must time out");
-        assert!(err.contains("terminated") || err.contains("limit"), "{}", err);
+        assert!(
+            err.contains("terminated") || err.contains("limit"),
+            "{}",
+            err
+        );
 
         let pid = wait_for_pid(&pidfile);
         assert!(
@@ -1067,7 +1173,11 @@ mod tests {
             Some("s3cret"),
         )
         .expect_err("the plugin must time out");
-        assert!(err.contains("terminated") || err.contains("limit"), "{}", err);
+        assert!(
+            err.contains("terminated") || err.contains("limit"),
+            "{}",
+            err
+        );
 
         // The stdin arrived complete and the pipe was closed.
         let got = std::fs::read_to_string(&stdin_file).unwrap_or_default();
@@ -1118,7 +1228,11 @@ mod tests {
         killer.kill();
         let status = child.wait().expect("wait");
         assert!(!status.success());
-        assert!(status.code().is_none(), "expected signal death, got {:?}", status.code());
+        assert!(
+            status.code().is_none(),
+            "expected signal death, got {:?}",
+            status.code()
+        );
     }
 
     #[test]
@@ -1129,9 +1243,18 @@ mod tests {
         std::env::set_var("XDG_DATA_HOME", "/tmp/xdg-data-pp");
         std::env::set_var("HOME", "/tmp/home-pp");
         let got = plugins_base_dir();
-        match prev { Some(v) => std::env::set_var("XDG_DATA_HOME", v), None => std::env::remove_var("XDG_DATA_HOME") }
-        match prev_home { Some(v) => std::env::set_var("HOME", v), None => std::env::remove_var("HOME") }
-        assert_eq!(got, std::path::PathBuf::from("/tmp/xdg-data-pp/CorkyTux/plugins"));
+        match prev {
+            Some(v) => std::env::set_var("XDG_DATA_HOME", v),
+            None => std::env::remove_var("XDG_DATA_HOME"),
+        }
+        match prev_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
+        assert_eq!(
+            got,
+            std::path::PathBuf::from("/tmp/xdg-data-pp/CorkyTux/plugins")
+        );
     }
 
     #[test]
@@ -1149,6 +1272,9 @@ mod tests {
         std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert!(plugin_available("x", "entry"));
         let _ = std::fs::remove_dir_all(&base);
-        match prev { Some(v) => std::env::set_var("XDG_DATA_HOME", v), None => std::env::remove_var("XDG_DATA_HOME") }
+        match prev {
+            Some(v) => std::env::set_var("XDG_DATA_HOME", v),
+            None => std::env::remove_var("XDG_DATA_HOME"),
+        }
     }
 }

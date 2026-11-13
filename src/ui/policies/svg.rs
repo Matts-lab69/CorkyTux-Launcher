@@ -7,13 +7,19 @@ mod tests {
         let Ok(text) = std::fs::read_to_string(path) else {
             return false;
         };
-        let Some(start) = text.find("<svg") else { return false };
-        let Some(end) = text[start..].find('>') else { return false };
+        let Some(start) = text.find("<svg") else {
+            return false;
+        };
+        let Some(end) = text[start..].find('>') else {
+            return false;
+        };
         text[start..start + end].contains("viewBox=")
     }
 
     fn walk_svgs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {

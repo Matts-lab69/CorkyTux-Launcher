@@ -1,5 +1,4 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -19,9 +18,12 @@ fn plugin_install_paths_at(cfg: &std::path::Path) -> Option<Vec<String>> {
     }
     let raw = std::fs::read_to_string(&p).ok()?;
     let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    Some(v.as_object()?.values()
-        .filter_map(|e| e.get("path")?.as_str().map(str::to_string))
-        .collect())
+    Some(
+        v.as_object()?
+            .values()
+            .filter_map(|e| e.get("path")?.as_str().map(str::to_string))
+            .collect(),
+    )
 }
 
 fn plugin_install_paths() -> Option<Vec<String>> {
@@ -29,19 +31,26 @@ fn plugin_install_paths() -> Option<Vec<String>> {
     if home.is_empty() {
         return None;
     }
-    plugin_install_paths_at(std::path::Path::new(&home).join(".config/CorkyTux").as_path())
+    plugin_install_paths_at(
+        std::path::Path::new(&home)
+            .join(".config/CorkyTux")
+            .as_path(),
+    )
 }
 
 /// Other installs except this one (by name and canonicalized path;
 /// handles the same app in both the native record and plugin registry).
 fn others_except(state: &AppState, selected: &str, main: &str) -> Option<Vec<String>> {
-    let self_c = canon(std::path::Path::new(main))
-        .unwrap_or_else(|| std::path::PathBuf::from(main));
-    let mut out: Vec<String> = state.game_model.ordered_names().iter()
+    let self_c =
+        canon(std::path::Path::new(main)).unwrap_or_else(|| std::path::PathBuf::from(main));
+    let mut out: Vec<String> = state
+        .game_model
+        .ordered_names()
+        .iter()
         .filter(|n| n.as_str() != selected)
         .filter_map(|n| state.game_model.get_game(n))
         .map(|g| g.main_path)
-        .chain(plugin_install_paths()?.into_iter())
+        .chain(plugin_install_paths()?)
         .filter(|o| {
             let oc = canon(std::path::Path::new(o)).unwrap_or_else(|| std::path::PathBuf::from(o));
             oc != self_c
@@ -58,9 +67,14 @@ fn others_except(state: &AppState, selected: &str, main: &str) -> Option<Vec<Str
 pub(crate) fn store_deny_roots(games_root: &str, home: &str) -> Vec<String> {
     let base = games_root.trim_end_matches('/');
     let h = home.trim_end_matches('/');
-    let mut v = vec!["/".to_string(), h.to_string(), base.to_string(),
-         format!("{}/Heroic", base),
-         format!("{}/Epic-Games", base), format!("{}/GOG-Games", base)];
+    let mut v = vec![
+        "/".to_string(),
+        h.to_string(),
+        base.to_string(),
+        format!("{}/Heroic", base),
+        format!("{}/Epic-Games", base),
+        format!("{}/GOG-Games", base),
+    ];
     // HOME's ancestor (/home relative to /home/user).
     if let Some(parent) = std::path::Path::new(h).parent() {
         let p = parent.to_string_lossy().trim_end_matches('/').to_string();
@@ -69,7 +83,14 @@ pub(crate) fn store_deny_roots(games_root: &str, home: &str) -> Vec<String> {
         }
     }
     // Standard user directories (XDG), even if they do not exist yet.
-    for d in ["Documents", "Downloads", "Desktop", "Music", "Pictures", "Videos"] {
+    for d in [
+        "Documents",
+        "Downloads",
+        "Desktop",
+        "Music",
+        "Pictures",
+        "Videos",
+    ] {
         v.push(format!("{}/{}", h, d));
     }
     // Actual Steam library roots: only the `common` directory, not its
@@ -133,8 +154,7 @@ fn prefix_path_safe(prefix: &str, shared_bases: &[String], other_prefixes: &[Str
         if bb.is_empty() {
             continue;
         }
-        let bc = canon(std::path::Path::new(bb))
-            .unwrap_or_else(|| std::path::PathBuf::from(bb));
+        let bc = canon(std::path::Path::new(bb)).unwrap_or_else(|| std::path::PathBuf::from(bb));
         if pc == bc || pc.starts_with(&bc) || bc.starts_with(&pc) {
             return false;
         }
@@ -144,8 +164,7 @@ fn prefix_path_safe(prefix: &str, shared_bases: &[String], other_prefixes: &[Str
         if oo.is_empty() {
             continue;
         }
-        let oc = canon(std::path::Path::new(oo))
-            .unwrap_or_else(|| std::path::PathBuf::from(oo));
+        let oc = canon(std::path::Path::new(oo)).unwrap_or_else(|| std::path::PathBuf::from(oo));
         if pc == oc {
             return false;
         }
@@ -165,7 +184,11 @@ pub(crate) fn path_within(dir: &std::path::Path, path: &std::path::Path) -> bool
 /// Gathers the deny inputs from the live config: every shared base plus the
 /// prefixes of all other registered games. Read-only; decides nothing.
 /// Reused by the Settings confirm dialogs (selected="" checks everything).
-pub(crate) fn prefix_delete_safe(state: &AppState, selected: &str, prefix: &std::path::Path) -> bool {
+pub(crate) fn prefix_delete_safe(
+    state: &AppState,
+    selected: &str,
+    prefix: &std::path::Path,
+) -> bool {
     let mut shared: Vec<String> = Vec::new();
     for name in state.config.shared_prefixes() {
         if let Some(p) = state.config.shared_prefix_path(&name) {
@@ -183,7 +206,10 @@ pub(crate) fn prefix_delete_safe(state: &AppState, selected: &str, prefix: &std:
             }
         }
     }
-    let others: Vec<String> = state.game_model.ordered_names().iter()
+    let others: Vec<String> = state
+        .game_model
+        .ordered_names()
+        .iter()
         .filter(|n| n.as_str() != selected)
         .filter_map(|n| state.config.game_value(n, "PrefixPath"))
         .filter(|v| !v.is_empty())
@@ -312,12 +338,18 @@ fn confirm_files_removal(
 
 #[cfg(test)]
 mod tests {
-    use super::{confirm_files_removal, path_within, prefix_path_safe, removal_target_safe,
-                store_deny_roots, use_shared_prefix_on, FILES_NOT_VERIFIED_MSG};
+    use super::{
+        confirm_files_removal, path_within, prefix_path_safe, removal_target_safe,
+        store_deny_roots, use_shared_prefix_on, FILES_NOT_VERIFIED_MSG,
+    };
 
     fn deny() -> Vec<String> {
-        vec!["/".to_string(), "/h".to_string(), "/h/Games".to_string(),
-             "/h/Games/Heroic".to_string()]
+        vec![
+            "/".to_string(),
+            "/h".to_string(),
+            "/h/Games".to_string(),
+            "/h/Games/Heroic".to_string(),
+        ]
     }
 
     #[test]
@@ -334,7 +366,12 @@ mod tests {
         assert!(!removal_target_safe("relativo/dir", "J.exe", &d, some));
         assert!(!removal_target_safe("/h/Games/Heroic/", "J.exe", &d, some));
         // Deny when the record is unreadable, even if the path shape is valid.
-        assert!(!removal_target_safe("/h/Games/Heroic/Juego", "J.exe", &d, none));
+        assert!(!removal_target_safe(
+            "/h/Games/Heroic/Juego",
+            "J.exe",
+            &d,
+            none
+        ));
     }
 
     fn mktmp(name: &str) -> std::path::PathBuf {
@@ -408,7 +445,11 @@ mod tests {
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
         assert!(!removal_target_safe(
-            &base.join("link").display().to_string(), "", &d, some));
+            &base.join("link").display().to_string(),
+            "",
+            &d,
+            some
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -424,13 +465,28 @@ mod tests {
         let ms_in = inner.display().to_string();
         // Legacy behavior allows a nested executable when there is no overlap.
         let no_others: Vec<String> = vec![];
-        assert!(removal_target_safe(&ms_out, "J/J.exe", &d, Some(no_others.as_slice())));
+        assert!(removal_target_safe(
+            &ms_out,
+            "J/J.exe",
+            &d,
+            Some(no_others.as_slice())
+        ));
         // Another install inside main: deny.
         let inside = vec![ms_in.clone()];
-        assert!(!removal_target_safe(&ms_out, "J/J.exe", &d, Some(inside.as_slice())));
+        assert!(!removal_target_safe(
+            &ms_out,
+            "J/J.exe",
+            &d,
+            Some(inside.as_slice())
+        ));
         // Main inside another install: deny.
         let outside = vec![ms_out.clone()];
-        assert!(!removal_target_safe(&ms_in, "J.exe", &d, Some(outside.as_slice())));
+        assert!(!removal_target_safe(
+            &ms_in,
+            "J.exe",
+            &d,
+            Some(outside.as_slice())
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -445,7 +501,12 @@ mod tests {
         let d = vec!["/".to_string()];
         let ms = main.display().to_string();
         let resto = vec![inner.display().to_string()];
-        assert!(!removal_target_safe(&ms, "J.exe", &d, Some(resto.as_slice())));
+        assert!(!removal_target_safe(
+            &ms,
+            "J.exe",
+            &d,
+            Some(resto.as_slice())
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -457,7 +518,11 @@ mod tests {
         let d = vec!["/".to_string()];
         let empty: Vec<String> = vec![];
         assert!(removal_target_safe(
-            &base.display().to_string(), "J.exe", &d, Some(empty.as_slice())));
+            &base.display().to_string(),
+            "J.exe",
+            &d,
+            Some(empty.as_slice())
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -473,9 +538,15 @@ mod tests {
         std::fs::write(cfg.join("plugins/heroic-store/installs.json"), b"{no-json").unwrap();
         assert_eq!(plugin_install_paths_at(&cfg), None);
         // Valid → paths.
-        std::fs::write(cfg.join("plugins/heroic-store/installs.json"),
-            br#"{"gog:9": {"path": "/juegos/X", "exe": "X.exe"}}"#).unwrap();
-        assert_eq!(plugin_install_paths_at(&cfg), Some(vec!["/juegos/X".to_string()]));
+        std::fs::write(
+            cfg.join("plugins/heroic-store/installs.json"),
+            br#"{"gog:9": {"path": "/juegos/X", "exe": "X.exe"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            plugin_install_paths_at(&cfg),
+            Some(vec!["/juegos/X".to_string()])
+        );
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -489,7 +560,11 @@ mod tests {
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
         // All three bases are denied even if they contain an executable.
-        for base in ["/h/Games/Epic-Games", "/h/Games/GOG-Games", "/h/Games/Heroic"] {
+        for base in [
+            "/h/Games/Epic-Games",
+            "/h/Games/GOG-Games",
+            "/h/Games/Heroic",
+        ] {
             assert!(!removal_target_safe(base, "J.exe", &d, some));
         }
     }
@@ -504,7 +579,11 @@ mod tests {
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
         assert!(!removal_target_safe(
-            &outer.display().to_string(), "sub/../../evil.exe", &d, some));
+            &outer.display().to_string(),
+            "sub/../../evil.exe",
+            &d,
+            some
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -527,7 +606,11 @@ mod tests {
         std::fs::create_dir_all(&own).unwrap();
         let shared_s = vec![shared.display().to_string()];
         let empty: Vec<String> = vec![];
-        assert!(prefix_path_safe(&own.display().to_string(), &shared_s, &empty));
+        assert!(prefix_path_safe(
+            &own.display().to_string(),
+            &shared_s,
+            &empty
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -538,9 +621,17 @@ mod tests {
         std::fs::create_dir_all(&shared).unwrap();
         let shared_s = vec![shared.display().to_string()];
         let empty: Vec<String> = vec![];
-        assert!(!prefix_path_safe(&shared.display().to_string(), &shared_s, &empty));
+        assert!(!prefix_path_safe(
+            &shared.display().to_string(),
+            &shared_s,
+            &empty
+        ));
         // Also deny with a trailing slash.
-        assert!(!prefix_path_safe(&format!("{}/", shared.display()), &shared_s, &empty));
+        assert!(!prefix_path_safe(
+            &format!("{}/", shared.display()),
+            &shared_s,
+            &empty
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -553,7 +644,11 @@ mod tests {
         std::fs::create_dir_all(&inner).unwrap();
         let shared_s = vec![shared.display().to_string()];
         let empty: Vec<String> = vec![];
-        assert!(!prefix_path_safe(&inner.display().to_string(), &shared_s, &empty));
+        assert!(!prefix_path_safe(
+            &inner.display().to_string(),
+            &shared_s,
+            &empty
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -565,8 +660,15 @@ mod tests {
         let shared_s = vec![shared.display().to_string()];
         let empty: Vec<String> = vec![];
         assert!(!prefix_path_safe(
-            &base.join("prefixes").display().to_string(), &shared_s, &empty));
-        assert!(!prefix_path_safe(&base.display().to_string(), &shared_s, &empty));
+            &base.join("prefixes").display().to_string(),
+            &shared_s,
+            &empty
+        ));
+        assert!(!prefix_path_safe(
+            &base.display().to_string(),
+            &shared_s,
+            &empty
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -581,7 +683,10 @@ mod tests {
         std::os::unix::fs::symlink(&shared, base.join("link")).unwrap();
         #[cfg(unix)]
         assert!(!prefix_path_safe(
-            &base.join("link").display().to_string(), &shared_s, &empty));
+            &base.join("link").display().to_string(),
+            &shared_s,
+            &empty
+        ));
         // ".." resolves within the base.
         let dotdot = format!("{}/pfx/..", shared.display());
         assert!(!prefix_path_safe(&dotdot, &shared_s, &empty));
@@ -597,8 +702,16 @@ mod tests {
         std::fs::create_dir_all(&other).unwrap();
         let shared_s: Vec<String> = vec![];
         let others = vec![other.display().to_string()];
-        assert!(!prefix_path_safe(&other.display().to_string(), &shared_s, &others));
-        assert!(prefix_path_safe(&mine.display().to_string(), &shared_s, &others));
+        assert!(!prefix_path_safe(
+            &other.display().to_string(),
+            &shared_s,
+            &others
+        ));
+        assert!(prefix_path_safe(
+            &mine.display().to_string(),
+            &shared_s,
+            &others
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -613,11 +726,7 @@ mod tests {
         std::fs::create_dir_all(&own).unwrap();
         std::fs::create_dir_all(&other).unwrap();
         let empty: Vec<String> = vec![];
-        assert!(prefix_path_safe(
-            &own.display().to_string(),
-            &empty,
-            &empty
-        ));
+        assert!(prefix_path_safe(&own.display().to_string(), &empty, &empty));
         // Overlap with another registered base still denies.
         let inner = other.join("pfx");
         std::fs::create_dir_all(&inner).unwrap();
@@ -641,7 +750,10 @@ mod tests {
             &std::path::PathBuf::from(format!("{}/", inner.display()))
         ));
         assert!(!path_within(&base, &base.join("..").join("other")));
-        assert!(!path_within(&base, &std::path::PathBuf::from("/nonexistent-xyz")));
+        assert!(!path_within(
+            &base,
+            &std::path::PathBuf::from("/nonexistent-xyz")
+        ));
         assert!(!path_within(
             &std::path::PathBuf::from("/nonexistent-xyz"),
             &inner
@@ -660,7 +772,10 @@ mod tests {
         let shared_s: Vec<String> = vec![];
         let empty: Vec<String> = vec![];
         assert!(!prefix_path_safe(
-            &base.join("no-existe").display().to_string(), &shared_s, &empty));
+            &base.join("no-existe").display().to_string(),
+            &shared_s,
+            &empty
+        ));
         assert!(!prefix_path_safe("relativo/dir", &shared_s, &empty));
         assert!(!prefix_path_safe("", &shared_s, &empty));
         let _ = std::fs::remove_dir_all(&base);
@@ -679,9 +794,14 @@ mod tests {
         let deny = store_deny_roots(&format!("{}/Games", home), &home);
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
-        assert!(!removal_target_safe(&home, "", &deny, some), "HOME must be denied");
-        assert!(!removal_target_safe(&format!("{}/", home), "", &deny, some),
-            "HOME with a trailing slash must also be denied");
+        assert!(
+            !removal_target_safe(&home, "", &deny, some),
+            "HOME must be denied"
+        );
+        assert!(
+            !removal_target_safe(&format!("{}/", home), "", &deny, some),
+            "HOME with a trailing slash must also be denied"
+        );
     }
 
     #[test]
@@ -692,12 +812,17 @@ mod tests {
         let root = mktmp("corky_guard_ancestor");
         let home = root.join("home");
         std::fs::create_dir_all(&home).unwrap();
-        let deny = store_deny_roots(&home.join("Games").display().to_string(),
-                                    &home.display().to_string());
+        let deny = store_deny_roots(
+            &home.join("Games").display().to_string(),
+            &home.display().to_string(),
+        );
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
-        assert!(!removal_target_safe(&root.display().to_string(), "", &deny, some),
-            "an ancestor of HOME ({}) must not be deletable", root.display());
+        assert!(
+            !removal_target_safe(&root.display().to_string(), "", &deny, some),
+            "an ancestor of HOME ({}) must not be deletable",
+            root.display()
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -716,8 +841,11 @@ mod tests {
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
         for d in ["Documents", "Downloads", "Desktop"] {
-            assert!(!removal_target_safe(&home.join(d).display().to_string(), "", &deny, some),
-                "{} must not be deletable", d);
+            assert!(
+                !removal_target_safe(&home.join(d).display().to_string(), "", &deny, some),
+                "{} must not be deletable",
+                d
+            );
         }
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -734,20 +862,38 @@ mod tests {
         std::fs::write(gamea.join("A.exe"), b"x").unwrap();
         let deny = store_deny_roots(&games.display().to_string(), &home.display().to_string());
         let empty: Vec<String> = vec![];
-        assert!(!removal_target_safe(&games.display().to_string(), "", &deny,
-                                     Some(empty.as_slice())),
-            "the library root is not deleted");
-        assert!(removal_target_safe(&gamea.display().to_string(), "A.exe", &deny,
-                                    Some(empty.as_slice())),
-            "the game with an executable inside is allowed");
+        assert!(
+            !removal_target_safe(
+                &games.display().to_string(),
+                "",
+                &deny,
+                Some(empty.as_slice())
+            ),
+            "the library root is not deleted"
+        );
+        assert!(
+            removal_target_safe(
+                &gamea.display().to_string(),
+                "A.exe",
+                &deny,
+                Some(empty.as_slice())
+            ),
+            "the game with an executable inside is allowed"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn root_and_tilde_prefixes_are_denied() {
         let empty: Vec<String> = vec![];
-        assert!(!prefix_path_safe("/", &empty, &empty), "\"/\" is not a deletable prefix");
-        assert!(!prefix_path_safe("~", &empty, &empty), "\"~\" is relative and must not be allowed");
+        assert!(
+            !prefix_path_safe("/", &empty, &empty),
+            "\"/\" is not a deletable prefix"
+        );
+        assert!(
+            !prefix_path_safe("~", &empty, &empty),
+            "\"~\" is relative and must not be allowed"
+        );
     }
 
     #[test]
@@ -758,7 +904,10 @@ mod tests {
             return;
         }
         let empty: Vec<String> = vec![];
-        assert!(!prefix_path_safe(&home, &empty, &empty), "HOME is not a deletable prefix");
+        assert!(
+            !prefix_path_safe(&home, &empty, &empty),
+            "HOME is not a deletable prefix"
+        );
         assert!(!prefix_path_safe(&format!("{}/", home), &empty, &empty));
     }
 
@@ -771,7 +920,9 @@ mod tests {
         }
         if p.components().count() == 2
             && p.is_dir()
-            && !std::fs::symlink_metadata(&p).map(|m| m.file_type().is_symlink()).unwrap_or(true)
+            && !std::fs::symlink_metadata(&p)
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(true)
         {
             Some(p)
         } else {
@@ -792,8 +943,10 @@ mod tests {
             std::os::unix::fs::symlink(&target, base.join("link")).unwrap();
             let link = base.join("link").display().to_string();
             let empty: Vec<String> = vec![];
-            assert!(prefix_path_safe(&link, &empty, &empty),
-                "documented: prefix_path_safe ALLOWS a symlink outside denied and other paths");
+            assert!(
+                prefix_path_safe(&link, &empty, &empty),
+                "documented: prefix_path_safe ALLOWS a symlink outside denied and other paths"
+            );
         }
         let _ = std::fs::remove_dir_all(&base);
     }
@@ -810,8 +963,10 @@ mod tests {
             let link = base.join("link").display().to_string();
             let d = vec!["/".to_string()];
             let empty: Vec<String> = vec![];
-            assert!(!removal_target_safe(&link, "", &d, Some(empty.as_slice())),
-                "a symlink used as main_path is never deleted");
+            assert!(
+                !removal_target_safe(&link, "", &d, Some(empty.as_slice())),
+                "a symlink used as main_path is never deleted"
+            );
         }
         let _ = std::fs::remove_dir_all(&base);
     }
@@ -825,8 +980,11 @@ mod tests {
         let some = Some(empty.as_slice());
         assert!(!removal_target_safe("/", "", &d, some));
         if let Some(two) = two_component_dir() {
-            assert!(!removal_target_safe(&two.display().to_string(), "", &d, some),
-                "a two-component path ({}) must not be deletable", two.display());
+            assert!(
+                !removal_target_safe(&two.display().to_string(), "", &d, some),
+                "a two-component path ({}) must not be deletable",
+                two.display()
+            );
         }
     }
 
@@ -841,12 +999,19 @@ mod tests {
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
         let evil = base.join("evil.exe").display().to_string();
-        assert!(!removal_target_safe(&main.display().to_string(), &evil, &d, some),
-            "an absolute executable outside main is not allowed");
+        assert!(
+            !removal_target_safe(&main.display().to_string(), &evil, &d, some),
+            "an absolute executable outside main is not allowed"
+        );
         // The same executable is allowed when it is inside main.
         std::fs::write(main.join("ok.exe"), b"x").unwrap();
         let ok = main.join("ok.exe").display().to_string();
-        assert!(removal_target_safe(&main.display().to_string(), &ok, &d, some));
+        assert!(removal_target_safe(
+            &main.display().to_string(),
+            &ok,
+            &d,
+            some
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -859,14 +1024,18 @@ mod tests {
         let d = vec!["/".to_string()];
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
-        assert!(removal_target_safe(&game.display().to_string(), "", &d, some),
-            "a game with at least three components must be allowed");
+        assert!(
+            removal_target_safe(&game.display().to_string(), "", &d, some),
+            "a game with at least three components must be allowed"
+        );
         // Exact boundary: 3 components (RootDir + 2 names), e.g. /tmp/foo.
         let three = std::env::temp_dir().join("corky_mnt_x");
         let _ = std::fs::remove_dir_all(&three);
         std::fs::create_dir_all(&three).unwrap();
-        assert!(removal_target_safe(&three.display().to_string(), "", &d, some),
-            "three components (RootDir+2) must be allowed");
+        assert!(
+            removal_target_safe(&three.display().to_string(), "", &d, some),
+            "three components (RootDir+2) must be allowed"
+        );
         let _ = std::fs::remove_dir_all(&three);
         let _ = std::fs::remove_dir_all(&top);
     }
@@ -883,10 +1052,14 @@ mod tests {
         let deny = store_deny_roots(&games.display().to_string(), &home.display().to_string());
         let empty: Vec<String> = vec![];
         let some = Some(empty.as_slice());
-        assert!(!removal_target_safe(&games.display().to_string(), "", &deny, some),
-            "the library root is not deleted");
-        assert!(removal_target_safe(&fnaf.display().to_string(), "", &deny, some),
-            "a game inside ~/Games is allowed");
+        assert!(
+            !removal_target_safe(&games.display().to_string(), "", &deny, some),
+            "the library root is not deleted"
+        );
+        assert!(
+            removal_target_safe(&fnaf.display().to_string(), "", &deny, some),
+            "a game inside ~/Games is allowed"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -916,7 +1089,9 @@ pub fn show_remove_modal(
     details: &Rc<RefCell<Option<DetailsPanel>>>,
 ) {
     let selected = state.selected_game.borrow().clone();
-    if selected.is_empty() { return; }
+    if selected.is_empty() {
+        return;
+    }
 
     let dialog = adw::Dialog::new();
     dialog.set_title("Remove Game");
@@ -941,7 +1116,9 @@ pub fn show_remove_modal(
     header_row.set_margin_top(4);
     {
         let dlg = dialog.clone();
-        x_btn.connect_clicked(move |_| { dlg.close(); });
+        x_btn.connect_clicked(move |_| {
+            dlg.close();
+        });
     }
     inner.append(&header_row);
 
@@ -952,12 +1129,16 @@ pub fn show_remove_modal(
     inner.append(&msg);
 
     // Check if game is an emulator game (has executor, no proton)
-    let is_emu = state.config.game_value(&selected, "Executor")
+    let is_emu = state
+        .config
+        .game_value(&selected, "Executor")
         .map(|v| !v.is_empty())
         .unwrap_or(false);
     // UseSharedPrefix: other games live in that prefix too, so it's never
     // deleted from this dialog.
-    let use_shared_prefix = state.config.game_value(&selected, "UseSharedPrefix")
+    let use_shared_prefix = state
+        .config
+        .game_value(&selected, "UseSharedPrefix")
         .map(|v| use_shared_prefix_on(&v))
         .unwrap_or(false);
 
@@ -979,12 +1160,19 @@ pub fn show_remove_modal(
         // deletion without an explicit stored path: the fallback would
         // point at a default dir the game never used.
         let steam_game = crate::backend::game_model::is_steam_game(
-            &state.config.game_value(&selected, "Source").unwrap_or_default(),
-            &state.config.game_value(&selected, "SteamID").unwrap_or_default(),
+            &state
+                .config
+                .game_value(&selected, "Source")
+                .unwrap_or_default(),
+            &state
+                .config
+                .game_value(&selected, "SteamID")
+                .unwrap_or_default(),
         );
         if steam_game {
             chk_prefix.set_visible(false);
-            warn_prefix.set_text("Steam manages this game's prefix. Remove unregisters the game only.");
+            warn_prefix
+                .set_text("Steam manages this game's prefix. Remove unregisters the game only.");
             warn_prefix.set_visible(true);
         } else {
             let explicit = state
@@ -993,10 +1181,14 @@ pub fn show_remove_modal(
                 .map(|v| !v.trim().is_empty())
                 .unwrap_or(false);
             let prefix_now = state.proton.prefix_path(&selected);
-            if !explicit || (chk_prefix.is_visible() && !prefix_delete_safe(state, &selected, &prefix_now)) {
+            if !explicit
+                || (chk_prefix.is_visible() && !prefix_delete_safe(state, &selected, &prefix_now))
+            {
                 chk_prefix.set_active(false);
                 chk_prefix.set_sensitive(false);
-                warn_prefix.set_text("Shared prefix: files will be kept. Remove unregisters the game only.");
+                warn_prefix.set_text(
+                    "Shared prefix: files will be kept. Remove unregisters the game only.",
+                );
                 warn_prefix.set_visible(true);
             }
         }
@@ -1015,16 +1207,26 @@ pub fn show_remove_modal(
     inner.append(&warn_files);
     {
         let home = std::env::var("HOME").unwrap_or_default();
-        let games_root = crate::ui::import_manager::games_root().display().to_string();
+        let games_root = crate::ui::import_manager::games_root()
+            .display()
+            .to_string();
         let deny = store_deny_roots(&games_root, &home);
 
-        let main = state.config.game_value(&selected, "MainPath").unwrap_or_default();
-        let exe = state.config.game_value(&selected, "Executable").unwrap_or_default();
+        let main = state
+            .config
+            .game_value(&selected, "MainPath")
+            .unwrap_or_default();
+        let exe = state
+            .config
+            .game_value(&selected, "Executable")
+            .unwrap_or_default();
         let others = others_except(state, &selected, &main);
         if !removal_target_safe(&main, &exe, &deny, others.as_deref()) {
             chk_files.set_active(false);
             chk_files.set_sensitive(false);
-            warn_files.set_text("Game folder not verified: files will be kept. Remove unregisters the game only.");
+            warn_files.set_text(
+                "Game folder not verified: files will be kept. Remove unregisters the game only.",
+            );
             warn_files.set_visible(true);
         }
     }
@@ -1140,7 +1342,9 @@ pub fn show_remove_modal(
     });
 
     let dialog_clone2 = dialog.clone();
-    no_btn.connect_clicked(move |_| { dialog_clone2.close(); });
+    no_btn.connect_clicked(move |_| {
+        dialog_clone2.close();
+    });
 
     btn_box.append(&no_btn);
     btn_box.append(&yes_btn);

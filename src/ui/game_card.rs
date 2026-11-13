@@ -1,11 +1,9 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::backend::config::ConfigManager;
 use crate::backend::game_model::{GameEntry, GameSource};
-use crate::backend::theme::ThemeManager;
 use crate::ui::details_panel::DetailsPanel;
 use crate::ui::helpers;
 
@@ -49,7 +47,12 @@ pub fn build_game_card(
                 img.set_paintable(Some(&tex));
             }
         } else {
-            crate::ui::minecraft_view::load_cover_async(&entry.banner, &entry.name, &img, CARD_W * 2);
+            crate::ui::minecraft_view::load_cover_async(
+                &entry.banner,
+                &entry.name,
+                &img,
+                CARD_W * 2,
+            );
         }
     }
 

@@ -1,14 +1,16 @@
 use glib::subclass::prelude::*;
 use gtk::prelude::*;
 use regex::Regex;
-use std::cell::{Cell, RefCell};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(PathBuf::from)
+    std::env::var("HOME")
+        .ok()
+        .filter(|h| !h.is_empty())
+        .map(PathBuf::from)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,7 +25,12 @@ fn steam_process_present(proc_root: &Path) -> bool {
         return false;
     };
     entries.flatten().any(|entry| {
-        if !entry.file_name().to_string_lossy().bytes().all(|byte| byte.is_ascii_digit()) {
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .bytes()
+            .all(|byte| byte.is_ascii_digit())
+        {
             return false;
         }
         fs::read_to_string(entry.path().join("comm"))
@@ -91,7 +98,10 @@ fn steam_debug_log(event: &str, detail: &str) {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or_default();
-    eprintln!("[steam-debug] unix_ms={} event={} {}", millis, event, detail);
+    eprintln!(
+        "[steam-debug] unix_ms={} event={} {}",
+        millis, event, detail
+    );
 }
 
 fn log_steam_readiness(context: &str, home: &Path) {
@@ -101,10 +111,16 @@ fn log_steam_readiness(context: &str, home: &Path) {
     let state = steam_readiness(home, Path::new("/proc"));
     steam_debug_log(
         "steam-session-snapshot",
-        &format!("context={} state={:?} source=proc+registry.vdf", context, state),
+        &format!(
+            "context={} state={:?} source=proc+registry.vdf",
+            context, state
+        ),
     );
     if state == SteamReadiness::Ready {
-        steam_debug_log("steam-ready", &format!("context={} signal=ActiveUser+proc", context));
+        steam_debug_log(
+            "steam-ready",
+            &format!("context={} signal=ActiveUser+proc", context),
+        );
     }
 }
 
@@ -216,9 +232,8 @@ pub struct ComponentStatus {
 
 mod imp {
     use super::*;
-    use glib::subclass::prelude::*;
+
     use std::cell::{Cell, RefCell};
-    use std::path::PathBuf;
 
     #[derive(Default)]
     pub struct ProtonManager {
@@ -520,7 +535,7 @@ pub(crate) fn should_adopt(
         return false;
     }
     // One second of slack: /proc start times are whole seconds.
-    !(start + 1 < closed_at)
+    start + 1 >= closed_at
 }
 
 impl ProtonManager {
@@ -534,8 +549,8 @@ impl ProtonManager {
         // drops the third-party binaries it downloads. The plugin script itself
         // lives in `plugins_base_dir()` (~/.local/share) — the two-root contract
         // is documented in `plugin_process::plugins_base_dir`.
-        let owned = PathBuf::from(&home)
-            .join(".config/CorkyTux/plugins/heroic-store/bin/legendary");
+        let owned =
+            PathBuf::from(&home).join(".config/CorkyTux/plugins/heroic-store/bin/legendary");
         if owned.is_file() {
             return Some(owned);
         }
@@ -558,11 +573,13 @@ impl ProtonManager {
             PathBuf::from(&home).join(".config/heroic/legendaryConfig/legendary"),
         ];
         for cfg in &cfgs {
-            let has = std::fs::read_dir(cfg.join("manifests")).ok().map(|it| {
-                it.flatten().any(|e| {
-                    e.file_name().to_string_lossy().contains(app)
+            let has = std::fs::read_dir(cfg.join("manifests"))
+                .ok()
+                .map(|it| {
+                    it.flatten()
+                        .any(|e| e.file_name().to_string_lossy().contains(app))
                 })
-            }).unwrap_or(false);
+                .unwrap_or(false);
             if has {
                 return Some(cfg.clone());
             }
@@ -622,7 +639,11 @@ impl ProtonManager {
             ro_dirs: ro,
             chdir,
         };
-        eprintln!("[CorkyTux] isolation on for '{}' ({})", game_name, reason.as_str());
+        eprintln!(
+            "[CorkyTux] isolation on for '{}' ({})",
+            game_name,
+            reason.as_str()
+        );
         super::isolation::wrap_command(cmd, &spec)
     }
 
@@ -652,11 +673,9 @@ impl ProtonManager {
         main_path: &str,
         actual_prefix: &std::path::Path,
         real_prefix: &std::path::Path,
-        environment: &str,
-        args_before: &str,
-        args_after: &str,
-        launch_args: &str,
+        arguments: (&str, &str, &str, &str),
     ) -> Option<Command> {
+        let (environment, args_before, args_after, launch_args) = arguments;
         let app = game.get("heroicappid").cloned().unwrap_or_default();
         if app.is_empty() {
             return None;
@@ -674,7 +693,9 @@ impl ProtonManager {
         std::fs::create_dir_all(&tools).ok();
         let wrapper = tools.join("legendary-proton");
         let wrapper_src = "#!/bin/sh\nexec \"$CORKY_PROTON_BIN\" waitforexitandrun \"$@\"\n";
-        let write_it = std::fs::read_to_string(&wrapper).map(|c| c != wrapper_src).unwrap_or(true);
+        let write_it = std::fs::read_to_string(&wrapper)
+            .map(|c| c != wrapper_src)
+            .unwrap_or(true);
         if write_it {
             use std::os::unix::fs::PermissionsExt;
             if std::fs::write(&wrapper, wrapper_src).is_ok() {
@@ -687,8 +708,10 @@ impl ProtonManager {
         // Proton-as-wine needs these like any Steam-less Proton launch
         // (Heroic sets them too); without them proton exits silently.
         cmd.env("STEAM_COMPAT_DATA_PATH", actual_prefix);
-        cmd.env("STEAM_COMPAT_CLIENT_INSTALL_PATH",
-                Self::steam_client_path_for(std::path::Path::new(&home)));
+        cmd.env(
+            "STEAM_COMPAT_CLIENT_INSTALL_PATH",
+            Self::steam_client_path_for(std::path::Path::new(&home)),
+        );
         // protonfixes derives the game id from SteamAppId first; without it
         // it parses digits out of DATA_PATH and dies on name-based prefixes.
         if let Some(sid) = game.get("steamid").cloned() {
@@ -719,7 +742,8 @@ impl ProtonManager {
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| {
                     std::path::Path::new(executable)
-                        .file_name().map(|n| n.to_string_lossy().to_string())
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_default()
                 });
             let rel = rel.trim_start_matches('/').to_string();
@@ -727,16 +751,26 @@ impl ProtonManager {
                 cmd.arg("--override-exe").arg(rel);
             }
         }
-        for arg in split_quoted_args(args_before) { cmd.arg(arg); }
-        for arg in split_quoted_args(args_after) { cmd.arg(arg); }
-        for arg in split_quoted_args(launch_args) { cmd.arg(arg); }
+        for arg in split_quoted_args(args_before) {
+            cmd.arg(arg);
+        }
+        for arg in split_quoted_args(args_after) {
+            cmd.arg(arg);
+        }
+        for arg in split_quoted_args(launch_args) {
+            cmd.arg(arg);
+        }
         if game.get("heroiceac").map(|v| v == "true").unwrap_or(false) {
             let rt = PathBuf::from(&home).join(".config/heroic/tools/runtimes/eac_runtime");
             if rt.is_dir() {
                 cmd.env("PROTON_EAC_RUNTIME", &rt);
             }
         }
-        if game.get("heroicbattleye").map(|v| v == "true").unwrap_or(false) {
+        if game
+            .get("heroicbattleye")
+            .map(|v| v == "true")
+            .unwrap_or(false)
+        {
             let rt = PathBuf::from(&home).join(".config/heroic/tools/runtimes/battleye_runtime");
             if rt.is_dir() {
                 cmd.env("PROTON_BATTLEYE_RUNTIME", &rt);
@@ -777,14 +811,19 @@ impl ProtonManager {
             let _ = std::fs::copy(&reg, &bak);
         }
         let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         let mut out: Vec<String> = Vec::new();
         let mut section = String::new();
         let mut did_desktops = false;
         let mut did_explorer = false;
         for line in orig.lines() {
             if line.starts_with('[') {
-                if section == r"[Software\\Wine\\Explorer\\Desktops]" && !did_desktops && !geom.is_empty() {
+                if section == r"[Software\\Wine\\Explorer\\Desktops]"
+                    && !did_desktops
+                    && !geom.is_empty()
+                {
                     out.push(format!("\"Default\"=\"{}\"", geom));
                     did_desktops = true;
                 }
@@ -792,25 +831,23 @@ impl ProtonManager {
                 out.push(line.to_string());
                 continue;
             }
-            if section == r"[Software\\Wine\\Explorer\\Desktops]" {
-                if line.starts_with("\"Default\"=") {
-                    if geom.is_empty() {
-                        continue;
-                    }
-                    out.push(format!("\"Default\"=\"{}\"", geom));
-                    did_desktops = true;
+            if section == r"[Software\\Wine\\Explorer\\Desktops]"
+                && line.starts_with("\"Default\"=")
+            {
+                if geom.is_empty() {
                     continue;
                 }
+                out.push(format!("\"Default\"=\"{}\"", geom));
+                did_desktops = true;
+                continue;
             }
-            if section == r"[Software\\Wine\\Explorer]" {
-                if line.starts_with("\"Desktop\"=") {
-                    if geom.is_empty() {
-                        continue;
-                    }
-                    out.push("\"Desktop\"=\"Default\"".to_string());
-                    did_explorer = true;
+            if section == r"[Software\\Wine\\Explorer]" && line.starts_with("\"Desktop\"=") {
+                if geom.is_empty() {
                     continue;
                 }
+                out.push("\"Desktop\"=\"Default\"".to_string());
+                did_explorer = true;
+                continue;
             }
             out.push(line.to_string());
         }
@@ -919,7 +956,11 @@ impl ProtonManager {
     /// First monitor size as "WxH" for the virtual desktop default.
     pub fn primary_display_size() -> String {
         if let Some(display) = gtk::gdk::Display::default() {
-            if let Some(mon) = display.monitors().item(0).and_then(|o| o.downcast::<gtk::gdk::Monitor>().ok()) {
+            if let Some(mon) = display
+                .monitors()
+                .item(0)
+                .and_then(|o| o.downcast::<gtk::gdk::Monitor>().ok())
+            {
                 let r = mon.geometry();
                 if r.width() > 0 && r.height() > 0 {
                     return format!("{}x{}", r.width(), r.height());
@@ -948,9 +989,7 @@ impl ProtonManager {
         if path.join("version").is_file() {
             return true;
         }
-        if path.join("compatibilitytool.vdf").is_file()
-            || path.join("toolmanifest.vdf").is_file()
-        {
+        if path.join("compatibilitytool.vdf").is_file() || path.join("toolmanifest.vdf").is_file() {
             return true;
         }
         for base in ["dist", "files"] {
@@ -979,10 +1018,11 @@ impl ProtonManager {
     /// they make the list look non-empty so auto-install never triggers.
     fn is_foreign_arch(name: &str) -> bool {
         let lower = name.to_lowercase();
-        let has_arm = lower.contains("aarch64") || lower.contains("arm64")
-            || lower.contains("armv7") || lower.contains("armhf");
-        let has_x86 = lower.contains("x86_64") || lower.contains("i686")
-            || lower.contains("i386");
+        let has_arm = lower.contains("aarch64")
+            || lower.contains("arm64")
+            || lower.contains("armv7")
+            || lower.contains("armhf");
+        let has_x86 = lower.contains("x86_64") || lower.contains("i686") || lower.contains("i386");
         match std::env::consts::ARCH {
             "aarch64" => has_x86,
             _ => has_arm,
@@ -998,12 +1038,15 @@ impl ProtonManager {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() && Self::is_proton_dir(&path) {
-                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                     if Self::is_foreign_arch(&name) {
                         continue;
                     }
-                    let version = fs::read_to_string(path.join("version"))
-                        .unwrap_or_default();
+                    let version = fs::read_to_string(path.join("version")).unwrap_or_default();
                     result.push(ProtonInfo {
                         name,
                         path: path.clone(),
@@ -1023,7 +1066,8 @@ impl ProtonManager {
 
         let version = self
             .imp()
-            .installed.borrow()
+            .installed
+            .borrow()
             .iter()
             .find(|p| p.name == proton_name)
             .map(|p| p.version.clone())
@@ -1039,7 +1083,11 @@ impl ProtonManager {
 
         let aarch64 = std::env::consts::ARCH == "aarch64";
         let dirname = if proton_version >= 11 {
-            if aarch64 { "SteamLinuxRuntime_4-arm64" } else { "SteamLinuxRuntime_4" }
+            if aarch64 {
+                "SteamLinuxRuntime_4-arm64"
+            } else {
+                "SteamLinuxRuntime_4"
+            }
         } else if proton_version >= 8 {
             "SteamLinuxRuntime_sniper"
         } else {
@@ -1050,8 +1098,12 @@ impl ProtonManager {
             for candidate in [
                 root.join("ubuntu12_32/steam-runtime/run.sh"),
                 root.join("ubuntu12_64/steam-runtime/run.sh"),
-                root.join("compatibilitytools.d").join(dirname).join("run.sh"),
-                root.join("steamapps/compatibilitytools.d").join(dirname).join("run.sh"),
+                root.join("compatibilitytools.d")
+                    .join(dirname)
+                    .join("run.sh"),
+                root.join("steamapps/compatibilitytools.d")
+                    .join(dirname)
+                    .join("run.sh"),
             ] {
                 if candidate.exists() {
                     return Some(candidate);
@@ -1071,7 +1123,12 @@ impl ProtonManager {
     }
 
     pub fn installed_protons(&self) -> Vec<String> {
-        self.imp().installed.borrow().iter().map(|p| p.name.clone()).collect()
+        self.imp()
+            .installed
+            .borrow()
+            .iter()
+            .map(|p| p.name.clone())
+            .collect()
     }
 
     pub fn installed_proton_details(&self) -> Vec<(String, String, String)> {
@@ -1079,7 +1136,13 @@ impl ProtonManager {
             .installed
             .borrow()
             .iter()
-            .map(|p| (p.name.clone(), p.version.clone(), p.path.display().to_string()))
+            .map(|p| {
+                (
+                    p.name.clone(),
+                    p.version.clone(),
+                    p.path.display().to_string(),
+                )
+            })
             .collect()
     }
 
@@ -1112,7 +1175,10 @@ impl ProtonManager {
             return Err(format!("Proton '{}' not found", wanted));
         }
         let config = super::ConfigManager::new();
-        if let Some(def) = config.launcher_value("defaultProton").filter(|v| !v.is_empty()) {
+        if let Some(def) = config
+            .launcher_value("defaultProton")
+            .filter(|v| !v.is_empty())
+        {
             if let Some(p) = entries.iter().find(|p| p.name == def) {
                 return Ok((p.name.clone(), p.path.clone()));
             }
@@ -1215,13 +1281,13 @@ impl ProtonManager {
         for dir in Self::library_search_dirs(bits) {
             // `read_dir` instead of a glob: the real filenames carry a version
             // suffix (`libMangoHud.so.1.2`), so prefixes are the comparison.
-            let Ok(entries) = fs::read_dir(&dir) else { continue };
+            let Ok(entries) = fs::read_dir(&dir) else {
+                continue;
+            };
             for entry in entries.flatten() {
                 // `is_file` follows symlinks, which is how the current version
                 // of a library usually gets installed.
-                if entry.file_name().to_string_lossy().starts_with(lib)
-                    && entry.path().is_file()
-                {
+                if entry.file_name().to_string_lossy().starts_with(lib) && entry.path().is_file() {
                     return true;
                 }
             }
@@ -1237,7 +1303,10 @@ impl ProtonManager {
     /// because 32-bit support depends on how the package was installed.
     fn component_bits(lib: &str) -> (bool, bool) {
         let arch = std::env::consts::ARCH;
-        let host_is_64 = matches!(arch, "x86_64" | "aarch64" | "powerpc64" | "riscv64" | "s390x");
+        let host_is_64 = matches!(
+            arch,
+            "x86_64" | "aarch64" | "powerpc64" | "riscv64" | "s390x"
+        );
         let host_can_run_32 = matches!(arch, "x86" | "x86_64");
         let installed64 = host_is_64 && Self::library_present(lib, 64);
         let installed32 = host_can_run_32 && Self::library_present(lib, 32);
@@ -1276,7 +1345,12 @@ impl ProtonManager {
                 _ => String::new(),
             }
         };
-        ComponentStatus { available, installed64, installed32, game_arch }
+        ComponentStatus {
+            available,
+            installed64,
+            installed32,
+            game_arch,
+        }
     }
 
     fn detect_game_arch_simple(exe_path: &str) -> String {
@@ -1288,7 +1362,8 @@ impl ProtonManager {
         if content.len() < 0x40 || content[0] != b'M' || content[1] != b'Z' {
             return String::new();
         }
-        let off = u32::from_le_bytes([content[0x3C], content[0x3D], content[0x3E], content[0x3F]]) as usize;
+        let off = u32::from_le_bytes([content[0x3C], content[0x3D], content[0x3E], content[0x3F]])
+            as usize;
         if content.len() < off + 26 || content[off] != b'P' || content[off + 1] != b'E' {
             return String::new();
         }
@@ -1310,11 +1385,19 @@ impl ProtonManager {
             return format!("{}: ready ({})", display, label);
         }
         if status.installed64 {
-            let need = if status.game_arch == "32" { "32-bit" } else { "64-bit" };
+            let need = if status.game_arch == "32" {
+                "32-bit"
+            } else {
+                "64-bit"
+            };
             return format!("{}: 64-bit only (needs {})", display, need);
         }
         if status.installed32 {
-            let need = if status.game_arch == "64" { "64-bit" } else { "32-bit" };
+            let need = if status.game_arch == "64" {
+                "64-bit"
+            } else {
+                "32-bit"
+            };
             return format!("{}: 32-bit only (needs {})", display, need);
         }
         format!("{}: not installed", display)
@@ -1379,9 +1462,7 @@ impl ProtonManager {
         }
         let config = super::ConfigManager::new();
         let game = config.game_section(game_name);
-        let executable = game.get("executable")
-            .cloned()
-            .unwrap_or_default();
+        let executable = game.get("executable").cloned().unwrap_or_default();
 
         // Steam-imported games always launch through the Steam client
         // when they have a valid steamid — regardless of whether an
@@ -1413,7 +1494,11 @@ impl ProtonManager {
                         .spawn();
                     steam_debug_log(
                         "steam-start-result",
-                        if started.is_ok() { "route=steam-id spawned=true" } else { "route=steam-id spawned=false" },
+                        if started.is_ok() {
+                            "route=steam-id spawned=true"
+                        } else {
+                            "route=steam-id spawned=false"
+                        },
                     );
                 }
             }
@@ -1449,16 +1534,22 @@ impl ProtonManager {
 
         let (proton_name, proton_path) = self.resolve_proton(&wanted_proton)?;
 
-        let proton_bin = find_proton_binary(&proton_path)
-            .ok_or("Proton binary not found")?;
+        let proton_bin = find_proton_binary(&proton_path).ok_or("Proton binary not found")?;
 
         let steam_client = self.steam_client_path();
         let main_path = game.get("mainpath").cloned().unwrap_or_default();
-        let install_path = if !main_path.is_empty() { main_path.clone() } else { String::from("/") };
+        let install_path = if !main_path.is_empty() {
+            main_path.clone()
+        } else {
+            String::from("/")
+        };
         let steam_id = game.get("steamid").cloned().unwrap_or_default();
         let use_umu = game.get("useumu").map(|v| v == "true").unwrap_or(false);
         let overrides = game.get("overrides").cloned().unwrap_or_default();
-        let use_shared_prefix = game.get("usesharedprefix").map(|v| v == "true").unwrap_or(false);
+        let use_shared_prefix = game
+            .get("usesharedprefix")
+            .map(|v| v == "true")
+            .unwrap_or(false);
         let shared_prefix_name = game.get("sharedprefix").cloned().unwrap_or_default();
         let game_mode = game.get("gamemode").map(|v| v == "true").unwrap_or(false);
         let mango_hud = game.get("mangohud").map(|v| v == "true").unwrap_or(false);
@@ -1468,8 +1559,14 @@ impl ProtonManager {
         let args_before = game.get("argsbefore").cloned().unwrap_or_default();
         let args_after = game.get("argsafter").cloned().unwrap_or_default();
         let mut launch_args = game.get("launchargs").cloned().unwrap_or_default();
-        let steam_overlay = game.get("steamoverlay").map(|v| v == "true").unwrap_or(false);
-        let fake_steam_id = game.get("fakesteamid").cloned().unwrap_or_else(|| "480".to_string());
+        let steam_overlay = game
+            .get("steamoverlay")
+            .map(|v| v == "true")
+            .unwrap_or(false);
+        let fake_steam_id = game
+            .get("fakesteamid")
+            .cloned()
+            .unwrap_or_else(|| "480".to_string());
         // Epic Online Services auth (Fall Guys and similar games abort with
         // a missing exchange-code message without it). Same as Heroic: a
         // fresh exchange code passed as launch args. The explicit toggle wins;
@@ -1477,14 +1574,20 @@ impl ProtonManager {
         let eos_on = match game.get("eosauth").map(|v| v.as_str()) {
             Some("false") | Some("0") => false,
             Some(_) => true,
-            None => game.get("heroicstore").map(|v| v == "epic").unwrap_or(false),
+            None => game
+                .get("heroicstore")
+                .map(|v| v == "epic")
+                .unwrap_or(false),
         };
         if eos_on {
             if let Ok(doc) = super::external::StoreManager::eos_code() {
                 let code = doc.get("code").and_then(|x| x.as_str()).unwrap_or("");
                 if !code.is_empty() {
                     let uid = doc.get("account_id").and_then(|x| x.as_str()).unwrap_or("");
-                    let uname = doc.get("display_name").and_then(|x| x.as_str()).unwrap_or("");
+                    let uname = doc
+                        .get("display_name")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("");
                     // The exchange code has to travel in the game argv: the
                     // Epic client reads it from `-auth_password` and there is
                     // no env var or file alternative (Heroic and Legendary
@@ -1530,7 +1633,11 @@ impl ProtonManager {
                         .spawn();
                     steam_debug_log(
                         "steam-start-result",
-                        if started.is_ok() { "route=proton spawned=true" } else { "route=proton spawned=false" },
+                        if started.is_ok() {
+                            "route=proton spawned=true"
+                        } else {
+                            "route=proton spawned=false"
+                        },
                     );
                 }
             }
@@ -1545,7 +1652,8 @@ impl ProtonManager {
             proton_name.clone()
         };
         let actual_prefix = if use_shared_prefix {
-            config.shared_prefix_path(&shared_key)
+            config
+                .shared_prefix_path(&shared_key)
                 .unwrap_or_else(|| prefix.clone())
         } else {
             prefix.clone()
@@ -1571,18 +1679,26 @@ impl ProtonManager {
         // token, -epicapp/sandbox/ovt and metadata params, and drives wine
         // itself (EOS overlay + EAC wiring included). Falls through to the
         // direct-exe path when legendary or its record is missing.
-        if game.get("heroicstore").map(|v| v == "epic").unwrap_or(false) {
+        if game
+            .get("heroicstore")
+            .map(|v| v == "epic")
+            .unwrap_or(false)
+        {
             if let Some(mut leg_cmd) = Self::legendary_launch_cmd(
-                &game, &proton_path, &executable, &main_path,
-                &actual_prefix, &real_prefix, &environment,
-                &args_before, &args_after, &launch_args,
+                &game,
+                &proton_path,
+                &executable,
+                &main_path,
+                &actual_prefix,
+                &real_prefix,
+                (&environment, &args_before, &args_after, &launch_args),
             ) {
                 if mango_hud {
                     leg_cmd.env("MANGOHUD", "1");
                 }
                 *self.imp().session_prefix.borrow_mut() = real_prefix.display().to_string();
                 *self.imp().session_proton_dir.borrow_mut() = proton_path.display().to_string();
-                let mut wrapped_cmd = if game_mode {
+                let wrapped_cmd = if game_mode {
                     let mut gm = Command::new("gamemoderun");
                     gm.arg(leg_cmd.get_program());
                     for arg in leg_cmd.get_args() {
@@ -1618,20 +1734,20 @@ impl ProtonManager {
                     leg_rw.push(d.clone());
                 }
                 if steam_debug_enabled() {
-                    log_steam_readiness("legendary-before-game-spawn", &home_dir().unwrap_or_default());
+                    log_steam_readiness(
+                        "legendary-before-game-spawn",
+                        &home_dir().unwrap_or_default(),
+                    );
                     steam_debug_log(
                         "game-launch-environment",
-                        &format!("runner=legendary {}", steam_launch_environment(&wrapped_cmd)),
+                        &format!(
+                            "runner=legendary {}",
+                            steam_launch_environment(&wrapped_cmd)
+                        ),
                     );
                 }
-                let mut wrapped_cmd = self.isolate_cmd(
-                    wrapped_cmd,
-                    game_name,
-                    &game,
-                    leg_rw,
-                    leg_ro,
-                    leg_gdir,
-                )?;
+                let mut wrapped_cmd =
+                    self.isolate_cmd(wrapped_cmd, game_name, &game, leg_rw, leg_ro, leg_gdir)?;
                 Self::attach_log_file(&mut wrapped_cmd, game_name);
                 steam_debug_log("game-spawn", "runner=legendary");
                 let child = wrapped_cmd
@@ -1646,7 +1762,10 @@ impl ProtonManager {
 
         // steamapps directory for STEAM_COMPAT_LIBRARY_PATHS: parent of "common".
         let steamapps_dir = if !main_path.is_empty() {
-            Path::new(&main_path).parent().and_then(|p| p.parent()).map(|p| p.to_path_buf())
+            Path::new(&main_path)
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.to_path_buf())
         } else {
             None
         };
@@ -1668,7 +1787,11 @@ impl ProtonManager {
             final_cmd.env("WINEPREFIX", &actual_prefix);
             *self.imp().session_prefix.borrow_mut() = actual_prefix.display().to_string();
             *self.imp().session_proton_dir.borrow_mut() = proton_path.display().to_string();
-            let gameid = if steam_id.is_empty() { "0".to_string() } else { steam_id.clone() };
+            let gameid = if steam_id.is_empty() {
+                "0".to_string()
+            } else {
+                steam_id.clone()
+            };
             final_cmd.env("GAMEID", &gameid);
             final_cmd.env("EXE", &executable);
             final_cmd.env("STORE", "steam");
@@ -1690,9 +1813,13 @@ impl ProtonManager {
                 }
             }
             // args: [argsBefore...] EXE [argsAfter...]
-            for arg in split_quoted_args(&args_before) { final_cmd.arg(arg); }
+            for arg in split_quoted_args(&args_before) {
+                final_cmd.arg(arg);
+            }
             final_cmd.arg(&executable);
-            for arg in split_quoted_args(&args_after) { final_cmd.arg(arg); }
+            for arg in split_quoted_args(&args_after) {
+                final_cmd.arg(arg);
+            }
         } else {
             final_cmd = Command::new(&proton_bin);
             if !overrides.is_empty() {
@@ -1720,10 +1847,17 @@ impl ProtonManager {
                 }
             }
             final_cmd.env("PROTON_USE_WINED3D", if wined3d { "1" } else { "0" });
-            let steam_app_id = if steam_id.is_empty() { "0".to_string() } else { steam_id.clone() };
+            let steam_app_id = if steam_id.is_empty() {
+                "0".to_string()
+            } else {
+                steam_id.clone()
+            };
             final_cmd.env("SteamAppId", &steam_app_id);
             if let Some(wayland) = &native_wayland_set {
-                final_cmd.env("PROTON_ENABLE_WAYLAND", if wayland == "true" { "1" } else { "0" });
+                final_cmd.env(
+                    "PROTON_ENABLE_WAYLAND",
+                    if wayland == "true" { "1" } else { "0" },
+                );
             }
 
             // Environment personalizado ("k=v k2=v2")
@@ -1737,7 +1871,11 @@ impl ProtonManager {
 
             // Heroic anti-cheat runtimes (Heroic pattern: point Proton at
             // the EAC/BattlEye runtimes shipped with Heroic).
-            if game.get("heroicstore").map(|v| !v.is_empty()).unwrap_or(false) {
+            if game
+                .get("heroicstore")
+                .map(|v| !v.is_empty())
+                .unwrap_or(false)
+            {
                 let home = std::env::var("HOME").unwrap_or_default();
                 if game.get("heroiceac").map(|v| v == "true").unwrap_or(false) {
                     let rt = std::path::PathBuf::from(&home)
@@ -1747,7 +1885,11 @@ impl ProtonManager {
                         iso_ro.push(rt);
                     }
                 }
-                if game.get("heroicbattleye").map(|v| v == "true").unwrap_or(false) {
+                if game
+                    .get("heroicbattleye")
+                    .map(|v| v == "true")
+                    .unwrap_or(false)
+                {
                     let rt = std::path::PathBuf::from(&home)
                         .join(".config/heroic/tools/runtimes/battleye_runtime");
                     if rt.is_dir() {
@@ -1781,16 +1923,26 @@ impl ProtonManager {
 
             // Standard Proton command: proton waitforexitandrun game.exe
             final_cmd.arg("waitforexitandrun");
-            for arg in split_quoted_args(&args_before) { final_cmd.arg(arg); }
+            for arg in split_quoted_args(&args_before) {
+                final_cmd.arg(arg);
+            }
             final_cmd.arg(&executable);
-            for arg in split_quoted_args(&args_after) { final_cmd.arg(arg); }
-            for arg in split_quoted_args(&launch_args) { final_cmd.arg(arg); }
+            for arg in split_quoted_args(&args_after) {
+                final_cmd.arg(arg);
+            }
+            for arg in split_quoted_args(&launch_args) {
+                final_cmd.arg(arg);
+            }
 
             // Steam Runtime: provides 32-bit libs (pulse/alsa) on purely
             // 64-bit systems. Only the standard Proton path uses it, never
             // umu-launcher.
             let runtime_flag = game.get("steamruntime").cloned().unwrap_or_else(|| {
-                if config.launcher_value("gamesUsesSteamRuntime").map(|v| v == "1").unwrap_or(true) {
+                if config
+                    .launcher_value("gamesUsesSteamRuntime")
+                    .map(|v| v == "1")
+                    .unwrap_or(true)
+                {
                     "true".to_string()
                 } else {
                     "false".to_string()
@@ -1841,7 +1993,8 @@ impl ProtonManager {
                     runner_name,
                     super::isolation::decide(
                         game.get("isolated").map(String::as_str),
-                        config.launcher_value(super::isolation::GLOBAL_KEY)
+                        config
+                            .launcher_value(super::isolation::GLOBAL_KEY)
                             .map(|value| value == "1")
                             .unwrap_or(false),
                     )
@@ -1864,17 +2017,11 @@ impl ProtonManager {
         if let Some(d) = &iso_chdir {
             iso_rw.push(d.clone());
         }
-        let mut wrapped_cmd = self.isolate_cmd(
-            wrapped_cmd,
-            game_name,
-            &game,
-            iso_rw,
-            iso_ro,
-            iso_chdir,
-        )?;
+        let mut wrapped_cmd =
+            self.isolate_cmd(wrapped_cmd, game_name, &game, iso_rw, iso_ro, iso_chdir)?;
 
         Self::attach_log_file(&mut wrapped_cmd, game_name);
-    steam_debug_log("game-spawn", &format!("runner={}", runner_name));
+        steam_debug_log("game-spawn", &format!("runner={}", runner_name));
         let child = wrapped_cmd
             .spawn()
             .map_err(|e| format!("Failed to launch: {}", e))?;
@@ -1895,17 +2042,16 @@ impl ProtonManager {
         let exe = get("executable");
         let executor = get("executor");
         let source = get("source");
-        let is_appimage = executor == "appimage-launcher" || source.eq_ignore_ascii_case("appimage");
+        let is_appimage =
+            executor == "appimage-launcher" || source.eq_ignore_ascii_case("appimage");
         let is_rpg = executor == "rpgmaker-runtime" || source.eq_ignore_ascii_case("rpgmaker");
         let is_emu = !executor.is_empty() && !is_appimage && !is_rpg;
         let wanted_proton = get("proton");
         let (proton_name, proton_path) = self
             .resolve_proton(&wanted_proton)
             .unwrap_or((wanted_proton.clone(), PathBuf::new()));
-        let wine_ver = proton_path
-            .join("version")
-            .is_file()
-            .then(|| {
+        let wine_ver = if proton_path.join("version").is_file() {
+            {
                 std::fs::read_to_string(proton_path.join("version"))
                     .unwrap_or_default()
                     .lines()
@@ -1913,12 +2059,18 @@ impl ProtonManager {
                     .unwrap_or("")
                     .trim()
                     .to_string()
-            })
-            .unwrap_or_default();
+            }
+        } else {
+            Default::default()
+        };
         // Same layout as run_game: compat dir + real prefix at /pfx.
         let shared_key = {
             let sp = get("sharedprefix");
-            if !sp.is_empty() { sp } else { proton_name.clone() }
+            if !sp.is_empty() {
+                sp
+            } else {
+                proton_name.clone()
+            }
         };
         let compat = if flag("usesharedprefix") {
             config
@@ -1966,7 +2118,11 @@ impl ProtonManager {
             h.push_str(&format!(
                 "Proton: {}{}\n",
                 proton_name,
-                if wine_ver.is_empty() { String::new() } else { format!(" ({})", wine_ver) }
+                if wine_ver.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", wine_ver)
+                }
             ));
         }
         if is_rpg {
@@ -1975,7 +2131,11 @@ impl ProtonManager {
                 get("rpgengine"),
                 {
                     let r = get("rpgruntime");
-                    if r.is_empty() { "auto".to_string() } else { r }
+                    if r.is_empty() {
+                        "auto".to_string()
+                    } else {
+                        r
+                    }
                 },
                 on(flag("gamemode")),
                 on(flag("mangohud")),
@@ -1998,7 +2158,11 @@ impl ProtonManager {
                 on(flag("usewined3d")),
                 {
                     let w = get("nativewayland");
-                    if w.is_empty() { "default".to_string() } else { w }
+                    if w.is_empty() {
+                        "default".to_string()
+                    } else {
+                        w
+                    }
                 },
             ));
         }
@@ -2010,10 +2174,8 @@ impl ProtonManager {
                 .launcher_value(super::isolation::GLOBAL_KEY)
                 .map(|v| v == "1")
                 .unwrap_or(false);
-            let (active, reason) = super::isolation::decide(
-                game.get("isolated").map(|v| v.as_str()),
-                global,
-            );
+            let (active, reason) =
+                super::isolation::decide(game.get("isolated").map(|v| v.as_str()), global);
             let bw = if super::isolation::bwrap_available() {
                 "ready"
             } else {
@@ -2056,7 +2218,13 @@ impl ProtonManager {
     pub fn log_path(game_name: &str) -> PathBuf {
         let safe: String = game_name
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         let dir = home_dir()
             .unwrap_or_default()
@@ -2125,7 +2293,7 @@ impl ProtonManager {
     }
 
     pub fn stop_game(&self) -> Result<(String, u64), String> {
-        let mut child = self.imp().running_child.borrow_mut().take();
+        let child = self.imp().running_child.borrow_mut().take();
         let ledger_pid = super::session_ledger::resolve_close_pid(
             child.as_ref().map(|c| c.id()),
             self.imp().session_pid.get(),
@@ -2165,7 +2333,8 @@ impl ProtonManager {
             *self.imp().session_watch.borrow_mut() = String::new();
             return Ok((game, secs));
         }
-        if child.is_none() && !self.imp().session_appimage.get()
+        if child.is_none()
+            && !self.imp().session_appimage.get()
             && self.imp().session_prefix.borrow().is_empty()
             && self.imp().session_proton_dir.borrow().is_empty()
             && self.imp().session_watch.borrow().is_empty()
@@ -2249,7 +2418,9 @@ impl ProtonManager {
 
     fn ledger_dir() -> Option<std::path::PathBuf> {
         let home = std::env::var("HOME").ok().filter(|h| !h.is_empty())?;
-        Some(super::session_ledger::sessions_dir(std::path::Path::new(&home)))
+        Some(super::session_ledger::sessions_dir(std::path::Path::new(
+            &home,
+        )))
     }
 
     fn ledger_credit(game: &str, delta: u64) -> Result<(), String> {
@@ -2257,7 +2428,9 @@ impl ProtonManager {
     }
 
     fn ledger_begin(&self, game_name: &str) {
-        let Some(dir) = Self::ledger_dir() else { return };
+        let Some(dir) = Self::ledger_dir() else {
+            return;
+        };
         let pid = {
             let slot = self.imp().running_child.borrow();
             match slot.as_ref() {
@@ -2281,7 +2454,9 @@ impl ProtonManager {
     /// with the same pid and starttime is resumed (its `credited_until` is
     /// kept); a reused pid drops the old ledger first.
     fn ledger_adopt(&self, game_name: &str, pid: u32, start_unix: Option<u64>) {
-        let Some(dir) = Self::ledger_dir() else { return };
+        let Some(dir) = Self::ledger_dir() else {
+            return;
+        };
         let Some(tick) = super::session_ledger::pid_starttime(pid) else {
             eprintln!("[session] cannot read starttime for adopted pid {}", pid);
             return;
@@ -2310,10 +2485,16 @@ impl ProtonManager {
     }
 
     pub fn ledger_checkpoint(&self) {
-        let Some(dir) = Self::ledger_dir() else { return };
-        let Some(pid) = self.session_pid() else { return; };
+        let Some(dir) = Self::ledger_dir() else {
+            return;
+        };
+        let Some(pid) = self.session_pid() else {
+            return;
+        };
         let clock = super::session_ledger::SystemClock;
-        if let Err(e) = super::session_ledger::checkpoint(&dir, pid, &clock, &mut |g, d| Self::ledger_credit(g, d)) {
+        if let Err(e) = super::session_ledger::checkpoint(&dir, pid, &clock, &mut |g, d| {
+            Self::ledger_credit(g, d)
+        }) {
             eprintln!("[session] checkpoint failed: {}", e);
         }
     }
@@ -2371,18 +2552,13 @@ impl ProtonManager {
             use super::session_ledger::Clock;
             super::session_ledger::SystemClock.now()
         };
-        let mut close_pid = |pid: u32| {
+        let close_pid = |pid: u32| {
             let _ = self.ledger_finish_pid(pid);
             if let Some(tick) = super::session_ledger::pid_starttime(pid) {
                 let _ = super::session_ledger::record_closed(&dir, pid, tick, now);
             }
         };
-        let child_pid = self
-            .imp()
-            .running_child
-            .borrow()
-            .as_ref()
-            .map(|c| c.id());
+        let child_pid = self.imp().running_child.borrow().as_ref().map(|c| c.id());
         if let Some(pid) =
             super::session_ledger::resolve_close_pid(child_pid, self.imp().session_pid.get())
         {
@@ -2407,7 +2583,9 @@ impl ProtonManager {
     }
 
     pub fn ledger_recover(&self) {
-        let Some(dir) = Self::ledger_dir() else { return };
+        let Some(dir) = Self::ledger_dir() else {
+            return;
+        };
         {
             use super::session_ledger::Clock;
             let now = super::session_ledger::SystemClock.now();
@@ -2415,7 +2593,9 @@ impl ProtonManager {
         }
         let clock = super::session_ledger::SystemClock;
         let alive = |pid: u32, st: u64| super::session_ledger::pid_alive_with_starttime(pid, st);
-        match super::session_ledger::recover(&dir, &clock, &alive, &mut |g, d| Self::ledger_credit(g, d)) {
+        match super::session_ledger::recover(&dir, &clock, &alive, &mut |g, d| {
+            Self::ledger_credit(g, d)
+        }) {
             Ok(n) if n > 0 => eprintln!("[session] recovered {} stale ledger(s)", n),
             Err(e) => eprintln!("[session] recovery failed: {}", e),
             _ => {}
@@ -2607,7 +2787,11 @@ impl ProtonManager {
                 },
             }
         };
-        let start = self.imp().session_start.borrow().unwrap_or_else(std::time::Instant::now);
+        let start = self
+            .imp()
+            .session_start
+            .borrow()
+            .unwrap_or_else(std::time::Instant::now);
         let child = self.imp().running_child.borrow_mut().take();
         let adopted_pid = self.imp().session_pid.get();
         self.imp().session_pid.set(None);
@@ -2804,9 +2988,9 @@ impl ProtonManager {
         proton_dir: &str,
         appimage: bool,
         watch: &str,
-        pid: u32,
-        start_unix: Option<u64>,
+        process: (u32, Option<u64>),
     ) {
+        let (pid, start_unix) = process;
         *self.imp().session_game.borrow_mut() = game_name.to_string();
         let now = {
             use super::session_ledger::Clock;
@@ -2831,7 +3015,10 @@ impl ProtonManager {
         self.imp().session_appimage.set(appimage);
         *self.imp().session_watch.borrow_mut() = watch.to_string();
         self.ledger_adopt(game_name, pid, start_unix);
-        eprintln!("[session] adopted already-running game: {} (pid {})", game_name, pid);
+        eprintln!(
+            "[session] adopted already-running game: {} (pid {})",
+            game_name, pid
+        );
     }
 
     /// Records the session that just closed. Single write point for the
@@ -2955,7 +3142,7 @@ impl ProtonManager {
                 if !should_adopt(pid, start, self.last_closed(name)) {
                     continue;
                 }
-                self.adopt_session(name, "", "", true, "", pid, start);
+                self.adopt_session(name, "", "", true, "", (pid, start));
                 return true;
             }
             return false;
@@ -2976,7 +3163,7 @@ impl ProtonManager {
                 if !should_adopt(pid, start, self.last_closed(name)) {
                     continue;
                 }
-                self.adopt_session(name, "", "", false, &pattern, pid, start);
+                self.adopt_session(name, "", "", false, &pattern, (pid, start));
                 return true;
             }
             return false;
@@ -2997,7 +3184,7 @@ impl ProtonManager {
             if !should_adopt(pid, start, self.last_closed(name)) {
                 continue;
             }
-            self.adopt_session(name, &prefix, &proton_dir, false, &pattern, pid, start);
+            self.adopt_session(name, &prefix, &proton_dir, false, &pattern, (pid, start));
             return true;
         }
         false
@@ -3017,9 +3204,15 @@ impl ProtonManager {
             eprintln!("[session] cannot read /proc/{}; not adopting", pid);
             return false;
         };
-        matches_game_process(&proc.args, &proc.comm, &proc.exe, game_exe, executor_exe, mounts)
+        matches_game_process(
+            &proc.args,
+            &proc.comm,
+            &proc.exe,
+            game_exe,
+            executor_exe,
+            mounts,
+        )
     }
-
 
     /// C++ onGameFinished parity: call periodically; returns (game, seconds)
     /// once when the running child exits so time can be banked.
@@ -3084,8 +3277,7 @@ impl ProtonManager {
                     .map(|c| c.id())
                     .or_else(|| self.imp().session_pid.get())
                     .unwrap_or(0);
-                let root_starttime =
-                    super::session_ledger::pid_starttime(root_pid).unwrap_or(0);
+                let root_starttime = super::session_ledger::pid_starttime(root_pid).unwrap_or(0);
                 let alive = Self::tree_alive(root_pid, root_starttime, &mounts, &procs);
                 if alive {
                     if code.is_some() {
@@ -3107,7 +3299,7 @@ impl ProtonManager {
                 let dir = super::ConfigManager::new()
                     .game_value(&game, "Executable")
                     .unwrap_or_default();
-                let start = self.imp().session_start.borrow().clone();
+                let start = *self.imp().session_start.borrow();
                 let young = start.map(|t| t.elapsed().as_secs() < 8).unwrap_or(false);
                 let age = start.map(|t| t.elapsed().as_secs()).unwrap_or(0);
                 let (action, fails, seen) = rpg_poll_decide(
@@ -3221,7 +3413,11 @@ impl ProtonManager {
 
         let mut cmd = Command::new(&emu_path);
         // Fullscreen flag from emu settings (common convention: -f / --fullscreen)
-        if game.get("emu_fullscreen").map(|v| v == "true").unwrap_or(false) {
+        if game
+            .get("emu_fullscreen")
+            .map(|v| v == "true")
+            .unwrap_or(false)
+        {
             cmd.arg("--fullscreen");
         }
         cmd.arg(&rom);
@@ -3366,7 +3562,9 @@ impl ProtonManager {
         }
         cmd.stdin(Stdio::null());
         Self::attach_log_file(&mut cmd, game_name);
-        let child = cmd.spawn().map_err(|e| format!("Failed to launch AppImage: {}", e))?;
+        let child = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to launch AppImage: {}", e))?;
         *self.imp().running_child.borrow_mut() = Some(child);
         *self.imp().session_prefix.borrow_mut() = String::new();
         *self.imp().session_proton_dir.borrow_mut() = String::new();
@@ -3587,8 +3785,14 @@ impl ProtonManager {
         let runtime = game.get("rpgruntime").cloned().unwrap_or_default();
         // Per-game consents (upstream model: explicit opt-in, both off by
         // default). Persisting the choice is the standing consent.
-        let allow_net = game.get("rpgallownet").map(|v| v == "true").unwrap_or(false);
-        let allow_writes = game.get("rpgallowwrites").map(|v| v == "true").unwrap_or(false);
+        let allow_net = game
+            .get("rpgallownet")
+            .map(|v| v == "true")
+            .unwrap_or(false);
+        let allow_writes = game
+            .get("rpgallowwrites")
+            .map(|v| v == "true")
+            .unwrap_or(false);
         super::external::RpgMakerManager::run_with_options(
             dir.trim(),
             runtime.trim(),
@@ -3614,21 +3818,21 @@ impl ProtonManager {
         if Self::steam_rungame_id(&game).is_some() {
             return Err("Steam launches this game; debug launch is not available".into());
         }
-        let executable = game.get("executable")
-            .cloned()
-            .unwrap_or_default();
+        let executable = game.get("executable").cloned().unwrap_or_default();
         if executable.is_empty() {
             return Err("No executable set".into());
         }
         let wanted_proton = game.get("proton").cloned().unwrap_or_default();
         let prefix = self.ensure_individual_prefix(game_name);
         let main_path = game.get("mainpath").cloned().unwrap_or_default();
-        let use_shared_prefix = game.get("usesharedprefix").map(|v| v == "true").unwrap_or(false);
+        let use_shared_prefix = game
+            .get("usesharedprefix")
+            .map(|v| v == "true")
+            .unwrap_or(false);
         let shared_prefix_name = game.get("sharedprefix").cloned().unwrap_or_default();
         let (proton_name, proton_path) = self.resolve_proton(&wanted_proton)?;
 
-        let proton_bin = find_proton_binary(&proton_path)
-            .ok_or("Proton binary not found")?;
+        let proton_bin = find_proton_binary(&proton_path).ok_or("Proton binary not found")?;
 
         // C++ parity: shared prefix is keyed by proton; the game's
         // SharedPrefix name overrides when set.
@@ -3638,7 +3842,8 @@ impl ProtonManager {
             proton_name.clone()
         };
         let actual_prefix = if use_shared_prefix {
-            config.shared_prefix_path(&shared_key)
+            config
+                .shared_prefix_path(&shared_key)
                 .unwrap_or_else(|| prefix.clone())
         } else {
             prefix.clone()
@@ -3679,8 +3884,7 @@ impl ProtonManager {
         let wanted = config.game_value(game_name, "Proton").unwrap_or_default();
         let (_, proton_path) = self.resolve_proton(&wanted)?;
 
-        let proton_bin = find_proton_binary(&proton_path)
-            .ok_or("Proton binary not found")?;
+        let proton_bin = find_proton_binary(&proton_path).ok_or("Proton binary not found")?;
 
         let prefix_path = self.ensure_individual_prefix(game_name);
         // Same layout as run_game: compat dir + real prefix at /pfx.
@@ -3713,9 +3917,7 @@ impl ProtonManager {
 
     pub fn run_wine_tool(&self, game_name: &str, tool: &str) -> Result<(), String> {
         let config = super::ConfigManager::new();
-        let wanted = config
-            .game_value(game_name, "Proton")
-            .unwrap_or_default();
+        let wanted = config.game_value(game_name, "Proton").unwrap_or_default();
         let (proton_name, _) = self.resolve_proton(&wanted)?;
         let prefix = self.ensure_individual_prefix(game_name);
         let prefix_for_iso = prefix.clone();
@@ -3753,7 +3955,7 @@ impl ProtonManager {
         }
         let wine_bin = wine_bin.ok_or("No Wine binary found")?;
 
-        let mut cmd = if tool == "winetricks" {
+        let cmd = if tool == "winetricks" {
             // winetricks is an external script, not a wine builtin. I run that
             // same script with WINE= pointing at Proton's wine, so it never
             // touches the system wine and corrupts the prefix.
@@ -3768,15 +3970,15 @@ impl ProtonManager {
             }
             let mut c = Command::new(wt);
             c.env("WINEPREFIX", &real_prefix);
-            c.env("WINE", &wine_bin);   // the key line
-            // wineserver lives next to wine64 in files/bin/
+            c.env("WINE", &wine_bin); // the key line
+                                      // wineserver lives next to wine64 in files/bin/
             if let Some(dir) = wine_bin.parent() {
                 let ws = dir.join("wineserver");
                 if ws.exists() {
                     c.env("WINESERVER", &ws);
                 }
             }
-            c.arg("--gui");   // opens the GUI; change the verb for another one
+            c.arg("--gui"); // opens the GUI; change the verb for another one
             c
         } else {
             // regular tools (winecfg, taskmgr, control, explorer, cmd)
@@ -3882,7 +4084,10 @@ impl ProtonManager {
         // The GE installer is pinned together with its publisher checksum.
         // Do not let an old latest-release cache bypass this policy.
         if source == "ge" {
-            return Ok(vec![(super::download_integrity::GE_TAG.to_string(), super::download_integrity::GE_URL.to_string())]);
+            return Ok(vec![(
+                super::download_integrity::GE_TAG.to_string(),
+                super::download_integrity::GE_URL.to_string(),
+            )]);
         }
         if let Some(cached) = Self::read_releases_cache(source, 3600) {
             return Ok(cached);
@@ -3916,14 +4121,15 @@ impl ProtonManager {
                     format!(" — retry in ~{} min", (wait + 59) / 60)
                 })
                 .unwrap_or_default();
-            return Err(format!("GitHub API rate limit exceeded (60/hour){}.", reset));
+            return Err(format!(
+                "GitHub API rate limit exceeded (60/hour){}.",
+                reset
+            ));
         }
         if !resp.status().is_success() {
             return Err(format!("GitHub API error: {}", resp.status()));
         }
-        let json: serde_json::Value = resp
-            .json()
-            .map_err(|e| format!("Invalid JSON: {}", e))?;
+        let json: serde_json::Value = resp.json().map_err(|e| format!("Invalid JSON: {}", e))?;
         let mut releases = Vec::new();
         for rel in json.as_array().cloned().unwrap_or_default() {
             let tag = rel
@@ -4080,7 +4286,10 @@ impl ProtonManager {
             on_progress(1.0, downloaded as f64 / secs);
         }
         let status = Command::new("tar")
-            .arg("-xzf").arg(archive.path()).arg("-C").arg(target_dir)
+            .arg("-xzf")
+            .arg(archive.path())
+            .arg("-C")
+            .arg(target_dir)
             .status()
             .map_err(|e| format!("Extract failed: {}", e))?;
         if !status.success() {
@@ -4130,7 +4339,9 @@ impl ProtonManager {
         };
         let use_shared = config.game_value(game_name, "UseSharedPrefix").as_deref() == Some("true");
         let base = if use_shared {
-            let sp = config.game_value(game_name, "SharedPrefix").unwrap_or_default();
+            let sp = config
+                .game_value(game_name, "SharedPrefix")
+                .unwrap_or_default();
             let key = if !sp.is_empty() {
                 sp
             } else {
@@ -4220,9 +4431,15 @@ impl ProtonManager {
     }
 
     pub fn format_size(bytes: u64) -> String {
-        if bytes < 1024 { return format!("{} B", bytes); }
-        if bytes < 1024 * 1024 { return format!("{:.1} KB", bytes as f64 / 1024.0); }
-        if bytes < 1024 * 1024 * 1024 { return format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0)); }
+        if bytes < 1024 {
+            return format!("{} B", bytes);
+        }
+        if bytes < 1024 * 1024 {
+            return format!("{:.1} KB", bytes as f64 / 1024.0);
+        }
+        if bytes < 1024 * 1024 * 1024 {
+            return format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0));
+        }
         format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 
@@ -4251,7 +4468,11 @@ impl ProtonManager {
         for entry in entries.flatten() {
             let p = entry.path();
             if p.is_file() {
-                let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let name = p
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 let lower = name.to_lowercase();
                 if lower.ends_with(".exe") || lower.ends_with(".bat") || lower.ends_with(".msi") {
                     // Skip crash handlers/uninstallers noise? No: show all,
@@ -4272,7 +4493,7 @@ impl ProtonManager {
         }
     }
 
-    pub fn find_wine_tools(&self, game_name: &str) -> Vec<(String, String)> {
+    pub fn find_wine_tools(&self, _game_name: &str) -> Vec<(String, String)> {
         let tools = vec![
             ("winecfg", "Wine Configuration"),
             ("winetricks", "Winetricks"),
@@ -4281,7 +4502,10 @@ impl ProtonManager {
             ("explorer", "File Explorer"),
             ("cmd", "Command Prompt"),
         ];
-        tools.into_iter().map(|(cmd, desc)| (cmd.to_string(), desc.to_string())).collect()
+        tools
+            .into_iter()
+            .map(|(cmd, desc)| (cmd.to_string(), desc.to_string()))
+            .collect()
     }
 
     pub fn detect_game_arch(&self, exe_path: &str) -> String {
@@ -4292,14 +4516,20 @@ impl ProtonManager {
                 if content[0] == b'M' && content[1] == b'Z' {
                     if let Some(pe_offset) = content.get(0x3C..0x40) {
                         let offset = u32::from_le_bytes([
-                            pe_offset[0], pe_offset[1], pe_offset[2], pe_offset[3],
+                            pe_offset[0],
+                            pe_offset[1],
+                            pe_offset[2],
+                            pe_offset[3],
                         ]) as usize;
                         if let Some(magic) = content.get(offset..offset + 2) {
                             if magic == b"PE" {
                                 if let Some(opt_hdr) = content.get(offset + 24..offset + 26) {
                                     let magic_val = u16::from_le_bytes([opt_hdr[0], opt_hdr[1]]);
-                                    if magic_val == 0x20b { return "PE32+ (64-bit)".to_string(); }
-                                    else if magic_val == 0x10b { return "PE32 (32-bit)".to_string(); }
+                                    if magic_val == 0x20b {
+                                        return "PE32+ (64-bit)".to_string();
+                                    } else if magic_val == 0x10b {
+                                        return "PE32 (32-bit)".to_string();
+                                    }
                                 }
                             }
                         }
@@ -4324,7 +4554,11 @@ fn shellexpand_tilde(s: &str) -> String {
 /// wineserver inside a Proton tree (GE/CachyOS: files/bin/wineserver,
 /// some builds: dist/bin/wineserver), plus C++-style relatives.
 fn find_wineserver(proton_dir: &Path) -> Option<PathBuf> {
-    for rel in ["files/bin/wineserver", "dist/bin/wineserver", "bin/wineserver"] {
+    for rel in [
+        "files/bin/wineserver",
+        "dist/bin/wineserver",
+        "bin/wineserver",
+    ] {
         let cand = proton_dir.join(rel);
         if cand.is_file() {
             return Some(cand);
@@ -4471,8 +4705,7 @@ fn which(name: &str) -> Option<String> {
 mod tests {
     use super::{
         launch_allowed, matches_game_process, scan_budget_left, should_adopt, should_scan,
-        steam_readiness, ParkedKind, ParkedSession, ProtonManager, SessionScanner,
-        SteamReadiness,
+        steam_readiness, ParkedKind, ParkedSession, ProtonManager, SessionScanner, SteamReadiness,
     };
     use glib::subclass::prelude::*;
     use std::fs;
@@ -4501,7 +4734,9 @@ mod tests {
         fallback: crate::backend::session_ledger::SystemClock,
     }
 
-    pub(super) fn close_clock(fallback: crate::backend::session_ledger::SystemClock) -> TestCloseClock {
+    pub(super) fn close_clock(
+        fallback: crate::backend::session_ledger::SystemClock,
+    ) -> TestCloseClock {
         TestCloseClock {
             fixed: TEST_CLOSE_TIME.with(|time| time.get()),
             fallback,
@@ -4574,8 +4809,7 @@ mod tests {
 
     #[test]
     fn steam_readiness_reads_native_flatpak_and_snap_fixtures() {
-        static SEQ: std::sync::atomic::AtomicU64 =
-            std::sync::atomic::AtomicU64::new(0);
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let base = std::env::temp_dir().join(format!(
             "corky_steam_ready_{}_{}",
             std::process::id(),
@@ -4595,16 +4829,18 @@ mod tests {
         ] {
             let registry = home.join(registry_rel);
             fs::create_dir_all(registry.parent().unwrap()).unwrap();
-            fs::write(&registry, "\"Registry\"\n{\n\t\"ActiveUser\"\t\"12345\"\n}\n")
-                .unwrap();
+            fs::write(
+                &registry,
+                "\"Registry\"\n{\n\t\"ActiveUser\"\t\"12345\"\n}\n",
+            )
+            .unwrap();
             assert_eq!(
                 steam_readiness(&home, &proc_root),
                 SteamReadiness::Ready,
                 "fixture {} should report a signed-in Steam session",
                 registry_rel
             );
-            fs::write(&registry, "\"Registry\"\n{\n\t\"ActiveUser\"\t\"0\"\n}\n")
-                .unwrap();
+            fs::write(&registry, "\"Registry\"\n{\n\t\"ActiveUser\"\t\"0\"\n}\n").unwrap();
             assert_eq!(
                 steam_readiness(&home, &proc_root),
                 SteamReadiness::NoActiveUser,
@@ -4656,7 +4892,11 @@ mod tests {
         // Same clock, not a reset: promoted start is the original one.
         // Range (not eq): the two elapsed() reads can straddle a second.
         let back = pm.imp().session_start.borrow().unwrap().elapsed();
-        assert!(back >= start.elapsed().saturating_sub(std::time::Duration::from_secs(1)));
+        assert!(
+            back >= start
+                .elapsed()
+                .saturating_sub(std::time::Duration::from_secs(1))
+        );
         assert!(back <= start.elapsed() + std::time::Duration::from_secs(5));
         assert!(pm.imp().parked.borrow().is_empty());
     }
@@ -4803,7 +5043,10 @@ mod tests {
     #[test]
     fn should_scan_waits_for_foreground_and_interval() {
         assert!(!should_scan(5, true, 0), "no scan with a live session");
-        assert!(!should_scan(4, false, 0), "four ticks is under the interval");
+        assert!(
+            !should_scan(4, false, 0),
+            "four ticks is under the interval"
+        );
         assert!(should_scan(5, false, 0));
         assert!(!should_scan(5, false, 5), "never twice on the same tick");
         assert!(!should_scan(9, false, 5));
@@ -4898,7 +5141,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
 
         assert_eq!(secs, 0, "the ledger must handle the adopted close");
-        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
+        assert!(
+            (600..=605).contains(&stored),
+            "credited once, got {}",
+            stored
+        );
         assert!(deleted, "ledger removed after the close");
         assert!(!pm.is_game_running());
     }
@@ -5002,7 +5249,11 @@ mod tests {
         let records = crate::backend::session_ledger::load_closed(&dir);
         let ledger_gone = crate::backend::session_ledger::load(&dir, pid).is_none();
         let _ = std::fs::remove_dir_all(&base);
-        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
+        assert!(
+            (600..=605).contains(&stored),
+            "credited once, got {}",
+            stored
+        );
         assert!(ledger_gone, "ledger closed by Quit");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].pid, pid);
@@ -5060,7 +5311,10 @@ mod tests {
         let real_start = crate::backend::session_ledger::process_start_unix(pid).unwrap();
         let left = crate::backend::session_ledger::load_closed(&dir);
         let _ = std::fs::remove_dir_all(&base);
-        assert_eq!(ledger.started_at, real_start, "normal adoption keeps the real start");
+        assert_eq!(
+            ledger.started_at, real_start,
+            "normal adoption keeps the real start"
+        );
         assert_eq!(left.len(), 1, "the other pid's record is untouched");
     }
 
@@ -5075,7 +5329,10 @@ mod tests {
         let pm = ProtonManager::new();
         let pid = std::process::id();
         let tick = crate::backend::session_ledger::pid_starttime(pid).unwrap();
-        let mut helper = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let mut helper = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
         let parked_pid = helper.id();
         let parked_tick = crate::backend::session_ledger::pid_starttime(parked_pid).unwrap();
         let now = {
@@ -5179,7 +5436,11 @@ mod tests {
             .game_value("AdoptScanGame", "TimeSpent")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
-        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
+        assert!(
+            (600..=605).contains(&stored),
+            "credited once, got {}",
+            stored
+        );
 
         // The process that survives the stop is the same pid and start: the
         // guard must refuse it, so nothing is adopted and nothing is banked.
@@ -5243,7 +5504,12 @@ mod tests {
         cfg.set_game_value(name, "executable", "/games/Game.exe");
     }
 
-    fn tree_proc(pid: u32, ppid: u32, starttime: u64, exe: &str) -> crate::backend::proc_tree::ProcInfo {
+    fn tree_proc(
+        pid: u32,
+        ppid: u32,
+        starttime: u64,
+        exe: &str,
+    ) -> crate::backend::proc_tree::ProcInfo {
         crate::backend::proc_tree::ProcInfo {
             pid,
             ppid,
@@ -5276,15 +5542,47 @@ mod tests {
         let game = "/games/Game.exe";
         let none: &[String] = &[];
         let editor = game_process(&["vim", game], "vim", "/usr/bin/vim");
-        assert!(!matches_game_process(&editor.args, &editor.comm, &editor.exe, game, "", none));
+        assert!(!matches_game_process(
+            &editor.args,
+            &editor.comm,
+            &editor.exe,
+            game,
+            "",
+            none
+        ));
         let pager = game_process(&["less", game], "less", "/usr/bin/less");
-        assert!(!matches_game_process(&pager.args, &pager.comm, &pager.exe, game, "", none));
+        assert!(!matches_game_process(
+            &pager.args,
+            &pager.comm,
+            &pager.exe,
+            game,
+            "",
+            none
+        ));
         let follow = game_process(&["tail", "-f", game], "tail", "/usr/bin/tail");
-        assert!(!matches_game_process(&follow.args, &follow.comm, &follow.exe, game, "", none));
+        assert!(!matches_game_process(
+            &follow.args,
+            &follow.comm,
+            &follow.exe,
+            game,
+            "",
+            none
+        ));
         let shell = game_process(&["bash", "-c", "wine /games/Game.exe"], "bash", "/bin/bash");
-        assert!(!matches_game_process(&shell.args, &shell.comm, &shell.exe, game, "", none));
+        assert!(!matches_game_process(
+            &shell.args,
+            &shell.comm,
+            &shell.exe,
+            game,
+            "",
+            none
+        ));
         for tool in ["cp", "mv", "rm", "rsync", "tar", "nautilus", "steam"] {
-            let p = game_process(&[tool, game, "somewhere"], tool, &format!("/usr/bin/{}", tool));
+            let p = game_process(
+                &[tool, game, "somewhere"],
+                tool,
+                &format!("/usr/bin/{}", tool),
+            );
             assert!(
                 !matches_game_process(&p.args, &p.comm, &p.exe, game, "", none),
                 "{} must not start a session",
@@ -5292,7 +5590,9 @@ mod tests {
             );
         }
         let wine = game_process(&["wine64", game], "wine64", "/usr/lib/wine/wine64");
-        assert!(matches_game_process(&wine.args, &wine.comm, &wine.exe, game, "", none));
+        assert!(matches_game_process(
+            &wine.args, &wine.comm, &wine.exe, game, "", none
+        ));
         let wine_steam = game_process(
             &["wine64", "steam.exe", game],
             "wine64",
@@ -5307,7 +5607,12 @@ mod tests {
             none,
         ));
         let script = game_process(
-            &["/usr/bin/python3", "/opt/Proton/proton", "waitforexitandrun", game],
+            &[
+                "/usr/bin/python3",
+                "/opt/Proton/proton",
+                "waitforexitandrun",
+                game,
+            ],
             "python3",
             "/usr/bin/python3",
         );
@@ -5333,7 +5638,9 @@ mod tests {
             none,
         ));
         let umu = game_process(&["umu-run", game], "umu-run", "/usr/bin/umu-run");
-        assert!(matches_game_process(&umu.args, &umu.comm, &umu.exe, game, "", none));
+        assert!(matches_game_process(
+            &umu.args, &umu.comm, &umu.exe, game, "", none
+        ));
         let appimage = game_process(
             &["/games/Game.AppImage", "--foo"],
             "Game.AppImage",
@@ -5375,11 +5682,7 @@ mod tests {
             &mounts,
         ));
         let rom = "/roms/game.nsp";
-        let emulator = game_process(
-            &["/usr/bin/ryujinx", rom],
-            "ryujinx",
-            "/usr/bin/ryujinx",
-        );
+        let emulator = game_process(&["/usr/bin/ryujinx", rom], "ryujinx", "/usr/bin/ryujinx");
         assert!(matches_game_process(
             &emulator.args,
             &emulator.comm,
@@ -5401,7 +5704,11 @@ mod tests {
             "/usr/bin/ryujinx",
             none,
         ));
-        let unrelated = game_process(&["firefox", "https://example.com"], "firefox", "/usr/bin/firefox");
+        let unrelated = game_process(
+            &["firefox", "https://example.com"],
+            "firefox",
+            "/usr/bin/firefox",
+        );
         assert!(!matches_game_process(
             &unrelated.args,
             &unrelated.comm,
@@ -5410,7 +5717,9 @@ mod tests {
             "",
             none,
         ));
-        assert!(!matches_game_process(&wine.args, &wine.comm, &wine.exe, "  ", "", none));
+        assert!(!matches_game_process(
+            &wine.args, &wine.comm, &wine.exe, "  ", "", none
+        ));
     }
 
     #[test]
@@ -5628,8 +5937,8 @@ mod tests {
 
     #[test]
     fn rpg_decide_running_marca_seen() {
-        use crate::backend::external::RpgSessionStatus as S;
         use super::{rpg_poll_decide, RpgPollAction};
+        use crate::backend::external::RpgSessionStatus as S;
         // Running marks seen and resets the counter, whatever came before.
         assert_eq!(
             rpg_poll_decide(&S::Running, false, 2, false, 100),
@@ -5647,8 +5956,8 @@ mod tests {
 
     #[test]
     fn rpg_decide_seen_closes_on_second_failure() {
-        use crate::backend::external::RpgSessionStatus as S;
         use super::{rpg_poll_decide, RpgPollAction, RPG_STATUS_MAX_UNKNOWNS};
+        use crate::backend::external::RpgSessionStatus as S;
         assert_eq!(RPG_STATUS_MAX_UNKNOWNS, 2);
         // Young: grace, no counting, no learning.
         assert_eq!(
@@ -5669,8 +5978,8 @@ mod tests {
 
     #[test]
     fn rpg_decide_unseen_respects_30s_floor() {
-        use crate::backend::external::RpgSessionStatus as S;
         use super::{rpg_poll_decide, RpgPollAction, RPG_STATUS_UNSEEN_FLOOR_SECS};
+        use crate::backend::external::RpgSessionStatus as S;
         assert_eq!(RPG_STATUS_UNSEEN_FLOOR_SECS, 30);
         // Never seen: alive at 20 s even with misses piled up…
         assert_eq!(
@@ -5686,8 +5995,8 @@ mod tests {
 
     #[test]
     fn rpg_decide_timeout_never_closes() {
-        use crate::backend::external::RpgSessionStatus as S;
         use super::{rpg_poll_decide, RpgPollAction};
+        use crate::backend::external::RpgSessionStatus as S;
         // A hundred timeouts in a row change nothing.
         let mut state = (RpgPollAction::Alive, 7, true);
         for _ in 0..100 {
@@ -5769,13 +6078,14 @@ mod tests {
             use crate::backend::session_ledger::Clock;
             crate::backend::session_ledger::SystemClock.now()
         };
-        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600)
-            .unwrap();
+        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600).unwrap();
         // One controlled checkpoint at half the session: 300 s banked, the
         // close must add only the remaining ~300 s.
         struct Fixed(u64);
         impl crate::backend::session_ledger::Clock for Fixed {
-            fn now(&self) -> u64 { self.0 }
+            fn now(&self) -> u64 {
+                self.0
+            }
         }
         crate::backend::session_ledger::checkpoint(&dir, pid, &Fixed(now - 300), &mut |g, d| {
             crate::backend::config::ConfigManager::new().credit_time_spent(g, d)
@@ -5803,7 +6113,11 @@ mod tests {
         // 300 s came from the fixed checkpoint, the rest from the close.
         // The 9 checkpoints and the temp dir take a couple of seconds; the
         // close uses SystemClock, so allow that overhead.
-        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
+        assert!(
+            (600..=605).contains(&stored),
+            "credited once, got {}",
+            stored
+        );
         assert!(deleted, "ledger removed after the close");
     }
 
@@ -5822,11 +6136,12 @@ mod tests {
             use crate::backend::session_ledger::Clock;
             crate::backend::session_ledger::SystemClock.now()
         };
-        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600)
-            .unwrap();
+        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600).unwrap();
         struct Fixed(u64);
         impl crate::backend::session_ledger::Clock for Fixed {
-            fn now(&self) -> u64 { self.0 }
+            fn now(&self) -> u64 {
+                self.0
+            }
         }
         crate::backend::session_ledger::checkpoint(&dir, pid, &Fixed(now - 300), &mut |g, d| {
             crate::backend::config::ConfigManager::new().credit_time_spent(g, d)
@@ -5852,7 +6167,11 @@ mod tests {
         assert_eq!(secs, 0);
         // The 9 checkpoints and the temp dir take a couple of seconds; the
         // close uses SystemClock, so allow that overhead.
-        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
+        assert!(
+            (600..=605).contains(&stored),
+            "credited once, got {}",
+            stored
+        );
         assert!(deleted);
     }
 
@@ -5890,14 +6209,17 @@ mod tests {
         crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, start).unwrap();
         struct Fixed(u64);
         impl crate::backend::session_ledger::Clock for Fixed {
-            fn now(&self) -> u64 { self.0 }
+            fn now(&self) -> u64 {
+                self.0
+            }
         }
         let _clock = TestCloseClockGuard::set(&Fixed(now));
         for i in 1..=9u64 {
             crate::backend::session_ledger::checkpoint(
-                &dir, pid, &Fixed(start + i * 60), &mut |g, d| {
-                    crate::backend::config::ConfigManager::new().credit_time_spent(g, d)
-                },
+                &dir,
+                pid,
+                &Fixed(start + i * 60),
+                &mut |g, d| crate::backend::config::ConfigManager::new().credit_time_spent(g, d),
             )
             .unwrap();
         }
@@ -5910,13 +6232,20 @@ mod tests {
 
         let secs = pm.check_finished().map(|(_, s)| s).unwrap_or(0);
         let cfg = crate::backend::config::ConfigManager::new();
-        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let stored: u64 = cfg
+            .game_value("Game", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
         let _ = std::fs::remove_dir_all(&base);
 
         assert_eq!(secs, 0);
         // Keep the existing bound; the injected close now produces exactly 600.
-        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
+        assert!(
+            (600..=605).contains(&stored),
+            "credited once, got {}",
+            stored
+        );
         assert!(deleted);
         stored
     }
@@ -5940,13 +6269,16 @@ mod tests {
         crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, start).unwrap();
         struct Fixed(u64);
         impl crate::backend::session_ledger::Clock for Fixed {
-            fn now(&self) -> u64 { self.0 }
+            fn now(&self) -> u64 {
+                self.0
+            }
         }
         for i in 1..=9u64 {
             crate::backend::session_ledger::checkpoint(
-                &dir, pid, &Fixed(start + i * 60), &mut |g, d| {
-                    crate::backend::config::ConfigManager::new().credit_time_spent(g, d)
-                },
+                &dir,
+                pid,
+                &Fixed(start + i * 60),
+                &mut |g, d| crate::backend::config::ConfigManager::new().credit_time_spent(g, d),
             )
             .unwrap();
         }
@@ -5959,14 +6291,21 @@ mod tests {
 
         let (_, secs) = pm.stop_game().unwrap();
         let cfg = crate::backend::config::ConfigManager::new();
-        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let stored: u64 = cfg
+            .game_value("Game", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
         let _ = std::fs::remove_dir_all(&base);
 
         assert_eq!(secs, 0);
         // The 9 checkpoints and the temp dir take a couple of seconds; the
         // close uses SystemClock, so allow that overhead.
-        assert!((600..=605).contains(&stored), "credited once, got {}", stored);
+        assert!(
+            (600..=605).contains(&stored),
+            "credited once, got {}",
+            stored
+        );
         assert!(deleted);
     }
 
@@ -5986,8 +6325,7 @@ mod tests {
             use crate::backend::session_ledger::Clock;
             crate::backend::session_ledger::SystemClock.now()
         };
-        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600)
-            .unwrap();
+        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600).unwrap();
         *pm.imp().session_game.borrow_mut() = "Game".to_string();
         *pm.imp().session_start.borrow_mut() =
             Some(std::time::Instant::now() - std::time::Duration::from_secs(600));
@@ -5999,13 +6337,20 @@ mod tests {
         let stored_pid = pm.imp().parked.borrow()[0].adopted_pid;
         let (_, secs) = pm.stop_parked("Game").unwrap();
         let cfg = crate::backend::config::ConfigManager::new();
-        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let stored: u64 = cfg
+            .game_value("Game", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
         let _ = std::fs::remove_dir_all(&base);
 
         assert_eq!(stored_pid, Some(pid));
         assert_eq!(secs, 0);
-        assert!((600..=601).contains(&stored), "credited once, got {}", stored);
+        assert!(
+            (600..=601).contains(&stored),
+            "credited once, got {}",
+            stored
+        );
         assert!(deleted);
     }
 
@@ -6025,11 +6370,12 @@ mod tests {
             use crate::backend::session_ledger::Clock;
             crate::backend::session_ledger::SystemClock.now()
         };
-        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600)
-            .unwrap();
+        crate::backend::session_ledger::adopt_ledger(&dir, "Game", pid, tick, now - 600).unwrap();
         *pm.imp().parked.borrow_mut() = vec![ParkedSession {
             name: "Game".to_string(),
-            kind: ParkedKind::Emu { pattern: String::new() },
+            kind: ParkedKind::Emu {
+                pattern: String::new(),
+            },
             start: std::time::Instant::now() - std::time::Duration::from_secs(600),
             child: None,
             adopted_pid: Some(pid),
@@ -6040,13 +6386,20 @@ mod tests {
         pm.imp().session_appimage.set(true);
         let (_, secs) = pm.stop_game().unwrap();
         let cfg = crate::backend::config::ConfigManager::new();
-        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let stored: u64 = cfg
+            .game_value("Game", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
         let _ = std::fs::remove_dir_all(&base);
 
         assert_eq!(restored, Some(pid));
         assert_eq!(secs, 0);
-        assert!((600..=601).contains(&stored), "credited once, got {}", stored);
+        assert!(
+            (600..=601).contains(&stored),
+            "credited once, got {}",
+            stored
+        );
         assert!(deleted);
     }
 
@@ -6074,17 +6427,26 @@ mod tests {
 
         *pm.imp().parked.borrow_mut() = vec![ParkedSession {
             name: "Game".to_string(),
-            kind: ParkedKind::AppImage { exe: "/nonexistent/App.AppImage".to_string() },
+            kind: ParkedKind::AppImage {
+                exe: "/nonexistent/App.AppImage".to_string(),
+            },
             start: std::time::Instant::now() - std::time::Duration::from_secs(900),
             child: None,
             adopted_pid: Some(pid),
         }];
         pm.purge_dead();
         let cfg = crate::backend::config::ConfigManager::new();
-        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let stored: u64 = cfg
+            .game_value("Game", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         let deleted = crate::backend::session_ledger::load(&dir, pid).is_none();
         let _ = std::fs::remove_dir_all(&base);
-        assert!((900..=901).contains(&stored), "credited once, got {}", stored);
+        assert!(
+            (900..=901).contains(&stored),
+            "credited once, got {}",
+            stored
+        );
         assert!(deleted);
     }
 
@@ -6197,7 +6559,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
 
         assert_eq!(first, vec!["Game".to_string()]);
-        assert!((900..=901).contains(&stored), "credited once, got {}", stored);
+        assert!(
+            (900..=901).contains(&stored),
+            "credited once, got {}",
+            stored
+        );
         assert!(deleted);
         assert!(second.is_empty());
         assert_eq!(stored, after);
@@ -6213,7 +6579,9 @@ mod tests {
         let child = std::process::Command::new("true").spawn().unwrap();
         *pm.imp().parked.borrow_mut() = vec![ParkedSession {
             name: "Game".to_string(),
-            kind: ParkedKind::Emu { pattern: String::new() },
+            kind: ParkedKind::Emu {
+                pattern: String::new(),
+            },
             start: std::time::Instant::now() - std::time::Duration::from_secs(10),
             child: Some(child),
             adopted_pid: None,
@@ -6222,7 +6590,10 @@ mod tests {
         let (_, secs) = pm.stop_parked("Game").unwrap();
         let _ = crate::backend::config::ConfigManager::new().credit_time_spent("Game", secs);
         let cfg = crate::backend::config::ConfigManager::new();
-        let stored: u64 = cfg.game_value("Game", "TimeSpent").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let stored: u64 = cfg
+            .game_value("Game", "TimeSpent")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         let dir = crate::backend::session_ledger::sessions_dir(&base);
         let deleted = crate::backend::session_ledger::load(&dir, std::process::id()).is_none();
         let _ = std::fs::remove_dir_all(&base);
@@ -6250,7 +6621,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
         assert!(cleared, "RPG stop must clear the adopted pid");
     }
-
 }
 
 #[cfg(test)]
@@ -6377,7 +6747,6 @@ mod game_log_tests {
     }
 }
 
-
 #[cfg(test)]
 mod arch_tests {
     use super::ProtonManager;
@@ -6385,10 +6754,12 @@ mod arch_tests {
 
     fn pe_bytes(magic: u16) -> Vec<u8> {
         let mut buf = vec![0u8; 0x40 + 26];
-        buf[0] = b'M'; buf[1] = b'Z';
+        buf[0] = b'M';
+        buf[1] = b'Z';
         let off: usize = 0x40;
         buf[0x3C..0x40].copy_from_slice(&(off as u32).to_le_bytes());
-        buf[off] = b'P'; buf[off + 1] = b'E';
+        buf[off] = b'P';
+        buf[off + 1] = b'E';
         buf[off + 24..off + 26].copy_from_slice(&magic.to_le_bytes());
         buf
     }
@@ -6426,14 +6797,23 @@ mod arch_tests {
     fn ge_catalog_is_pinned_without_reading_a_latest_cache_or_network() {
         use crate::backend::download_integrity::{GE_API_URL, GE_TAG, GE_URL};
         assert_eq!(ProtonManager::release_source_url("ge").unwrap(), GE_API_URL);
-        assert_eq!(ProtonManager::fetch_releases("ge").unwrap(), vec![(GE_TAG.to_string(), GE_URL.to_string())]);
+        assert_eq!(
+            ProtonManager::fetch_releases("ge").unwrap(),
+            vec![(GE_TAG.to_string(), GE_URL.to_string())]
+        );
     }
 
     #[test]
     fn unpinned_ge_download_aborts_before_creating_or_extracting_files() {
-        let destination = std::env::temp_dir().join(format!("corky-rejected-ge-{}", std::process::id()));
+        let destination =
+            std::env::temp_dir().join(format!("corky-rejected-ge-{}", std::process::id()));
         assert!(!destination.exists());
-        let result = ProtonManager::download_proton("GE-Proton-old", "http://127.0.0.1:1/rejected", &destination, |_, _| {});
+        let result = ProtonManager::download_proton(
+            "GE-Proton-old",
+            "http://127.0.0.1:1/rejected",
+            &destination,
+            |_, _| {},
+        );
         assert!(result.unwrap_err().contains("Unpinned"));
         assert!(!destination.exists());
     }

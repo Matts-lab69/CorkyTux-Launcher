@@ -1,37 +1,39 @@
 pub mod helpers;
-#[path = "policies/layout.rs"]
-pub mod layout;
+
+pub type RefreshCallback = std::rc::Rc<std::cell::RefCell<Option<std::rc::Rc<dyn Fn()>>>>;
+pub type CallbackSlot<T> = std::rc::Rc<std::cell::RefCell<Option<std::rc::Rc<dyn Fn(T)>>>>;
+pub mod add_game;
+pub mod center;
 pub mod deps_modal;
-pub mod sidebar;
 pub mod details_panel;
 pub mod game_card;
-#[path = "policies/svg.rs"]
-pub mod svg_assets;
 #[cfg(test)]
 #[path = "policies/input_prompts.rs"]
 mod input_prompts_contract;
-pub mod add_game;
+#[path = "policies/layout.rs"]
+pub mod layout;
 pub mod remove_modal;
 pub mod settings;
-pub mod center;
+pub mod sidebar;
+#[path = "policies/svg.rs"]
+pub mod svg_assets;
 pub use crate::backend::icon_sources as icons;
-pub mod log_modal;
-pub mod warnings;
-pub mod proton_modal;
-pub mod game_settings;
 pub mod apps_settings;
+#[path = "policies/dialog.rs"]
+pub mod dialog;
+pub mod game_settings;
+pub mod gamepad;
+mod gamepad_controls;
+pub mod gamepad_nav;
+pub mod import_manager;
+pub mod log_modal;
 #[path = "policies/markdown.rs"]
 pub mod markdown;
 pub mod mcx_theme;
-pub mod minecraft_view;
-pub mod stores_view;
-mod rail_loader;
-#[path = "policies/dialog.rs"]
-pub mod dialog;
-pub mod import_manager;
-pub mod update_dialog;
-pub mod gamepad;
-pub mod gamepad_nav;
-mod gamepad_controls;
 mod minecraft_ram;
+pub mod minecraft_view;
+mod rail_loader;
+pub mod stores_view;
 pub mod tray;
+pub mod update_dialog;
+pub mod warnings;

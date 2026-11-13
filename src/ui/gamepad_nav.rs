@@ -222,10 +222,14 @@ pub fn quick_action_target(
 /// are used; the physical South button always confirms.
 pub fn help_text(family: PadFamily) -> &'static str {
     match family {
-        PadFamily::PlayStation => "✕ Select   ○ Back   □ Context   △ Quick   L1/R1 Tabs   Options Menu",
+        PadFamily::PlayStation => {
+            "✕ Select   ○ Back   □ Context   △ Quick   L1/R1 Tabs   Options Menu"
+        }
         PadFamily::Xbox => "A Select   B Back   X Context   Y Quick   LB/RB Tabs   Menu Menu",
         PadFamily::Nintendo => "B Select   A Back   Y Context   X Quick   L/R Tabs   + Menu",
-        PadFamily::Generic => "South Select   East Back   West Context   North Quick   LB/RB Tabs   Start Menu",
+        PadFamily::Generic => {
+            "South Select   East Back   West Context   North Quick   LB/RB Tabs   Start Menu"
+        }
     }
 }
 
@@ -337,7 +341,10 @@ pub fn best_form_in_scope(
 pub fn best_in_form(current: NavRect, candidates: &[NavRect], dir: Dir) -> Option<usize> {
     let (cx, cy) = current.center();
     let horizontal = matches!(dir, Dir::Left | Dir::Right);
-    let eligible: Vec<(usize, NavRect)> = candidates.iter().copied().enumerate()
+    let eligible: Vec<(usize, NavRect)> = candidates
+        .iter()
+        .copied()
+        .enumerate()
         .filter(|(_, rect)| {
             let (x, y) = rect.center();
             match dir {
@@ -346,19 +353,35 @@ pub fn best_in_form(current: NavRect, candidates: &[NavRect], dir: Dir) -> Optio
                 Dir::Up => !current.overlaps_y(*rect) && y < cy,
                 Dir::Down => !current.overlaps_y(*rect) && y > cy,
             }
-        }).collect();
+        })
+        .collect();
     if horizontal {
-        return eligible.iter().min_by(|a, b| {
-            (a.1.center().0 - cx).abs().total_cmp(&(b.1.center().0 - cx).abs())
-        }).map(|(index, _)| *index);
+        return eligible
+            .iter()
+            .min_by(|a, b| {
+                (a.1.center().0 - cx)
+                    .abs()
+                    .total_cmp(&(b.1.center().0 - cx).abs())
+            })
+            .map(|(index, _)| *index);
     }
-    let frontier = eligible.iter().min_by(|a, b| {
-        (a.1.center().1 - cy).abs().total_cmp(&(b.1.center().1 - cy).abs())
-    })?.1;
-    eligible.iter().filter(|(_, rect)| rect.overlaps_y(frontier))
+    let frontier = eligible
+        .iter()
         .min_by(|a, b| {
-            (a.1.center().0 - cx).abs().total_cmp(&(b.1.center().0 - cx).abs())
-        }).map(|(index, _)| *index)
+            (a.1.center().1 - cy)
+                .abs()
+                .total_cmp(&(b.1.center().1 - cy).abs())
+        })?
+        .1;
+    eligible
+        .iter()
+        .filter(|(_, rect)| rect.overlaps_y(frontier))
+        .min_by(|a, b| {
+            (a.1.center().0 - cx)
+                .abs()
+                .total_cmp(&(b.1.center().0 - cx).abs())
+        })
+        .map(|(index, _)| *index)
 }
 
 fn best_in_scope_using(
@@ -426,6 +449,7 @@ fn step(
     None
 }
 
+#[cfg(test)]
 pub fn map_event(input: PadInput, state: &mut NavState, now_ms: u64) -> Option<NavAction> {
     map_event_with_delays(input, state, now_ms, RepeatDelays::default())
 }
@@ -474,11 +498,13 @@ pub fn map_event_with_delays(
 }
 
 /// Drive held directions even when gilrs emits no more events for a steady axis.
+#[cfg(test)]
 pub fn repeat(state: &mut NavState, now_ms: u64) -> Option<NavAction> {
     repeat_with_delays(state, now_ms, RepeatDelays::default())
 }
 
 /// Keep held-axis polling consistent with the configured input-event delays.
+#[cfg(test)]
 pub fn repeat_with_delays(
     state: &mut NavState,
     now_ms: u64,
@@ -537,14 +563,20 @@ mod tests {
     #[test]
     fn gamepad_held_direction_repeats_without_new_device_events() {
         let mut state = NavState::default();
-        assert_eq!(map_event(PadInput::Dpad(Dir::Right, true), &mut state, 0), Some(NavAction::Move(Dir::Right)));
+        assert_eq!(
+            map_event(PadInput::Dpad(Dir::Right, true), &mut state, 0),
+            Some(NavAction::Move(Dir::Right))
+        );
         assert_eq!(repeat(&mut state, 399), None);
         assert_eq!(repeat(&mut state, 400), Some(NavAction::Move(Dir::Right)));
         assert_eq!(repeat(&mut state, 400), None);
         assert_eq!(repeat(&mut state, 520), Some(NavAction::Move(Dir::Right)));
         map_event(PadInput::Dpad(Dir::Right, false), &mut state, 521);
         assert_eq!(repeat(&mut state, 800), None);
-        assert_eq!(map_event(PadInput::Stick { x: -1.0, y: 0.0 }, &mut state, 900), Some(NavAction::Move(Dir::Left)));
+        assert_eq!(
+            map_event(PadInput::Stick { x: -1.0, y: 0.0 }, &mut state, 900),
+            Some(NavAction::Move(Dir::Left))
+        );
         assert_eq!(repeat(&mut state, 1300), Some(NavAction::Move(Dir::Left)));
         state.reset();
         assert_eq!(repeat(&mut state, 1600), None);
@@ -572,8 +604,14 @@ mod tests {
     #[test]
     fn deadzone_ignores_small_sticks() {
         let mut st = NavState::default();
-        assert_eq!(map_event(PadInput::Stick { x: 0.4, y: 0.4 }, &mut st, 0), None);
-        assert_eq!(map_event(PadInput::Stick { x: -0.49, y: 0.1 }, &mut st, 0), None);
+        assert_eq!(
+            map_event(PadInput::Stick { x: 0.4, y: 0.4 }, &mut st, 0),
+            None
+        );
+        assert_eq!(
+            map_event(PadInput::Stick { x: -0.49, y: 0.1 }, &mut st, 0),
+            None
+        );
         assert_eq!(
             map_event(PadInput::Stick { x: 0.5, y: 0.0 }, &mut st, 0),
             Some(NavAction::Move(Dir::Right))
@@ -587,18 +625,30 @@ mod tests {
             map_event(PadInput::Dpad(Dir::Down, true), &mut st, 0),
             Some(NavAction::Move(Dir::Down))
         );
-        assert_eq!(map_event(PadInput::Dpad(Dir::Down, true), &mut st, 399), None);
+        assert_eq!(
+            map_event(PadInput::Dpad(Dir::Down, true), &mut st, 399),
+            None
+        );
         assert_eq!(
             map_event(PadInput::Dpad(Dir::Down, true), &mut st, 400),
             Some(NavAction::Move(Dir::Down))
         );
-        assert_eq!(map_event(PadInput::Dpad(Dir::Down, true), &mut st, 519), None);
+        assert_eq!(
+            map_event(PadInput::Dpad(Dir::Down, true), &mut st, 519),
+            None
+        );
         assert_eq!(
             map_event(PadInput::Dpad(Dir::Down, true), &mut st, 520),
             Some(NavAction::Move(Dir::Down))
         );
-        assert_eq!(map_event(PadInput::Dpad(Dir::Down, false), &mut st, 530), None);
-        assert_eq!(map_event(PadInput::Dpad(Dir::Down, true), &mut st, 600), Some(NavAction::Move(Dir::Down)));
+        assert_eq!(
+            map_event(PadInput::Dpad(Dir::Down, false), &mut st, 530),
+            None
+        );
+        assert_eq!(
+            map_event(PadInput::Dpad(Dir::Down, true), &mut st, 600),
+            Some(NavAction::Move(Dir::Down))
+        );
     }
 
     #[test]
@@ -614,7 +664,10 @@ mod tests {
             RepeatDelays::from_values(Some("0"), Some("invalid")),
             RepeatDelays::default()
         );
-        assert_eq!(RepeatDelays::from_values(None, None), RepeatDelays::default());
+        assert_eq!(
+            RepeatDelays::from_values(None, None),
+            RepeatDelays::default()
+        );
     }
 
     #[test]
@@ -651,13 +704,19 @@ mod tests {
             Some(NavAction::Move(Dir::Up))
         );
         // The stick asks for the right while the D-pad holds up: no move.
-        assert_eq!(map_event(PadInput::Stick { x: 0.9, y: 0.0 }, &mut st, 10), None);
+        assert_eq!(
+            map_event(PadInput::Stick { x: 0.9, y: 0.0 }, &mut st, 10),
+            None
+        );
         // Releasing the D-pad hands over to the stick.
         assert_eq!(
             map_event(PadInput::Dpad(Dir::Up, false), &mut st, 20),
             Some(NavAction::Move(Dir::Right))
         );
-        assert_eq!(map_event(PadInput::Stick { x: 0.0, y: 0.0 }, &mut st, 30), None);
+        assert_eq!(
+            map_event(PadInput::Stick { x: 0.0, y: 0.0 }, &mut st, 30),
+            None
+        );
     }
 
     #[test]
@@ -689,10 +748,7 @@ mod tests {
             detect_family("DualSense Wireless Controller"),
             PadFamily::PlayStation
         );
-        assert_eq!(
-            detect_family("Xbox Wireless Controller"),
-            PadFamily::Xbox
-        );
+        assert_eq!(detect_family("Xbox Wireless Controller"), PadFamily::Xbox);
         assert_eq!(
             detect_family("Nintendo Switch Pro Controller"),
             PadFamily::Nintendo
@@ -709,10 +765,26 @@ mod tests {
     }
     #[test]
     fn only_mapped_gamepads_are_accepted() {
-        let ds = PadInfo { vendor: Some(0x054c), product: Some(0x0ce6), mapping: PadMapping::Sdl };
-        let stick = PadInfo { vendor: Some(0x044f), product: Some(0xb10a), mapping: PadMapping::None };
-        let g29 = PadInfo { vendor: Some(G29_VENDOR), product: Some(G29_PRODUCT), mapping: PadMapping::Sdl };
-        let driver = PadInfo { vendor: Some(0x1234), product: Some(0x0001), mapping: PadMapping::Driver };
+        let ds = PadInfo {
+            vendor: Some(0x054c),
+            product: Some(0x0ce6),
+            mapping: PadMapping::Sdl,
+        };
+        let stick = PadInfo {
+            vendor: Some(0x044f),
+            product: Some(0xb10a),
+            mapping: PadMapping::None,
+        };
+        let g29 = PadInfo {
+            vendor: Some(G29_VENDOR),
+            product: Some(G29_PRODUCT),
+            mapping: PadMapping::Sdl,
+        };
+        let driver = PadInfo {
+            vendor: Some(0x1234),
+            product: Some(0x0001),
+            mapping: PadMapping::Driver,
+        };
         assert!(is_gamepad(ds));
         assert!(is_gamepad(driver));
         assert!(!is_gamepad(stick));
@@ -771,7 +843,11 @@ mod tests {
         assert!(dedupe(deck_later, &[virtual_pad], DEDUPE_WINDOW_MS));
         // A lone virtual pad is valid.
         assert!(dedupe(
-            PadStamp { vendor: Some(STEAM_VENDOR), product: Some(STEAM_VIRTUAL_PRODUCT), at_ms: 3_000 },
+            PadStamp {
+                vendor: Some(STEAM_VENDOR),
+                product: Some(STEAM_VIRTUAL_PRODUCT),
+                at_ms: 3_000
+            },
             &[],
             DEDUPE_WINDOW_MS
         ));
@@ -821,17 +897,44 @@ mod tests {
     #[test]
     fn quick_action_policy() {
         // Focus on a game card (inside the library stack).
-        assert_eq!(quick_action_target("games", false, true, true, false), QuickTarget::Play);
+        assert_eq!(
+            quick_action_target("games", false, true, true, false),
+            QuickTarget::Play
+        );
         // Focus on the details panel: not the library body.
-        assert_eq!(quick_action_target("games", false, false, true, false), QuickTarget::None);
+        assert_eq!(
+            quick_action_target("games", false, false, true, false),
+            QuickTarget::None
+        );
         // Focus on the sidebar: also outside the library body.
-        assert_eq!(quick_action_target("games", false, false, true, false), QuickTarget::None);
-        assert_eq!(quick_action_target("games", true, true, true, false), QuickTarget::None);
-        assert_eq!(quick_action_target("games", false, true, false, false), QuickTarget::None);
-        assert_eq!(quick_action_target("games", false, true, true, true), QuickTarget::None);
-        assert_eq!(quick_action_target("settings", false, true, true, false), QuickTarget::None);
-        assert_eq!(quick_action_target("stores", false, true, true, false), QuickTarget::None);
-        assert_eq!(quick_action_target("minecraft", false, true, true, false), QuickTarget::None);
+        assert_eq!(
+            quick_action_target("games", false, false, true, false),
+            QuickTarget::None
+        );
+        assert_eq!(
+            quick_action_target("games", true, true, true, false),
+            QuickTarget::None
+        );
+        assert_eq!(
+            quick_action_target("games", false, true, false, false),
+            QuickTarget::None
+        );
+        assert_eq!(
+            quick_action_target("games", false, true, true, true),
+            QuickTarget::None
+        );
+        assert_eq!(
+            quick_action_target("settings", false, true, true, false),
+            QuickTarget::None
+        );
+        assert_eq!(
+            quick_action_target("stores", false, true, true, false),
+            QuickTarget::None
+        );
+        assert_eq!(
+            quick_action_target("minecraft", false, true, true, false),
+            QuickTarget::None
+        );
     }
 
     fn rect(x: f64, y: f64, w: f64, h: f64) -> NavRect {

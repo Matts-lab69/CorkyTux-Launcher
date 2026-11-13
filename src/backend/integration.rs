@@ -1,6 +1,4 @@
 use glib::subclass::prelude::*;
-use gtk::prelude::*;
-use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -74,9 +72,9 @@ fn lutris_data_roots(home: &Path) -> Vec<PathBuf> {
 
 fn cached_icon_valid(path: &Path) -> bool {
     path.is_file()
-        && gdk_pixbuf::Pixbuf::from_file(path).map(|pb| {
-            pb.width() >= 16 && pb.height() >= 16
-        }).unwrap_or(false)
+        && gdk_pixbuf::Pixbuf::from_file(path)
+            .map(|pb| pb.width() >= 16 && pb.height() >= 16)
+            .unwrap_or(false)
 }
 
 fn tool_available(tool: &str) -> bool {
@@ -131,7 +129,7 @@ pub fn lutris_runner_to_executor(runner: &str) -> String {
 mod imp {
     use super::*;
     use crate::backend::config::ConfigManager;
-    use glib::subclass::prelude::*;
+
     use std::cell::RefCell;
 
     #[derive(Default)]
@@ -253,7 +251,11 @@ impl IntegrationManager {
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.is_file() {
-                    let name = p.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+                    let name = p
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_lowercase();
                     if name.ends_with(".exe") || name.ends_with(".sh") || name.ends_with(".bin") {
                         candidates.push(p);
                     }
@@ -264,8 +266,16 @@ impl IntegrationManager {
             return None;
         }
         candidates.sort_by(|a, b| {
-            let a_name = a.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
-            let b_name = b.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+            let a_name = a
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_lowercase();
+            let b_name = b
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_lowercase();
             a_name.len().cmp(&b_name.len())
         });
         Some(candidates[0].display().to_string())
@@ -295,7 +305,11 @@ impl IntegrationManager {
     /// lookup skips this provider without sending an empty bearer token.
     fn key_or_none(value: &str) -> Option<&str> {
         let value = value.trim();
-        if value.is_empty() { None } else { Some(value) }
+        if value.is_empty() {
+            None
+        } else {
+            Some(value)
+        }
     }
 
     /// Read a user-owned regular file through one descriptor, hardening its
@@ -387,21 +401,13 @@ impl IntegrationManager {
     }
 
     /// Download helper: min_bytes required, Referer for steamgriddb CDN.
-    fn download_art(
-        client: &reqwest::blocking::Client,
-        url: &str,
-        dest: &PathBuf,
-    ) -> bool {
+    fn download_art(client: &reqwest::blocking::Client, url: &str, dest: &PathBuf) -> bool {
         Self::download_art_min(client, url, dest, 1000)
     }
 
     /// Icon-specific download: lower min_bytes threshold (small icons
     /// can be valid at ~100 bytes).
-    fn download_art_icon(
-        client: &reqwest::blocking::Client,
-        url: &str,
-        dest: &PathBuf,
-    ) -> bool {
+    fn download_art_icon(client: &reqwest::blocking::Client, url: &str, dest: &PathBuf) -> bool {
         Self::download_art_min(client, url, dest, 100)
     }
 
@@ -432,14 +438,17 @@ impl IntegrationManager {
     }
 
     fn file_valid(path: &PathBuf, min_bytes: u64) -> bool {
-        if !fs::metadata(path).map(|m| m.len() > min_bytes).unwrap_or(false) {
+        if !fs::metadata(path)
+            .map(|m| m.len() > min_bytes)
+            .unwrap_or(false)
+        {
             return false;
         }
         // Validate the image is actually loadable — prevents corrupted
         // partial downloads from being treated as cached forever.
-        gdk_pixbuf::Pixbuf::from_file(path).map(|pb| {
-            pb.width() >= 16 && pb.height() >= 16
-        }).unwrap_or(false)
+        gdk_pixbuf::Pixbuf::from_file(path)
+            .map(|pb| pb.width() >= 16 && pb.height() >= 16)
+            .unwrap_or(false)
     }
 
     fn sgdb_get(
@@ -463,11 +472,19 @@ impl IntegrationManager {
     /// banner: Steam header -> Store API -> local Lutris -> Lutris API -> SGDB grid.
     /// icon: Steam logo -> local Lutris -> SGDB icons. Extraction is last and the caller does it.
     /// Returns (icon, banner). Files land in ~/.config/CorkyTux/{icons,banners}/.
-    pub fn resolve_artwork(&self, game_name: &str, steam_id: &str) -> (Option<String>, Option<String>) {
+    pub fn resolve_artwork(
+        &self,
+        game_name: &str,
+        steam_id: &str,
+    ) -> (Option<String>, Option<String>) {
         let slug = super::ConfigManager::new()
             .game_value(game_name, "LutrisSlug")
             .unwrap_or_default();
-        let slug = if slug.is_empty() { slugify(game_name) } else { slug };
+        let slug = if slug.is_empty() {
+            slugify(game_name)
+        } else {
+            slug
+        };
         let key = Self::user_sgdb_key();
         Self::resolve_artwork_static(game_name, steam_id, &slug, key.as_deref())
     }
@@ -510,11 +527,15 @@ impl IntegrationManager {
         };
         if !id.is_empty() {
             let b = banners_dir.join(format!("{}.jpg", id));
-            if Self::file_valid(&b, 1000) {
-                banner = Some(b.display().to_string());
-            } else if Self::download_art(&client,
-                &format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{}/header.jpg", id),
-                &b)
+            if Self::file_valid(&b, 1000)
+                || Self::download_art(
+                    &client,
+                    &format!(
+                        "https://cdn.cloudflare.steamstatic.com/steam/apps/{}/header.jpg",
+                        id
+                    ),
+                    &b,
+                )
             {
                 banner = Some(b.display().to_string());
             }
@@ -523,7 +544,10 @@ impl IntegrationManager {
                 if Self::file_valid(&d, 1000) {
                     banner = Some(d.display().to_string());
                 } else if let Ok(resp) = client
-                    .get(&format!("https://store.steampowered.com/api/appdetails?appids={}", id))
+                    .get(format!(
+                        "https://store.steampowered.com/api/appdetails?appids={}",
+                        id
+                    ))
                     .send()
                 {
                     if let Ok(body) = resp.text() {
@@ -547,10 +571,14 @@ impl IntegrationManager {
                     let _ = fs::rename(&legacy, &i);
                     icon = Some(i.display().to_string());
                     icon_is_wide = true;
-                } else if Self::download_art_icon(&client,
-                    &format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{}/logo.png", id),
-                    &i)
-                {
+                } else if Self::download_art_icon(
+                    &client,
+                    &format!(
+                        "https://cdn.cloudflare.steamstatic.com/steam/apps/{}/logo.png",
+                        id
+                    ),
+                    &i,
+                ) {
                     icon = Some(i.display().to_string());
                     icon_is_wide = true;
                 }
@@ -637,7 +665,8 @@ impl IntegrationManager {
 
         if let Some(key) = sgdb_key {
             let mut grid_id = String::new();
-            if (banner.is_none() || icon.is_none() || icon_is_wide) && !game_name.trim().is_empty() {
+            if (banner.is_none() || icon.is_none() || icon_is_wide) && !game_name.trim().is_empty()
+            {
                 let search_url = format!(
                     "https://www.steamgriddb.com/api/v2/search/autocomplete/{}",
                     url_encode_query(game_name.trim())
@@ -688,7 +717,7 @@ impl IntegrationManager {
         client: &reqwest::blocking::Client,
         grid_id: &str,
         game_name: &str,
-        icons_dir: &std::path::PathBuf,
+        icons_dir: &Path,
         key: &str,
     ) -> Option<String> {
         let url = format!(
@@ -709,9 +738,7 @@ impl IntegrationManager {
                 break;
             }
         }
-        urls.sort_by(|a, b| {
-            b.ends_with(".png").cmp(&a.ends_with(".png"))
-        });
+        urls.sort_by_key(|url| std::cmp::Reverse(url.ends_with(".png")));
         for u in urls {
             let d = icons_dir.join(format!("{}-sgdb.png", slugify(game_name)));
             if Self::file_valid(&d, 100) {
@@ -891,7 +918,8 @@ impl IntegrationManager {
 
     pub fn extract_appimage_icon_static(appimage_path: &str, game_name: &str) -> Option<String> {
         let is_app = Path::new(&shellexpand_tilde(appimage_path))
-            .extension().and_then(|e| e.to_str())
+            .extension()
+            .and_then(|e| e.to_str())
             .map(|e| e.eq_ignore_ascii_case("appimage"))
             .unwrap_or(false);
         if !is_app {
@@ -910,10 +938,9 @@ impl IntegrationManager {
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).ok();
         }
-        let doc = super::external::AppImageManager::extract_icon(
-            &expanded,
-            &dest.display().to_string(),
-        ).ok()?;
+        let doc =
+            super::external::AppImageManager::extract_icon(&expanded, &dest.display().to_string())
+                .ok()?;
         let got = doc.get("icon").and_then(|v| v.as_str()).unwrap_or_default();
         if got.is_empty() || !Path::new(got).is_file() {
             return None;
@@ -943,7 +970,11 @@ impl IntegrationManager {
         if pkg.is_file() {
             if let Ok(content) = fs::read_to_string(&pkg) {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(rel) = v.get("window").and_then(|w| w.get("icon")).and_then(|i| i.as_str()) {
+                    if let Some(rel) = v
+                        .get("window")
+                        .and_then(|w| w.get("icon"))
+                        .and_then(|i| i.as_str())
+                    {
                         candidates.push(base.join(rel));
                     }
                 }
@@ -1001,7 +1032,7 @@ impl IntegrationManager {
         if !p.exists() {
             return "--".to_string();
         }
-        if let Ok(md) = fs::symlink_metadata(&p) {
+        if let Ok(md) = fs::symlink_metadata(p) {
             if md.is_file() {
                 return format_size_bytes(md.len());
             }
@@ -1031,10 +1062,6 @@ impl IntegrationManager {
             }
         }
         total
-    }
-
-    fn query_folder_size_recursive(&self, path: &Path) -> u64 {
-        Self::query_folder_size_recursive_static(path, 0)
     }
 
     pub fn scan_lutris(&self) -> Vec<IntegrationEntry> {
@@ -1095,9 +1122,7 @@ impl IntegrationManager {
         if let Ok(entries) = fs::read_dir(lutris_dir) {
             for entry in entries.flatten() {
                 let p = entry.path();
-                if p.is_file()
-                    && p.extension().and_then(|x| x.to_str()) == Some("yml")
-                {
+                if p.is_file() && p.extension().and_then(|x| x.to_str()) == Some("yml") {
                     let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
                     // Config files are "<slug>-<timestamp>"; plain "<slug>.yml"
                     // files are runner configs, not games.
@@ -1247,17 +1272,45 @@ impl IntegrationManager {
                 continue;
             }
             let name = cols[0].trim().to_string();
-            let slug = cols.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
-            let runner = cols.get(2).map(|s| s.trim().to_string()).unwrap_or_default();
-            let mut directory = cols.get(3).map(|s| s.trim().to_string()).unwrap_or_default();
-            let db_exe = cols.get(4).map(|s| s.trim().to_string()).unwrap_or_default();
-            let configpath = cols.get(5).map(|s| s.trim().to_string()).unwrap_or_default();
-            let service = cols.get(6).map(|s| s.trim().to_string()).unwrap_or_default();
-            let service_id = cols.get(7).map(|s| s.trim().to_string()).unwrap_or_default();
+            let slug = cols
+                .get(1)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            let runner = cols
+                .get(2)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            let mut directory = cols
+                .get(3)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            let db_exe = cols
+                .get(4)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            let configpath = cols
+                .get(5)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            let service = cols
+                .get(6)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            let service_id = cols
+                .get(7)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
             // pga.playtime is already in hours (2.28 ~= 2h17m played).
-            let playtime: f64 = cols.get(8).and_then(|s| s.trim().parse().ok()).unwrap_or(0.0);
+            let playtime: f64 = cols
+                .get(8)
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(0.0);
             // Steam-service games carry their AppID (Steam art + launch).
-            let appid = if service == "steam" { service_id } else { String::new() };
+            let appid = if service == "steam" {
+                service_id
+            } else {
+                String::new()
+            };
             // Real binary/prefix/proton live in the game yml, in the `games/`
             // dir under the SAME root as this database.
             let games_dir = db
@@ -1266,11 +1319,7 @@ impl IntegrationManager {
                 .unwrap_or_default();
             let (yml_exe, yml_prefix, yml_version) =
                 self.lutris_yml_info(&games_dir, &configpath, &slug);
-            let executable = if !yml_exe.is_empty() {
-                yml_exe
-            } else {
-                db_exe
-            };
+            let executable = if !yml_exe.is_empty() { yml_exe } else { db_exe };
             // Prefer whichever path really exists on disk: Lutris rows
             // often carry a stale directory (renamed folders, e.g.
             // "New Super MArio Bros" vs the real "New Super Mario Bros").
@@ -1278,13 +1327,9 @@ impl IntegrationManager {
                 .parent()
                 .map(|p| p.display().to_string())
                 .unwrap_or_default();
-            let dir_ok = !directory.is_empty()
-                && std::path::Path::new(&directory).exists();
-            let parent_ok =
-                !exe_parent.is_empty() && std::path::Path::new(&exe_parent).exists();
-            if !dir_ok && parent_ok {
-                directory = exe_parent;
-            } else if directory.is_empty() && !exe_parent.is_empty() {
+            let dir_ok = !directory.is_empty() && std::path::Path::new(&directory).exists();
+            let parent_ok = !exe_parent.is_empty() && std::path::Path::new(&exe_parent).exists();
+            if (!dir_ok && parent_ok) || (directory.is_empty() && !exe_parent.is_empty()) {
                 directory = exe_parent;
             }
             results.push(IntegrationEntry {
@@ -1324,7 +1369,10 @@ impl IntegrationManager {
             if name.is_empty() {
                 continue;
             }
-            let runner = cols.get(2).map(|s| s.trim().to_string()).unwrap_or_default();
+            let runner = cols
+                .get(2)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
             results.push(IntegrationEntry {
                 name,
                 path: String::new(),
@@ -1377,7 +1425,11 @@ impl IntegrationManager {
                 for entry in entries.flatten() {
                     let p = entry.path();
                     // I match the legacy layout: only appmanifest_*.acf files
-                    let fname = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let fname = p
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                     if !fname.starts_with("appmanifest_") || !fname.ends_with(".acf") {
                         continue;
                     }
@@ -1521,10 +1573,11 @@ pub fn steam_install_confirmed(appid: &str) -> bool {
                     installdir = extract_acf_value(t);
                 }
             }
-            if flags & 0x04 != 0 && !installdir.is_empty() {
-                if sd.join("common").join(&installdir).is_dir() {
-                    return true;
-                }
+            if flags & 0x04 != 0
+                && !installdir.is_empty()
+                && sd.join("common").join(&installdir).is_dir()
+            {
+                return true;
             }
         }
     }
@@ -1534,11 +1587,10 @@ pub fn steam_install_confirmed(appid: &str) -> bool {
 /// I skip known Steam tool / runtime appids (legacy isSteamTool list).
 fn is_steam_tool(name: &str, appid: &str) -> bool {
     const TOOL_IDS: &[&str] = &[
-        "228980", "250820", "252950", "280390", "311460", "316450", "321360",
-        "342710", "359320", "361420", "365670", "414490", "593110", "605740",
-        "1054830", "1070560", "1113280", "1161040", "1172470", "1245040",
-        "1290000", "1391110", "1493710", "1580130", "1628350", "1730190",
-        "1730300", "1845910", "1887720", "1893810", "2348590", "2805730",
+        "228980", "250820", "252950", "280390", "311460", "316450", "321360", "342710", "359320",
+        "361420", "365670", "414490", "593110", "605740", "1054830", "1070560", "1113280",
+        "1161040", "1172470", "1245040", "1290000", "1391110", "1493710", "1580130", "1628350",
+        "1730190", "1730300", "1845910", "1887720", "1893810", "2348590", "2805730",
     ];
     if TOOL_IDS.contains(&appid) {
         return true;
@@ -1559,7 +1611,7 @@ fn is_steam_tool(name: &str, appid: &str) -> bool {
 }
 
 /// ACF/VDF value extraction (I match the legacy vdfValue). Lines look like:
-/// `"name"		"Half-Life 2"` — no colon, key and value are both quoted.
+/// `"name"        "Half-Life 2"` — no colon, key and value are both quoted.
 fn extract_acf_value(line: &str) -> String {
     let mut quoted = Vec::new();
     let mut chars = line.trim().chars();
@@ -1628,11 +1680,7 @@ fn steam_appid_by_name(client: &reqwest::blocking::Client, game_name: &str) -> O
     );
     let body = client.get(&url).send().ok()?.text().ok()?;
     let mut rest = body.as_str();
-    loop {
-        let pos = match rest.find("data-ds-appid=\"") {
-            Some(p) => p,
-            None => break,
-        };
+    while let Some(pos) = rest.find("data-ds-appid=\"") {
         let seg = &rest[pos + "data-ds-appid=\"".len()..];
         let appid: String = seg.chars().take_while(|c| c.is_ascii_digit()).collect();
         // Name shown in the following match_name div (bounded window).
@@ -1711,11 +1759,7 @@ fn find_grid_id(body: &str, game_name: &str) -> String {
     let mut best_id = String::new();
     let mut best_score = 0u32;
     let mut rest = body;
-    loop {
-        let id_pos = match rest.find("\"id\"") {
-            Some(p) => p,
-            None => break,
-        };
+    while let Some(id_pos) = rest.find("\"id\"") {
         let seg = &rest[id_pos..];
         let id_num: String = seg["\"id\"".len()..]
             .chars()
@@ -1728,7 +1772,9 @@ fn find_grid_id(body: &str, game_name: &str) -> String {
             if let Some(nm) = json_field(&window[npos..], "name") {
                 if id_num.is_empty() {
                     rest = &seg[5.min(seg.len())..];
-                    if rest.len() < 10 { break; }
+                    if rest.len() < 10 {
+                        break;
+                    }
                     continue;
                 }
                 let candidate = norm_name(&nm);
@@ -1740,9 +1786,16 @@ fn find_grid_id(body: &str, game_name: &str) -> String {
                     3
                 } else {
                     // Prefix match: first 6+ chars identical
-                    let prefix_len = candidate.chars().zip(want.chars())
-                        .take_while(|(a, b)| a == b).count();
-                    if prefix_len >= 6 { 2 } else { 0 }
+                    let prefix_len = candidate
+                        .chars()
+                        .zip(want.chars())
+                        .take_while(|(a, b)| a == b)
+                        .count();
+                    if prefix_len >= 6 {
+                        2
+                    } else {
+                        0
+                    }
                 };
                 if score > best_score {
                     best_score = score;
@@ -1763,9 +1816,15 @@ fn shellexpand_tilde(s: &str) -> String {
 }
 
 fn format_size_bytes(bytes: u64) -> String {
-    if bytes < 1024 { return format!("{} B", bytes); }
-    if bytes < 1024 * 1024 { return format!("{:.1} KB", bytes as f64 / 1024.0); }
-    if bytes < 1024 * 1024 * 1024 { return format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0)); }
+    if bytes < 1024 {
+        return format!("{} B", bytes);
+    }
+    if bytes < 1024 * 1024 {
+        return format!("{:.1} KB", bytes as f64 / 1024.0);
+    }
+    if bytes < 1024 * 1024 * 1024 {
+        return format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0));
+    }
     format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
 }
 
@@ -1811,7 +1870,10 @@ mod tests {
 
         let m = IntegrationManager::new();
         m.remove_dir_recursive(&base.display().to_string()).unwrap();
-        assert!(!base.exists(), "the temporary tree must be removed completely");
+        assert!(
+            !base.exists(),
+            "the temporary tree must be removed completely"
+        );
 
         // Removing an absent path is idempotent and does not fail.
         m.remove_dir_recursive(&base.display().to_string()).unwrap();
@@ -1829,21 +1891,67 @@ mod tests {
     fn sgdb_credentials_prefer_environment_then_file_then_legacy() {
         let path = std::env::temp_dir().join(format!("corky-sgdb-sources-{}", std::process::id()));
         std::fs::write(&path, " file-value\n").unwrap();
-        assert_eq!(IntegrationManager::sgdb_key_from_sources(Some(" env-value "), Some(&path), "legacy-value", Some("builtin-value")), Some("env-value".into()));
-        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "legacy-value", Some("builtin-value")), Some("file-value".into()));
+        assert_eq!(
+            IntegrationManager::sgdb_key_from_sources(
+                Some(" env-value "),
+                Some(&path),
+                "legacy-value",
+                Some("builtin-value")
+            ),
+            Some("env-value".into())
+        );
+        assert_eq!(
+            IntegrationManager::sgdb_key_from_sources(
+                None,
+                Some(&path),
+                "legacy-value",
+                Some("builtin-value")
+            ),
+            Some("file-value".into())
+        );
         std::fs::write(&path, "  \n").unwrap();
-        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), " legacy-value ", Some("builtin-value")), Some("legacy-value".into()));
-        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some("builtin-value")), None);
+        assert_eq!(
+            IntegrationManager::sgdb_key_from_sources(
+                None,
+                Some(&path),
+                " legacy-value ",
+                Some("builtin-value")
+            ),
+            Some("legacy-value".into())
+        );
+        assert_eq!(
+            IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some("builtin-value")),
+            None
+        );
         std::fs::remove_file(&path).unwrap();
-        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some(" builtin-value ")), None);
-        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some("   ")), None);
-        assert_eq!(IntegrationManager::sgdb_key_from_sources(None, None, "", None), None);
+        assert_eq!(
+            IntegrationManager::sgdb_key_from_sources(
+                None,
+                Some(&path),
+                "",
+                Some(" builtin-value ")
+            ),
+            None
+        );
+        assert_eq!(
+            IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", Some("   ")),
+            None
+        );
+        assert_eq!(
+            IntegrationManager::sgdb_key_from_sources(None, None, "", None),
+            None
+        );
     }
 
     #[test]
     fn sgdb_key_from_environment_wins_over_a_compiled_fallback() {
         assert_eq!(
-            IntegrationManager::sgdb_key_from_sources(Some("environment-value"), None, "legacy-value", Some("builtin-value")),
+            IntegrationManager::sgdb_key_from_sources(
+                Some("environment-value"),
+                None,
+                "legacy-value",
+                Some("builtin-value")
+            ),
             Some("environment-value".into())
         );
     }
@@ -1853,10 +1961,14 @@ mod tests {
         let path = std::env::temp_dir().join(format!("corky-sgdb-redact-{}", std::process::id()));
         std::fs::write(&path, "SGDB_REDACTION_TEST_VALUE\n").unwrap();
         let key = IntegrationManager::sgdb_key_from_sources(None, Some(&path), "", None).unwrap();
-        let message = format!("error sending request for url (https://example.invalid/): bearer {key}");
+        let message =
+            format!("error sending request for url (https://example.invalid/): bearer {key}");
         let safe = crate::backend::redact::redact_secrets(&message);
         assert!(!safe.contains(&key), "redaction failed");
-        assert!(safe.contains(crate::backend::redact::REDACTED), "redaction failed");
+        assert!(
+            safe.contains(crate::backend::redact::REDACTED),
+            "redaction failed"
+        );
         std::fs::remove_file(&path).unwrap();
     }
 
@@ -1867,19 +1979,28 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
         let steamapps = base.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps");
         std::fs::create_dir_all(&steamapps).unwrap();
-        std::fs::write(steamapps.join("appmanifest_123.acf"),
+        std::fs::write(
+            steamapps.join("appmanifest_123.acf"),
             r#""appid"		"123"
 "name"		"FlatpakGame"
 "installdir"		"flatpakgame"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         let prev_home = std::env::var("HOME").ok();
         std::env::set_var("HOME", &base);
         let m = IntegrationManager::new();
         let res = m.scan_steam();
-        match prev_home { Some(v) => std::env::set_var("HOME", v), None => std::env::remove_var("HOME") }
+        match prev_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
         let _ = std::fs::remove_dir_all(&base);
-        assert!(res.iter().any(|e| e.name == "FlatpakGame"),
-                "Flatpak Steam game not found: {:?}", res);
+        assert!(
+            res.iter().any(|e| e.name == "FlatpakGame"),
+            "Flatpak Steam game not found: {:?}",
+            res
+        );
     }
     #[test]
     fn icon_tools_policy_and_warn_once() {
@@ -1892,5 +2013,4 @@ mod tests {
         assert!(!IntegrationManager::warn_once(&flag));
         assert!(!IntegrationManager::warn_once(&flag));
     }
-
 }

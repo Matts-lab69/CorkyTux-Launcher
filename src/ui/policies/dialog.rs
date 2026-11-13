@@ -2,7 +2,6 @@
 //! never shrinks below the usable minimum, unless the parent is tiny.
 
 use adw::prelude::*;
-use gtk::prelude::*;
 
 const DIALOG_MIN_W: i32 = 320;
 const DIALOG_MIN_H: i32 = 240;
@@ -18,7 +17,10 @@ pub fn dialog_size(parent_w: i32, parent_h: i32, want_w: i32, want_h: i32) -> (i
         let cap = (parent as f64 * 0.9).round() as i32;
         want.min(cap).max(min.min(cap))
     };
-    (fit(want_w, parent_w, DIALOG_MIN_W), fit(want_h, parent_h, DIALOG_MIN_H))
+    (
+        fit(want_w, parent_w, DIALOG_MIN_W),
+        fit(want_h, parent_h, DIALOG_MIN_H),
+    )
 }
 
 /// Applies `dialog_size` to an AdwDialog against the active window.

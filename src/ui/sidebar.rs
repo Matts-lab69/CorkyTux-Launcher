@@ -19,7 +19,6 @@ pub struct Sidebar {
     pub search_entry: gtk::SearchEntry,
     current_filter: Rc<RefCell<String>>,
     game_names: Rc<RefCell<Vec<String>>>,
-    pub on_game_clicked: GameCallback,
     pub on_filter_changed: FilterCallback,
     config: ConfigManager,
     theme: ThemeManager,
@@ -29,11 +28,13 @@ pub struct Sidebar {
 }
 
 impl Sidebar {
-    pub fn new(cfg: &ConfigManager, theme: &ThemeManager) -> Self {
-        return Self::new_with_callbacks(cfg, theme, &Rc::new(RefCell::new(None)), &Rc::new(RefCell::new(None)), &Rc::new(RefCell::new(None)));
-    }
-
-    pub fn new_with_callbacks(cfg: &ConfigManager, theme: &ThemeManager, game_cb: &GameCallback, filter_cb: &FilterCallback, page_cb: &PageCallback) -> Self {
+    pub fn new_with_callbacks(
+        cfg: &ConfigManager,
+        theme: &ThemeManager,
+        game_cb: &GameCallback,
+        filter_cb: &FilterCallback,
+        page_cb: &PageCallback,
+    ) -> Self {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 8);
         root.set_width_request(230);
         // Match the center column margins (24/24) so both panels end
@@ -72,7 +73,12 @@ impl Sidebar {
             let pc = page_cb.clone();
             let st = page_state.clone();
             mc_btn.connect_clicked(move |_| {
-                let next = if *st.borrow() == "minecraft" { "games" } else { "minecraft" }.to_string();
+                let next = if *st.borrow() == "minecraft" {
+                    "games"
+                } else {
+                    "minecraft"
+                }
+                .to_string();
                 *st.borrow_mut() = next.clone();
                 if let Some(f) = pc.borrow().as_ref() {
                     f(next);
@@ -94,7 +100,12 @@ impl Sidebar {
             let pc = page_cb.clone();
             let st = page_state.clone();
             store_btn.connect_clicked(move |_| {
-                let next = if *st.borrow() == "stores" { "games" } else { "stores" }.to_string();
+                let next = if *st.borrow() == "stores" {
+                    "games"
+                } else {
+                    "stores"
+                }
+                .to_string();
                 *st.borrow_mut() = next.clone();
                 if let Some(f) = pc.borrow().as_ref() {
                     f(next);
@@ -245,7 +256,6 @@ impl Sidebar {
             search_entry: search,
             current_filter,
             game_names,
-            on_game_clicked,
             on_filter_changed,
             config: cfg.clone(),
             theme: theme.clone(),
@@ -269,7 +279,8 @@ impl Sidebar {
         match pm {
             Some(p) => {
                 p.refresh();
-                self.mc_btn.set_visible(p.is_available("minecraft-launcher"));
+                self.mc_btn
+                    .set_visible(p.is_available("minecraft-launcher"));
                 self.store_btn.set_visible(p.is_available("heroic-store"));
             }
             None => {
@@ -277,11 +288,6 @@ impl Sidebar {
                 self.store_btn.set_visible(false);
             }
         }
-    }
-
-    pub fn set_callbacks(&self, on_game_clicked: GameCallback, on_filter_changed: FilterCallback) {
-        *self.on_game_clicked.borrow_mut() = on_game_clicked.borrow_mut().take();
-        *self.on_filter_changed.borrow_mut() = on_filter_changed.borrow_mut().take();
     }
 
     fn build_game_row(name: &str, cfg: &ConfigManager, _theme: &ThemeManager) -> gtk::ListBoxRow {
@@ -314,14 +320,6 @@ impl Sidebar {
         row
     }
 
-    pub fn get_filter(&self) -> String {
-        self.current_filter.borrow().clone()
-    }
-
-    pub fn get_search_query(&self) -> String {
-        self.search_entry.text().to_string()
-    }
-
     pub fn refresh_list(&self, names: &[String]) {
         self.refresh_plugin_buttons();
         self.list_box.remove_all();
@@ -337,15 +335,10 @@ impl Sidebar {
     /// silently reset the list to "All").
     pub fn apply_current_filter(&self) {
         if let Some(f) = self.on_filter_changed.borrow().as_ref() {
-            f(self.current_filter.borrow().clone(), self.search_entry.text().to_string());
-        }
-    }
-
-    pub fn select_game(&self, name: &str) {
-        let names = self.game_names.borrow();
-        if let Some(idx) = names.iter().position(|n| n == name) {
-            self.list_box
-                .select_row(self.list_box.row_at_index(idx as i32).as_ref());
+            f(
+                self.current_filter.borrow().clone(),
+                self.search_entry.text().to_string(),
+            );
         }
     }
 }

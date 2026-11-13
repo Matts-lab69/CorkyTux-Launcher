@@ -114,16 +114,13 @@ fn temp_measure_gog_cards() {
     parent.set_focusable(false);
     parent.set_focus_on_click(false);
     parent.set_default_size(1400, 900);
-    let sb: Rc<RefCell<Option<crate::ui::sidebar::Sidebar>>> =
-        Rc::new(RefCell::new(None));
-    let ch: Rc<RefCell<Option<crate::ui::center::CenterHandle>>> =
-        Rc::new(RefCell::new(None));
+    let sb: Rc<RefCell<Option<crate::ui::sidebar::Sidebar>>> = Rc::new(RefCell::new(None));
+    let ch: Rc<RefCell<Option<crate::ui::center::CenterHandle>>> = Rc::new(RefCell::new(None));
     let det: Rc<RefCell<Option<crate::ui::details_panel::DetailsPanel>>> =
         Rc::new(RefCell::new(None));
     let deals: Rc<RefCell<std::collections::HashMap<String, DealsState>>> =
         Rc::new(RefCell::new(std::collections::HashMap::new()));
-    let (page, handle) =
-        StoresView::store_page(&state, &parent, &sb, &ch, &det, "gog", &deals);
+    let (page, handle) = StoresView::store_page(&state, &parent, &sb, &ch, &det, "gog", &deals);
     parent.set_content(Some(&page));
     parent.present();
     for _ in 0..400 {
@@ -135,8 +132,7 @@ fn temp_measure_gog_cards() {
     }
     assert!(parent.is_mapped(), "probe window never mapped");
     let surface = parent.surface().expect("no surface after map");
-    let renderer =
-        gtk::gsk::Renderer::for_surface(&surface).expect("no renderer");
+    let renderer = gtk::gsk::Renderer::for_surface(&surface).expect("no renderer");
     let (tile_w, _img_px, cover_h) = handle.card_sizes();
     eprintln!(
         "TEMP-PROBE card_sizes: tile_w={} cover_h={}",
@@ -162,8 +158,7 @@ fn temp_measure_gog_cards() {
             let inner_alloc = alloc(&inner.clone().upcast::<gtk::Widget>());
             // coverbox is the first row when a cover URL exists.
             let coverbox = boxed_child(&inner, 0).expect("no coverbox");
-            let cover_alloc =
-                alloc(&coverbox);
+            let cover_alloc = alloc(&coverbox);
             // Picture may sit under wrapper widgets (isolation
             // experiments); descend to it.
             fn find_picture(w: &gtk::Widget) -> Option<gtk::Widget> {
@@ -228,37 +223,32 @@ fn temp_measure_gog_cards() {
                         use gdk::prelude::*;
                         t.snapshot(&snap2, tw2 as f64, th2 as f64);
                     }
-                    let (tred, tbg, tother, twhy) =
-                        match snap2.to_node() {
-                            Some(node) => {
-                                let tex = renderer.render_texture(
-                                    &node,
-                                    Some(&gtk::graphene::Rect::new(
-                                        0.0, 0.0, tw2 as f32, th2 as f32,
-                                    )),
-                                );
-                                let (tw3, th3) = (tex.width(), tex.height());
-                                let mut data =
-                                    vec![0u8; (tw3 * th3 * 4).max(4) as usize];
-                                if tw3 > 0 && th3 > 0 {
-                                    tex.download(&mut data, (tw3 * 4) as usize);
-                                }
-                                let (mut a, mut b, mut c) = (0, 0, 0);
-                                for px in data.chunks_exact(4) {
-                                    let (bb, gg, rr, aa) =
-                                        (px[0], px[1], px[2], px[3]);
-                                    if aa < 16 {
-                                        b += 1;
-                                    } else if rr > 150 && gg < 100 && bb < 100 {
-                                        a += 1;
-                                    } else {
-                                        c += 1;
-                                    }
-                                }
-                                (a, b, c, format!("tex-{}x{}", tw3, th3))
+                    let (tred, tbg, tother, twhy) = match snap2.to_node() {
+                        Some(node) => {
+                            let tex = renderer.render_texture(
+                                &node,
+                                Some(&gtk::graphene::Rect::new(0.0, 0.0, tw2 as f32, th2 as f32)),
+                            );
+                            let (tw3, th3) = (tex.width(), tex.height());
+                            let mut data = vec![0u8; (tw3 * th3 * 4).max(4) as usize];
+                            if tw3 > 0 && th3 > 0 {
+                                tex.download(&mut data, (tw3 * 4) as usize);
                             }
-                            None => (0, 0, 0, "tex-node-none".to_string()),
-                        };
+                            let (mut a, mut b, mut c) = (0, 0, 0);
+                            for px in data.chunks_exact(4) {
+                                let (bb, gg, rr, aa) = (px[0], px[1], px[2], px[3]);
+                                if aa < 16 {
+                                    b += 1;
+                                } else if rr > 150 && gg < 100 && bb < 100 {
+                                    a += 1;
+                                } else {
+                                    c += 1;
+                                }
+                            }
+                            (a, b, c, format!("tex-{}x{}", tw3, th3))
+                        }
+                        None => (0, 0, 0, "tex-node-none".to_string()),
+                    };
                     eprintln!(
                         "TEMP-PROBE n={} tex-paintable={}x{} red-px={} via={}",
                         n, tw2, th2, tred, twhy
@@ -344,10 +334,7 @@ fn temp_measure_gog_cards() {
     let mut echild = epic_handle.flow.first_child();
     while let Some(tile) = echild {
         let tile_alloc = alloc(&tile);
-        let einner = tile
-            .first_child()
-            .map(|w| alloc(&w))
-            .unwrap_or((0, 0));
+        let einner = tile.first_child().map(|w| alloc(&w)).unwrap_or((0, 0));
         eprintln!(
             "TEMP-PROBE epic card#{} tile={}x{} inner={}x{} expect={}x{}",
             ei,

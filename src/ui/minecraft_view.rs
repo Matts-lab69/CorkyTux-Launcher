@@ -1,12 +1,11 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::AppState;
-use crate::ui::helpers;
 use crate::backend::external::MinecraftManager;
+use crate::ui::helpers;
+use crate::AppState;
 
 // GDLauncher-Carbon order, CorkyTux style, PineconeMC/mll logic.
 // Library (tiles grid) <-> Detail (Overview/Addons/Logs/Settings).
@@ -103,7 +102,10 @@ fn inst_container(id: &str, isolated: bool) -> std::path::PathBuf {
 /// I compare total vs filter-visible updates: my global "Update all"
 /// button uses the total, and I show the visible count in the tooltip.
 fn update_counts(files: &[String], visible_files: &[String]) -> (usize, usize) {
-    let shown = visible_files.iter().filter(|f| files.iter().any(|x| x == *f)).count();
+    let shown = visible_files
+        .iter()
+        .filter(|f| files.iter().any(|x| x == *f))
+        .count();
     (files.len(), shown)
 }
 
@@ -120,14 +122,25 @@ fn dedup_disp(s: &str) -> String {
 }
 
 fn safe_id(id: &str) -> String {
-    id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' }).collect()
+    id.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn is_mc_ver(s: &str) -> bool {
     let mut parts = s.split('.');
     match (parts.next(), parts.next(), parts.next(), parts.next()) {
         (Some(a), Some(b), None, None) | (Some(a), Some(b), Some(_), None) => {
-            a.chars().all(|c| c.is_ascii_digit()) && b.chars().all(|c| c.is_ascii_digit()) && !a.is_empty() && !b.is_empty()
+            a.chars().all(|c| c.is_ascii_digit())
+                && b.chars().all(|c| c.is_ascii_digit())
+                && !a.is_empty()
+                && !b.is_empty()
         }
         _ => false,
     }
@@ -191,7 +204,7 @@ fn required_java_major(ver: &str) -> u32 {
     let mut parts = ver.split('.');
     let major: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
     let minor: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-    let patch: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let _patch: u32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
     if major != 1 {
         return 21;
     }
@@ -223,12 +236,18 @@ fn java_range_text(ver: &str) -> String {
     }
     let mx = max_java_major(ver);
     if mx >= 99 {
-        format!("Needs Java {}+ (auto-selected on launch).", required_java_major(ver))
+        format!(
+            "Needs Java {}+ (auto-selected on launch).",
+            required_java_major(ver)
+        )
     } else {
-        format!("Needs Java {}–{} (auto-selected on launch).", required_java_major(ver), mx)
+        format!(
+            "Needs Java {}–{} (auto-selected on launch).",
+            required_java_major(ver),
+            mx
+        )
     }
 }
-
 
 fn card(title: &str) -> (gtk::Box, gtk::Box) {
     let frame = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -274,8 +293,6 @@ fn set_btn_icon(btn: &gtk::Button, icon: &str, size: i32) {
     btn.set_child(Some(&sym(icon, size)));
 }
 
-
-
 fn menu_btn(icon: &str, label: &str) -> gtk::Button {
     let b = btn_with_icon(icon, label);
     b.add_css_class("settings-btn");
@@ -308,8 +325,6 @@ fn menu_btn_png(asset: &str, label: &str, is_dark: bool) -> gtk::Button {
     b.set_halign(gtk::Align::Fill);
     b
 }
-
-
 
 fn note(text: &str) -> gtk::Label {
     let l = gtk::Label::new(Some(text));
@@ -348,16 +363,27 @@ fn clean_md(s: &str) -> String {
     out = re_tag.replace_all(&out, "").to_string();
     let mut lines = Vec::new();
     for line in out.lines() {
-        let mut l = line.trim().trim_start_matches(|c| c == '#' || c == '>' || c == '-' || c == '*' || c == '=').trim().to_string();
+        let mut l = line
+            .trim()
+            .trim_start_matches(['#', '>', '-', '*', '='])
+            .trim()
+            .to_string();
         l = l.replace('|', " ");
         while l.contains("  ") {
             l = l.replace("  ", " ");
         }
         let l = l.trim().to_string();
-        if l.is_empty() || l.chars().all(|c| c == '-' || c == '_' || c == '*' || c == '=' || c == ':') {
+        if l.is_empty()
+            || l.chars()
+                .all(|c| c == '-' || c == '_' || c == '*' || c == '=' || c == ':')
+        {
             continue;
         }
-        lines.push(l.replace("**", "").replace("__", "").replace('`', "").replace('*', ""));
+        lines.push(
+            l.replace("**", "")
+                .replace("__", "")
+                .replace(['`', '*'], ""),
+        );
     }
     // collapse 3+ blank gaps
     let mut compact = Vec::new();
@@ -389,51 +415,79 @@ fn md_segments(s: &str) -> Vec<MdSeg> {
     static SEG_URL: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let seg_img = SEG_IMG.get_or_init(|| regex::Regex::new(r"!\[[^\]]*\]\([^\)]*\)").unwrap());
     let seg_link = SEG_LINK.get_or_init(|| regex::Regex::new(r"\[([^\]]*)\]\(([^\)]+)\)").unwrap());
-    let seg_def = SEG_DEF.get_or_init(|| regex::Regex::new(r"\[[0-9]+\]:\s*(https?://[^\s]+)").unwrap());
+    let seg_def =
+        SEG_DEF.get_or_init(|| regex::Regex::new(r"\[[0-9]+\]:\s*(https?://[^\s]+)").unwrap());
     let seg_tag = SEG_TAG.get_or_init(|| regex::Regex::new(r"<[^>]*>").unwrap());
     let seg_url = SEG_URL.get_or_init(|| regex::Regex::new(r"https?://[^\s\)\]]+").unwrap());
     let mut out = s.replace("\r\n", "\n");
     out = seg_img.replace_all(&out, "").to_string();
     // collect links first, replacing them with placeholders
     let mut links: Vec<(String, String)> = Vec::new();
-    out = seg_link.replace_all(&out, |caps: &regex::Captures| {
-            let label = caps.get(1).map(|m| m.as_str().trim().to_string()).unwrap_or_default();
-            let url = caps.get(2).map(|m| m.as_str().trim().to_string()).unwrap_or_default();
+    out = seg_link
+        .replace_all(&out, |caps: &regex::Captures| {
+            let label = caps
+                .get(1)
+                .map(|m| m.as_str().trim().to_string())
+                .unwrap_or_default();
+            let url = caps
+                .get(2)
+                .map(|m| m.as_str().trim().to_string())
+                .unwrap_or_default();
             let label = if label.is_empty() { url.clone() } else { label };
             links.push((label.clone(), url.clone()));
             format!("@@LINK{}@@", links.len() - 1)
-        }).to_string();
-    out = seg_def.replace_all(&out, |caps: &regex::Captures| {
-            let url = caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
+        })
+        .to_string();
+    out = seg_def
+        .replace_all(&out, |caps: &regex::Captures| {
+            let url = caps
+                .get(1)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
             links.push((url.clone(), url.clone()));
             format!("@@LINK{}@@", links.len() - 1)
-        }).to_string();
+        })
+        .to_string();
     out = seg_tag.replace_all(&out, "").to_string();
     // bare urls last
-    out = seg_url.replace_all(&out, |caps: &regex::Captures| {
-            let mut url = caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
+    out = seg_url
+        .replace_all(&out, |caps: &regex::Captures| {
+            let mut url = caps
+                .get(0)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
             while url.ends_with(|c| ".,;:!?)".contains(c)) {
                 url.pop();
             }
             links.push((url.clone(), url.clone()));
             format!("@@LINK{}@@", links.len() - 1)
-        }).to_string();
+        })
+        .to_string();
     // footnote refs now meaningless
     static SEG_FOOT2: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     static SEG_PH: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    out = SEG_FOOT2.get_or_init(|| regex::Regex::new(r"\[[0-9]+\]").unwrap())
-        .replace_all(&out, "").to_string();
+    out = SEG_FOOT2
+        .get_or_init(|| regex::Regex::new(r"\[[0-9]+\]").unwrap())
+        .replace_all(&out, "")
+        .to_string();
     // split into clean lines, re-emitting link segments
     let mut segs = Vec::new();
     let link_re = SEG_PH.get_or_init(|| regex::Regex::new(r"@@LINK(\d+)@@").unwrap());
     for line in out.lines() {
-        let mut l = line.trim().trim_start_matches(|c| c == '#' || c == '>' || c == '-' || c == '*' || c == '=').trim().to_string();
+        let mut l = line
+            .trim()
+            .trim_start_matches(['#', '>', '-', '*', '='])
+            .trim()
+            .to_string();
         l = l.replace('|', " ");
         while l.contains("  ") {
             l = l.replace("  ", " ");
         }
         let l = l.trim().to_string();
-        if l.is_empty() || l.chars().all(|c| c == '-' || c == '_' || c == '*' || c == '=' || c == ':') {
+        if l.is_empty()
+            || l.chars()
+                .all(|c| c == '-' || c == '_' || c == '*' || c == '=' || c == ':')
+        {
             continue;
         }
         let mut last = 0;
@@ -441,7 +495,11 @@ fn md_segments(s: &str) -> Vec<MdSeg> {
             if m.start() > last {
                 segs.push(MdSeg::Text(l[last..m.start()].to_string()));
             }
-            if let Some(idx) = link_re.captures(&l[m.start()..m.end()]).and_then(|c| c.get(1)).and_then(|x| x.as_str().parse::<usize>().ok()) {
+            if let Some(idx) = link_re
+                .captures(&l[m.start()..m.end()])
+                .and_then(|c| c.get(1))
+                .and_then(|x| x.as_str().parse::<usize>().ok())
+            {
                 if let Some((label, url)) = links.get(idx) {
                     segs.push(MdSeg::Link(label.clone(), url.clone()));
                 }
@@ -471,10 +529,17 @@ fn md_segments(s: &str) -> Vec<MdSeg> {
         }
     }
     // strip leftover markdown emphasis inside text runs
-    compact.into_iter().map(|s| match s {
-        MdSeg::Text(x) => MdSeg::Text(x.replace("**", "").replace("__", "").replace('`', "").replace('*', "")),
-        other => other,
-    }).collect()
+    compact
+        .into_iter()
+        .map(|s| match s {
+            MdSeg::Text(x) => MdSeg::Text(
+                x.replace("**", "")
+                    .replace("__", "")
+                    .replace(['`', '*'], ""),
+            ),
+            other => other,
+        })
+        .collect()
 }
 
 fn serde_json_to_py_str(s: &str) -> String {
@@ -519,7 +584,11 @@ fn java_major_of(ver: &str) -> String {
     let v = ver.trim();
     let rest = v.strip_prefix("1.").unwrap_or(v);
     let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-    if digits.is_empty() { "0".to_string() } else { digits }
+    if digits.is_empty() {
+        "0".to_string()
+    } else {
+        digits
+    }
 }
 
 fn dl_button_child(ver: &str, installed: bool) -> gtk::Box {
@@ -527,7 +596,11 @@ fn dl_button_child(ver: &str, installed: bool) -> gtk::Box {
     inner.set_halign(gtk::Align::Center);
     inner.set_valign(gtk::Align::Center);
     let dot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    dot.add_css_class(if installed { "mcx-dot-ok" } else { "mcx-dot-missing" });
+    dot.add_css_class(if installed {
+        "mcx-dot-ok"
+    } else {
+        "mcx-dot-missing"
+    });
     dot.set_halign(gtk::Align::Center);
     dot.set_valign(gtk::Align::Center);
     dot.set_hexpand(false);
@@ -541,9 +614,14 @@ fn dl_button_child(ver: &str, installed: bool) -> gtk::Box {
 fn java_vendor(path: &str) -> String {
     let l = path.to_lowercase();
     for (k, name) in [
-        ("temurin", "Temurin"), ("zulu", "Zulu"), ("corretto", "Corretto"),
-        ("oracle", "Oracle"), ("graal", "GraalVM"), ("semeru", "Semeru"),
-        ("microsoft", "Microsoft"), ("openjdk", "OpenJDK"),
+        ("temurin", "Temurin"),
+        ("zulu", "Zulu"),
+        ("corretto", "Corretto"),
+        ("oracle", "Oracle"),
+        ("graal", "GraalVM"),
+        ("semeru", "Semeru"),
+        ("microsoft", "Microsoft"),
+        ("openjdk", "OpenJDK"),
     ] {
         if l.contains(k) {
             return name.to_string();
@@ -600,7 +678,10 @@ fn prune_cache_dir(dir: &std::path::Path, max_bytes: u64, max_files: usize) -> (
         if !p.is_file() {
             continue;
         }
-        let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
         let is_raw = name.ends_with("-raw.bin");
         if !(name.ends_with("-icon.png") || name.ends_with("-icon.missing") || is_raw) {
             continue;
@@ -610,8 +691,12 @@ fn prune_cache_dir(dir: &std::path::Path, max_bytes: u64, max_files: usize) -> (
         };
         // Raws en curso (descarga viva) no se tocan.
         if is_raw {
-            let age = m.modified().ok().and_then(|t| t.elapsed().ok())
-                .map(|d| d.as_secs()).unwrap_or(0);
+            let age = m
+                .modified()
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
             if age < 86400 {
                 continue;
             }
@@ -620,7 +705,7 @@ fn prune_cache_dir(dir: &std::path::Path, max_bytes: u64, max_files: usize) -> (
         total += m.len();
         entries.push((mtime, m.len(), p));
     }
-    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    entries.sort_by_key(|a| a.0);
     let mut removed = 0usize;
     let mut freed = 0u64;
     let mut count = entries.len();
@@ -641,7 +726,11 @@ fn prune_cache_dir(dir: &std::path::Path, max_bytes: u64, max_files: usize) -> (
 // Negative cache: a hard failure skips refetch for 1h (no infinite
 // retry loop on 404/429/dead hosts). Removed once stale.
 fn icon_neg_mark(project_id: &str) {
-    std::fs::write(icon_cache_path(&format!("{}-icon.missing", project_id)), b"").ok();
+    std::fs::write(
+        icon_cache_path(&format!("{}-icon.missing", project_id)),
+        b"",
+    )
+    .ok();
 }
 
 fn icon_neg_fresh(project_id: &str) -> bool {
@@ -703,7 +792,19 @@ fn download_icon_file(url: &str, key: &str) -> Option<std::path::PathBuf> {
     }
     let mut dl = false;
     for _ in 0..2 {
-        dl = std::process::Command::new("curl").args(["-sL", "--fail", "--max-time", "20", "-o", raw.to_str().unwrap_or(""), url]).output().is_ok() && raw.exists();
+        dl = std::process::Command::new("curl")
+            .args([
+                "-sL",
+                "--fail",
+                "--max-time",
+                "20",
+                "-o",
+                raw.to_str().unwrap_or(""),
+                url,
+            ])
+            .output()
+            .is_ok()
+            && raw.exists();
         if dl {
             break;
         }
@@ -721,13 +822,29 @@ fn download_icon_file(url: &str, key: &str) -> Option<std::path::PathBuf> {
     let is_webp = bytes.len() > 12 && &bytes[8..12] == b"WEBP";
     let needs_convert = is_webp || url.ends_with(".webp");
     if needs_convert {
-        let py = std::process::Command::new("python3").args(["-c",
-            &format!("from PIL import Image; Image.open({}).convert('RGBA').save({})",
-                serde_json_to_py_str(raw.to_str().unwrap_or("")),
-                serde_json_to_py_str(png.to_str().unwrap_or("")))]).output();
-        let converted = py.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0;
+        let py = std::process::Command::new("python3")
+            .args([
+                "-c",
+                &format!(
+                    "from PIL import Image; Image.open({}).convert('RGBA').save({})",
+                    serde_json_to_py_str(raw.to_str().unwrap_or("")),
+                    serde_json_to_py_str(png.to_str().unwrap_or(""))
+                ),
+            ])
+            .output();
+        let converted =
+            py.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0;
         if !converted {
-            let out = std::process::Command::new("ffmpeg").args(["-y", "-v", "error", "-i", raw.to_str().unwrap_or(""), png.to_str().unwrap_or("")]).output();
+            let out = std::process::Command::new("ffmpeg")
+                .args([
+                    "-y",
+                    "-v",
+                    "error",
+                    "-i",
+                    raw.to_str().unwrap_or(""),
+                    png.to_str().unwrap_or(""),
+                ])
+                .output();
             if !(out.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0) {
                 eprintln!("corkytux: icon for {}: download ok but webp conversion failed (needs python3+PIL or ffmpeg installed)", key);
                 icon_neg_mark(key);
@@ -879,7 +996,19 @@ fn download_pack_icon(icon_url: &str, launch_version: &str) -> Option<String> {
         std::fs::create_dir_all(parent).ok();
     }
     let raw = icon_cache_path(&format!("{}-pack-raw.bin", safe_id(launch_version)));
-    let dl = std::process::Command::new("curl").args(["-sL", "--fail", "--max-time", "25", "-o", raw.to_str().unwrap_or(""), icon_url]).output().is_ok() && raw.exists();
+    let dl = std::process::Command::new("curl")
+        .args([
+            "-sL",
+            "--fail",
+            "--max-time",
+            "25",
+            "-o",
+            raw.to_str().unwrap_or(""),
+            icon_url,
+        ])
+        .output()
+        .is_ok()
+        && raw.exists();
     if !dl {
         return None;
     }
@@ -889,27 +1018,52 @@ fn download_pack_icon(icon_url: &str, launch_version: &str) -> Option<String> {
     }
     let is_webp = bytes.len() > 12 && bytes.len() >= 12 && &bytes[8..12] == b"WEBP";
     if is_webp || icon_url.ends_with(".webp") {
-        let py = std::process::Command::new("python3").args(["-c",
-            &format!("from PIL import Image; Image.open({}).convert('RGBA').save({})",
-                serde_json_to_py_str(raw.to_str().unwrap_or("")),
-                serde_json_to_py_str(png.to_str().unwrap_or("")))]).output();
+        let py = std::process::Command::new("python3")
+            .args([
+                "-c",
+                &format!(
+                    "from PIL import Image; Image.open({}).convert('RGBA').save({})",
+                    serde_json_to_py_str(raw.to_str().unwrap_or("")),
+                    serde_json_to_py_str(png.to_str().unwrap_or(""))
+                ),
+            ])
+            .output();
         let ok = py.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0;
-            if !ok {
-                let out = std::process::Command::new("ffmpeg").args(["-y", "-v", "error", "-i", raw.to_str().unwrap_or(""), png.to_str().unwrap_or("")]).output();
-                if !(out.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0) {
-                    eprintln!("corkytux: pack icon for {}: webp conversion failed (needs python3+PIL or ffmpeg installed)", launch_version);
-                    return None;
-                }
+        if !ok {
+            let out = std::process::Command::new("ffmpeg")
+                .args([
+                    "-y",
+                    "-v",
+                    "error",
+                    "-i",
+                    raw.to_str().unwrap_or(""),
+                    png.to_str().unwrap_or(""),
+                ])
+                .output();
+            if !(out.is_ok() && png.exists() && png.metadata().map(|m| m.len()).unwrap_or(0) > 0) {
+                eprintln!("corkytux: pack icon for {}: webp conversion failed (needs python3+PIL or ffmpeg installed)", launch_version);
+                return None;
             }
+        }
         std::fs::remove_file(&raw).ok();
     } else {
         std::fs::rename(&raw, &png).ok();
     }
-    if png.exists() { Some(png.display().to_string()) } else { None }
+    if png.exists() {
+        Some(png.display().to_string())
+    } else {
+        None
+    }
 }
 
 fn find_local_pack_icon(dir: &std::path::Path) -> Option<String> {
-    for name in ["icon.png", "pack.png", "logo.png", "pack-icon.png", "modpack.png"] {
+    for name in [
+        "icon.png",
+        "pack.png",
+        "logo.png",
+        "pack-icon.png",
+        "modpack.png",
+    ] {
         let p = dir.join(name);
         if p.is_file() {
             return Some(p.display().to_string());
@@ -928,7 +1082,8 @@ fn find_local_pack_icon(dir: &std::path::Path) -> Option<String> {
                         if ["png", "jpg", "jpeg", "webp"].contains(&ext.to_lowercase().as_str()) {
                             if let Some(fname) = p.file_name().and_then(|x| x.to_str()) {
                                 let fl = fname.to_lowercase();
-                                if fl.contains("icon") || fl.contains("logo") || fl.contains("pack") {
+                                if fl.contains("icon") || fl.contains("logo") || fl.contains("pack")
+                                {
                                     return Some(p.display().to_string());
                                 }
                             }
@@ -943,8 +1098,15 @@ fn find_local_pack_icon(dir: &std::path::Path) -> Option<String> {
 
 fn block_fallback_image(is_dark: bool, size: i32) -> gtk::Image {
     let home = std::env::var("HOME").unwrap_or_default();
-    let path = format!("{}/.local/share/corkytux/assets/{}",
-        home, if is_dark { "inst_block_white.png" } else { "inst_block_black.png" });
+    let path = format!(
+        "{}/.local/share/corkytux/assets/{}",
+        home,
+        if is_dark {
+            "inst_block_white.png"
+        } else {
+            "inst_block_black.png"
+        }
+    );
     if let Some(tex) = helpers::load_texture(&path) {
         let img = gtk::Image::new();
         img.set_paintable(Some(&tex));
@@ -954,20 +1116,32 @@ fn block_fallback_image(is_dark: bool, size: i32) -> gtk::Image {
     helpers::themed_image("minecraft", is_dark, size)
 }
 
-fn inst_icon_path(id: &str, kind: &str, is_dark: bool) -> Option<String> {
+fn inst_icon_path(_id: &str, kind: &str, is_dark: bool) -> Option<String> {
     let home = std::env::var("HOME").unwrap_or_default();
     if let Some(custom) = kind.strip_prefix("custom:") {
         if !custom.is_empty() {
             return Some(custom.to_string());
         }
     }
-    Some(format!("{}/.local/share/corkytux/assets/{}",
+    Some(format!(
+        "{}/.local/share/corkytux/assets/{}",
         home,
         match kind {
-            "ely" => if is_dark { "minecraft.png" } else { "minecraft_dark.png" },
-            "block" => if is_dark { "inst_block_white.png" } else { "inst_block_black.png" },
+            "ely" =>
+                if is_dark {
+                    "minecraft.png"
+                } else {
+                    "minecraft_dark.png"
+                },
+            "block" =>
+                if is_dark {
+                    "inst_block_white.png"
+                } else {
+                    "inst_block_black.png"
+                },
             _ => "inst_grass.png",
-        }))
+        }
+    ))
 }
 
 fn inst_icon_image(id: &str, kind: &str, is_dark: bool, size: i32) -> gtk::Image {
@@ -977,7 +1151,16 @@ fn inst_icon_image(id: &str, kind: &str, is_dark: bool, size: i32) -> gtk::Image
         if load.ends_with(".webp") {
             let cached = icon_cache_path(&format!("inst-{}-icon.png", safe_id(id)));
             if !cached.exists() {
-                let _ = std::process::Command::new("ffmpeg").args(["-y", "-v", "error", "-i", &load, cached.to_str().unwrap_or("")]).output();
+                let _ = std::process::Command::new("ffmpeg")
+                    .args([
+                        "-y",
+                        "-v",
+                        "error",
+                        "-i",
+                        &load,
+                        cached.to_str().unwrap_or(""),
+                    ])
+                    .output();
             }
             if cached.exists() {
                 load = cached.display().to_string();
@@ -1013,10 +1196,14 @@ fn scan_instance_dirs_in(root: &std::path::Path) -> Vec<(String, String)> {
                 continue;
             }
             let vers_dir = p.join("versions");
-            let ids: Vec<String> = std::fs::read_dir(&vers_dir).map(|it| {
-                it.flatten().filter(|x| x.path().is_dir())
-                    .map(|x| x.file_name().to_string_lossy().to_string()).collect()
-            }).unwrap_or_default();
+            let ids: Vec<String> = std::fs::read_dir(&vers_dir)
+                .map(|it| {
+                    it.flatten()
+                        .filter(|x| x.path().is_dir())
+                        .map(|x| x.file_name().to_string_lossy().to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
             for id in ids {
                 if id.is_empty() {
                     continue;
@@ -1062,7 +1249,10 @@ fn base_version_ids(vers_dir: &std::path::Path) -> std::collections::HashSet<Str
 /// (not a dependency) still lives in this container. `bases` is the base-id
 /// set captured before the backend delete — the deleted instance's own
 /// inheritsFrom must keep counting, its JSON is gone afterwards.
-fn has_visible_versions(vers_dir: &std::path::Path, bases: &std::collections::HashSet<String>) -> bool {
+fn has_visible_versions(
+    vers_dir: &std::path::Path,
+    bases: &std::collections::HashSet<String>,
+) -> bool {
     match std::fs::read_dir(vers_dir) {
         Ok(it) => it.flatten().any(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
@@ -1110,7 +1300,10 @@ fn base_version_user(vers_dir: &std::path::Path, id: &str) -> Option<String> {
 /// loaders with unparseable id schemes (mll's "neoforge-<lver>") count too.
 fn drop_base_copies(vers_dir: &std::path::Path, ids: &[String]) -> Vec<String> {
     let bases = base_version_ids(vers_dir);
-    ids.iter().filter(|id| !bases.contains(id.as_str())).cloned().collect()
+    ids.iter()
+        .filter(|id| !bases.contains(id.as_str()))
+        .cloned()
+        .collect()
 }
 
 /// Merge isolated containers + legacy global installs into (id, isolated).
@@ -1119,7 +1312,8 @@ fn drop_base_copies(vers_dir: &std::path::Path, ids: &[String]) -> Vec<String> {
 /// could never be launched or deleted unambiguously — keep the first.
 fn collect_instance_ids(dirs: &[(String, String)], legacy: &[String]) -> Vec<(String, bool)> {
     let mut out: Vec<(String, bool)> = Vec::new();
-    let mut by_dir: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut by_dir: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
     for (dir, id) in dirs {
         by_dir.entry(dir.clone()).or_default().push(id.clone());
     }
@@ -1215,23 +1409,43 @@ enum ProbeMsg {
 /// Parse the batch `loader-versions --loaders …` response.
 fn parse_loader_probe(doc: &serde_json::Value) -> Result<LoaderProbe, String> {
     if !doc.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) {
-        return Err(doc.get("error").and_then(|x| x.as_str())
-            .unwrap_or("loader probe failed").to_string());
+        return Err(doc
+            .get("error")
+            .and_then(|x| x.as_str())
+            .unwrap_or("loader probe failed")
+            .to_string());
     }
-    let arr = doc.get("loaders").and_then(|x| x.as_array())
+    let arr = doc
+        .get("loaders")
+        .and_then(|x| x.as_array())
         .ok_or_else(|| "missing loaders array".to_string())?;
     let mut loaders: Vec<(String, bool, Vec<String>)> = Vec::new();
     for l in arr {
-        let name = l.get("loader").and_then(|x| x.as_str())
-            .ok_or_else(|| "missing loader name".to_string())?.to_string();
-        let supported = l.get("supported").and_then(|x| x.as_bool()).unwrap_or(false);
-        let versions: Vec<String> = l.get("versions").and_then(|x| x.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        let name = l
+            .get("loader")
+            .and_then(|x| x.as_str())
+            .ok_or_else(|| "missing loader name".to_string())?
+            .to_string();
+        let supported = l
+            .get("supported")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false);
+        let versions: Vec<String> = l
+            .get("versions")
+            .and_then(|x| x.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
             .unwrap_or_default();
         loaders.push((name, supported, versions));
     }
-    let errors: Vec<String> = doc.get("errors").and_then(|x| x.as_object())
-        .map(|o| o.keys().cloned().collect()).unwrap_or_default();
+    let errors: Vec<String> = doc
+        .get("errors")
+        .and_then(|x| x.as_object())
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
     Ok(LoaderProbe { loaders, errors })
 }
 
@@ -1263,7 +1477,11 @@ fn probe_rows(probe: &LoaderProbe) -> (Vec<String>, Vec<String>, HashMap<String,
 /// dropdown stays insensitive (Vanilla can't be picked before the probe
 /// confirms the version actually supports it); Ready clears the status;
 /// Failed shows a visible message instead of failing silently.
-enum ProbeState { Detecting, Ready, Failed(String) }
+enum ProbeState {
+    Detecting,
+    Ready,
+    Failed(String),
+}
 
 fn probe_status_text(state: &ProbeState) -> String {
     match state {
@@ -1435,7 +1653,8 @@ impl MinecraftView {
 
         let data = Rc::new(RefCell::new(McData::default()));
         let install_prog: Rc<RefCell<HashMap<String, f64>>> = Rc::new(RefCell::new(HashMap::new()));
-        let sessions: Rc<RefCell<HashMap<String, (String, i64)>>> = Rc::new(RefCell::new(HashMap::new()));
+        let sessions: Rc<RefCell<HashMap<String, (String, i64)>>> =
+            Rc::new(RefCell::new(HashMap::new()));
         let probe_cache: Rc<RefCell<ProbeCache>> = Rc::new(RefCell::new(HashMap::new()));
         let detail_id: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
         let addons_type: Rc<RefCell<String>> = Rc::new(RefCell::new("mods".to_string()));
@@ -1478,7 +1697,8 @@ impl MinecraftView {
         search_entry.set_hexpand(true);
         search_entry.set_width_request(160);
         head.append(&search_entry);
-        let sort_store = gtk::StringList::new(&["Name", "Most played", "Last played", "Game version"]);
+        let sort_store =
+            gtk::StringList::new(&["Name", "Most played", "Last played", "Game version"]);
         let sort_drop = gtk::DropDown::new(Some(sort_store), gtk::Expression::NONE);
         sort_drop.set_tooltip_text(Some("Sort by"));
         sort_drop.set_valign(gtk::Align::Center);
@@ -1490,7 +1710,11 @@ impl MinecraftView {
         head.append(&sort_cycle);
         let settings_btn = gtk::Button::new();
         settings_btn.add_css_class("settings-btn");
-        settings_btn.set_child(Some(&helpers::themed_image("settings", state.theme.is_dark(), 16)));
+        settings_btn.set_child(Some(&helpers::themed_image(
+            "settings",
+            state.theme.is_dark(),
+            16,
+        )));
         settings_btn.set_tooltip_text(Some("Minecraft settings"));
         settings_btn.set_valign(gtk::Align::Center);
         head.append(&settings_btn);
@@ -1519,7 +1743,10 @@ impl MinecraftView {
                 box_.set_margin_start(6);
                 box_.set_margin_end(6);
                 let mut group: Option<gtk::CheckButton> = None;
-                for (i, name) in ["Name", "Most played", "Last played", "Game version"].iter().enumerate() {
+                for (i, name) in ["Name", "Most played", "Last played", "Game version"]
+                    .iter()
+                    .enumerate()
+                {
                     let chk = gtk::CheckButton::with_label(name);
                     if let Some(g) = &group {
                         chk.set_group(Some(g));
@@ -1676,7 +1903,12 @@ impl MinecraftView {
                 tile.set_child(Some(&chip));
                 chips_flow.insert(&tile, -1);
             }
-            (vals[0].clone(), vals[1].clone(), vals[2].clone(), vals[3].clone())
+            (
+                vals[0].clone(),
+                vals[1].clone(),
+                vals[2].clone(),
+                vals[3].clone(),
+            )
         };
         name_box.append(&chips_flow);
         det_head.append(&name_box);
@@ -1686,7 +1918,8 @@ impl MinecraftView {
         detail_play.set_valign(gtk::Align::Center);
 
         det_head.append(&detail_play);
-        let detail_play_icon = gtk::Button::from_icon_name("corkytux-media-playback-start-symbolic");
+        let detail_play_icon =
+            gtk::Button::from_icon_name("corkytux-media-playback-start-symbolic");
         detail_play_icon.add_css_class("add-btn");
         detail_play_icon.set_tooltip_text(Some("Play"));
         detail_play_icon.set_size_request(40, 40);
@@ -1716,7 +1949,11 @@ impl MinecraftView {
         let mut det_btns: Vec<gtk::ToggleButton> = Vec::new();
         let mut det_inds: Vec<gtk::Box> = Vec::new();
         let addons_tab_wrap_holder: Rc<RefCell<Option<gtk::Box>>> = Rc::new(RefCell::new(None));
-        let det_icons = ["application-x-addon-symbolic", "text-x-generic-symbolic", "corkytux-preferences-system-symbolic"];
+        let det_icons = [
+            "application-x-addon-symbolic",
+            "text-x-generic-symbolic",
+            "corkytux-preferences-system-symbolic",
+        ];
         for ((label, id), tab_icon) in det_labels.iter().zip(det_ids.iter()).zip(det_icons.iter()) {
             let wrap = gtk::Box::new(gtk::Orientation::Vertical, 1);
             let btn = gtk::ToggleButton::new();
@@ -1780,7 +2017,8 @@ impl MinecraftView {
         let plat_store = gtk::StringList::new(&["All", "Modrinth", "Local"]);
         let plat_drop = gtk::DropDown::new(Some(plat_store), gtk::Expression::NONE);
         ad_toolbar.append(&plat_drop);
-        let update_all_btn = btn_with_icon("corkytux-software-update-available-symbolic", "Update all");
+        let update_all_btn =
+            btn_with_icon("corkytux-software-update-available-symbolic", "Update all");
         update_all_btn.add_css_class("settings-btn");
         update_all_btn.set_visible(false);
         ad_toolbar.append(&update_all_btn);
@@ -1944,7 +2182,8 @@ impl MinecraftView {
         let set_prehook = gtk::Entry::new();
         set_prehook.set_placeholder_text(Some("empty = none"));
         st_inner.append(&set_prehook);
-        let set_repair = btn_with_icon("corkytux-view-refresh-symbolic", "Repair (reinstall files)");
+        let set_repair =
+            btn_with_icon("corkytux-view-refresh-symbolic", "Repair (reinstall files)");
         set_repair.add_css_class("settings-btn");
         st_inner.append(&set_repair);
         let set_danger_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -2020,7 +2259,10 @@ impl MinecraftView {
             detail_play,
             detail_play_icon,
             detail_star,
-            addons_tab_wrap: addons_tab_wrap_holder.borrow().clone().unwrap_or_else(|| gtk::Box::new(gtk::Orientation::Vertical, 1)),
+            addons_tab_wrap: addons_tab_wrap_holder
+                .borrow()
+                .clone()
+                .unwrap_or_else(|| gtk::Box::new(gtk::Orientation::Vertical, 1)),
             det_addons_btn: det_addons_btn.clone(),
             detail_tabs,
             ov_mc,
@@ -2052,13 +2294,17 @@ impl MinecraftView {
         // ---- wiring ----
         {
             let v = view.clone();
-            view.search_entry.connect_search_changed(move |_| v.render_library());
+            view.search_entry
+                .connect_search_changed(move |_| v.render_library());
         }
         {
             let v = view.clone();
             view.sort_drop.connect_selected_notify(move |d| {
                 let names = ["Name", "Most played", "Last played", "Game version"];
-                let sel = names.get(d.selected() as usize).unwrap_or(&"Name").to_string();
+                let sel = names
+                    .get(d.selected() as usize)
+                    .unwrap_or(&"Name")
+                    .to_string();
                 v.set_cfg("McSort", &sel);
                 v.render_library();
             });
@@ -2084,15 +2330,18 @@ impl MinecraftView {
         }
         {
             let v = view.clone();
-            view.detail_play.connect_clicked(move |_| v.toggle_play_selected());
+            view.detail_play
+                .connect_clicked(move |_| v.toggle_play_selected());
         }
         {
             let v = view.clone();
-            view.detail_play_icon.connect_clicked(move |_| v.toggle_play_selected());
+            view.detail_play_icon
+                .connect_clicked(move |_| v.toggle_play_selected());
         }
         {
             let v = view.clone();
-            view.detail_star.connect_clicked(move |_| v.toggle_fav_selected());
+            view.detail_star
+                .connect_clicked(move |_| v.toggle_fav_selected());
         }
         {
             let v = view.clone();
@@ -2134,7 +2383,8 @@ impl MinecraftView {
 
         {
             let v = view.clone();
-            view.addons_search.connect_search_changed(move |_| v.render_addons());
+            view.addons_search
+                .connect_search_changed(move |_| v.render_addons());
         }
         {
             let v = view.clone();
@@ -2168,7 +2418,8 @@ impl MinecraftView {
         }
         {
             let v = view.clone();
-            view.plat_drop.connect_selected_notify(move |_| v.render_addons());
+            view.plat_drop
+                .connect_selected_notify(move |_| v.render_addons());
         }
         {
             let v = view.clone();
@@ -2189,7 +2440,8 @@ impl MinecraftView {
             let vv = view.clone();
             ad_folder_btn.connect_clicked(move |_| {
                 let dir = vv.addon_dir();
-                st.integration.open_url(&format!("file://{}", dir.display()));
+                st.integration
+                    .open_url(&format!("file://{}", dir.display()));
             });
         }
         {
@@ -2255,7 +2507,8 @@ impl MinecraftView {
         }
         {
             let v = view.clone();
-            view.account_pop.connect_show(move |_| v.rebuild_account_popover());
+            view.account_pop
+                .connect_show(move |_| v.rebuild_account_popover());
         }
         view.refresh_account_header();
         view.refresh_all();
@@ -2266,16 +2519,28 @@ impl MinecraftView {
 
     fn cfg_sort(&self) -> String {
         let s = self.cfg("McSort");
-        if s.is_empty() { "Name".to_string() } else { s }
+        if s.is_empty() {
+            "Name".to_string()
+        } else {
+            s
+        }
     }
 
     fn load_installed(&self) -> Vec<Inst> {
         // legacy global installs (same base-copy rule in the shared dir)
         let st = MinecraftManager::status(&legacy_dir().display().to_string()).unwrap_or_default();
-        let legacy: Vec<String> = st.get("installed_versions").and_then(|a| a.as_array()).cloned().unwrap_or_default()
-            .into_iter().filter_map(|x| x.as_str().map(str::to_string)).collect();
+        let legacy: Vec<String> = st
+            .get("installed_versions")
+            .and_then(|a| a.as_array())
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|x| x.as_str().map(str::to_string))
+            .collect();
         collect_instance_ids(&scan_instance_dirs(), &legacy)
-            .into_iter().map(|(id, isolated)| self.make_inst(&id, isolated)).collect()
+            .into_iter()
+            .map(|(id, isolated)| self.make_inst(&id, isolated))
+            .collect()
     }
 
     fn make_inst(&self, id: &str, isolated: bool) -> Inst {
@@ -2299,7 +2564,11 @@ impl MinecraftView {
             last: self.inst_cfg(id, "Last"),
             disp: {
                 let n = self.inst_cfg(id, "Name");
-                if n.is_empty() { id.to_string() } else { n }
+                if n.is_empty() {
+                    id.to_string()
+                } else {
+                    n
+                }
             },
         }
     }
@@ -2318,32 +2587,89 @@ impl MinecraftView {
         }
         let (tx, rx) = std::sync::mpsc::channel::<McData>();
         std::thread::spawn(move || {
-            let st = MinecraftManager::status(&legacy_dir().display().to_string()).unwrap_or_default();
-            let mut data = McData::default();
-            data.deps_ok = st.get("deps").and_then(|d| d.get("minecraft_launcher_lib"))
-                .and_then(|x| x.as_bool()).unwrap_or(false);
-            data.accounts = st.get("accounts").and_then(|a| a.as_array()).cloned().unwrap_or_default()
-                .into_iter().map(|a| (
-                    a.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    a.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    a.get("offline").and_then(|x| x.as_bool()).unwrap_or(false),
-                    a.get("ely").and_then(|x| x.as_bool()).unwrap_or(false),
-                )).collect::<Vec<_>>();
-            data.java_selected = st.get("java").and_then(|j| j.get("selected")).and_then(|x| x.as_str()).unwrap_or("").to_string();
-            data.java_found = MinecraftManager::java_detect().ok()
-                .and_then(|d| d.get("found").cloned()).and_then(|v| v.as_array().cloned()).unwrap_or_default()
-                .into_iter().map(|j| (
-                    j.get("path").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    j.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    j.get("origin").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                )).collect::<Vec<_>>();
-            data.azure_configured = st.get("azure_configured").and_then(|x| x.as_bool()).unwrap_or(false);
-            data.versions = MinecraftManager::versions(false).ok()
-                .and_then(|d| d.get("versions").cloned()).and_then(|v| v.as_array().cloned()).unwrap_or_default()
-                .into_iter().map(|x| (
-                    x.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string(),
-                    x.get("type").and_then(|i| i.as_str()).unwrap_or("").to_string(),
-                )).collect::<Vec<_>>();
+            let st =
+                MinecraftManager::status(&legacy_dir().display().to_string()).unwrap_or_default();
+            let data = McData {
+                deps_ok: st
+                    .get("deps")
+                    .and_then(|d| d.get("minecraft_launcher_lib"))
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or(false),
+                accounts: st
+                    .get("accounts")
+                    .and_then(|a| a.as_array())
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|a| {
+                        (
+                            a.get("id")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            a.get("name")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            a.get("offline").and_then(|x| x.as_bool()).unwrap_or(false),
+                            a.get("ely").and_then(|x| x.as_bool()).unwrap_or(false),
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+                java_selected: st
+                    .get("java")
+                    .and_then(|j| j.get("selected"))
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                java_found: MinecraftManager::java_detect()
+                    .ok()
+                    .and_then(|d| d.get("found").cloned())
+                    .and_then(|v| v.as_array().cloned())
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|j| {
+                        (
+                            j.get("path")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            j.get("version")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            j.get("origin")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+                azure_configured: st
+                    .get("azure_configured")
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or(false),
+                versions: MinecraftManager::versions(false)
+                    .ok()
+                    .and_then(|d| d.get("versions").cloned())
+                    .and_then(|v| v.as_array().cloned())
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|x| {
+                        (
+                            x.get("id")
+                                .and_then(|i| i.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            x.get("type")
+                                .and_then(|i| i.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+                ..McData::default()
+            };
             let _ = tx.send(data);
         });
         let v = self.clone();
@@ -2367,16 +2693,25 @@ impl MinecraftView {
         let (tx, rx) = std::sync::mpsc::channel::<(Vec<(String, String)>, serde_json::Value)>();
         std::thread::spawn(move || {
             let dirs = scan_instance_dirs();
-            let st = MinecraftManager::status(&legacy_dir().display().to_string()).unwrap_or_default();
+            let st =
+                MinecraftManager::status(&legacy_dir().display().to_string()).unwrap_or_default();
             let _ = tx.send((dirs, st));
         });
         let vv = self.clone();
         glib::idle_add_local(move || match rx.try_recv() {
             Ok((dirs, st)) => {
-                let legacy: Vec<String> = st.get("installed_versions").and_then(|a| a.as_array()).cloned().unwrap_or_default()
-                    .into_iter().filter_map(|x| x.as_str().map(str::to_string)).collect();
+                let legacy: Vec<String> = st
+                    .get("installed_versions")
+                    .and_then(|a| a.as_array())
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect();
                 let list: Vec<Inst> = collect_instance_ids(&dirs, &legacy)
-                    .into_iter().map(|(id, isolated)| vv.make_inst(&id, isolated)).collect();
+                    .into_iter()
+                    .map(|(id, isolated)| vv.make_inst(&id, isolated))
+                    .collect();
                 vv.data.borrow_mut().installed = list;
                 vv.render_library();
                 if !vv.detail_id.borrow().is_empty() {
@@ -2394,16 +2729,23 @@ impl MinecraftView {
     fn sorted_filtered(&self) -> Vec<Inst> {
         let data = self.data.borrow();
         let q = self.search_entry.text().to_string().to_lowercase();
-        let mut list: Vec<Inst> = data.installed.iter()
-            .filter(|i| q.is_empty() || i.disp.to_lowercase().contains(&q) || i.id.to_lowercase().contains(&q))
-            .cloned().collect();
+        let mut list: Vec<Inst> = data
+            .installed
+            .iter()
+            .filter(|i| {
+                q.is_empty()
+                    || i.disp.to_lowercase().contains(&q)
+                    || i.id.to_lowercase().contains(&q)
+            })
+            .cloned()
+            .collect();
         match self.cfg_sort().as_str() {
-            "Most played" => list.sort_by(|a, b| b.secs.cmp(&a.secs)),
+            "Most played" => list.sort_by_key(|game| std::cmp::Reverse(game.secs)),
             "Last played" => list.sort_by(|a, b| b.last.cmp(&a.last)),
             "Game version" => list.sort_by(|a, b| b.mc_ver.cmp(&a.mc_ver)),
-            _ => list.sort_by(|a, b| a.disp.to_lowercase().cmp(&b.disp.to_lowercase())),
+            _ => list.sort_by_key(|a| a.disp.to_lowercase()),
         }
-        list.sort_by(|a, b| b.fav.cmp(&a.fav));
+        list.sort_by_key(|game| std::cmp::Reverse(game.fav));
         list
     }
 
@@ -2422,7 +2764,11 @@ impl MinecraftView {
                 "Instances · no matches".to_string()
             }
         } else if list.len() == total {
-            format!("Instances · {} {}", total, if total == 1 { "instance" } else { "instances" })
+            format!(
+                "Instances · {} {}",
+                total,
+                if total == 1 { "instance" } else { "instances" }
+            )
         } else {
             format!("Instances · {} of {}", list.len(), total)
         };
@@ -2457,7 +2803,10 @@ impl MinecraftView {
         let compact = self.cfg("McCompact") == "1";
         for inst in &list {
             let tile = gtk::FlowBoxChild::new();
-            tile.set_width_request((self.cfg("McTileSize").parse().unwrap_or(64) + if compact { 110 } else { 134 }).max(158));
+            tile.set_width_request(
+                (self.cfg("McTileSize").parse().unwrap_or(64) + if compact { 110 } else { 134 })
+                    .max(158),
+            );
             tile.set_hexpand(true);
             let inner = gtk::Box::new(gtk::Orientation::Vertical, if compact { 4 } else { 6 });
             let pad = if compact { 8 } else { 12 };
@@ -2477,8 +2826,15 @@ impl MinecraftView {
             name.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
             name.add_css_class("mc-tile-name");
             inner.append(&name);
-            let sub = gtk::Label::new(Some(&format!("{} • {}", inst.mc_ver,
-                if inst.loader == "vanilla" { "Vanilla".to_string() } else { inst.loader.clone() })));
+            let sub = gtk::Label::new(Some(&format!(
+                "{} • {}",
+                inst.mc_ver,
+                if inst.loader == "vanilla" {
+                    "Vanilla".to_string()
+                } else {
+                    inst.loader.clone()
+                }
+            )));
             sub.set_halign(gtk::Align::Center);
             sub.set_opacity(0.9);
             sub.add_css_class("mc-tile-sub");
@@ -2550,7 +2906,10 @@ impl MinecraftView {
             let key = gtk::EventControllerKey::new();
             key.set_propagation_phase(gtk::PropagationPhase::Capture);
             key.connect_key_pressed(move |_, keyval, _, _| {
-                if keyval == gtk::gdk::Key::Return || keyval == gtk::gdk::Key::KP_Enter || keyval == gtk::gdk::Key::space {
+                if keyval == gtk::gdk::Key::Return
+                    || keyval == gtk::gdk::Key::KP_Enter
+                    || keyval == gtk::gdk::Key::space
+                {
                     if let Some(tile) = weak_tile.upgrade() {
                         tile.emit_activate();
                     }
@@ -2581,7 +2940,10 @@ impl MinecraftView {
     }
 
     fn show_tile_menu(&self, id: &str, anchor: &gtk::Widget, x: f64, y: f64) {
-        let is_vanilla = self.get_inst(id).map(|i| i.loader == "vanilla").unwrap_or(false);
+        let is_vanilla = self
+            .get_inst(id)
+            .map(|i| i.loader == "vanilla")
+            .unwrap_or(false);
         let pop = gtk::Popover::new();
         let box_ = gtk::Box::new(gtk::Orientation::Vertical, 2);
         box_.set_margin_top(6);
@@ -2647,12 +3009,20 @@ impl MinecraftView {
     }
 
     fn get_inst(&self, id: &str) -> Option<Inst> {
-        self.data.borrow().installed.iter().find(|i| i.id == id).cloned()
+        self.data
+            .borrow()
+            .installed
+            .iter()
+            .find(|i| i.id == id)
+            .cloned()
     }
 
     fn open_detail(&self, id: &str) {
         *self.detail_id.borrow_mut() = id.to_string();
-        let vanilla = self.get_inst(id).map(|i| i.loader == "vanilla").unwrap_or(false);
+        let vanilla = self
+            .get_inst(id)
+            .map(|i| i.loader == "vanilla")
+            .unwrap_or(false);
         if vanilla {
             self.detail_tabs.set_visible_child_name("logs");
         } else {
@@ -2666,7 +3036,9 @@ impl MinecraftView {
     fn open_inst_folder(&self, id: &str) {
         if let Some(inst) = self.get_inst(id) {
             let dir = inst_container(&inst.id, inst.isolated);
-            self.state.integration.open_url(&format!("file://{}", dir.display()));
+            self.state
+                .integration
+                .open_url(&format!("file://{}", dir.display()));
         }
     }
 
@@ -2705,7 +3077,9 @@ impl MinecraftView {
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
-            x_btn.connect_clicked(move |_| { d.close(); });
+            x_btn.connect_clicked(move |_| {
+                d.close();
+            });
         }
         let v = self.clone();
         let idc = id.to_string();
@@ -2725,7 +3099,11 @@ impl MinecraftView {
     }
 
     fn confirm_delete(&self, id: &str) {
-        let dlg = adw::MessageDialog::new(Some(&self.parent), Some("Delete instance?"), Some(&format!("Remove {} and its files?", id)));
+        let dlg = adw::MessageDialog::new(
+            Some(&self.parent),
+            Some("Delete instance?"),
+            Some(&format!("Remove {} and its files?", id)),
+        );
         if let Some(root) = self.parent.root() {
             if let Ok(win) = root.downcast::<gtk::Window>() {
                 dlg.set_transient_for(Some(&win));
@@ -2781,7 +3159,10 @@ impl MinecraftView {
                 Ok(doc) => {
                     let ok = doc.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
                     if !ok {
-                        let msg = doc.get("error").and_then(|x| x.as_str()).map(str::to_string)
+                        let msg = doc
+                            .get("error")
+                            .and_then(|x| x.as_str())
+                            .map(str::to_string)
                             .unwrap_or_else(|| "backend refused".to_string());
                         errs.push(msg);
                     }
@@ -2792,7 +3173,9 @@ impl MinecraftView {
         // The backend only removes versions/<id>. Sweep the container only
         // when nothing visible is left in it: a sibling instance (and the
         // base copy it inherits from) must survive with its mods/saves.
-        if dir.exists() && should_sweep_container(inst.isolated, errs.is_empty(), &vers_dir, &pre_bases) {
+        if dir.exists()
+            && should_sweep_container(inst.isolated, errs.is_empty(), &vers_dir, &pre_bases)
+        {
             if let Err(e) = std::fs::remove_dir_all(&dir) {
                 errs.push(format!("{}: {}", dir.display(), e));
             }
@@ -2809,7 +3192,9 @@ impl MinecraftView {
         let still_there = vers_dir.join(&inst.id).exists() || legacy_ver.exists();
         for k in ["Fav", "Time", "Last", "Name", "Ram", "Java", "Account"] {
             crate::backend::ConfigManager::log_launcher_write(
-                self.state.config.remove_launcher_value_in("User Settings", &format!("Mc{}_{}", k, safe_id(id))),
+                self.state
+                    .config
+                    .remove_launcher_value_in("User Settings", &format!("Mc{}_{}", k, safe_id(id))),
             );
         }
         if *self.detail_id.borrow() == id {
@@ -2819,7 +3204,11 @@ impl MinecraftView {
         if errs.is_empty() && !still_there {
             self.toast("Deleted", id);
         } else {
-            errs.push(if still_there { "files remain on disk".to_string() } else { String::new() });
+            errs.push(if still_there {
+                "files remain on disk".to_string()
+            } else {
+                String::new()
+            });
             let msg: Vec<String> = errs.into_iter().filter(|s| !s.is_empty()).collect();
             self.toast("Delete incomplete", &msg.join("\n"));
         }
@@ -2834,8 +3223,16 @@ impl MinecraftView {
 
     fn selected_account(&self) -> (String, String) {
         let data = self.data.borrow();
-        let names: Vec<(String, String)> = data.accounts.iter().map(|(i, n, _, _)| (i.clone(), n.clone())).collect();
-        let saved = self.state.config.launcher_value("McAccount").unwrap_or_default();
+        let names: Vec<(String, String)> = data
+            .accounts
+            .iter()
+            .map(|(i, n, _, _)| (i.clone(), n.clone()))
+            .collect();
+        let saved = self
+            .state
+            .config
+            .launcher_value("McAccount")
+            .unwrap_or_default();
         if let Some((aid, name)) = names.iter().find(|(_, n)| n == &saved) {
             return (aid.clone(), name.clone());
         }
@@ -2847,18 +3244,23 @@ impl MinecraftView {
         if aid.is_empty() {
             self.account_label.set_text("Sign in");
             self.account_head.set_pixel_size(24);
-            self.account_head.set_icon_name(Some("corkytux-avatar-default-symbolic"));
-            self.account_btn.set_tooltip_text(Some("No account — click to add"));
+            self.account_head
+                .set_icon_name(Some("corkytux-avatar-default-symbolic"));
+            self.account_btn
+                .set_tooltip_text(Some("No account — click to add"));
             return;
         }
         self.account_label.set_text(&name);
-        self.account_btn.set_tooltip_text(Some(&format!("{} — click to switch", name)));
+        self.account_btn
+            .set_tooltip_text(Some(&format!("{} — click to switch", name)));
         self.account_head.set_pixel_size(24);
-        self.account_head.set_icon_name(Some("corkytux-avatar-default-symbolic"));
+        self.account_head
+            .set_icon_name(Some("corkytux-avatar-default-symbolic"));
         let img = self.account_head.clone();
         let (tx, rx) = std::sync::mpsc::channel::<Option<String>>();
         std::thread::spawn(move || {
-            let head = MinecraftManager::ely_skin(&name, &aid, false).ok()
+            let head = MinecraftManager::ely_skin(&name, &aid, false)
+                .ok()
                 .and_then(|d| d.get("head").and_then(|x| x.as_str()).map(str::to_string));
             let _ = tx.send(head);
         });
@@ -2898,7 +3300,13 @@ impl MinecraftView {
             head_img.set_pixel_size(24);
             head_img.set_icon_name(Some("corkytux-avatar-default-symbolic"));
             row.append(&head_img);
-            let tag = if *ely { "Ely.by" } else if *offline { "Offline" } else { "MS" };
+            let tag = if *ely {
+                "Ely.by"
+            } else if *offline {
+                "Offline"
+            } else {
+                "MS"
+            };
             let lbl = gtk::Label::new(Some(&format!("{}  ·  {}", name, tag)));
             lbl.add_css_class("details-title");
             lbl.set_halign(gtk::Align::Start);
@@ -2917,7 +3325,8 @@ impl MinecraftView {
                 let aidc = aid.clone();
                 let (tx, rx) = std::sync::mpsc::channel::<Option<String>>();
                 std::thread::spawn(move || {
-                    let head = MinecraftManager::ely_skin(&nm, &aidc, false).ok()
+                    let head = MinecraftManager::ely_skin(&nm, &aidc, false)
+                        .ok()
                         .and_then(|d| d.get("head").and_then(|x| x.as_str()).map(str::to_string));
                     let _ = tx.send(head);
                 });
@@ -2999,20 +3408,39 @@ impl MinecraftView {
         }
         let running = !MinecraftManager::running_pids().is_empty();
         if running {
-            set_btn_icon_label(&self.detail_play, "corkytux-media-playback-stop-symbolic", "Stop");
+            set_btn_icon_label(
+                &self.detail_play,
+                "corkytux-media-playback-stop-symbolic",
+                "Stop",
+            );
             self.detail_play.remove_css_class("add-btn");
             self.detail_play.add_css_class("danger-btn");
-            set_btn_icon(&self.detail_play_icon, "corkytux-media-playback-stop-symbolic", 20);
+            set_btn_icon(
+                &self.detail_play_icon,
+                "corkytux-media-playback-stop-symbolic",
+                20,
+            );
             self.detail_play_icon.set_tooltip_text(Some("Stop"));
         } else {
-            set_themed_btn(&self.detail_play, "play", "Play", self.state.theme.is_dark(), 20);
+            set_themed_btn(
+                &self.detail_play,
+                "play",
+                "Play",
+                self.state.theme.is_dark(),
+                20,
+            );
             self.detail_play.remove_css_class("danger-btn");
             self.detail_play.add_css_class("add-btn");
-            set_btn_icon(&self.detail_play_icon, "corkytux-media-playback-start-symbolic", 20);
+            set_btn_icon(
+                &self.detail_play_icon,
+                "corkytux-media-playback-start-symbolic",
+                20,
+            );
             self.detail_play_icon.set_tooltip_text(Some("Play"));
         }
         self.detail_star.set_active(inst.fav);
-        self.detail_star.set_tooltip_text(Some(if inst.fav { "Unfavorite" } else { "Favorite" }));
+        self.detail_star
+            .set_tooltip_text(Some(if inst.fav { "Unfavorite" } else { "Favorite" }));
         // vanilla has no addons: hide the whole category
         let is_vanilla = inst.loader == "vanilla";
         self.addons_tab_wrap.set_visible(!is_vanilla);
@@ -3021,16 +3449,23 @@ impl MinecraftView {
         }
         // header chips
         self.ov_mc.set_text(&inst.mc_ver);
-        let loader_txt = if inst.loader == "vanilla" { "Vanilla".to_string() } else { format!("{} {}", inst.loader, inst.loader_ver) };
+        let loader_txt = if inst.loader == "vanilla" {
+            "Vanilla".to_string()
+        } else {
+            format!("{} {}", inst.loader, inst.loader_ver)
+        };
         self.ov_loader.set_text(&loader_txt);
         let count = self.count_addons();
         self.ov_addons.set_text(&format!("{}", count));
-        self.ov_played.set_text(&crate::ui::helpers::format_playtime(inst.secs));
+        self.ov_played
+            .set_text(&crate::ui::helpers::format_playtime(inst.secs));
         self.set_jvm.set_text(&self.inst_cfg(&inst.id, "Jvm"));
         self.set_res_w.set_text(&self.inst_cfg(&inst.id, "ResW"));
         self.set_res_h.set_text(&self.inst_cfg(&inst.id, "ResH"));
-        self.set_wrapper.set_text(&self.inst_cfg(&inst.id, "Wrapper"));
-        self.set_prehook.set_text(&self.inst_cfg(&inst.id, "PreHook"));
+        self.set_wrapper
+            .set_text(&self.inst_cfg(&inst.id, "Wrapper"));
+        self.set_prehook
+            .set_text(&self.inst_cfg(&inst.id, "PreHook"));
         let ram = self.inst_ram(&inst.id);
         self.set_ram.set_value(ram as f64);
         self.set_ram_entry
@@ -3052,9 +3487,13 @@ impl MinecraftView {
         let mut n = 0;
         for sub in ["mods", "resourcepacks", "shaderpacks"] {
             if let Ok(entries) = std::fs::read_dir(dir.join(sub)) {
-                n += entries.flatten().filter(|e| {
-                    e.path().is_file() && !e.file_name().to_string_lossy().ends_with(".corky.json")
-                }).count();
+                n += entries
+                    .flatten()
+                    .filter(|e| {
+                        e.path().is_file()
+                            && !e.file_name().to_string_lossy().ends_with(".corky.json")
+                    })
+                    .count();
             }
         }
         n
@@ -3087,24 +3526,55 @@ impl MinecraftView {
         };
         // stale tile guard: files deleted outside the app
         let dir = inst_container(&inst.id, inst.isolated);
-        if !dir.join("versions").join(&inst.id).join(format!("{}.json", inst.id)).exists() {
-            self.toast("Instance files missing",
-                &format!("{} has no game files on disk (deleted outside the app?). Remove the tile.", inst.disp));
+        if !dir
+            .join("versions")
+            .join(&inst.id)
+            .join(format!("{}.json", inst.id))
+            .exists()
+        {
+            self.toast(
+                "Instance files missing",
+                &format!(
+                    "{} has no game files on disk (deleted outside the app?). Remove the tile.",
+                    inst.disp
+                ),
+            );
             self.confirm_delete(&inst.id);
             return;
         }
         // Pre-flight: I warn when no compatible Java exists ("you are missing Java X").
-        let dir_s = inst_container(&inst.id, inst.isolated).display().to_string();
+        let dir_s = inst_container(&inst.id, inst.isolated)
+            .display()
+            .to_string();
         let req = MinecraftManager::java_required(&inst.id, &dir_s).ok();
-        let satisfied = req.as_ref().and_then(|d| d.get("satisfied")).and_then(|x| x.as_bool()).unwrap_or(true);
+        let satisfied = req
+            .as_ref()
+            .and_then(|d| d.get("satisfied"))
+            .and_then(|x| x.as_bool())
+            .unwrap_or(true);
         if !satisfied {
-            let want = req.as_ref().map(|d| {
-                let r = d.get("required_java").and_then(|x| x.as_u64()).unwrap_or(17);
-                let m = d.get("max_java").and_then(|x| x.as_u64()).unwrap_or(99);
-                if m >= 99 { format!("Java {}", r) } else { format!("Java {}-{}", r, m) }
-            }).unwrap_or("Java".to_string());
-            self.toast(&format!("Missing {}", want),
-                &format!("{} needs {}. Install it in Settings → Java.", inst.disp, want));
+            let want = req
+                .as_ref()
+                .map(|d| {
+                    let r = d
+                        .get("required_java")
+                        .and_then(|x| x.as_u64())
+                        .unwrap_or(17);
+                    let m = d.get("max_java").and_then(|x| x.as_u64()).unwrap_or(99);
+                    if m >= 99 {
+                        format!("Java {}", r)
+                    } else {
+                        format!("Java {}-{}", r, m)
+                    }
+                })
+                .unwrap_or("Java".to_string());
+            self.toast(
+                &format!("Missing {}", want),
+                &format!(
+                    "{} needs {}. Install it in Settings → Java.",
+                    inst.disp, want
+                ),
+            );
             self.show_mc_settings();
             return;
         }
@@ -3121,16 +3591,25 @@ impl MinecraftView {
         let ram_min: u32 = 0;
         let java = self.inst_java(&inst.id);
         let jvm_extra: Vec<String> = [self.inst_cfg(&inst.id, "Jvm"), self.cfg("McJvmArgs")]
-            .iter().flat_map(|s| s.split_whitespace().map(str::to_string)).collect();
+            .iter()
+            .flat_map(|s| s.split_whitespace().map(str::to_string))
+            .collect();
         let res = {
             let mut w = self.inst_cfg(&inst.id, "ResW");
             let mut h = self.inst_cfg(&inst.id, "ResH");
-            if w.is_empty() { w = self.cfg("McResW"); }
-            if h.is_empty() { h = self.cfg("McResH"); }
-            if w.is_empty() || h.is_empty() { String::new() } else { format!("{}x{}", w, h) }
+            if w.is_empty() {
+                w = self.cfg("McResW");
+            }
+            if h.is_empty() {
+                h = self.cfg("McResH");
+            }
+            if w.is_empty() || h.is_empty() {
+                String::new()
+            } else {
+                format!("{}x{}", w, h)
+            }
         };
         let opts = crate::backend::external::LaunchOpts {
-            max_mb: ram,
             min_mb: if ram_min >= ram { 0 } else { ram_min },
             jvm_args: jvm_extra,
             resolution: res,
@@ -3138,36 +3617,52 @@ impl MinecraftView {
             pre_hook: self.inst_cfg(&inst.id, "PreHook"),
         };
         let rx = MinecraftManager::spawn_launch_isolated(
-            inst.id.clone(), Some(acc_id.clone()), ram, java, dir.display().to_string(), Some(opts));
-        self.lib_status.set_text(&format!("Launching {} as {}…", inst.disp, acc_name));
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
-        self.sessions.borrow_mut().insert(acc_id.clone(), (inst.id.clone(), now));
+            inst.id.clone(),
+            Some(acc_id.clone()),
+            ram,
+            java,
+            dir.display().to_string(),
+            Some(opts),
+        );
+        self.lib_status
+            .set_text(&format!("Launching {} as {}…", inst.disp, acc_name));
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        self.sessions
+            .borrow_mut()
+            .insert(acc_id.clone(), (inst.id.clone(), now));
         let v = self.clone();
         let idc = inst.id.clone();
-        crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
-            match ev {
-                crate::backend::plugin_process::PluginEvent::Done(val) => {
-                    let pid = val.get("pid").and_then(|x| x.as_i64()).unwrap_or(0);
-                    v.lib_status.set_text(&format!("{} running (pid {}).", idc, pid));
-                    v.render_library();
-                    v.render_detail();
-                    false
-                }
-                crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
-                    v.lib_status.set_text(&format!("Launch failed: {}", message));
-                    v.sessions.borrow_mut().remove(&acc_id);
-                    v.toast("Launch failed", &message);
-                    false
-                }
-                _ => true,
+        crate::backend::plugin_process::pump_to_idle(rx, move |ev| match ev {
+            crate::backend::plugin_process::PluginEvent::Done(val) => {
+                let pid = val.get("pid").and_then(|x| x.as_i64()).unwrap_or(0);
+                v.lib_status
+                    .set_text(&format!("{} running (pid {}).", idc, pid));
+                v.render_library();
+                v.render_detail();
+                false
             }
+            crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
+                v.lib_status
+                    .set_text(&format!("Launch failed: {}", message));
+                v.sessions.borrow_mut().remove(&acc_id);
+                v.toast("Launch failed", &message);
+                false
+            }
+            _ => true,
         });
     }
 
     fn do_stop(&self) {
         let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
         std::thread::spawn(move || {
-            let _ = tx.send(MinecraftManager::stop(None).map(|_| String::new()).map_err(|e| e.to_string()));
+            let _ = tx.send(
+                MinecraftManager::stop(None)
+                    .map(|_| String::new())
+                    .map_err(|e| e.to_string()),
+            );
         });
         let v = self.clone();
         glib::idle_add_local(move || match rx.try_recv() {
@@ -3189,8 +3684,12 @@ impl MinecraftView {
 
     fn tick_sessions(&self) {
         let running = MinecraftManager::running_pids();
-        let alive: std::collections::HashSet<String> = running.into_iter().map(|(a, _)| a).collect();
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+        let alive: std::collections::HashSet<String> =
+            running.into_iter().map(|(a, _)| a).collect();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
         let mut done = Vec::new();
         for (acc, (inst, start)) in self.sessions.borrow().iter() {
             if !alive.contains(acc) {
@@ -3205,9 +3704,7 @@ impl MinecraftView {
         for acc in done {
             self.sessions.borrow_mut().remove(&acc);
         }
-        if !self.sessions.borrow().is_empty() {
-            return;
-        }
+        if !self.sessions.borrow().is_empty() {}
     }
 
     fn show_icon_popover(&self) {
@@ -3224,15 +3721,35 @@ impl MinecraftView {
         let is_dark = self.state.theme.is_dark();
         for (kind, label, asset) in [
             ("grass", "Grass (GDL default)", "inst_grass.png"),
-            ("ely", "Ely", if is_dark { "minecraft.png" } else { "minecraft_dark.png" }),
-            ("block", "Block", if is_dark { "inst_block_white.png" } else { "inst_block_black.png" }),
+            (
+                "ely",
+                "Ely",
+                if is_dark {
+                    "minecraft.png"
+                } else {
+                    "minecraft_dark.png"
+                },
+            ),
+            (
+                "block",
+                "Block",
+                if is_dark {
+                    "inst_block_white.png"
+                } else {
+                    "inst_block_black.png"
+                },
+            ),
             ("custom:", "Custom file…", ""),
         ] {
             let b = gtk::Button::new();
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
             if asset.is_empty() {
                 row.append(&sym("image-x-generic-symbolic", 32));
-            } else if let Some(tex) = helpers::load_texture(&format!("{}/.local/share/corkytux/assets/{}", std::env::var("HOME").unwrap_or_default(), asset)) {
+            } else if let Some(tex) = helpers::load_texture(&format!(
+                "{}/.local/share/corkytux/assets/{}",
+                std::env::var("HOME").unwrap_or_default(),
+                asset
+            )) {
                 let img = gtk::Image::new();
                 img.set_paintable(Some(&tex));
                 img.set_pixel_size(32);
@@ -3295,7 +3812,10 @@ impl MinecraftView {
                     return;
                 }
             };
-            let path = file.path().map(|p| p.display().to_string()).unwrap_or_default();
+            let path = file
+                .path()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
             if path.is_empty() {
                 v.render_detail();
                 return;
@@ -3315,27 +3835,33 @@ impl MinecraftView {
             Some(i) => i,
             None => return,
         };
-        let dir = inst_container(&inst.id, inst.isolated).display().to_string();
-        self.lib_status.set_text(&format!("Repairing {}…", inst.disp));
+        let dir = inst_container(&inst.id, inst.isolated)
+            .display()
+            .to_string();
+        self.lib_status
+            .set_text(&format!("Repairing {}…", inst.disp));
         self.main_stack.set_visible_child_name("library");
         let rx = MinecraftManager::spawn_install_isolated(
-            inst.mc_ver.clone(), inst.loader.clone(), inst.loader_ver.clone(), dir);
+            inst.mc_ver.clone(),
+            inst.loader.clone(),
+            inst.loader_ver.clone(),
+            dir,
+        );
         let v = self.clone();
         let idc = inst.id.clone();
-        crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
-            match ev {
-                crate::backend::plugin_process::PluginEvent::Done(_) => {
-                    v.lib_status.set_text(&format!("{} repaired.", idc));
-                    v.toast("Repaired", &idc);
-                    v.reload_silent();
-                    false
-                }
-                crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
-                    v.lib_status.set_text(&format!("Repair failed: {}", message));
-                    false
-                }
-                _ => true,
+        crate::backend::plugin_process::pump_to_idle(rx, move |ev| match ev {
+            crate::backend::plugin_process::PluginEvent::Done(_) => {
+                v.lib_status.set_text(&format!("{} repaired.", idc));
+                v.toast("Repaired", &idc);
+                v.reload_silent();
+                false
             }
+            crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
+                v.lib_status
+                    .set_text(&format!("Repair failed: {}", message));
+                false
+            }
+            _ => true,
         });
     }
 
@@ -3347,8 +3873,28 @@ impl MinecraftView {
         self.set_inst_cfg(&id, "Ram", &(self.set_ram.value() as u32).to_string());
         self.set_inst_cfg(&id, "Java", self.set_java.text().trim());
         self.set_inst_cfg(&id, "Jvm", self.set_jvm.text().trim());
-        self.set_inst_cfg(&id, "ResW", self.set_res_w.text().trim().chars().filter(|c| c.is_ascii_digit()).collect::<String>().as_str());
-        self.set_inst_cfg(&id, "ResH", self.set_res_h.text().trim().chars().filter(|c| c.is_ascii_digit()).collect::<String>().as_str());
+        self.set_inst_cfg(
+            &id,
+            "ResW",
+            self.set_res_w
+                .text()
+                .trim()
+                .chars()
+                .filter(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .as_str(),
+        );
+        self.set_inst_cfg(
+            &id,
+            "ResH",
+            self.set_res_h
+                .text()
+                .trim()
+                .chars()
+                .filter(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .as_str(),
+        );
         self.set_inst_cfg(&id, "Wrapper", self.set_wrapper.text().trim());
         self.set_inst_cfg(&id, "PreHook", self.set_prehook.text().trim());
         self.toast("Saved", "Instance settings saved.");
@@ -3405,7 +3951,10 @@ impl MinecraftView {
                 if !p.is_file() {
                     continue;
                 }
-                let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                let name = p
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
                 if name.ends_with(".corky.json") {
                     continue;
                 }
@@ -3432,10 +3981,26 @@ impl MinecraftView {
                 if sc.is_file() {
                     if let Ok(txt) = std::fs::read_to_string(&sc) {
                         if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&txt) {
-                            row.title = meta.get("title").and_then(|x| x.as_str()).unwrap_or(&name).to_string();
-                            row.version = meta.get("version_number").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                            row.project_id = meta.get("project_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                            row.icon_url = meta.get("icon_url").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                            row.title = meta
+                                .get("title")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or(&name)
+                                .to_string();
+                            row.version = meta
+                                .get("version_number")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            row.project_id = meta
+                                .get("project_id")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            row.icon_url = meta
+                                .get("icon_url")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string();
                             if !row.project_id.is_empty() {
                                 row.platform = "modrinth".to_string();
                             }
@@ -3445,7 +4010,7 @@ impl MinecraftView {
                 rows.push(row);
             }
         }
-        rows.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        rows.sort_by_key(|a| a.title.to_lowercase());
         rows
     }
 
@@ -3459,21 +4024,31 @@ impl MinecraftView {
             2 => "local",
             _ => "all",
         };
-        let rows: Vec<AddonRow> = self.load_addon_rows().into_iter()
-            .filter(|r| (q.is_empty() || r.title.to_lowercase().contains(&q) || r.file.to_lowercase().contains(&q))
-                && (plat == "all" || r.platform == plat))
+        let rows: Vec<AddonRow> = self
+            .load_addon_rows()
+            .into_iter()
+            .filter(|r| {
+                (q.is_empty()
+                    || r.title.to_lowercase().contains(&q)
+                    || r.file.to_lowercase().contains(&q))
+                    && (plat == "all" || r.platform == plat)
+            })
             .collect();
         let kind_lbl = match self.addons_type.borrow().as_str() {
             "shaders" => "Shaders",
             "resourcepacks" => "Resource Packs",
             _ => "Mods",
         };
-        self.addons_count.set_text(&format!("{} {}", kind_lbl, rows.len()));
-        self.addons_dir_lbl.set_text(&format!("{}", self.addon_dir().display()));
+        self.addons_count
+            .set_text(&format!("{} {}", kind_lbl, rows.len()));
+        self.addons_dir_lbl
+            .set_text(&format!("{}", self.addon_dir().display()));
         if rows.is_empty() {
-            self.addons_box.append(&note("Nothing here — press ADD to browse Modrinth."));
+            self.addons_box
+                .append(&note("Nothing here — press ADD to browse Modrinth."));
         }
-        let upd_map: Rc<RefCell<HashMap<String, gtk::Button>>> = Rc::new(RefCell::new(HashMap::new()));
+        let upd_map: Rc<RefCell<HashMap<String, gtk::Button>>> =
+            Rc::new(RefCell::new(HashMap::new()));
         for r in &rows {
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
             row.set_height_request(56);
@@ -3493,10 +4068,16 @@ impl MinecraftView {
             t.set_ellipsize(gtk::pango::EllipsizeMode::End);
             t.add_css_class("mc-tile-name");
             mid.append(&t);
-            let sub = gtk::Label::new(Some(&format!("{}  •  {}  •  {}",
-                if r.version.is_empty() { r.file.clone() } else { r.version.clone() },
+            let sub = gtk::Label::new(Some(&format!(
+                "{}  •  {}  •  {}",
+                if r.version.is_empty() {
+                    r.file.clone()
+                } else {
+                    r.version.clone()
+                },
                 r.platform,
-                if r.enabled { "enabled" } else { "disabled" })));
+                if r.enabled { "enabled" } else { "disabled" }
+            )));
             sub.set_halign(gtk::Align::Start);
             sub.set_opacity(0.9);
             sub.add_css_class("mc-tile-sub");
@@ -3515,7 +4096,11 @@ impl MinecraftView {
             }
             let tgl = gtk::Switch::new();
             tgl.set_valign(gtk::Align::Center);
-            tgl.set_tooltip_text(Some(if r.enabled { "Enabled — click to disable" } else { "Disabled — click to enable" }));
+            tgl.set_tooltip_text(Some(if r.enabled {
+                "Enabled — click to disable"
+            } else {
+                "Disabled — click to enable"
+            }));
             tgl.set_active(r.enabled);
             let v = self.clone();
             let fc = r.file.clone();
@@ -3543,13 +4128,18 @@ impl MinecraftView {
         let ctx = self.inst_addon_ctx();
         let (tx, rx) = std::sync::mpsc::channel::<Vec<String>>();
         std::thread::spawn(move || {
-            let files = ctx.map(|(mdir, mc, loader, at)| {
-                MinecraftManager::mod_check_updates(&at, &mc, &loader, &mdir)
-                    .ok().and_then(|d| d.get("updates").cloned())
-                    .and_then(|v| v.as_array().cloned()).unwrap_or_default()
-                    .into_iter().filter_map(|u| u.get("file").and_then(|x| x.as_str()).map(str::to_string))
-                    .collect::<Vec<_>>()
-            }).unwrap_or_default();
+            let files = ctx
+                .map(|(mdir, mc, loader, at)| {
+                    MinecraftManager::mod_check_updates(&at, &mc, &loader, &mdir)
+                        .ok()
+                        .and_then(|d| d.get("updates").cloned())
+                        .and_then(|v| v.as_array().cloned())
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter_map(|u| u.get("file").and_then(|x| x.as_str()).map(str::to_string))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
             let _ = tx.send(files);
         });
         let v = self.clone();
@@ -3558,11 +4148,15 @@ impl MinecraftView {
             Ok(files) => {
                 let visible: Vec<String> = upd_map_c.borrow().keys().cloned().collect();
                 let (total, shown) = update_counts(&files, &visible);
-                set_btn_icon_label(&v.update_all_btn, "corkytux-software-update-available-symbolic",
-                    &format!("Update all ({})", total));
+                set_btn_icon_label(
+                    &v.update_all_btn,
+                    "corkytux-software-update-available-symbolic",
+                    &format!("Update all ({})", total),
+                );
                 v.update_all_btn.set_tooltip_text(Some(&format!(
                     "{} update(s) available, {} shown by the current filter",
-                    total, shown)));
+                    total, shown
+                )));
                 v.update_all_btn.set_visible(total > 0);
                 for (f, btn) in upd_map_c.borrow().iter() {
                     btn.set_visible(files.iter().any(|x| x == f));
@@ -3596,7 +4190,11 @@ impl MinecraftView {
                 std::fs::rename(&sc_old, &sc_new).ok();
             }
         } else if disabled.is_file() {
-            let back = if file.ends_with(".disabled") { file.trim_end_matches(".disabled").to_string() } else { file.to_string() };
+            let back = if file.ends_with(".disabled") {
+                file.trim_end_matches(".disabled").to_string()
+            } else {
+                file.to_string()
+            };
             std::fs::rename(&disabled, dir.join(sub).join(&back)).ok();
             let sc_old = dir.join(sub).join(format!("{}.corky.json", file));
             let sc_new = dir.join(sub).join(format!("{}.corky.json", back));
@@ -3624,9 +4222,16 @@ impl MinecraftView {
         };
         let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
         std::thread::spawn(move || {
-            let _ = tx.send(MinecraftManager::mod_update(&fc, &at, &mdir).map(|d| {
-                d.get("file").and_then(|x| x.as_str()).unwrap_or("").to_string()
-            }).map_err(|e| e.to_string()));
+            let _ = tx.send(
+                MinecraftManager::mod_update(&fc, &at, &mdir)
+                    .map(|d| {
+                        d.get("file")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string()
+                    })
+                    .map_err(|e| e.to_string()),
+            );
         });
         let v = self.clone();
         glib::idle_add_local(move || match rx.try_recv() {
@@ -3652,7 +4257,10 @@ impl MinecraftView {
         box_.set_margin_start(6);
         box_.set_margin_end(6);
         let is_dark = self.state.theme.is_dark();
-        let mut items = vec![("corkytux-folder-symbolic", "Open folder", "folder"), ("corkytux-user-trash-symbolic", "Delete", "delete")];
+        let mut items = vec![
+            ("corkytux-folder-symbolic", "Open folder", "folder"),
+            ("corkytux-user-trash-symbolic", "Delete", "delete"),
+        ];
         if !project_id.trim().is_empty() {
             items.push(("application-x-addon-symbolic", "View on Modrinth", "view"));
         }
@@ -3674,7 +4282,9 @@ impl MinecraftView {
                 match act.as_str() {
                     "folder" => {
                         let dir = v.addon_dir();
-                        v.state.integration.open_url(&format!("file://{}", dir.display()));
+                        v.state
+                            .integration
+                            .open_url(&format!("file://{}", dir.display()));
                     }
                     "view" => v.show_project_view(&pid, None),
                     "delete" => v.do_addon_delete(&fc),
@@ -3724,19 +4334,43 @@ impl MinecraftView {
         let v = self.clone();
         glib::idle_add_local(move || match rx.try_recv() {
             Ok(Ok(d)) => {
-                let plats: std::collections::HashMap<String, String> = v.load_addon_rows()
-                    .into_iter().map(|r| (r.file, r.platform)).collect();
-                let items = d.get("updates").and_then(|u| u.as_array()).cloned().unwrap_or_default()
-                    .into_iter().filter_map(|u| {
+                let plats: std::collections::HashMap<String, String> = v
+                    .load_addon_rows()
+                    .into_iter()
+                    .map(|r| (r.file, r.platform))
+                    .collect();
+                let items = d
+                    .get("updates")
+                    .and_then(|u| u.as_array())
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|u| {
                         let file = u.get("file")?.as_str()?.to_string();
                         Some(PendingUpdate {
-                            title: u.get("title").and_then(|x| x.as_str()).unwrap_or(&file).to_string(),
-                            current: u.get("current").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                            latest: u.get("latest").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                            platform: plats.get(&file).cloned().unwrap_or_else(|| "modrinth".to_string()),
+                            title: u
+                                .get("title")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or(&file)
+                                .to_string(),
+                            current: u
+                                .get("current")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            latest: u
+                                .get("latest")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            platform: plats
+                                .get(&file)
+                                .cloned()
+                                .unwrap_or_else(|| "modrinth".to_string()),
                             file,
                         })
-                    }).collect::<Vec<_>>();
+                    })
+                    .collect::<Vec<_>>();
                 if items.is_empty() {
                     v.toast("Up to date", "No addon updates available.");
                 } else {
@@ -3763,7 +4397,10 @@ impl MinecraftView {
         let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
         content.add_css_class("modal-bg");
         content.append(&header);
-        let sub = gtk::Label::new(Some(&format!("{} update(s) available. Uncheck to skip.", items.len())));
+        let sub = gtk::Label::new(Some(&format!(
+            "{} update(s) available. Uncheck to skip.",
+            items.len()
+        )));
         sub.set_halign(gtk::Align::Start);
         sub.set_margin_start(16);
         sub.set_margin_end(16);
@@ -3777,28 +4414,35 @@ impl MinecraftView {
         let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
         scroll.set_child(Some(&list));
         content.append(&scroll);
-        let checks: Vec<gtk::CheckButton> = items.iter().map(|it| {
-            let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-            let chk = gtk::CheckButton::new();
-            chk.set_active(true);
-            chk.set_valign(gtk::Align::Center);
-            row.append(&chk);
-            let mid = gtk::Box::new(gtk::Orientation::Vertical, 0);
-            mid.set_hexpand(true);
-            let t = gtk::Label::new(Some(&it.title));
-            t.set_halign(gtk::Align::Start);
-            t.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            t.add_css_class("mc-tile-name");
-            mid.append(&t);
-            let ver = if it.current.is_empty() { it.latest.clone() } else { format!("{} → {}", it.current, it.latest) };
-            let s = gtk::Label::new(Some(&format!("{}  •  {}", ver, it.platform)));
-            s.set_halign(gtk::Align::Start);
-            s.add_css_class("mc-tile-sub");
-            mid.append(&s);
-            row.append(&mid);
-            list.append(&row);
-            chk
-        }).collect();
+        let checks: Vec<gtk::CheckButton> = items
+            .iter()
+            .map(|it| {
+                let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+                let chk = gtk::CheckButton::new();
+                chk.set_active(true);
+                chk.set_valign(gtk::Align::Center);
+                row.append(&chk);
+                let mid = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                mid.set_hexpand(true);
+                let t = gtk::Label::new(Some(&it.title));
+                t.set_halign(gtk::Align::Start);
+                t.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                t.add_css_class("mc-tile-name");
+                mid.append(&t);
+                let ver = if it.current.is_empty() {
+                    it.latest.clone()
+                } else {
+                    format!("{} → {}", it.current, it.latest)
+                };
+                let s = gtk::Label::new(Some(&format!("{}  •  {}", ver, it.platform)));
+                s.set_halign(gtk::Align::Start);
+                s.add_css_class("mc-tile-sub");
+                mid.append(&s);
+                row.append(&mid);
+                list.append(&row);
+                chk
+            })
+            .collect();
         let foot = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         foot.set_margin_start(16);
         foot.set_margin_end(16);
@@ -3818,7 +4462,9 @@ impl MinecraftView {
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
-            x_btn.connect_clicked(move |_| { d.close(); });
+            x_btn.connect_clicked(move |_| {
+                d.close();
+            });
         }
         {
             let c = checks.clone();
@@ -3836,19 +4482,35 @@ impl MinecraftView {
             sel_all.connect_clicked({
                 let c = checks.clone();
                 let g = go.clone();
-                move |_| { for b in &c { b.set_active(true); } g.set_label(&format!("Update selected ({})", n_all)); g.set_sensitive(true); }
+                move |_| {
+                    for b in &c {
+                        b.set_active(true);
+                    }
+                    g.set_label(&format!("Update selected ({})", n_all));
+                    g.set_sensitive(true);
+                }
             });
             sel_none.connect_clicked({
                 let c = checks.clone();
                 let g = go.clone();
-                move |_| { for b in &c { b.set_active(false); } g.set_label("Update selected (0)"); g.set_sensitive(false); }
+                move |_| {
+                    for b in &c {
+                        b.set_active(false);
+                    }
+                    g.set_label("Update selected (0)");
+                    g.set_sensitive(false);
+                }
             });
         }
         let v = self.clone();
         let d = dlg.clone();
         go.connect_clicked(move |_| {
-            let sel = items.iter().zip(checks.iter())
-                .filter(|(_, b)| b.is_active()).map(|(it, _)| it.clone()).collect::<Vec<_>>();
+            let sel = items
+                .iter()
+                .zip(checks.iter())
+                .filter(|(_, b)| b.is_active())
+                .map(|(it, _)| it.clone())
+                .collect::<Vec<_>>();
             d.close();
             v.run_updates(sel);
         });
@@ -3857,7 +4519,7 @@ impl MinecraftView {
 
     /// I run updates in the background with a progress view: bar + "X of N"
     /// + current mod + per-mod result. Canceling stops pending items without
-    /// touching the in-flight mod (I rely on atomic replace in the plugin).
+    ///   touching the in-flight mod (I rely on atomic replace in the plugin).
     fn run_updates(&self, items: Vec<PendingUpdate>) {
         if items.is_empty() {
             return;
@@ -3916,24 +4578,36 @@ impl MinecraftView {
         let (tx, rx) = std::sync::mpsc::channel::<UpdEv>();
         let total = items.len();
         // I resolve one title per file for progress (live rows + selected).
-        let mut titles: std::collections::HashMap<String, String> =
-            self.load_addon_rows().into_iter().map(|r| (r.file, r.title)).collect();
+        let mut titles: std::collections::HashMap<String, String> = self
+            .load_addon_rows()
+            .into_iter()
+            .map(|r| (r.file, r.title))
+            .collect();
         for it in &items {
-            titles.entry(it.file.clone()).or_insert_with(|| it.title.clone());
+            titles
+                .entry(it.file.clone())
+                .or_insert_with(|| it.title.clone());
         }
         std::thread::spawn(move || {
             for (idx, it) in items.iter().enumerate() {
                 if cancel_flag.load(std::sync::atomic::Ordering::SeqCst) {
                     break;
                 }
-                let _ = tx.send(UpdEv::Start { idx, file: it.file.clone() });
+                let _ = tx.send(UpdEv::Start {
+                    idx,
+                    file: it.file.clone(),
+                });
                 // I always let the in-flight mod finish (atomic in the plugin);
                 // canceling just stops me from picking up more pending ones.
                 let (ok, msg) = match MinecraftManager::mod_update(&it.file, &at, &mdir) {
                     Ok(_) => (true, String::new()),
                     Err(e) => (false, e),
                 };
-                let _ = tx.send(UpdEv::Done { file: it.file.clone(), ok, msg });
+                let _ = tx.send(UpdEv::Done {
+                    file: it.file.clone(),
+                    ok,
+                    msg,
+                });
             }
             let _ = tx.send(UpdEv::End);
         });
@@ -3967,7 +4641,10 @@ impl MinecraftView {
             Ok(UpdEv::End) => {
                 let (ok_n, fail_n) = *counts.borrow();
                 let skipped = total - ok_n - fail_n;
-                status.set_text(&format!("Done: {} updated, {} failed, {} skipped.", ok_n, fail_n, skipped));
+                status.set_text(&format!(
+                    "Done: {} updated, {} failed, {} skipped.",
+                    ok_n, fail_n, skipped
+                ));
                 bar.set_fraction(1.0);
                 bar.set_text(Some(&format!("{} of {}", total, total)));
                 done_flag.set(true);
@@ -3991,7 +4668,11 @@ impl MinecraftView {
         };
         let (mdir, _mc, _loader, _at) = ctx;
         self.addons_count.set_text("Matching metadata…");
-        let all_types = ["mods".to_string(), "resourcepacks".to_string(), "shaders".to_string()];
+        let all_types = [
+            "mods".to_string(),
+            "resourcepacks".to_string(),
+            "shaders".to_string(),
+        ];
         let (tx, rx) = std::sync::mpsc::channel::<bool>();
         std::thread::spawn(move || {
             for at in &all_types {
@@ -4026,10 +4707,15 @@ impl MinecraftView {
             return;
         };
         self.ov_mc.set_text(&inst.mc_ver);
-        let loader_txt = if inst.loader == "vanilla" { "Vanilla".to_string() } else { format!("{} {}", inst.loader, inst.loader_ver) };
+        let loader_txt = if inst.loader == "vanilla" {
+            "Vanilla".to_string()
+        } else {
+            format!("{} {}", inst.loader, inst.loader_ver)
+        };
         self.ov_loader.set_text(&loader_txt);
         self.ov_addons.set_text(&format!("{}", self.count_addons()));
-        self.ov_played.set_text(&crate::ui::helpers::format_playtime(inst.secs));
+        self.ov_played
+            .set_text(&crate::ui::helpers::format_playtime(inst.secs));
     }
 
     // ============ logs tab ============
@@ -4057,19 +4743,33 @@ impl MinecraftView {
             Some(p) => {
                 let text = std::fs::read_to_string(&p).unwrap_or_default();
                 let lines: Vec<&str> = text.lines().collect();
-                let tail = if lines.len() > 400 { &lines[lines.len() - 400..] } else { &lines[..] };
-                let kept: Vec<&str> = tail.iter().copied().filter(|l| {
-                    let t = l.trim_start();
-                    !(t.starts_with("# cmd:") && l.len() > 300)
-                }).collect();
+                let tail = if lines.len() > 400 {
+                    &lines[lines.len() - 400..]
+                } else {
+                    &lines[..]
+                };
+                let kept: Vec<&str> = tail
+                    .iter()
+                    .copied()
+                    .filter(|l| {
+                        let t = l.trim_start();
+                        !(t.starts_with("# cmd:") && l.len() > 300)
+                    })
+                    .collect();
                 self.logs_view.buffer().set_text(&kept.join("\n"));
-                self.log_lbl.set_text(&format!("Showing: {}", p.file_name().and_then(|s| s.to_str()).unwrap_or("log")));
+                self.log_lbl.set_text(&format!(
+                    "Showing: {}",
+                    p.file_name().and_then(|s| s.to_str()).unwrap_or("log")
+                ));
                 let buf = self.logs_view.buffer();
                 let mut end = buf.end_iter();
-                self.logs_view.scroll_to_iter(&mut end, 0.0, false, 0.0, 0.0);
+                self.logs_view
+                    .scroll_to_iter(&mut end, 0.0, false, 0.0, 0.0);
             }
             None => {
-                self.logs_view.buffer().set_text("No Minecraft logs yet — launch an instance first.");
+                self.logs_view
+                    .buffer()
+                    .set_text("No Minecraft logs yet — launch an instance first.");
                 self.log_lbl.set_text("");
             }
         }
@@ -4104,7 +4804,11 @@ impl MinecraftView {
         let add_ids = ["custom", "modpack", "import"];
         let add_labels = ["Custom", "Modpack", "Import"];
         let mut add_btns: Vec<gtk::ToggleButton> = Vec::new();
-        let add_icons = ["applications-engineering-symbolic", "package-x-generic-symbolic", "corkytux-document-open-symbolic"];
+        let add_icons = [
+            "applications-engineering-symbolic",
+            "package-x-generic-symbolic",
+            "corkytux-document-open-symbolic",
+        ];
         for ((label, id), tab_icon) in add_labels.iter().zip(add_ids.iter()).zip(add_icons.iter()) {
             let btn = gtk::ToggleButton::new();
             btn.add_css_class("seg");
@@ -4144,7 +4848,13 @@ impl MinecraftView {
         ver_group.add_css_class("page-card");
         custom_page.append(&ver_group);
         ver_group.append(&note("Minecraft version"));
-        let avail: Vec<String> = self.data.borrow().versions.iter().map(|(id, _)| id.clone()).collect();
+        let avail: Vec<String> = self
+            .data
+            .borrow()
+            .versions
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect();
         let ver_store = gtk::StringList::new(&[] as &[&str]);
         let refs: Vec<&str> = avail.iter().map(|s| s.as_str()).collect();
         ver_store.splice(0, 0, &refs);
@@ -4166,8 +4876,10 @@ impl MinecraftView {
         ver_group.append(&filt_row);
 
         custom_page.append(&note("Modloader (auto-detected for this version)"));
-        let loader_ids: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(vec!["vanilla".to_string()]));
-        let loader_vers: Rc<RefCell<HashMap<String, Vec<String>>>> = Rc::new(RefCell::new(HashMap::new()));
+        let loader_ids: Rc<RefCell<Vec<String>>> =
+            Rc::new(RefCell::new(vec!["vanilla".to_string()]));
+        let loader_vers: Rc<RefCell<HashMap<String, Vec<String>>>> =
+            Rc::new(RefCell::new(HashMap::new()));
         let loader_store = gtk::StringList::new(&["Vanilla"]);
         let loader_drop = gtk::DropDown::new(Some(loader_store.clone()), gtk::Expression::NONE);
         // Vanilla is not selectable until the loader probe confirms support
@@ -4183,7 +4895,9 @@ impl MinecraftView {
         lv_wrap.set_visible(false);
         custom_page.append(&lv_wrap);
 
-        pack_page.append(&note("Modpacks — version, mods and configs install as a new isolated instance."));
+        pack_page.append(&note(
+            "Modpacks — version, mods and configs install as a new isolated instance.",
+        ));
         let pack_search_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let pack_q = gtk::SearchEntry::new();
         pack_q.set_placeholder_text(Some("Search modpacks…"));
@@ -4205,7 +4919,9 @@ impl MinecraftView {
         pack_scroll.set_max_content_height(440);
         pack_scroll.set_child(Some(&pack_results));
         pack_page.append(&pack_scroll);
-        import_page.append(&note("Import a Modrinth .mrpack (or compatible zip) from disk."));
+        import_page.append(&note(
+            "Import a Modrinth .mrpack (or compatible zip) from disk.",
+        ));
         let import_pick = btn_with_icon("corkytux-folder-symbolic", "Choose .mrpack file…");
         import_pick.add_css_class("settings-btn");
         import_page.append(&import_pick);
@@ -4225,7 +4941,9 @@ impl MinecraftView {
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
-            x_btn.connect_clicked(move |_| { d.close(); });
+            x_btn.connect_clicked(move |_| {
+                d.close();
+            });
         }
         // auto name: refreshes while the user hasn't typed their own
         // (a stale auto value like "Vanilla X" is replaced, manual text kept)
@@ -4242,9 +4960,18 @@ impl MinecraftView {
                 if !cur.trim().is_empty() && cur != *last_auto.borrow() {
                     return;
                 }
-                let ver = avail.get(ver_drop.selected() as usize).cloned().unwrap_or_default();
-                let loader = loader_ids.borrow().get(loader_drop.selected() as usize).cloned().unwrap_or("vanilla".to_string());
-                let disp = if loader == "vanilla" { "Vanilla".to_string() } else {
+                let ver = avail
+                    .get(ver_drop.selected() as usize)
+                    .cloned()
+                    .unwrap_or_default();
+                let loader = loader_ids
+                    .borrow()
+                    .get(loader_drop.selected() as usize)
+                    .cloned()
+                    .unwrap_or("vanilla".to_string());
+                let disp = if loader == "vanilla" {
+                    "Vanilla".to_string()
+                } else {
                     let mut s = loader.clone();
                     s[..1].make_ascii_uppercase();
                     s
@@ -4260,13 +4987,21 @@ impl MinecraftView {
             let req2 = add_java_req.clone();
             ver_drop.connect_selected_notify(move |d| {
                 u();
-                let ver = avail2.get(d.selected() as usize).cloned().unwrap_or_default();
+                let ver = avail2
+                    .get(d.selected() as usize)
+                    .cloned()
+                    .unwrap_or_default();
                 req2.set_text(&java_range_text(&ver));
             });
         }
         {
             let avail3 = avail.clone();
-            add_java_req.set_text(&java_range_text(&avail3.get(ver_drop.selected() as usize).cloned().unwrap_or_default()));
+            add_java_req.set_text(&java_range_text(
+                &avail3
+                    .get(ver_drop.selected() as usize)
+                    .cloned()
+                    .unwrap_or_default(),
+            ));
         }
         {
             let u = update_name.clone();
@@ -4276,7 +5011,11 @@ impl MinecraftView {
             let lv_wrap_c = lv_wrap.clone();
             loader_drop.connect_selected_notify(move |d| {
                 u();
-                let loader = ids.borrow().get(d.selected() as usize).cloned().unwrap_or("vanilla".to_string());
+                let loader = ids
+                    .borrow()
+                    .get(d.selected() as usize)
+                    .cloned()
+                    .unwrap_or("vanilla".to_string());
                 lv_wrap_c.set_visible(loader != "vanilla");
                 lv_store_c.splice(0, lv_store_c.n_items(), &[] as &[&str]);
                 lv_store_c.append("latest");
@@ -4323,7 +5062,9 @@ impl MinecraftView {
                     let (ids, names, vers) = probe_rows(probe);
                     // never clobber the user's pick: keep current loader if
                     // still supported, else last-used, else vanilla
-                    let keep = ids.iter().position(|x| x == prev_loader)
+                    let keep = ids
+                        .iter()
+                        .position(|x| x == prev_loader)
                         .or_else(|| ids.iter().position(|x| x == &last_loader))
                         .unwrap_or(0);
                     let keep_vers: Vec<String> = vers.get(&ids[keep]).cloned().unwrap_or_default();
@@ -4356,12 +5097,19 @@ impl MinecraftView {
             };
             let do_probe = Rc::new(RefCell::new(Box::new(move || {}) as Box<dyn Fn()>));
             *do_probe.borrow_mut() = Box::new(move || {
-                let ver = avail_c.get(ver_drop_c.selected() as usize).cloned().unwrap_or_default();
+                let ver = avail_c
+                    .get(ver_drop_c.selected() as usize)
+                    .cloned()
+                    .unwrap_or_default();
                 if ver.is_empty() {
                     loader_drop_c.set_sensitive(true);
                     return;
                 }
-                let prev_loader = loader_ids_c.borrow().get(loader_drop_c.selected() as usize).cloned().unwrap_or("vanilla".to_string());
+                let prev_loader = loader_ids_c
+                    .borrow()
+                    .get(loader_drop_c.selected() as usize)
+                    .cloned()
+                    .unwrap_or("vanilla".to_string());
                 // session cache: a version probed before spawns no subprocess;
                 // the java note is reapplied too, so switching back to a
                 // cached version never shows a stale requirement
@@ -4383,12 +5131,16 @@ impl MinecraftView {
                 let ver_s = ver.clone();
                 let ver_t = ver_s.clone();
                 std::thread::spawn(move || {
-                    let res = match MinecraftManager::loader_versions_batch(&ver_t, &["fabric", "forge", "neoforge", "quilt"]) {
+                    let res = match MinecraftManager::loader_versions_batch(
+                        &ver_t,
+                        &["fabric", "forge", "neoforge", "quilt"],
+                    ) {
                         Ok(doc) => parse_loader_probe(&doc),
                         Err(e) => Err(e),
                     };
                     let _ = tx.send(ProbeMsg::Loaders(res));
-                    let java = MinecraftManager::manifest_java(&ver_t).ok()
+                    let java = MinecraftManager::manifest_java(&ver_t)
+                        .ok()
                         .and_then(|d| d.get("required_java").and_then(|x| x.as_u64()));
                     let _ = tx.send(ProbeMsg::Java(java));
                 });
@@ -4419,29 +5171,45 @@ impl MinecraftView {
                                         apply_b(&probe, &prev_b);
                                     }
                                     Err(e) => {
-                                        let state = ProbeState::Failed(format!("Modloader probe failed: {}", e));
+                                        let state = ProbeState::Failed(format!(
+                                            "Modloader probe failed: {}",
+                                            e
+                                        ));
                                         status_b.set_text(&probe_status_text(&state));
                                         loader_drop_b.set_sensitive(probe_ready(&state));
                                     }
                                 }
                             }
-                            if got_java { glib::ControlFlow::Break } else { glib::ControlFlow::Continue }
+                            if got_java {
+                                glib::ControlFlow::Break
+                            } else {
+                                glib::ControlFlow::Continue
+                            }
                         }
                         Ok(ProbeMsg::Java(java)) => {
                             got_java = true;
                             if still {
                                 if let Some(j) = java {
-                                    cache_b.borrow_mut().entry(ver_s.clone()).or_default().java = Some(j);
-                                    req_b.set_text(&format!("Needs Java {} (auto-selected on launch).", j));
+                                    cache_b.borrow_mut().entry(ver_s.clone()).or_default().java =
+                                        Some(j);
+                                    req_b.set_text(&format!(
+                                        "Needs Java {} (auto-selected on launch).",
+                                        j
+                                    ));
                                 }
                             }
-                            if got_loaders { glib::ControlFlow::Break } else { glib::ControlFlow::Continue }
+                            if got_loaders {
+                                glib::ControlFlow::Break
+                            } else {
+                                glib::ControlFlow::Continue
+                            }
                         }
                         Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
                         Err(_) => {
                             // the probe thread died before answering
                             if !got_loaders {
-                                let state = ProbeState::Failed("Modloader probe crashed".to_string());
+                                let state =
+                                    ProbeState::Failed("Modloader probe crashed".to_string());
                                 status_b.set_text(&probe_status_text(&state));
                                 loader_drop_b.set_sensitive(probe_ready(&state));
                             }
@@ -4475,30 +5243,86 @@ impl MinecraftView {
                     while let Some(c) = results_c.first_child() {
                         results_c.remove(&c);
                     }
-                    results_c.append(&note(if is_cf { "Searching CurseForge…" } else { "Searching Modrinth…" }));
+                    results_c.append(&note(if is_cf {
+                        "Searching CurseForge…"
+                    } else {
+                        "Searching Modrinth…"
+                    }));
                     let query = q_c.text().to_string();
-                    let (tx, rx) = std::sync::mpsc::channel::<Result<Vec<(String, String, String, String, String)>, String>>();
+                    let (tx, rx) = std::sync::mpsc::channel::<
+                        Result<Vec<(String, String, String, String, String)>, String>,
+                    >();
                     std::thread::spawn(move || {
                         let _ = tx.send(if is_cf {
-                            MinecraftManager::cf_search(&query, "modpack", "", "", 20).map(|doc| {
-                                doc.get("hits").and_then(|x| x.as_array()).cloned().unwrap_or_default().into_iter().map(|h| (
-                                    h.get("mod_id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                    h.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                    h.get("author").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                    h.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                    h.get("icon_url").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                )).collect::<Vec<_>>()
-                            }).map_err(|e| e.to_string())
+                            MinecraftManager::cf_search(&query, "modpack", "", "", 20)
+                                .map(|doc| {
+                                    doc.get("hits")
+                                        .and_then(|x| x.as_array())
+                                        .cloned()
+                                        .unwrap_or_default()
+                                        .into_iter()
+                                        .map(|h| {
+                                            (
+                                                h.get("mod_id")
+                                                    .and_then(|x| x.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string(),
+                                                h.get("title")
+                                                    .and_then(|x| x.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string(),
+                                                h.get("author")
+                                                    .and_then(|x| x.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string(),
+                                                h.get("description")
+                                                    .and_then(|x| x.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string(),
+                                                h.get("icon_url")
+                                                    .and_then(|x| x.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string(),
+                                            )
+                                        })
+                                        .collect::<Vec<_>>()
+                                })
+                                .map_err(|e| e.to_string())
                         } else {
-                            MinecraftManager::mod_search(&query, "modpack", "", "", 20).map(|doc| {
-                                doc.get("hits").and_then(|x| x.as_array()).cloned().unwrap_or_default().into_iter().map(|h| (
-                                    h.get("project_id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                    h.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                    h.get("author").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                    h.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                    h.get("icon_url").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                )).collect::<Vec<_>>()
-                            }).map_err(|e| e.to_string())
+                            MinecraftManager::mod_search(&query, "modpack", "", "", 20)
+                                .map(|doc| {
+                                    doc.get("hits")
+                                        .and_then(|x| x.as_array())
+                                        .cloned()
+                                        .unwrap_or_default()
+                                        .into_iter()
+                                        .map(|h| {
+                                            (
+                                                h.get("project_id")
+                                                    .and_then(|x| x.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string(),
+                                                h.get("title")
+                                                    .and_then(|x| x.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string(),
+                                                h.get("author")
+                                                    .and_then(|x| x.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string(),
+                                                h.get("description")
+                                                    .and_then(|x| x.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string(),
+                                                h.get("icon_url")
+                                                    .and_then(|x| x.as_str())
+                                                    .unwrap_or("")
+                                                    .to_string(),
+                                            )
+                                        })
+                                        .collect::<Vec<_>>()
+                                })
+                                .map_err(|e| e.to_string())
                         });
                     });
                     let vv = v.clone();
@@ -4523,19 +5347,23 @@ impl MinecraftView {
                                 }
                                 let mid = gtk::Box::new(gtk::Orientation::Vertical, 0);
                                 mid.set_hexpand(true);
-                                let tt = gtk::Label::new(Some(&format!("{}  ·  {}", title, author)));
+                                let tt =
+                                    gtk::Label::new(Some(&format!("{}  ·  {}", title, author)));
                                 tt.add_css_class("details-title");
                                 tt.set_halign(gtk::Align::Start);
                                 tt.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
                                 mid.append(&tt);
-                                let dd2 = gtk::Label::new(Some(&clean_md(&desc).lines().next().unwrap_or("").to_string()));
+                                let dd2 = gtk::Label::new(Some(
+                                    clean_md(&desc).lines().next().unwrap_or(""),
+                                ));
                                 dd2.set_halign(gtk::Align::Start);
                                 dd2.set_ellipsize(gtk::pango::EllipsizeMode::End);
 
                                 dd2.add_css_class("time-label");
                                 mid.append(&dd2);
                                 row.append(&mid);
-                                let ib = themed_btn("download", "Install", vv.state.theme.is_dark(), 14);
+                                let ib =
+                                    themed_btn("download", "Install", vv.state.theme.is_dark(), 14);
                                 ib.add_css_class("add-btn");
                                 ib.set_valign(gtk::Align::Center);
 
@@ -4569,12 +5397,18 @@ impl MinecraftView {
                                         let cb: Box<dyn Fn()> = Box::new(move || {
                                             vvw2.install_cf_modpack(&pidw2, "", &iconw2, &ddw2);
                                         });
-                                        vvw.show_cf_project_view(&pidw, Some(("Install".to_string(), cb)));
+                                        vvw.show_cf_project_view(
+                                            &pidw,
+                                            Some(("Install".to_string(), cb)),
+                                        );
                                     } else {
                                         let cb: Box<dyn Fn()> = Box::new(move || {
                                             vvw2.install_modpack(&pidw2, "", &ddw2);
                                         });
-                                        vvw.show_project_view(&pidw, Some(("Install".to_string(), cb)));
+                                        vvw.show_project_view(
+                                            &pidw,
+                                            Some(("Install".to_string(), cb)),
+                                        );
                                     }
                                 });
                                 row.append(&vwb);
@@ -4649,7 +5483,10 @@ impl MinecraftView {
                         Ok(f) => f,
                         Err(_) => return,
                     };
-                    let path = file.path().map(|x| x.display().to_string()).unwrap_or_default();
+                    let path = file
+                        .path()
+                        .map(|x| x.display().to_string())
+                        .unwrap_or_default();
                     if path.is_empty() {
                         return;
                     }
@@ -4666,14 +5503,26 @@ impl MinecraftView {
                 let all = snap_sw.is_active();
                 let (tx, rx) = std::sync::mpsc::channel::<Result<Vec<String>, String>>();
                 std::thread::spawn(move || {
-                    let _ = tx.send(MinecraftManager::versions(all).map(|doc| {
-                        doc.get("versions").and_then(|x| x.as_array()).cloned().unwrap_or_default()
-                            .into_iter().filter_map(|x| x.get("id").and_then(|i| i.as_str()).map(str::to_string)).collect::<Vec<_>>()
-                    }).map_err(|e| e.to_string()));
+                    let _ = tx.send(
+                        MinecraftManager::versions(all)
+                            .map(|doc| {
+                                doc.get("versions")
+                                    .and_then(|x| x.as_array())
+                                    .cloned()
+                                    .unwrap_or_default()
+                                    .into_iter()
+                                    .filter_map(|x| {
+                                        x.get("id").and_then(|i| i.as_str()).map(str::to_string)
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .map_err(|e| e.to_string()),
+                    );
                 });
                 glib::idle_add_local(move || match rx.try_recv() {
                     Ok(Ok(list)) => {
-                        v.data.borrow_mut().versions = list.into_iter().map(|id| (id, String::new())).collect();
+                        v.data.borrow_mut().versions =
+                            list.into_iter().map(|id| (id, String::new())).collect();
                         d.close();
                         v.show_add_instance();
                         glib::ControlFlow::Break
@@ -4724,7 +5573,7 @@ impl MinecraftView {
                     if loader2 != "vanilla" {
                         match MinecraftManager::loader_versions(&loader2, &mc2) {
                             Ok(doc) => {
-                                if doc.get("supported").and_then(|x| x.as_bool()).unwrap_or(false) != true {
+                                if !doc.get("supported").and_then(|x| x.as_bool()).unwrap_or(false) {
                                     let _ = tx2.send(Err(format!("{} has no builds for Minecraft {} — pick another loader.", loader2, mc2)));
                                     return;
                                 }
@@ -4858,10 +5707,12 @@ impl MinecraftView {
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
-            x_btn.connect_clicked(move |_| { d.close(); });
+            x_btn.connect_clicked(move |_| {
+                d.close();
+            });
         }
         {
-            let d = dlg.clone();
+            let _d = dlg.clone();
             let e = entry.clone();
             let s = status.clone();
             save.connect_clicked(move |_| {
@@ -4876,13 +5727,22 @@ impl MinecraftView {
                 s.set_text("Saving…");
                 let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
                 std::thread::spawn(move || {
-                    let saved = MinecraftManager::curse_save_key(&key).map(|_| ()).map_err(|e| e.to_string());
+                    let saved = MinecraftManager::curse_save_key(&key)
+                        .map(|_| ())
+                        .map_err(|e| e.to_string());
                     let msg = match saved {
                         Err(e) => Err(e),
                         Ok(_) => match MinecraftManager::curse_test() {
-                            Ok(doc) => Ok(format!("Saved. API OK ({}). Reopen Browse → CurseForge.",
-                                doc.get("game").and_then(|x| x.as_str()).unwrap_or("reachable"))),
-                            Err(e) => Err(format!("Saved, but API test failed: {}", e.lines().next().unwrap_or("").to_string())),
+                            Ok(doc) => Ok(format!(
+                                "Saved. API OK ({}). Reopen Browse → CurseForge.",
+                                doc.get("game")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("reachable")
+                            )),
+                            Err(e) => Err(format!(
+                                "Saved, but API test failed: {}",
+                                e.lines().next().unwrap_or("")
+                            )),
                         },
                     };
                     let _ = tx.send(msg);
@@ -4918,7 +5778,15 @@ impl MinecraftView {
         body.set_margin_start(16);
         body.set_margin_end(16);
         body.set_margin_bottom(16);
-        body.append(&note(&format!("For Minecraft {} • {}", mc, if loader == "vanilla" { "Vanilla".to_string() } else { loader.to_string() })));
+        body.append(&note(&format!(
+            "For Minecraft {} • {}",
+            mc,
+            if loader == "vanilla" {
+                "Vanilla".to_string()
+            } else {
+                loader.to_string()
+            }
+        )));
         let list = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_vexpand(true);
@@ -4930,23 +5798,55 @@ impl MinecraftView {
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
-            x_btn.connect_clicked(move |_| { d.close(); });
+            x_btn.connect_clicked(move |_| {
+                d.close();
+            });
         }
         list.append(&note("Loading versions…"));
-        let (tx, rx) = std::sync::mpsc::channel::<Result<Vec<(String, String, String, String)>, String>>();
+        let (tx, rx) =
+            std::sync::mpsc::channel::<Result<Vec<(String, String, String, String)>, String>>();
         let mid = mod_id.to_string();
         let mc_s = mc.to_string();
         let loader_s = loader.to_string();
         let kind_s = kind.to_string();
         std::thread::spawn(move || {
-            let _ = tx.send(MinecraftManager::cf_versions(&mid, &mc_s, &loader_s, &kind_s).map(|d| {
-                d.get("versions").and_then(|x| x.as_array()).cloned().unwrap_or_default().into_iter().map(|ver| (
-                    ver.get("version_id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    ver.get("version_number").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    ver.get("date").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    ver.get("game_versions").and_then(|x| x.as_array()).map(|a| a.iter().filter_map(|g| g.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default(),
-                )).collect::<Vec<_>>()
-            }).map_err(|e| e.to_string()));
+            let _ = tx.send(
+                MinecraftManager::cf_versions(&mid, &mc_s, &loader_s, &kind_s)
+                    .map(|d| {
+                        d.get("versions")
+                            .and_then(|x| x.as_array())
+                            .cloned()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|ver| {
+                                (
+                                    ver.get("version_id")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    ver.get("version_number")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    ver.get("date")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    ver.get("game_versions")
+                                        .and_then(|x| x.as_array())
+                                        .map(|a| {
+                                            a.iter()
+                                                .filter_map(|g| g.as_str())
+                                                .collect::<Vec<_>>()
+                                                .join(", ")
+                                        })
+                                        .unwrap_or_default(),
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .map_err(|e| e.to_string()),
+            );
         });
         let v = self.clone();
         let mid2 = mod_id.to_string();
@@ -4987,7 +5887,7 @@ impl MinecraftView {
                     let at = v.addons_type.borrow().clone();
                     let ttl = title2.clone();
                     ib.connect_clicked(move |_| {
-                        vv.install_cf_with_progress(&midc, &fid, &mc3, &ld3, &kind3, &at, &ttl);
+                        vv.install_cf_with_progress((&midc, &fid), &mc3, &ld3, &kind3, &at, &ttl);
                     });
                     row.append(&ib);
                     list.append(&row);
@@ -5025,7 +5925,9 @@ impl MinecraftView {
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
-            x_btn.connect_clicked(move |_| { d.close(); });
+            x_btn.connect_clicked(move |_| {
+                d.close();
+            });
         }
         let (tx, rx) = std::sync::mpsc::channel::<Result<serde_json::Value, String>>();
         let mid = mod_id.to_string();
@@ -5033,7 +5935,8 @@ impl MinecraftView {
             let _ = tx.send(MinecraftManager::cf_project(&mid).map_err(|e| e.to_string()));
         });
         let v = self.clone();
-        let install_slot: Rc<RefCell<Option<(String, Box<dyn Fn()>)>>> = Rc::new(RefCell::new(install));
+        type InstallSlot = Rc<RefCell<Option<(String, Box<dyn Fn()>)>>>;
+        let install_slot: InstallSlot = Rc::new(RefCell::new(install));
         glib::idle_add_local(move || match rx.try_recv() {
             Ok(Ok(doc)) => {
                 while let Some(c) = body.first_child() {
@@ -5043,7 +5946,11 @@ impl MinecraftView {
                 let title = pr.get("title").and_then(|x| x.as_str()).unwrap_or("?");
                 let desc = pr.get("description").and_then(|x| x.as_str()).unwrap_or("");
                 let icon = pr.get("icon_url").and_then(|x| x.as_str()).unwrap_or("");
-                let mid2 = pr.get("mod_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let mid2 = pr
+                    .get("mod_id")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let head = gtk::Box::new(gtk::Orientation::Horizontal, 10);
                 if !icon.is_empty() {
                     let img = gtk::Image::new();
@@ -5059,16 +5966,24 @@ impl MinecraftView {
                 tt.set_halign(gtk::Align::Start);
                 tt.add_css_class("details-title");
                 tbox.append(&tt);
-                let stats = gtk::Label::new(Some(&format!("{} downloads",
-                    pr.get("downloads").and_then(|x| x.as_u64()).unwrap_or(0))));
+                let stats = gtk::Label::new(Some(&format!(
+                    "{} downloads",
+                    pr.get("downloads").and_then(|x| x.as_u64()).unwrap_or(0)
+                )));
                 stats.set_halign(gtk::Align::Start);
 
                 stats.add_css_class("time-label");
                 tbox.append(&stats);
                 head.append(&tbox);
                 body.append(&head);
-                let gallery: Vec<String> = pr.get("gallery").and_then(|x| x.as_array()).cloned().unwrap_or_default()
-                    .into_iter().filter_map(|g| g.as_str().map(str::to_string)).collect();
+                let gallery: Vec<String> = pr
+                    .get("gallery")
+                    .and_then(|x| x.as_array())
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|g| g.as_str().map(str::to_string))
+                    .collect();
                 if let Some(first) = gallery.first() {
                     let gimg = gtk::Image::new();
                     gimg.set_pixel_size(320);
@@ -5119,7 +6034,15 @@ impl MinecraftView {
         body.set_margin_start(16);
         body.set_margin_end(16);
         body.set_margin_bottom(16);
-        body.append(&note(&format!("For Minecraft {} • {}", mc, if loader == "vanilla" { "Vanilla".to_string() } else { loader.to_string() })));
+        body.append(&note(&format!(
+            "For Minecraft {} • {}",
+            mc,
+            if loader == "vanilla" {
+                "Vanilla".to_string()
+            } else {
+                loader.to_string()
+            }
+        )));
         let list = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_vexpand(true);
@@ -5131,22 +6054,54 @@ impl MinecraftView {
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
-            x_btn.connect_clicked(move |_| { d.close(); });
+            x_btn.connect_clicked(move |_| {
+                d.close();
+            });
         }
         list.append(&note("Loading versions…"));
-        let (tx, rx) = std::sync::mpsc::channel::<Result<Vec<(String, String, String, String)>, String>>();
+        let (tx, rx) =
+            std::sync::mpsc::channel::<Result<Vec<(String, String, String, String)>, String>>();
         let pid = project_id.to_string();
         let mc_s = mc.to_string();
         let loader_s = loader.to_string();
         std::thread::spawn(move || {
-            let _ = tx.send(MinecraftManager::mod_versions(&pid, &mc_s, &loader_s, &ptype).map(|d| {
-                d.get("versions").and_then(|x| x.as_array()).cloned().unwrap_or_default().into_iter().map(|ver| (
-                    ver.get("version_id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    ver.get("version_number").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    ver.get("date").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    ver.get("game_versions").and_then(|x| x.as_array()).map(|a| a.iter().filter_map(|g| g.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default(),
-                )).collect::<Vec<_>>()
-            }).map_err(|e| e.to_string()));
+            let _ = tx.send(
+                MinecraftManager::mod_versions(&pid, &mc_s, &loader_s, &ptype)
+                    .map(|d| {
+                        d.get("versions")
+                            .and_then(|x| x.as_array())
+                            .cloned()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|ver| {
+                                (
+                                    ver.get("version_id")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    ver.get("version_number")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    ver.get("date")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    ver.get("game_versions")
+                                        .and_then(|x| x.as_array())
+                                        .map(|a| {
+                                            a.iter()
+                                                .filter_map(|g| g.as_str())
+                                                .collect::<Vec<_>>()
+                                                .join(", ")
+                                        })
+                                        .unwrap_or_default(),
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .map_err(|e| e.to_string()),
+            );
         });
         let v = self.clone();
         let pid2 = project_id.to_string();
@@ -5167,7 +6122,11 @@ impl MinecraftView {
                     let t = gtk::Label::new(Some(&vnum));
                     t.set_halign(gtk::Align::Start);
                     mid.append(&t);
-                    let sub = gtk::Label::new(Some(&format!("{}  •  {}", &date[..10.min(date.len())], games)));
+                    let sub = gtk::Label::new(Some(&format!(
+                        "{}  •  {}",
+                        &date[..10.min(date.len())],
+                        games
+                    )));
                     sub.set_halign(gtk::Align::Start);
 
                     sub.add_css_class("time-label");
@@ -5203,11 +6162,22 @@ impl MinecraftView {
     }
 
     fn staging_dir() -> std::path::PathBuf {
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         instances_root().join(format!(".staging-{}-{}", std::process::id(), now))
     }
 
-    fn match_then_finish(&self, staging: &std::path::Path, launch_version: &str, title: &str, project_id: &str, icon_url: &str, dlg: Option<&adw::Dialog>) {
+    fn match_then_finish(
+        &self,
+        staging: &std::path::Path,
+        launch_version: &str,
+        title: &str,
+        project_id: &str,
+        icon_url: &str,
+        dlg: Option<&adw::Dialog>,
+    ) {
         // identify pack-provided jars so addon rows show real icons/titles
         let staging_owned = staging.to_path_buf();
         let dir = staging_owned.display().to_string();
@@ -5218,46 +6188,72 @@ impl MinecraftView {
         self.lib_status.set_text("Matching addon metadata…");
         let rx = MinecraftManager::spawn_mod_match("mods".to_string(), dir.clone());
         let v = self.clone();
-        let dd: Option<adw::Dialog> = dlg.map(|d| d.clone());
-        crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
-            match ev {
-                crate::backend::plugin_process::PluginEvent::Done(_) => {
-                    let rx2 = MinecraftManager::spawn_mod_match("resourcepacks".to_string(), dir.clone());
-                    let (v2, dd2, vid2, ttl2, dir2, pid2, ico2) = (v.clone(), dd.clone(), vid.clone(), ttl.clone(), dir.clone(), pid.clone(), ico.clone());
-                    crate::backend::plugin_process::pump_to_idle(rx2, move |ev2| {
-                        match ev2 {
+        let dd: Option<adw::Dialog> = dlg.cloned();
+        crate::backend::plugin_process::pump_to_idle(rx, move |ev| match ev {
+            crate::backend::plugin_process::PluginEvent::Done(_) => {
+                let rx2 =
+                    MinecraftManager::spawn_mod_match("resourcepacks".to_string(), dir.clone());
+                let (v2, dd2, vid2, ttl2, dir2, pid2, ico2) = (
+                    v.clone(),
+                    dd.clone(),
+                    vid.clone(),
+                    ttl.clone(),
+                    dir.clone(),
+                    pid.clone(),
+                    ico.clone(),
+                );
+                crate::backend::plugin_process::pump_to_idle(rx2, move |ev2| match ev2 {
+                    crate::backend::plugin_process::PluginEvent::Done(_) => {
+                        let (vid3, ttl3, dir3, pid3, ico3) = (
+                            vid2.clone(),
+                            ttl2.clone(),
+                            dir2.clone(),
+                            pid2.clone(),
+                            ico2.clone(),
+                        );
+                        let rx3 =
+                            MinecraftManager::spawn_mod_match("shaders".to_string(), dir3.clone());
+                        let v3 = v2.clone();
+                        let dd3 = dd2.clone();
+                        crate::backend::plugin_process::pump_to_idle(rx3, move |ev3| match ev3 {
                             crate::backend::plugin_process::PluginEvent::Done(_) => {
-                                let (vid3, ttl3, dir3, pid3, ico3) = (vid2.clone(), ttl2.clone(), dir2.clone(), pid2.clone(), ico2.clone());
-                                let rx3 = MinecraftManager::spawn_mod_match("shaders".to_string(), dir3.clone());
-                                let v3 = v2.clone();
-                                let dd3 = dd2.clone();
-                                crate::backend::plugin_process::pump_to_idle(rx3, move |ev3| {
-                                    match ev3 {
-                                        crate::backend::plugin_process::PluginEvent::Done(_) => {
-                                            v3.finish_staging(std::path::Path::new(&dir3), &vid3, &ttl3, &pid3, &ico3, dd3.as_ref());
-                                            false
-                                        }
-                                        _ => true,
-                                    }
-                                });
+                                v3.finish_staging(
+                                    std::path::Path::new(&dir3),
+                                    &vid3,
+                                    &ttl3,
+                                    &pid3,
+                                    &ico3,
+                                    dd3.as_ref(),
+                                );
                                 false
                             }
                             _ => true,
-                        }
-                    });
-                    false
-                }
-                crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
-                    v.lib_status.set_text(&format!("Match failed (continuing): {}", message));
-                    v.finish_staging(&staging_owned, &vid, &ttl, &pid, &ico, dd.as_ref());
-                    false
-                }
-                _ => true,
+                        });
+                        false
+                    }
+                    _ => true,
+                });
+                false
             }
+            crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
+                v.lib_status
+                    .set_text(&format!("Match failed (continuing): {}", message));
+                v.finish_staging(&staging_owned, &vid, &ttl, &pid, &ico, dd.as_ref());
+                false
+            }
+            _ => true,
         });
     }
 
-    fn finish_staging(&self, staging: &std::path::Path, launch_version: &str, title: &str, project_id: &str, icon_url: &str, dlg: Option<&adw::Dialog>) {
+    fn finish_staging(
+        &self,
+        staging: &std::path::Path,
+        launch_version: &str,
+        title: &str,
+        project_id: &str,
+        icon_url: &str,
+        dlg: Option<&adw::Dialog>,
+    ) {
         let target = instances_root().join(safe_id(launch_version));
         if target.exists() {
             std::fs::remove_dir_all(&target).ok();
@@ -5279,8 +6275,14 @@ impl MinecraftView {
             let (tx, rx) = std::sync::mpsc::channel::<Option<(String, String)>>();
             std::thread::spawn(move || {
                 let icon_url = if direct.is_empty() {
-                    MinecraftManager::mod_project(&pid).ok()
-                        .and_then(|d| d.get("project").and_then(|p| p.get("icon_url")).and_then(|x| x.as_str()).map(str::to_string))
+                    MinecraftManager::mod_project(&pid)
+                        .ok()
+                        .and_then(|d| {
+                            d.get("project")
+                                .and_then(|p| p.get("icon_url"))
+                                .and_then(|x| x.as_str())
+                                .map(str::to_string)
+                        })
                         .unwrap_or_default()
                 } else {
                     direct
@@ -5316,20 +6318,37 @@ impl MinecraftView {
         let (bar, status) = self.show_progress("Installing modpack");
         let pid0 = project_id.to_string();
         let rx = MinecraftManager::spawn_modpack_install(
-            project_id.to_string(), version_id.to_string(), staging.display().to_string());
+            project_id.to_string(),
+            version_id.to_string(),
+            staging.display().to_string(),
+        );
         let v = self.clone();
         let dd = dlg.clone();
         crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
             match ev {
-                crate::backend::plugin_process::PluginEvent::Progress { stage, percent, .. } => {
+                crate::backend::plugin_process::PluginEvent::Progress {
+                    stage, percent, ..
+                } => {
                     Self::drive_progress(&bar, &status, stage, percent, "Installing modpack");
-                    v.lib_status.set_text(&status.text().to_string());
+                    v.lib_status.set_text(status.text().as_ref());
                     true
                 }
                 crate::backend::plugin_process::PluginEvent::Done(val) => {
-                    let vid = val.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    let title = val.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    let pid = val.get("project_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let vid = val
+                        .get("version")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let title = val
+                        .get("title")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let pid = val
+                        .get("project_id")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     let pid = if pid.is_empty() { pid0.clone() } else { pid };
                     if vid.is_empty() {
                         status.set_text("Install failed: no launch version reported.");
@@ -5363,20 +6382,33 @@ impl MinecraftView {
         self.lib_status.set_text("Installing modpack (CurseForge)…");
         let (bar, status) = self.show_progress("Installing modpack (CurseForge)");
         let rx = MinecraftManager::spawn_cf_modpack_install(
-            pack_id.to_string(), file_id.to_string(), staging.display().to_string());
+            pack_id.to_string(),
+            file_id.to_string(),
+            staging.display().to_string(),
+        );
         let v = self.clone();
         let dd = dlg.clone();
         let ico = icon_url.to_string();
         crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
             match ev {
-                crate::backend::plugin_process::PluginEvent::Progress { stage, percent, .. } => {
+                crate::backend::plugin_process::PluginEvent::Progress {
+                    stage, percent, ..
+                } => {
                     Self::drive_progress(&bar, &status, stage, percent, "Installing modpack");
-                    v.lib_status.set_text(&status.text().to_string());
+                    v.lib_status.set_text(status.text().as_ref());
                     true
                 }
                 crate::backend::plugin_process::PluginEvent::Done(val) => {
-                    let vid = val.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    let title = val.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let vid = val
+                        .get("version")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let title = val
+                        .get("title")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     if vid.is_empty() {
                         status.set_text("Install failed: no launch version reported.");
                         v.toast("Install failed", "No launch version reported.");
@@ -5408,41 +6440,49 @@ impl MinecraftView {
         std::fs::create_dir_all(&staging).ok();
         self.lib_status.set_text("Importing modpack…");
         let (bar, status) = self.show_progress("Importing modpack");
-        let rx = MinecraftManager::spawn_modpack_import(path.to_string(), staging.display().to_string());
+        let rx =
+            MinecraftManager::spawn_modpack_import(path.to_string(), staging.display().to_string());
         let v = self.clone();
         let dd = dlg.clone();
-        crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
-            match ev {
-                crate::backend::plugin_process::PluginEvent::Progress { stage, percent, .. } => {
-                    Self::drive_progress(&bar, &status, stage, percent, "Importing modpack");
-                    v.lib_status.set_text(&status.text().to_string());
-                    true
-                }
-                crate::backend::plugin_process::PluginEvent::Done(val) => {
-                    let vid = val.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    let title = val.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    if vid.is_empty() {
-                        status.set_text("Import failed: no launch version reported.");
-                        v.toast("Import failed", "No launch version reported.");
-                        std::fs::remove_dir_all(&staging).ok();
-                    } else {
-                        bar.set_fraction(1.0);
-                        status.set_text("Matching addon metadata…");
-                        v.match_then_finish(&staging, &vid, &title, "", "", Some(&dd));
-                    }
-                    false
-                }
-                crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
-                    bar.set_fraction(0.0);
-                    bar.set_text(Some("Failed"));
-                    status.set_text(&message);
-                    v.lib_status.set_text(&format!("Import failed: {}", message));
-                    v.toast("Import failed", &message);
-                    std::fs::remove_dir_all(&staging).ok();
-                    false
-                }
-                _ => true,
+        crate::backend::plugin_process::pump_to_idle(rx, move |ev| match ev {
+            crate::backend::plugin_process::PluginEvent::Progress { stage, percent, .. } => {
+                Self::drive_progress(&bar, &status, stage, percent, "Importing modpack");
+                v.lib_status.set_text(status.text().as_ref());
+                true
             }
+            crate::backend::plugin_process::PluginEvent::Done(val) => {
+                let vid = val
+                    .get("version")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let title = val
+                    .get("title")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if vid.is_empty() {
+                    status.set_text("Import failed: no launch version reported.");
+                    v.toast("Import failed", "No launch version reported.");
+                    std::fs::remove_dir_all(&staging).ok();
+                } else {
+                    bar.set_fraction(1.0);
+                    status.set_text("Matching addon metadata…");
+                    v.match_then_finish(&staging, &vid, &title, "", "", Some(&dd));
+                }
+                false
+            }
+            crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
+                bar.set_fraction(0.0);
+                bar.set_text(Some("Failed"));
+                status.set_text(&message);
+                v.lib_status
+                    .set_text(&format!("Import failed: {}", message));
+                v.toast("Import failed", &message);
+                std::fs::remove_dir_all(&staging).ok();
+                false
+            }
+            _ => true,
         });
     }
 
@@ -5472,24 +6512,43 @@ impl MinecraftView {
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
-            x_btn.connect_clicked(move |_| { d.close(); });
+            x_btn.connect_clicked(move |_| {
+                d.close();
+            });
         }
         {
             let d = dlg.clone();
-            hide.connect_clicked(move |_| { d.close(); });
+            hide.connect_clicked(move |_| {
+                d.close();
+            });
         }
         dlg.present(Some(&self.parent));
         (bar, status)
     }
 
-    fn drive_progress(bar: &gtk::ProgressBar, status: &gtk::Label, stage: Option<String>, percent: Option<f64>, prefix: &str) {
+    fn drive_progress(
+        bar: &gtk::ProgressBar,
+        status: &gtk::Label,
+        stage: Option<String>,
+        percent: Option<f64>,
+        prefix: &str,
+    ) {
         let st = stage.unwrap_or_default();
         match percent {
             Some(pc) => {
                 let frac = (pc / 100.0).clamp(0.0, 1.0);
                 bar.set_fraction(frac);
                 bar.set_text(Some(&format!("{}%", pc as u32)));
-                status.set_text(&format!("{}{} ({}%)", prefix, if st.is_empty() { String::new() } else { format!(" — {}", st) }, pc as u32));
+                status.set_text(&format!(
+                    "{}{} ({}%)",
+                    prefix,
+                    if st.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" — {}", st)
+                    },
+                    pc as u32
+                ));
             }
             None => {
                 bar.pulse();
@@ -5499,7 +6558,15 @@ impl MinecraftView {
         }
     }
 
-    fn install_addon_with_progress(&self, pid: &str, version_id: &str, mc: &str, ld: &str, at: &str, title: &str) {
+    fn install_addon_with_progress(
+        &self,
+        pid: &str,
+        version_id: &str,
+        mc: &str,
+        ld: &str,
+        at: &str,
+        title: &str,
+    ) {
         if ld == "vanilla" && at != "resourcepacks" {
             self.toast("No modloader", "This instance is Vanilla — create a Fabric/Forge/NeoForge/Quilt instance to use mods or shaders. Resource Packs work on Vanilla.");
             return;
@@ -5507,40 +6574,54 @@ impl MinecraftView {
         let (bar, status) = self.show_progress(&format!("Installing {}", title));
         let mdir = self.inst_base_dir().display().to_string();
         let rx = MinecraftManager::spawn_mod_install(
-            pid.to_string(), version_id.to_string(), mc.to_string(), ld.to_string(), at.to_string(), mdir);
+            pid.to_string(),
+            version_id.to_string(),
+            mc.to_string(),
+            ld.to_string(),
+            at.to_string(),
+            mdir,
+        );
         let v = self.clone();
-        crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
-            match ev {
-                crate::backend::plugin_process::PluginEvent::Progress { stage, percent, .. } => {
-                    Self::drive_progress(&bar, &status, stage, percent, "");
-                    v.lib_status.set_text(&status.text().to_string());
-                    true
-                }
-                crate::backend::plugin_process::PluginEvent::Done(val) => {
-                    let f = val.get("file").and_then(|x| x.as_str()).unwrap_or("");
-                    bar.set_fraction(1.0);
-                    bar.set_text(Some("Done"));
-                    status.set_text(&format!("Installed {}", f));
-                    v.lib_status.set_text(&format!("Installed {}", f));
-                    v.toast("Installed", f);
-                    v.render_addons();
-                    v.render_detail_cards();
-                    false
-                }
-                crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
-                    bar.set_fraction(0.0);
-                    bar.set_text(Some("Failed"));
-                    status.set_text(&message);
-                    v.lib_status.set_text(&format!("Install failed: {}", message));
-                    v.toast("Install failed", &message);
-                    false
-                }
-                _ => true,
+        crate::backend::plugin_process::pump_to_idle(rx, move |ev| match ev {
+            crate::backend::plugin_process::PluginEvent::Progress { stage, percent, .. } => {
+                Self::drive_progress(&bar, &status, stage, percent, "");
+                v.lib_status.set_text(status.text().as_ref());
+                true
             }
+            crate::backend::plugin_process::PluginEvent::Done(val) => {
+                let f = val.get("file").and_then(|x| x.as_str()).unwrap_or("");
+                bar.set_fraction(1.0);
+                bar.set_text(Some("Done"));
+                status.set_text(&format!("Installed {}", f));
+                v.lib_status.set_text(&format!("Installed {}", f));
+                v.toast("Installed", f);
+                v.render_addons();
+                v.render_detail_cards();
+                false
+            }
+            crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
+                bar.set_fraction(0.0);
+                bar.set_text(Some("Failed"));
+                status.set_text(&message);
+                v.lib_status
+                    .set_text(&format!("Install failed: {}", message));
+                v.toast("Install failed", &message);
+                false
+            }
+            _ => true,
         });
     }
 
-    fn install_cf_with_progress(&self, mod_id: &str, file_id: &str, mc: &str, ld: &str, kind: &str, at: &str, title: &str) {
+    fn install_cf_with_progress(
+        &self,
+        file: (&str, &str),
+        mc: &str,
+        ld: &str,
+        kind: &str,
+        at: &str,
+        title: &str,
+    ) {
+        let (mod_id, file_id) = file;
         if ld == "vanilla" && at != "resourcepacks" {
             self.toast("No modloader", "This instance is Vanilla — create a Fabric/Forge/NeoForge/Quilt instance to use mods or shaders. Resource Packs work on Vanilla.");
             return;
@@ -5548,40 +6629,54 @@ impl MinecraftView {
         let (bar, status) = self.show_progress(&format!("Installing {} (CurseForge)", title));
         let mdir = self.inst_base_dir().display().to_string();
         let rx = MinecraftManager::spawn_cf_install(
-            mod_id.to_string(), file_id.to_string(), mc.to_string(), ld.to_string(), kind.to_string(), at.to_string(), mdir);
+            mod_id.to_string(),
+            file_id.to_string(),
+            mc.to_string(),
+            ld.to_string(),
+            kind.to_string(),
+            at.to_string(),
+            mdir,
+        );
         let v = self.clone();
-        crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
-            match ev {
-                crate::backend::plugin_process::PluginEvent::Progress { stage, percent, .. } => {
-                    Self::drive_progress(&bar, &status, stage, percent, "");
-                    v.lib_status.set_text(&status.text().to_string());
-                    true
-                }
-                crate::backend::plugin_process::PluginEvent::Done(val) => {
-                    let f = val.get("file").and_then(|x| x.as_str()).unwrap_or("");
-                    bar.set_fraction(1.0);
-                    bar.set_text(Some("Done"));
-                    status.set_text(&format!("Installed {}", f));
-                    v.lib_status.set_text(&format!("Installed {}", f));
-                    v.toast("Installed", f);
-                    v.render_addons();
-                    v.render_detail_cards();
-                    false
-                }
-                crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
-                    bar.set_fraction(0.0);
-                    bar.set_text(Some("Failed"));
-                    status.set_text(&message);
-                    v.lib_status.set_text(&format!("Install failed: {}", message));
-                    v.toast("Install failed", &message);
-                    false
-                }
-                _ => true,
+        crate::backend::plugin_process::pump_to_idle(rx, move |ev| match ev {
+            crate::backend::plugin_process::PluginEvent::Progress { stage, percent, .. } => {
+                Self::drive_progress(&bar, &status, stage, percent, "");
+                v.lib_status.set_text(status.text().as_ref());
+                true
             }
+            crate::backend::plugin_process::PluginEvent::Done(val) => {
+                let f = val.get("file").and_then(|x| x.as_str()).unwrap_or("");
+                bar.set_fraction(1.0);
+                bar.set_text(Some("Done"));
+                status.set_text(&format!("Installed {}", f));
+                v.lib_status.set_text(&format!("Installed {}", f));
+                v.toast("Installed", f);
+                v.render_addons();
+                v.render_detail_cards();
+                false
+            }
+            crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
+                bar.set_fraction(0.0);
+                bar.set_text(Some("Failed"));
+                status.set_text(&message);
+                v.lib_status
+                    .set_text(&format!("Install failed: {}", message));
+                v.toast("Install failed", &message);
+                false
+            }
+            _ => true,
         });
     }
 
-    fn install_addon_queue(&self, items: Vec<(String, String)>, mc: &str, ld: &str, at: &str, source: &str, kind: &str) {
+    fn install_addon_queue(
+        &self,
+        items: Vec<(String, String)>,
+        mc: &str,
+        ld: &str,
+        at: &str,
+        source: &str,
+        kind: &str,
+    ) {
         if ld == "vanilla" && at != "resourcepacks" {
             self.toast("No modloader", "This instance is Vanilla — create a Fabric/Forge/NeoForge/Quilt instance to use mods or shaders. Resource Packs work on Vanilla.");
             return;
@@ -5599,7 +6694,8 @@ impl MinecraftView {
         let kind = kind.to_string();
         let queue: Rc<RefCell<Vec<(String, String)>>> = Rc::new(RefCell::new(items));
         let failed: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
-        let step: Rc<RefCell<Box<dyn Fn(usize)>>> = Rc::new(RefCell::new(Box::new(|_| {}) as Box<dyn Fn(usize)>));
+        type QueueStep = Rc<RefCell<Box<dyn Fn(usize)>>>;
+        let step: QueueStep = Rc::new(RefCell::new(Box::new(|_| {}) as Box<dyn Fn(usize)>));
         *step.borrow_mut() = {
             let queue = queue.clone();
             let failed = failed.clone();
@@ -5617,61 +6713,99 @@ impl MinecraftView {
                 let mdir = v.inst_base_dir().display().to_string();
                 let rx = if source == "curseforge" {
                     MinecraftManager::spawn_cf_install(
-                        pid, String::new(), mc.clone(), ld.clone(), kind.clone(), at.clone(), mdir)
+                        pid,
+                        String::new(),
+                        mc.clone(),
+                        ld.clone(),
+                        kind.clone(),
+                        at.clone(),
+                        mdir,
+                    )
                 } else {
                     MinecraftManager::spawn_mod_install(
-                        pid, String::new(), mc.clone(), ld.clone(), at.clone(), mdir)
+                        pid,
+                        String::new(),
+                        mc.clone(),
+                        ld.clone(),
+                        at.clone(),
+                        mdir,
+                    )
                 };
-                let (vv, barc, statusc, queuec, failedc, stepc) =
-                    (v.clone(), bar.clone(), status.clone(), queue.clone(), failed.clone(), step.clone());
-                crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
-                    match ev {
-                        crate::backend::plugin_process::PluginEvent::Progress { percent, .. } => {
-                            let frac = ((i as f64) + percent.unwrap_or(0.0) / 100.0) / (total as f64);
-                            barc.set_fraction(frac.clamp(0.0, 1.0));
-                            barc.set_text(Some(&format!("{}/{}", i + 1, total)));
-                            true
-                        }
-                        crate::backend::plugin_process::PluginEvent::Done(val) => {
-                            let f = val.get("file").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                            vv.lib_status.set_text(&format!("Installed {} ({}/{})", f, i + 1, total));
-                            if i + 1 >= total {
-                                barc.set_fraction(1.0);
-                                barc.set_text(Some("Done"));
-                                let fails = failedc.borrow().clone();
-                                if fails.is_empty() {
-                                    statusc.set_text(&format!("Installed {} item(s).", total));
-                                    vv.toast("Installed", &format!("{} item(s) installed.", total));
-                                } else {
-                                    statusc.set_text(&format!("Done with {} failure(s): {}", fails.len(), fails.join(", ")));
-                                    vv.toast("Installed with errors", &fails.join("\n"));
-                                }
-                                vv.render_addons();
-                                vv.render_detail_cards();
-                            } else {
-                                stepc.borrow()(i + 1);
-                            }
-                            let _ = queuec;
-                            false
-                        }
-                        crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
-                            let title = queuec.borrow().get(i).map(|(_, t)| t.clone()).unwrap_or_default();
-                            failedc.borrow_mut().push(format!("{}: {}", title, message.lines().next().unwrap_or("").to_string()));
-                            if i + 1 >= total {
-                                barc.set_fraction(1.0);
-                                barc.set_text(Some("Done"));
-                                let fails = failedc.borrow().clone();
-                                statusc.set_text(&format!("Done with {} failure(s): {}", fails.len(), fails.join(", ")));
-                                vv.toast("Installed with errors", &fails.join("\n"));
-                                vv.render_addons();
-                                vv.render_detail_cards();
-                            } else {
-                                stepc.borrow()(i + 1);
-                            }
-                            false
-                        }
-                        _ => true,
+                let (vv, barc, statusc, queuec, failedc, stepc) = (
+                    v.clone(),
+                    bar.clone(),
+                    status.clone(),
+                    queue.clone(),
+                    failed.clone(),
+                    step.clone(),
+                );
+                crate::backend::plugin_process::pump_to_idle(rx, move |ev| match ev {
+                    crate::backend::plugin_process::PluginEvent::Progress { percent, .. } => {
+                        let frac = ((i as f64) + percent.unwrap_or(0.0) / 100.0) / (total as f64);
+                        barc.set_fraction(frac.clamp(0.0, 1.0));
+                        barc.set_text(Some(&format!("{}/{}", i + 1, total)));
+                        true
                     }
+                    crate::backend::plugin_process::PluginEvent::Done(val) => {
+                        let f = val
+                            .get("file")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        vv.lib_status
+                            .set_text(&format!("Installed {} ({}/{})", f, i + 1, total));
+                        if i + 1 >= total {
+                            barc.set_fraction(1.0);
+                            barc.set_text(Some("Done"));
+                            let fails = failedc.borrow().clone();
+                            if fails.is_empty() {
+                                statusc.set_text(&format!("Installed {} item(s).", total));
+                                vv.toast("Installed", &format!("{} item(s) installed.", total));
+                            } else {
+                                statusc.set_text(&format!(
+                                    "Done with {} failure(s): {}",
+                                    fails.len(),
+                                    fails.join(", ")
+                                ));
+                                vv.toast("Installed with errors", &fails.join("\n"));
+                            }
+                            vv.render_addons();
+                            vv.render_detail_cards();
+                        } else {
+                            stepc.borrow()(i + 1);
+                        }
+                        let _ = queuec;
+                        false
+                    }
+                    crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
+                        let title = queuec
+                            .borrow()
+                            .get(i)
+                            .map(|(_, t)| t.clone())
+                            .unwrap_or_default();
+                        failedc.borrow_mut().push(format!(
+                            "{}: {}",
+                            title,
+                            message.lines().next().unwrap_or("")
+                        ));
+                        if i + 1 >= total {
+                            barc.set_fraction(1.0);
+                            barc.set_text(Some("Done"));
+                            let fails = failedc.borrow().clone();
+                            statusc.set_text(&format!(
+                                "Done with {} failure(s): {}",
+                                fails.len(),
+                                fails.join(", ")
+                            ));
+                            vv.toast("Installed with errors", &fails.join("\n"));
+                            vv.render_addons();
+                            vv.render_detail_cards();
+                        } else {
+                            stepc.borrow()(i + 1);
+                        }
+                        false
+                    }
+                    _ => true,
                 });
             })
         };
@@ -5700,7 +6834,9 @@ impl MinecraftView {
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
-            x_btn.connect_clicked(move |_| { d.close(); });
+            x_btn.connect_clicked(move |_| {
+                d.close();
+            });
         }
         let (tx, rx) = std::sync::mpsc::channel::<Result<serde_json::Value, String>>();
         let pid = project_id.to_string();
@@ -5708,7 +6844,8 @@ impl MinecraftView {
             let _ = tx.send(MinecraftManager::mod_project(&pid).map_err(|e| e.to_string()));
         });
         let v = self.clone();
-        let install_slot: Rc<RefCell<Option<(String, Box<dyn Fn()>)>>> = Rc::new(RefCell::new(install));
+        type InstallSlot = Rc<RefCell<Option<(String, Box<dyn Fn()>)>>>;
+        let install_slot: InstallSlot = Rc::new(RefCell::new(install));
         glib::idle_add_local(move || match rx.try_recv() {
             Ok(Ok(doc)) => {
                 while let Some(c) = body.first_child() {
@@ -5719,7 +6856,11 @@ impl MinecraftView {
                 let desc = pr.get("description").and_then(|x| x.as_str()).unwrap_or("");
                 let body_txt = pr.get("body").and_then(|x| x.as_str()).unwrap_or("");
                 let icon = pr.get("icon_url").and_then(|x| x.as_str()).unwrap_or("");
-                let pid2 = pr.get("project_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let pid2 = pr
+                    .get("project_id")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let head = gtk::Box::new(gtk::Orientation::Horizontal, 10);
                 if !icon.is_empty() {
                     let img = gtk::Image::new();
@@ -5735,9 +6876,11 @@ impl MinecraftView {
                 tt.set_halign(gtk::Align::Start);
                 tt.add_css_class("details-title");
                 tbox.append(&tt);
-                let stats = gtk::Label::new(Some(&format!("{} downloads • {} followers",
+                let stats = gtk::Label::new(Some(&format!(
+                    "{} downloads • {} followers",
                     pr.get("downloads").and_then(|x| x.as_u64()).unwrap_or(0),
-                    pr.get("followers").and_then(|x| x.as_u64()).unwrap_or(0))));
+                    pr.get("followers").and_then(|x| x.as_u64()).unwrap_or(0)
+                )));
                 stats.set_halign(gtk::Align::Start);
 
                 stats.add_css_class("time-label");
@@ -5745,8 +6888,14 @@ impl MinecraftView {
                 head.append(&tbox);
                 body.append(&head);
                 // gallery preview
-                let gallery: Vec<String> = pr.get("gallery").and_then(|x| x.as_array()).cloned().unwrap_or_default()
-                    .into_iter().filter_map(|g| g.as_str().map(str::to_string)).collect();
+                let gallery: Vec<String> = pr
+                    .get("gallery")
+                    .and_then(|x| x.as_array())
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|g| g.as_str().map(str::to_string))
+                    .collect();
                 if let Some(first) = gallery.first() {
                     let gimg = gtk::Image::new();
                     gimg.set_pixel_size(320);
@@ -5756,14 +6905,26 @@ impl MinecraftView {
                 }
                 // loader + version chips
                 let chips = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-                for c in pr.get("loaders").and_then(|x| x.as_array()).cloned().unwrap_or_default()
-                    .into_iter().filter_map(|x| x.as_str().map(str::to_string)) {
+                for c in pr
+                    .get("loaders")
+                    .and_then(|x| x.as_array())
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                {
                     let b = gtk::Label::new(Some(&c));
                     b.add_css_class("loader-tag");
                     chips.append(&b);
                 }
-                for g in pr.get("game_versions").and_then(|x| x.as_array()).cloned().unwrap_or_default()
-                    .into_iter().filter_map(|x| x.as_str().map(str::to_string)) {
+                for g in pr
+                    .get("game_versions")
+                    .and_then(|x| x.as_array())
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                {
                     let b = gtk::Label::new(Some(&g));
                     b.add_css_class("loader-tag");
                     chips.append(&b);
@@ -5791,9 +6952,9 @@ impl MinecraftView {
                     // follow the dialog theme reliably, keep body readable
                     // in light and dark.
                     let body_tag = gtk::TextTag::new(Some("body-text"));
-                    body_tag.set_foreground(Some(&v.state.theme.text_main()));
+                    body_tag.set_foreground(Some(v.state.theme.text_main()));
                     buf.tag_table().add(&body_tag);
-                    for seg in md_segments(&body_txt) {
+                    for seg in md_segments(body_txt) {
                         match seg {
                             MdSeg::Text(x) => {
                                 buf.insert_with_tags(&mut buf.end_iter(), &x, &[&body_tag]);
@@ -5824,7 +6985,11 @@ impl MinecraftView {
                         if g.current_button() != 1 {
                             return;
                         }
-                        let (ix, iy) = tv_c.window_to_buffer_coords(gtk::TextWindowType::Text, x as i32, y as i32);
+                        let (ix, iy) = tv_c.window_to_buffer_coords(
+                            gtk::TextWindowType::Text,
+                            x as i32,
+                            y as i32,
+                        );
                         let Some(iter) = tv_c.iter_at_location(ix, iy) else {
                             return;
                         };
@@ -5841,12 +7006,19 @@ impl MinecraftView {
                     let motion = gtk::EventControllerMotion::new();
                     let tv_m = tv.clone();
                     motion.connect_motion(move |_, x, y| {
-                        let (ix, iy) = tv_m.window_to_buffer_coords(gtk::TextWindowType::Text, x as i32, y as i32);
-                        let over = tv_m.iter_at_location(ix, iy).map(|iter| {
-                            iter.tags().iter().any(|tag| {
-                                tag.name().map(|n| n.starts_with("link::")).unwrap_or(false)
+                        let (ix, iy) = tv_m.window_to_buffer_coords(
+                            gtk::TextWindowType::Text,
+                            x as i32,
+                            y as i32,
+                        );
+                        let over = tv_m
+                            .iter_at_location(ix, iy)
+                            .map(|iter| {
+                                iter.tags().iter().any(|tag| {
+                                    tag.name().map(|n| n.starts_with("link::")).unwrap_or(false)
+                                })
                             })
-                        }).unwrap_or(false);
+                            .unwrap_or(false);
                         tv_m.set_cursor_from_name(if over { Some("pointer") } else { None });
                     });
                     tv.add_controller(motion);
@@ -5912,7 +7084,11 @@ impl MinecraftView {
         let src_store = gtk::StringList::new(&["Modrinth", "CurseForge"]);
         let src_drop = gtk::DropDown::new(Some(src_store), gtk::Expression::NONE);
         src_drop.set_tooltip_text(Some("Addon source"));
-        src_drop.set_selected(if self.cfg("McBrowseSrc") == "cf" { 1 } else { 0 });
+        src_drop.set_selected(if self.cfg("McBrowseSrc") == "cf" {
+            1
+        } else {
+            0
+        });
         search_row.append(&src_drop);
         let go = gtk::Button::with_label("Search");
         go.add_css_class("settings-btn");
@@ -5921,9 +7097,15 @@ impl MinecraftView {
         filter_bar.add_css_class("filter-bar");
         filter_bar.append(&search_row);
         body.append(&filter_bar);
-        let inst_loader_lbl = note(&format!("Instance: {} • {}",
+        let inst_loader_lbl = note(&format!(
+            "Instance: {} • {}",
             inst.mc_ver,
-            if inst.loader == "vanilla" { "Vanilla".to_string() } else { inst.loader.clone() }));
+            if inst.loader == "vanilla" {
+                "Vanilla".to_string()
+            } else {
+                inst.loader.clone()
+            }
+        ));
         body.append(&inst_loader_lbl);
         let vanilla_warn = note("Vanilla instances can't load mods or shaders — create a Fabric/Forge/NeoForge/Quilt instance, or browse Resource Packs.");
         vanilla_warn.set_visible(inst.loader == "vanilla");
@@ -5976,15 +7158,21 @@ impl MinecraftView {
         sel_btn.set_valign(gtk::Align::Center);
         sel_row.append(&sel_btn);
         body.append(&sel_row);
-        let sel_checks: Rc<RefCell<Vec<(String, String, gtk::CheckButton)>>> = Rc::new(RefCell::new(Vec::new()));
-        let refresh_sel: Rc<RefCell<Box<dyn Fn()>>> = Rc::new(RefCell::new(Box::new(|| {}) as Box<dyn Fn()>));
+        let sel_checks: Rc<RefCell<Vec<(String, String, gtk::CheckButton)>>> =
+            Rc::new(RefCell::new(Vec::new()));
+        let refresh_sel: Rc<RefCell<Box<dyn Fn()>>> =
+            Rc::new(RefCell::new(Box::new(|| {}) as Box<dyn Fn()>));
         *refresh_sel.borrow_mut() = {
             let checks = sel_checks.clone();
             let lbl = sel_count.clone();
             let btn = sel_btn.clone();
             let all = sel_all.clone();
             Box::new(move || {
-                let n = checks.borrow().iter().filter(|(_, _, c)| c.is_active()).count();
+                let n = checks
+                    .borrow()
+                    .iter()
+                    .filter(|(_, _, c)| c.is_active())
+                    .count();
                 lbl.set_text(&format!("{} selected", n));
                 btn.set_sensitive(n > 0);
                 btn.set_label(&format!("Install selected ({})", n));
@@ -6011,7 +7199,9 @@ impl MinecraftView {
             let typed = type_drop.clone();
             let srcd = src_drop.clone();
             sel_btn.connect_clicked(move |_| {
-                let items: Vec<(String, String)> = checks.borrow().iter()
+                let items: Vec<(String, String)> = checks
+                    .borrow()
+                    .iter()
                     .filter(|(_, _, c)| c.is_active())
                     .map(|(p, t, _)| (p.clone(), t.clone()))
                     .collect();
@@ -6022,12 +7212,14 @@ impl MinecraftView {
                     1 => "resourcepacks",
                     2 => "shaders",
                     _ => "mods",
-                }.to_string();
+                }
+                .to_string();
                 let kind = match typed.selected() {
                     1 => "resourcepack",
                     2 => "shader",
                     _ => "mod",
-                }.to_string();
+                }
+                .to_string();
                 if srcd.selected() == 1 {
                     vv.install_addon_queue(items, &mcq, &ldq, &at, "curseforge", &kind);
                 } else {
@@ -6046,7 +7238,9 @@ impl MinecraftView {
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
-            x_btn.connect_clicked(move |_| { d.close(); });
+            x_btn.connect_clicked(move |_| {
+                d.close();
+            });
         }
         let v = self.clone();
         let mc = inst.mc_ver.clone();
@@ -6077,7 +7271,14 @@ impl MinecraftView {
                 let refresh_c = refresh0.clone();
                 checks_c.borrow_mut().clear();
                 refresh_c.borrow()();
-                vv_c.set_cfg("McBrowseSrc", if src_drop_c.selected() == 1 { "cf" } else { "mr" });
+                vv_c.set_cfg(
+                    "McBrowseSrc",
+                    if src_drop_c.selected() == 1 {
+                        "cf"
+                    } else {
+                        "mr"
+                    },
+                );
                 cf_row0.set_visible(src_drop_c.selected() == 1 && !*cf_ok0.borrow());
                 let is_cf = src_drop_c.selected() == 1;
                 let is_mod_kind = type_drop_c.selected() != 1;
@@ -6085,42 +7286,115 @@ impl MinecraftView {
                 while let Some(c) = results_c.first_child() {
                     results_c.remove(&c);
                 }
-                results_c.append(&note(if is_cf { "Searching CurseForge…" } else { "Searching Modrinth…" }));
+                results_c.append(&note(if is_cf {
+                    "Searching CurseForge…"
+                } else {
+                    "Searching Modrinth…"
+                }));
                 let q = q_entry_c.text().to_string();
                 let ptype = match type_drop_c.selected() {
                     1 => "resourcepack",
                     2 => "shader",
                     _ => "mod",
-                }.to_string();
+                }
+                .to_string();
                 let kind_rows = ptype.clone();
                 // PineconeMC-style: no loader facet — every build for this MC
                 // version is listed, badges show each project's loaders.
-                let (tx, rx) = std::sync::mpsc::channel::<Result<Vec<(String, String, String, String, String, Vec<String>)>, String>>();
+                let (tx, rx) = std::sync::mpsc::channel::<
+                    Result<Vec<(String, String, String, String, String, Vec<String>)>, String>,
+                >();
                 let mc_s = mc_c.clone();
                 let loader_s = loader_c.clone();
                 std::thread::spawn(move || {
                     let _ = tx.send(if is_cf {
-                        MinecraftManager::cf_search(&q, &ptype, &mc_s, &loader_s, 20).map(|d| {
-                            d.get("hits").and_then(|x| x.as_array()).cloned().unwrap_or_default().into_iter().map(|h| (
-                                h.get("mod_id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                h.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                h.get("author").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                h.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                h.get("icon_url").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                h.get("categories").and_then(|x| x.as_array()).map(|a| a.iter().filter_map(|c| c.as_str()).map(str::to_string).collect()).unwrap_or_default(),
-                            )).collect::<Vec<_>>()
-                        }).map_err(|e| e.to_string())
+                        MinecraftManager::cf_search(&q, &ptype, &mc_s, &loader_s, 20)
+                            .map(|d| {
+                                d.get("hits")
+                                    .and_then(|x| x.as_array())
+                                    .cloned()
+                                    .unwrap_or_default()
+                                    .into_iter()
+                                    .map(|h| {
+                                        (
+                                            h.get("mod_id")
+                                                .and_then(|x| x.as_str())
+                                                .unwrap_or("")
+                                                .to_string(),
+                                            h.get("title")
+                                                .and_then(|x| x.as_str())
+                                                .unwrap_or("")
+                                                .to_string(),
+                                            h.get("author")
+                                                .and_then(|x| x.as_str())
+                                                .unwrap_or("")
+                                                .to_string(),
+                                            h.get("description")
+                                                .and_then(|x| x.as_str())
+                                                .unwrap_or("")
+                                                .to_string(),
+                                            h.get("icon_url")
+                                                .and_then(|x| x.as_str())
+                                                .unwrap_or("")
+                                                .to_string(),
+                                            h.get("categories")
+                                                .and_then(|x| x.as_array())
+                                                .map(|a| {
+                                                    a.iter()
+                                                        .filter_map(|c| c.as_str())
+                                                        .map(str::to_string)
+                                                        .collect()
+                                                })
+                                                .unwrap_or_default(),
+                                        )
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .map_err(|e| e.to_string())
                     } else {
-                        MinecraftManager::mod_search(&q, &ptype, &mc_s, "", 20).map(|d| {
-                            d.get("hits").and_then(|x| x.as_array()).cloned().unwrap_or_default().into_iter().map(|h| (
-                                h.get("project_id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                h.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                h.get("author").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                h.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                h.get("icon_url").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                h.get("categories").and_then(|x| x.as_array()).map(|a| a.iter().filter_map(|c| c.as_str()).map(str::to_string).collect()).unwrap_or_default(),
-                            )).collect::<Vec<_>>()
-                        }).map_err(|e| e.to_string())
+                        MinecraftManager::mod_search(&q, &ptype, &mc_s, "", 20)
+                            .map(|d| {
+                                d.get("hits")
+                                    .and_then(|x| x.as_array())
+                                    .cloned()
+                                    .unwrap_or_default()
+                                    .into_iter()
+                                    .map(|h| {
+                                        (
+                                            h.get("project_id")
+                                                .and_then(|x| x.as_str())
+                                                .unwrap_or("")
+                                                .to_string(),
+                                            h.get("title")
+                                                .and_then(|x| x.as_str())
+                                                .unwrap_or("")
+                                                .to_string(),
+                                            h.get("author")
+                                                .and_then(|x| x.as_str())
+                                                .unwrap_or("")
+                                                .to_string(),
+                                            h.get("description")
+                                                .and_then(|x| x.as_str())
+                                                .unwrap_or("")
+                                                .to_string(),
+                                            h.get("icon_url")
+                                                .and_then(|x| x.as_str())
+                                                .unwrap_or("")
+                                                .to_string(),
+                                            h.get("categories")
+                                                .and_then(|x| x.as_array())
+                                                .map(|a| {
+                                                    a.iter()
+                                                        .filter_map(|c| c.as_str())
+                                                        .map(str::to_string)
+                                                        .collect()
+                                                })
+                                                .unwrap_or_default(),
+                                        )
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .map_err(|e| e.to_string())
                     });
                 });
                 glib::idle_add_local(move || match rx.try_recv() {
@@ -6138,7 +7412,9 @@ impl MinecraftView {
                             check.set_valign(gtk::Align::Center);
                             check.set_tooltip_text(Some("Select for batch install"));
                             row.append(&check);
-                            checks_c.borrow_mut().push((pid.clone(), title.clone(), check.clone()));
+                            checks_c
+                                .borrow_mut()
+                                .push((pid.clone(), title.clone(), check.clone()));
                             {
                                 let r = refresh_c.clone();
                                 check.connect_toggled(move |_| r.borrow()());
@@ -6163,7 +7439,8 @@ impl MinecraftView {
                             au.set_ellipsize(gtk::pango::EllipsizeMode::End);
                             au.add_css_class("time-label");
                             mid.append(&au);
-                            let dd = gtk::Label::new(Some(&clean_md(&desc).lines().next().unwrap_or("").to_string()));
+                            let dd =
+                                gtk::Label::new(Some(clean_md(&desc).lines().next().unwrap_or("")));
                             dd.set_halign(gtk::Align::Start);
                             dd.set_ellipsize(gtk::pango::EllipsizeMode::End);
 
@@ -6182,7 +7459,8 @@ impl MinecraftView {
                             let row_btns = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                             row_btns.set_valign(gtk::Align::Center);
                             row.append(&row_btns);
-                            let inst_btn = themed_btn("download", "Install", vv_c.state.theme.is_dark(), 16);
+                            let inst_btn =
+                                themed_btn("download", "Install", vv_c.state.theme.is_dark(), 16);
                             inst_btn.add_css_class("add-btn");
                             inst_btn.set_valign(gtk::Align::Center);
 
@@ -6203,7 +7481,8 @@ impl MinecraftView {
                                 1 => "resourcepacks",
                                 2 => "shaders",
                                 _ => "mods",
-                            }.to_string();
+                            }
+                            .to_string();
                             let kind_btn = kind_rows.clone();
                             view_btn.connect_clicked(move |_| {
                                 let pidc2 = pidw.clone();
@@ -6216,9 +7495,19 @@ impl MinecraftView {
                                     let pidv2 = pidw.clone();
                                     let vvw3 = vvw.clone();
                                     let cb: Box<dyn Fn()> = Box::new(move || {
-                                        vvw3.install_cf_with_progress(&pidc2, "", &mcw2, &ldw2, &kind2, &atw2, &pidc2);
+                                        vvw3.install_cf_with_progress(
+                                            (&pidc2, ""),
+                                            &mcw2,
+                                            &ldw2,
+                                            &kind2,
+                                            &atw2,
+                                            &pidc2,
+                                        );
                                     });
-                                    vvw.show_cf_project_view(&pidv2, Some(("Install".to_string(), cb)));
+                                    vvw.show_cf_project_view(
+                                        &pidv2,
+                                        Some(("Install".to_string(), cb)),
+                                    );
                                 } else {
                                     let cb: Box<dyn Fn()> = Box::new(move || {
                                         vvw2.do_browse_install_simple(&pidc2, &mcw2, &ldw2, &atw2);
@@ -6249,11 +7538,21 @@ impl MinecraftView {
                                     1 => "resourcepacks",
                                     2 => "shaders",
                                     _ => "mods",
-                                }.to_string();
+                                }
+                                .to_string();
                                 if is_cf {
-                                    vv2.install_cf_with_progress(&pidc, "", &mc2, &ldinst, &kind_inst, &at, &title);
+                                    vv2.install_cf_with_progress(
+                                        (&pidc, ""),
+                                        &mc2,
+                                        &ldinst,
+                                        &kind_inst,
+                                        &at,
+                                        &title,
+                                    );
                                 } else {
-                                    vv2.install_addon_with_progress(&pidc, "", &mc2, &ldinst, &at, &title);
+                                    vv2.install_addon_with_progress(
+                                        &pidc, "", &mc2, &ldinst, &at, &title,
+                                    );
                                 }
                             });
                             row_btns.append(&inst_btn);
@@ -6304,7 +7603,6 @@ impl MinecraftView {
             type_drop.connect_selected_notify(move |_| ds2.borrow()());
             let ds3 = do_search.clone();
             src_drop.connect_selected_notify(move |_| ds3.borrow()());
-
         }
         do_search.borrow()();
         dlg.present(Some(&self.parent));
@@ -6312,7 +7610,13 @@ impl MinecraftView {
 
     // ============ global MC settings dialog (Carbon Settings page) ============
 
-    fn render_java_card(&self, groups: &gtk::Box, enuso_t: &gtk::Label, enuso_p: &gtk::Label, dl_btns: &[gtk::Button]) {
+    fn render_java_card(
+        &self,
+        groups: &gtk::Box,
+        enuso_t: &gtk::Label,
+        enuso_p: &gtk::Label,
+        dl_btns: &[gtk::Button],
+    ) {
         while let Some(c) = groups.first_child() {
             groups.remove(&c);
         }
@@ -6320,15 +7624,37 @@ impl MinecraftView {
         enuso_p.set_text("");
         let (tx, rx) = std::sync::mpsc::channel::<(Vec<(String, String, String)>, String)>();
         std::thread::spawn(move || {
-            let found: Vec<(String, String, String)> = MinecraftManager::java_detect().ok()
-                .and_then(|d| d.get("found").cloned()).and_then(|x| x.as_array().cloned()).unwrap_or_default()
-                .into_iter().map(|j| (
-                    j.get("path").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    j.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    j.get("origin").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                )).collect();
-            let sel = MinecraftManager::status(&legacy_dir().display().to_string()).ok()
-                .and_then(|d| d.get("java").and_then(|j| j.get("selected")).and_then(|x| x.as_str()).map(str::to_string))
+            let found: Vec<(String, String, String)> = MinecraftManager::java_detect()
+                .ok()
+                .and_then(|d| d.get("found").cloned())
+                .and_then(|x| x.as_array().cloned())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|j| {
+                    (
+                        j.get("path")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        j.get("version")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        j.get("origin")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                    )
+                })
+                .collect();
+            let sel = MinecraftManager::status(&legacy_dir().display().to_string())
+                .ok()
+                .and_then(|d| {
+                    d.get("java")
+                        .and_then(|j| j.get("selected"))
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string)
+                })
                 .unwrap_or_default();
             let _ = tx.send((found, sel));
         });
@@ -6341,13 +7667,18 @@ impl MinecraftView {
             Ok((found, sel)) => {
                 v.data.borrow_mut().java_found = found.clone();
                 v.data.borrow_mut().java_selected = sel.clone();
-                let mut majors: std::collections::HashSet<String> = std::collections::HashSet::new();
+                let mut majors: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
                 for (_, version, _) in &found {
                     majors.insert(java_major_of(version));
                 }
                 for (b, ver) in dl_c.iter().zip(["8", "17", "21", "25"]) {
                     let installed = majors.contains(ver);
-                    let state = if installed { "installed" } else { "not installed, click to install" };
+                    let state = if installed {
+                        "installed"
+                    } else {
+                        "not installed, click to install"
+                    };
                     b.set_child(Some(&dl_button_child(ver, installed)));
                     b.set_tooltip_text(Some(&format!("Java {} · {}", ver, state)));
                 }
@@ -6377,11 +7708,18 @@ impl MinecraftView {
                 });
                 let mut anchor: Option<gtk::CheckButton> = None;
                 for major in order {
-                    let head = gtk::Label::new(Some(&if major == "0" { "Other".to_string() } else { format!("Java {}", major) }));
+                    let head = gtk::Label::new(Some(&if major == "0" {
+                        "Other".to_string()
+                    } else {
+                        format!("Java {}", major)
+                    }));
                     head.set_halign(gtk::Align::Start);
                     head.add_css_class("mcx-section-sm");
                     groups_c.append(&head);
-                    for (path, version, origin) in found.iter().filter(|(_, ver, _)| java_major_of(ver) == major) {
+                    for (path, version, origin) in found
+                        .iter()
+                        .filter(|(_, ver, _)| java_major_of(ver) == major)
+                    {
                         let cb = gtk::CheckButton::new();
                         if let Some(ref a) = anchor {
                             cb.set_group(Some(a));
@@ -6396,7 +7734,11 @@ impl MinecraftView {
                         mid.set_hexpand(true);
                         mid.set_valign(gtk::Align::Center);
                         let vendor = java_vendor(path);
-                        let title = if vendor == "Java" { version.clone() } else { format!("{} · {}", version, vendor) };
+                        let title = if vendor == "Java" {
+                            version.clone()
+                        } else {
+                            format!("{} · {}", version, vendor)
+                        };
                         let t = gtk::Label::new(Some(&title));
                         t.set_halign(gtk::Align::Start);
                         t.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -6435,7 +7777,11 @@ impl MinecraftView {
                             let dl_cc = dl_cc.clone();
                             let (tx2, rx2) = std::sync::mpsc::channel::<Result<(), String>>();
                             std::thread::spawn(move || {
-                                let _ = tx2.send(MinecraftManager::java_use(&pcc).map(|_| ()).map_err(|e| e.to_string()));
+                                let _ = tx2.send(
+                                    MinecraftManager::java_use(&pcc)
+                                        .map(|_| ())
+                                        .map_err(|e| e.to_string()),
+                                );
                             });
                             glib::idle_add_local(move || match rx2.try_recv() {
                                 Ok(Ok(_)) => {
@@ -6449,7 +7795,9 @@ impl MinecraftView {
                                     vv.render_java_card(&groups_cc, &et_cc, &ep_cc, &dl_cc);
                                     glib::ControlFlow::Break
                                 }
-                                Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                    glib::ControlFlow::Continue
+                                }
                                 Err(_) => glib::ControlFlow::Break,
                             });
                         });
@@ -6511,14 +7859,20 @@ impl MinecraftView {
         gen_page.set_margin_start(24);
         gen_page.set_margin_end(24);
         let (setup_frame, setup_inner) = card("Setup");
-        let setup_lbl = note(if self.data.borrow().deps_ok { "Dependencies ready." } else { "Missing deps — press Install." });
+        let setup_lbl = note(if self.data.borrow().deps_ok {
+            "Dependencies ready."
+        } else {
+            "Missing deps — press Install."
+        });
         setup_inner.append(&setup_lbl);
         let setup_btn = gtk::Button::with_label("Install Python deps");
         setup_btn.add_css_class("add-btn");
         setup_btn.set_visible(!self.data.borrow().deps_ok);
         setup_inner.append(&setup_btn);
         gen_page.append(&setup_frame);
-        setup_inner.append(&note("Default memory for new instances (per-instance override in its Settings tab)"));
+        setup_inner.append(&note(
+            "Default memory for new instances (per-instance override in its Settings tab)",
+        ));
         let ram_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let ram_lbl = gtk::Label::new(Some(&format!("{} MB", self.cfg("McRam"))));
         // Fixed width: a shrinking label ("1024 MB" -> "999 MB") resizes
@@ -6587,9 +7941,15 @@ impl MinecraftView {
             lbl.add_css_class("mc-tile-name");
             mid.append(&lbl);
             let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-                            let tag = gtk::Label::new(Some(if ely { "Ely.by" } else if offline { "Offline" } else { "Microsoft" }));
-                            tag.add_css_class("loader-tag");
-                            tag.add_css_class("mcx-origin");
+            let tag = gtk::Label::new(Some(if ely {
+                "Ely.by"
+            } else if offline {
+                "Offline"
+            } else {
+                "Microsoft"
+            }));
+            tag.add_css_class("loader-tag");
+            tag.add_css_class("mcx-origin");
             chips.append(&tag);
             if aid == sel_aid {
                 let act = gtk::Label::new(Some("Active"));
@@ -6608,7 +7968,11 @@ impl MinecraftView {
                 let idc = idc.clone();
                 let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
                 std::thread::spawn(move || {
-                    let _ = tx.send(MinecraftManager::unaccount(&idc).map(|_| ()).map_err(|e| e.to_string()));
+                    let _ = tx.send(
+                        MinecraftManager::unaccount(&idc)
+                            .map(|_| ())
+                            .map_err(|e| e.to_string()),
+                    );
                 });
                 glib::idle_add_local(move || match rx.try_recv() {
                     Ok(Ok(_)) => {
@@ -6631,7 +7995,11 @@ impl MinecraftView {
                 let (tx, rx) = std::sync::mpsc::channel::<Option<String>>();
                 std::thread::spawn(move || {
                     let doc = MinecraftManager::ely_skin(&nm, &aidc, false).ok();
-                    let head = doc.as_ref().and_then(|d| d.get("head")).and_then(|x| x.as_str()).map(str::to_string);
+                    let head = doc
+                        .as_ref()
+                        .and_then(|d| d.get("head"))
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string);
                     let _ = tx.send(head);
                 });
                 glib::idle_add_local(move || match rx.try_recv() {
@@ -6738,11 +8106,23 @@ impl MinecraftView {
                 of.set_visible(which == "off");
             });
             let s1 = show.clone();
-            kind_ms.connect_toggled(move |b| if b.is_active() { s1("ms"); });
+            kind_ms.connect_toggled(move |b| {
+                if b.is_active() {
+                    s1("ms");
+                }
+            });
             let s2 = show.clone();
-            kind_ely.connect_toggled(move |b| if b.is_active() { s2("ely"); });
+            kind_ely.connect_toggled(move |b| {
+                if b.is_active() {
+                    s2("ely");
+                }
+            });
             let s3 = show.clone();
-            kind_off.connect_toggled(move |b| if b.is_active() { s3("off"); });
+            kind_off.connect_toggled(move |b| {
+                if b.is_active() {
+                    s3("off");
+                }
+            });
         }
         add_pop.set_child(Some(&add_pop_box));
         add_menu_btn.set_popover(Some(&add_pop));
@@ -6840,7 +8220,10 @@ impl MinecraftView {
             let b = gtk::Button::new();
             b.add_css_class("settings-btn");
             b.set_child(Some(&dl_button_child(ver, false)));
-            b.set_tooltip_text(Some(&format!("Java {} · not installed, click to install", ver)));
+            b.set_tooltip_text(Some(&format!(
+                "Java {} · not installed, click to install",
+                ver
+            )));
             dl_flow.append(&b);
             dl_btns.push(b);
         }
@@ -6848,7 +8231,10 @@ impl MinecraftView {
         self.render_java_card(&java_groups, &enuso_title, &enuso_path, &dl_btns);
         {
             let v = self.clone();
-            let vercs: Vec<String> = ["8", "17", "21", "25"].iter().map(|s| s.to_string()).collect();
+            let vercs: Vec<String> = ["8", "17", "21", "25"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
             let groups_c = java_groups.clone();
             let et_c = enuso_title.clone();
             let ep_c = enuso_path.clone();
@@ -6881,27 +8267,25 @@ impl MinecraftView {
                     let et_cc = et_c.clone();
                     let ep_cc = ep_c.clone();
                     let all_c = all.clone();
-                    crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
-                        match ev {
-                            crate::backend::plugin_process::PluginEvent::Done(val) => {
-                                let p = val.get("path").and_then(|x| x.as_str()).unwrap_or("");
-                                vv.toast("Java installed", &format!("{}: {}", verc2, p));
-                                vv.refresh_all();
-                                vv.render_java_card(&groups_cc, &et_cc, &ep_cc, &all_c);
-                                for o in &all_c {
-                                    o.set_sensitive(true);
-                                }
-                                false
+                    crate::backend::plugin_process::pump_to_idle(rx, move |ev| match ev {
+                        crate::backend::plugin_process::PluginEvent::Done(val) => {
+                            let p = val.get("path").and_then(|x| x.as_str()).unwrap_or("");
+                            vv.toast("Java installed", &format!("{}: {}", verc2, p));
+                            vv.refresh_all();
+                            vv.render_java_card(&groups_cc, &et_cc, &ep_cc, &all_c);
+                            for o in &all_c {
+                                o.set_sensitive(true);
                             }
-                            crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
-                                vv.toast("Java install failed", &message);
-                                for o in &all_c {
-                                    o.set_sensitive(true);
-                                }
-                                false
-                            }
-                            _ => true,
+                            false
                         }
+                        crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
+                            vv.toast("Java install failed", &message);
+                            for o in &all_c {
+                                o.set_sensitive(true);
+                            }
+                            false
+                        }
+                        _ => true,
                     });
                 });
             }
@@ -6914,7 +8298,9 @@ impl MinecraftView {
         ap_page.set_margin_start(24);
         ap_page.set_margin_end(24);
         let (ap_frame, ap_inner) = card("Appearance");
-        ap_inner.append(&note("Instance tile size (preview below, library updates live)"));
+        ap_inner.append(&note(
+            "Instance tile size (preview below, library updates live)",
+        ));
         let tile_store = gtk::StringList::new(&["Small (48px)", "Medium (64px)", "Large (96px)"]);
         let tile_drop = gtk::DropDown::new(Some(tile_store), gtk::Expression::NONE);
         tile_drop.set_selected(match self.cfg("McTileSize").as_str() {
@@ -6923,7 +8309,8 @@ impl MinecraftView {
             _ => 1,
         });
         ap_inner.append(&tile_drop);
-        let compact_check = gtk::CheckButton::with_label("Compact tiles (less padding, narrower cards)");
+        let compact_check =
+            gtk::CheckButton::with_label("Compact tiles (less padding, narrower cards)");
         compact_check.set_active(self.cfg("McCompact") == "1");
         ap_inner.append(&compact_check);
         let (prev_frame, prev_inner) = card("Preview");
@@ -6943,7 +8330,12 @@ impl MinecraftView {
         ap_page.append(&ap_frame);
         let ap_scroll = modal_scroll(&ap_page);
         stack.add_titled(&ap_scroll, Some("appearance"), "Appearance");
-        let tab_scrolls = [gen_scroll.clone(), acc_scroll.clone(), java_scroll.clone(), ap_scroll.clone()];
+        let tab_scrolls = [
+            gen_scroll.clone(),
+            acc_scroll.clone(),
+            java_scroll.clone(),
+            ap_scroll.clone(),
+        ];
 
         // tab bar (centered, above content)
         let tab_bar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
@@ -6955,7 +8347,12 @@ impl MinecraftView {
         let mut set_tab_labels: Vec<gtk::Label> = Vec::new();
         let init_tab = initial.to_string();
         stack.set_visible_child_name(&init_tab);
-        let set_icons = ["corkytux-preferences-other-symbolic", "corkytux-system-users-symbolic", "corkytux-system-run-symbolic", "corkytux-view-grid-symbolic"];
+        let set_icons = [
+            "corkytux-preferences-other-symbolic",
+            "corkytux-system-users-symbolic",
+            "corkytux-system-run-symbolic",
+            "corkytux-view-grid-symbolic",
+        ];
         for ((label, id), tab_icon) in labels.iter().zip(ids.iter()).zip(set_icons.iter()) {
             let wrap = gtk::Box::new(gtk::Orientation::Vertical, 1);
             let btn = gtk::ToggleButton::new();
@@ -7024,7 +8421,9 @@ impl MinecraftView {
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
-            x_btn.connect_clicked(move |_| { d.close(); });
+            x_btn.connect_clicked(move |_| {
+                d.close();
+            });
         }
         {
             let v = self.clone();
@@ -7032,7 +8431,11 @@ impl MinecraftView {
                 let v = v.clone();
                 let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
                 std::thread::spawn(move || {
-                    let _ = tx.send(MinecraftManager::setup().map(|_| ()).map_err(|e| e.to_string()));
+                    let _ = tx.send(
+                        MinecraftManager::setup()
+                            .map(|_| ())
+                            .map_err(|e| e.to_string()),
+                    );
                 });
                 glib::idle_add_local(move || match rx.try_recv() {
                     Ok(Ok(_)) => {
@@ -7078,9 +8481,27 @@ impl MinecraftView {
             let v = self.clone();
             let gs = gen_save.clone();
             gen_save.connect_clicked(move |_| {
-                v.set_cfg("McJvmArgs", &gjvm.text().to_string().trim());
-                v.set_cfg("McResW", &gres_w.text().to_string().trim().chars().filter(|c| c.is_ascii_digit()).collect::<String>());
-                v.set_cfg("McResH", &gres_h.text().to_string().trim().chars().filter(|c| c.is_ascii_digit()).collect::<String>());
+                v.set_cfg("McJvmArgs", gjvm.text().to_string().trim());
+                v.set_cfg(
+                    "McResW",
+                    &gres_w
+                        .text()
+                        .to_string()
+                        .trim()
+                        .chars()
+                        .filter(|c| c.is_ascii_digit())
+                        .collect::<String>(),
+                );
+                v.set_cfg(
+                    "McResH",
+                    &gres_h
+                        .text()
+                        .to_string()
+                        .trim()
+                        .chars()
+                        .filter(|c| c.is_ascii_digit())
+                        .collect::<String>(),
+                );
                 gs.set_sensitive(false);
                 v.toast("Saved", "Defaults saved.");
             });
@@ -7106,11 +8527,14 @@ impl MinecraftView {
                 let u = upd.clone();
                 let vv = v.clone();
                 tile_drop.connect_selected_notify(move |d| {
-                    vv.set_cfg("McTileSize", match d.selected() {
-                        0 => "48",
-                        2 => "96",
-                        _ => "64",
-                    });
+                    vv.set_cfg(
+                        "McTileSize",
+                        match d.selected() {
+                            0 => "48",
+                            2 => "96",
+                            _ => "64",
+                        },
+                    );
                     u.borrow()();
                     vv.render_library();
                 });
@@ -7132,7 +8556,9 @@ impl MinecraftView {
             let img = skin_img.clone();
             let lbl = skin_lbl.clone();
             let who = skin_for.clone();
-            let load = Rc::new(RefCell::new(Box::new(move |force: bool| {}) as Box<dyn Fn(bool)>));
+            let load = Rc::new(RefCell::new(
+                Box::new(move |_force: bool| {}) as Box<dyn Fn(bool)>
+            ));
             let vv0 = v.clone();
             *load.borrow_mut() = {
                 Box::new(move |force: bool| {
@@ -7149,13 +8575,29 @@ impl MinecraftView {
                     who.set_text(&format!("Skin of {}", name));
                     lbl.set_visible(false);
                     let uuid = aid.clone();
-                    let (tx, rx) = std::sync::mpsc::channel::<Result<(String, String, String), String>>();
+                    let (tx, rx) =
+                        std::sync::mpsc::channel::<Result<(String, String, String), String>>();
                     std::thread::spawn(move || {
-                        let _ = tx.send(MinecraftManager::ely_skin(&name, &uuid, force).map(|d| (
-                            d.get("skin").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                            d.get("head").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                            d.get("model").and_then(|x| x.as_str()).unwrap_or("classic").to_string(),
-                        )).map_err(|e| e.to_string()));
+                        let _ = tx.send(
+                            MinecraftManager::ely_skin(&name, &uuid, force)
+                                .map(|d| {
+                                    (
+                                        d.get("skin")
+                                            .and_then(|x| x.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        d.get("head")
+                                            .and_then(|x| x.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        d.get("model")
+                                            .and_then(|x| x.as_str())
+                                            .unwrap_or("classic")
+                                            .to_string(),
+                                    )
+                                })
+                                .map_err(|e| e.to_string()),
+                        );
                     });
                     glib::idle_add_local(move || match rx.try_recv() {
                         Ok(Ok((skin, _head, model))) => {
@@ -7163,7 +8605,11 @@ impl MinecraftView {
                                 img.set_paintable(Some(&tex));
                                 img.set_pixel_size(128);
                             }
-                            model_lbl.set_text(if model == "slim" { "Slim (Alex)" } else { "Classic (Steve)" });
+                            model_lbl.set_text(if model == "slim" {
+                                "Slim (Alex)"
+                            } else {
+                                "Classic (Steve)"
+                            });
                             model_lbl.set_visible(true);
                             glib::ControlFlow::Break
                         }
@@ -7182,13 +8628,26 @@ impl MinecraftView {
             let vv = v.clone();
             skin_change.connect_clicked(move |_| {
                 let (aid, name) = vv.selected_account();
-                let ely_acc = vv.data.borrow().accounts.iter().any(|(i, _, _, e)| i == &aid && *e);
+                let ely_acc = vv
+                    .data
+                    .borrow()
+                    .accounts
+                    .iter()
+                    .any(|(i, _, _, e)| i == &aid && *e);
                 if ely_acc {
                     vv.state.integration.open_url("https://ely.by/skins");
-                    vv.toast("Change skin", "Upload it in your Ely.by wardrobe, then press Refresh.");
+                    vv.toast(
+                        "Change skin",
+                        "Upload it in your Ely.by wardrobe, then press Refresh.",
+                    );
                 } else {
-                    vv.state.integration.open_url("https://www.minecraft.net/msaprofile/mygames/editskin");
-                    vv.toast("Change skin", "Change it on minecraft.net (Microsoft accounts), then press Refresh.");
+                    vv.state
+                        .integration
+                        .open_url("https://www.minecraft.net/msaprofile/mygames/editskin");
+                    vv.toast(
+                        "Change skin",
+                        "Change it on minecraft.net (Microsoft accounts), then press Refresh.",
+                    );
                 }
                 let _ = name;
             });
@@ -7211,7 +8670,10 @@ impl MinecraftView {
                 let user = eu.text().to_string().trim().to_string();
                 let pwd = ep.text().to_string();
                 if user.is_empty() || pwd.is_empty() {
-                    v.toast("Missing data", "Type your Ely.by username and password first.");
+                    v.toast(
+                        "Missing data",
+                        "Type your Ely.by username and password first.",
+                    );
                     return;
                 }
                 eu.set_text("");
@@ -7220,9 +8682,16 @@ impl MinecraftView {
                 el.set_text("Signing in to Ely.by…");
                 let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
                 std::thread::spawn(move || {
-                    let _ = tx.send(MinecraftManager::ely_auth(&user, &pwd).map(|d| {
-                        d.get("username").and_then(|x| x.as_str()).unwrap_or("").to_string()
-                    }).map_err(|e| e.to_string()));
+                    let _ = tx.send(
+                        MinecraftManager::ely_auth(&user, &pwd)
+                            .map(|d| {
+                                d.get("username")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string()
+                            })
+                            .map_err(|e| e.to_string()),
+                    );
                 });
                 glib::idle_add_local(move || match rx.try_recv() {
                     Ok(Ok(username)) => {
@@ -7294,7 +8763,11 @@ impl MinecraftView {
                 let v = v.clone();
                 let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
                 std::thread::spawn(move || {
-                    let _ = tx.send(MinecraftManager::offline(&name).map(|_| name.clone()).map_err(|e| e.to_string()));
+                    let _ = tx.send(
+                        MinecraftManager::offline(&name)
+                            .map(|_| name.clone())
+                            .map_err(|e| e.to_string()),
+                    );
                 });
                 glib::idle_add_local(move || match rx.try_recv() {
                     Ok(Ok(n)) => {
@@ -7335,7 +8808,24 @@ fn chrono_date(epoch: i64) -> String {
         rem -= yd;
         y += 1;
     }
-    let months = [31, if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let months = [
+        31,
+        if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 {
+            29
+        } else {
+            28
+        },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     for (i, dim) in months.iter().enumerate() {
         if rem < *dim {
             m = i as i64 + 1;
@@ -7373,18 +8863,24 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         // I seed two leaked `.staging-*` installs plus one real container,
         // all holding the same version id: I let only the real one count.
-        mktree(&root, &[
-            ".staging-1/versions/fabric-loader-0.19.3-26.2",
-            ".staging-1/versions/26.2",
-            ".staging-2/versions/fabric-loader-0.19.3-26.2",
-            ".staging-2/versions/26.2",
-            "fabric-loader-0.19.3-26.2/versions/fabric-loader-0.19.3-26.2",
-            "fabric-loader-0.19.3-26.2/versions/26.2",
-        ]);
+        mktree(
+            &root,
+            &[
+                ".staging-1/versions/fabric-loader-0.19.3-26.2",
+                ".staging-1/versions/26.2",
+                ".staging-2/versions/fabric-loader-0.19.3-26.2",
+                ".staging-2/versions/26.2",
+                "fabric-loader-0.19.3-26.2/versions/fabric-loader-0.19.3-26.2",
+                "fabric-loader-0.19.3-26.2/versions/26.2",
+            ],
+        );
         let got = scan_instance_dirs_in(&root);
         let _ = fs::remove_dir_all(&root);
-        assert!(got.iter().all(|(dir, _)| !dir.contains(".staging")),
-            "staging dirs must never surface as instances: {:?}", got);
+        assert!(
+            got.iter().all(|(dir, _)| !dir.contains(".staging")),
+            "staging dirs must never surface as instances: {:?}",
+            got
+        );
         let ids: Vec<&str> = got.iter().map(|(_, id)| id.as_str()).collect();
         assert!(ids.contains(&"fabric-loader-0.19.3-26.2"));
     }
@@ -7398,7 +8894,10 @@ mod tests {
             ("/c/b".to_string(), "fabric-loader-0.19.3-26.2".to_string()),
         ];
         let merged = collect_instance_ids(&dirs, &["fabric-loader-0.19.3-26.2".to_string()]);
-        assert_eq!(merged, vec![("fabric-loader-0.19.3-26.2".to_string(), true)]);
+        assert_eq!(
+            merged,
+            vec![("fabric-loader-0.19.3-26.2".to_string(), true)]
+        );
         // I treat a base vanilla copy next to its loader as a dependency, not
         // an instance. Base detection reads the version JSON now, so the
         // fixture is a real temp tree mirroring the on-disk layout.
@@ -7408,17 +8907,27 @@ mod tests {
         mkversion(&root, "a", "fabric-loader-0.19.3-26.2", Some("26.2"));
         let with_base = vec![
             (container.display().to_string(), "26.2".to_string()),
-            (container.display().to_string(), "fabric-loader-0.19.3-26.2".to_string()),
+            (
+                container.display().to_string(),
+                "fabric-loader-0.19.3-26.2".to_string(),
+            ),
         ];
         let merged = collect_instance_ids(&with_base, &[]);
-        assert_eq!(merged, vec![("fabric-loader-0.19.3-26.2".to_string(), true)]);
+        assert_eq!(
+            merged,
+            vec![("fabric-loader-0.19.3-26.2".to_string(), true)]
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn update_counts_total_vs_filtered() {
         // I base my global button on the total; visible counts go in the tooltip.
-        let files = vec!["a.jar".to_string(), "b.jar".to_string(), "c.jar".to_string()];
+        let files = vec![
+            "a.jar".to_string(),
+            "b.jar".to_string(),
+            "c.jar".to_string(),
+        ];
         let visible = vec!["a.jar".to_string()];
         assert_eq!(update_counts(&files, &visible), (3, 1));
         assert_eq!(update_counts(&files, &files), (3, 3));
@@ -7437,8 +8946,14 @@ mod tests {
             .map(|d| d.as_secs() - secs_ago)
             .unwrap_or(0) as libc::time_t;
         let times = [
-            libc::timespec { tv_sec: t, tv_nsec: 0 },
-            libc::timespec { tv_sec: t, tv_nsec: 0 },
+            libc::timespec {
+                tv_sec: t,
+                tv_nsec: 0,
+            },
+            libc::timespec {
+                tv_sec: t,
+                tv_nsec: 0,
+            },
         ];
         let c = CString::new(p.as_os_str().as_bytes()).unwrap();
         unsafe {
@@ -7479,7 +8994,12 @@ mod tests {
 
     /// Builds `root/<container>/versions/<id>/<id>.json` and returns the
     /// container's versions dir. Temp trees only, never real instances.
-    fn mkversion(root: &std::path::Path, container: &str, id: &str, inherits: Option<&str>) -> std::path::PathBuf {
+    fn mkversion(
+        root: &std::path::Path,
+        container: &str,
+        id: &str,
+        inherits: Option<&str>,
+    ) -> std::path::PathBuf {
         let vers = root.join(container).join("versions");
         fs::create_dir_all(vers.join(id)).unwrap();
         let json = match inherits {
@@ -7491,7 +9011,8 @@ mod tests {
     }
 
     fn tmproot(tag: &str) -> std::path::PathBuf {
-        let root = std::env::temp_dir().join(format!("corkytux-mc-del-{}-{}", tag, std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("corkytux-mc-del-{}-{}", tag, std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         root
@@ -7504,13 +9025,22 @@ mod tests {
         // container, no orphan base behind.
         let root = tmproot("sweep-neo");
         let vers = mkversion(&root, "neoforge-21.1.218", "1.21.1", None);
-        mkversion(&root, "neoforge-21.1.218", "neoforge-21.1.218", Some("1.21.1"));
+        mkversion(
+            &root,
+            "neoforge-21.1.218",
+            "neoforge-21.1.218",
+            Some("1.21.1"),
+        );
         let pre = base_version_ids(&vers);
-        assert!(!should_sweep_container(true, true, &vers, &pre),
-            "container still hosts the instance before the backend delete");
+        assert!(
+            !should_sweep_container(true, true, &vers, &pre),
+            "container still hosts the instance before the backend delete"
+        );
         fs::remove_dir_all(vers.join("neoforge-21.1.218")).unwrap(); // backend step
-        assert!(should_sweep_container(true, true, &vers, &pre),
-            "only the base copy remains: the container must go completely");
+        assert!(
+            should_sweep_container(true, true, &vers, &pre),
+            "only the base copy remains: the container must go completely"
+        );
         fs::remove_dir_all(root.join("neoforge-21.1.218")).unwrap(); // sweep step
         assert!(!root.join("neoforge-21.1.218").exists());
         let _ = fs::remove_dir_all(&root);
@@ -7528,11 +9058,22 @@ mod tests {
         fs::write(vers.parent().unwrap().join("mods").join("keep.jar"), b"jar").unwrap();
         let pre = base_version_ids(&vers);
         fs::remove_dir_all(vers.join("neoforge-21.1.218")).unwrap(); // backend step
-        assert!(has_visible_versions(&vers, &pre), "the fabric sibling is a visible instance");
-        assert!(!should_sweep_container(true, true, &vers, &pre),
-            "a sibling instance remains: the container must survive");
-        assert!(vers.parent().unwrap().join("mods").join("keep.jar").exists(),
-            "sibling data must stay untouched");
+        assert!(
+            has_visible_versions(&vers, &pre),
+            "the fabric sibling is a visible instance"
+        );
+        assert!(
+            !should_sweep_container(true, true, &vers, &pre),
+            "a sibling instance remains: the container must survive"
+        );
+        assert!(
+            vers.parent()
+                .unwrap()
+                .join("mods")
+                .join("keep.jar")
+                .exists(),
+            "sibling data must stay untouched"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -7542,7 +9083,12 @@ mod tests {
         // is left → the container goes completely.
         let root = tmproot("sweep-keo");
         let vers = mkversion(&root, "fabric-loader-0.19.5-26.3", "26.3", None);
-        mkversion(&root, "fabric-loader-0.19.5-26.3", "fabric-loader-0.19.5-26.3", Some("26.3"));
+        mkversion(
+            &root,
+            "fabric-loader-0.19.5-26.3",
+            "fabric-loader-0.19.5-26.3",
+            Some("26.3"),
+        );
         let pre = base_version_ids(&vers);
         fs::remove_dir_all(vers.join("fabric-loader-0.19.5-26.3")).unwrap(); // backend step
         assert!(should_sweep_container(true, true, &vers, &pre));
@@ -7555,9 +9101,15 @@ mod tests {
         let root = tmproot("sweep-lone");
         let vers = mkversion(&root, "solo", "1.20.1", None);
         let pre = base_version_ids(&vers);
-        assert!(!should_sweep_container(true, true, &vers, &pre), "the instance itself is visible");
+        assert!(
+            !should_sweep_container(true, true, &vers, &pre),
+            "the instance itself is visible"
+        );
         fs::remove_dir_all(vers.join("1.20.1")).unwrap(); // backend step
-        assert!(should_sweep_container(true, true, &vers, &pre), "empty container → sweep");
+        assert!(
+            should_sweep_container(true, true, &vers, &pre),
+            "empty container → sweep"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -7570,15 +9122,19 @@ mod tests {
         mkversion(&root, "c", "neoforge-21.1.218", Some("1.21.1"));
         let pre = base_version_ids(&vers);
         fs::remove_dir_all(vers.join("neoforge-21.1.218")).unwrap();
-        assert!(!should_sweep_container(true, false, &vers, &pre),
-            "partial failure must keep the container");
+        assert!(
+            !should_sweep_container(true, false, &vers, &pre),
+            "partial failure must keep the container"
+        );
         assert!(root.join("c").exists());
         let empty = tmproot("partial-empty");
         let evers = empty.join("c").join("versions");
         fs::create_dir_all(&evers).unwrap();
         let no_bases = std::collections::HashSet::new();
-        assert!(!should_sweep_container(true, false, &evers, &no_bases),
-            "partial failure must not sweep even an empty container");
+        assert!(
+            !should_sweep_container(true, false, &evers, &no_bases),
+            "partial failure must not sweep even an empty container"
+        );
         // legacy (non-isolated) containers are never swept here.
         assert!(!should_sweep_container(false, true, &evers, &no_bases));
         let _ = fs::remove_dir_all(&root);
@@ -7592,9 +9148,15 @@ mod tests {
         let root = tmproot("base-guard");
         let vers = mkversion(&root, "c", "1.21.1", None);
         mkversion(&root, "c", "neoforge-21.1.218", Some("1.21.1"));
-        assert_eq!(base_version_user(&vers, "1.21.1").as_deref(), Some("neoforge-21.1.218"));
-        assert_eq!(base_version_user(&vers, "neoforge-21.1.218"), None,
-            "the loader version is deletable");
+        assert_eq!(
+            base_version_user(&vers, "1.21.1").as_deref(),
+            Some("neoforge-21.1.218")
+        );
+        assert_eq!(
+            base_version_user(&vers, "neoforge-21.1.218"),
+            None,
+            "the loader version is deletable"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -7604,19 +9166,47 @@ mod tests {
         // get_mrpack_launch_version); the MC version lives in the JSON.
         let root = tmproot("parse-neo");
         let vers = mkversion(&root, "c", "neoforge-21.1.218", Some("1.21.1"));
-        assert_eq!(parse_inst_id("neoforge-21.1.218"),
-            (String::new(), "neoforge".to_string(), "21.1.218".to_string()));
-        assert_eq!(parse_inst_id_in(&vers, "neoforge-21.1.218"),
-            ("1.21.1".to_string(), "neoforge".to_string(), "21.1.218".to_string()));
-        assert_eq!(parse_inst_id("forge-47.1.0"),
-            (String::new(), "forge".to_string(), "47.1.0".to_string()));
+        assert_eq!(
+            parse_inst_id("neoforge-21.1.218"),
+            (
+                String::new(),
+                "neoforge".to_string(),
+                "21.1.218".to_string()
+            )
+        );
+        assert_eq!(
+            parse_inst_id_in(&vers, "neoforge-21.1.218"),
+            (
+                "1.21.1".to_string(),
+                "neoforge".to_string(),
+                "21.1.218".to_string()
+            )
+        );
+        assert_eq!(
+            parse_inst_id("forge-47.1.0"),
+            (String::new(), "forge".to_string(), "47.1.0".to_string())
+        );
         // existing schemes keep working untouched
-        assert_eq!(parse_inst_id("fabric-loader-0.19.5-26.3"),
-            ("26.3".to_string(), "fabric".to_string(), "0.19.5".to_string()));
-        assert_eq!(parse_inst_id("1.21.1-neoforge-21.1.218"),
-            ("1.21.1".to_string(), "neoforge".to_string(), "21.1.218".to_string()));
-        assert_eq!(parse_inst_id("26.3"),
-            ("26.3".to_string(), "vanilla".to_string(), String::new()));
+        assert_eq!(
+            parse_inst_id("fabric-loader-0.19.5-26.3"),
+            (
+                "26.3".to_string(),
+                "fabric".to_string(),
+                "0.19.5".to_string()
+            )
+        );
+        assert_eq!(
+            parse_inst_id("1.21.1-neoforge-21.1.218"),
+            (
+                "1.21.1".to_string(),
+                "neoforge".to_string(),
+                "21.1.218".to_string()
+            )
+        );
+        assert_eq!(
+            parse_inst_id("26.3"),
+            ("26.3".to_string(), "vanilla".to_string(), String::new())
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -7638,17 +9228,30 @@ mod tests {
         let root = tmproot("neo-card");
         let container = root.join("neoforge-21.1.218");
         let vers = mkversion(&root, "neoforge-21.1.218", "1.21.1", None);
-        mkversion(&root, "neoforge-21.1.218", "neoforge-21.1.218", Some("1.21.1"));
+        mkversion(
+            &root,
+            "neoforge-21.1.218",
+            "neoforge-21.1.218",
+            Some("1.21.1"),
+        );
         let dirs = vec![
             (container.display().to_string(), "1.21.1".to_string()),
-            (container.display().to_string(), "neoforge-21.1.218".to_string()),
+            (
+                container.display().to_string(),
+                "neoforge-21.1.218".to_string(),
+            ),
         ];
         let merged = collect_instance_ids(&dirs, &[]);
-        assert_eq!(merged, vec![("neoforge-21.1.218".to_string(), true)],
-            "the 1.21.1 base copy must not surface as its own card");
+        assert_eq!(
+            merged,
+            vec![("neoforge-21.1.218".to_string(), true)],
+            "the 1.21.1 base copy must not surface as its own card"
+        );
         let (mc, loader, lver) = parse_inst_id_in(&vers, "neoforge-21.1.218");
-        assert_eq!((mc.as_str(), loader.as_str(), lver.as_str()),
-            ("1.21.1", "neoforge", "21.1.218"));
+        assert_eq!(
+            (mc.as_str(), loader.as_str(), lver.as_str()),
+            ("1.21.1", "neoforge", "21.1.218")
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -7658,13 +9261,24 @@ mod tests {
         let root = tmproot("keo-card");
         let container = root.join("fabric-loader-0.19.5-26.3");
         mkversion(&root, "fabric-loader-0.19.5-26.3", "26.3", None);
-        mkversion(&root, "fabric-loader-0.19.5-26.3", "fabric-loader-0.19.5-26.3", Some("26.3"));
+        mkversion(
+            &root,
+            "fabric-loader-0.19.5-26.3",
+            "fabric-loader-0.19.5-26.3",
+            Some("26.3"),
+        );
         let dirs = vec![
             (container.display().to_string(), "26.3".to_string()),
-            (container.display().to_string(), "fabric-loader-0.19.5-26.3".to_string()),
+            (
+                container.display().to_string(),
+                "fabric-loader-0.19.5-26.3".to_string(),
+            ),
         ];
         let merged = collect_instance_ids(&dirs, &[]);
-        assert_eq!(merged, vec![("fabric-loader-0.19.5-26.3".to_string(), true)]);
+        assert_eq!(
+            merged,
+            vec![("fabric-loader-0.19.5-26.3".to_string(), true)]
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -7680,10 +9294,10 @@ mod tests {
             (container.display().to_string(), "1.21.1".to_string()),
         ];
         let merged = collect_instance_ids(&dirs, &[]);
-        assert_eq!(merged, vec![
-            ("1.20.1".to_string(), true),
-            ("1.21.1".to_string(), true),
-        ]);
+        assert_eq!(
+            merged,
+            vec![("1.20.1".to_string(), true), ("1.21.1".to_string(), true),]
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -7704,10 +9318,17 @@ mod tests {
         });
         let p = parse_loader_probe(&doc).expect("batch response parses");
         assert_eq!(p.loaders.len(), 3, "requested order preserved");
-        assert_eq!(p.loaders[0], ("fabric".to_string(), true, vec!["0.19.5".to_string()]));
+        assert_eq!(
+            p.loaders[0],
+            ("fabric".to_string(), true, vec!["0.19.5".to_string()])
+        );
         assert_eq!(p.loaders[1], ("neoforge".to_string(), true, vec![]));
         assert_eq!(p.loaders[2], ("quilt".to_string(), false, vec![]));
-        assert_eq!(p.errors, vec!["forge".to_string()], "failed loader surfaces in errors");
+        assert_eq!(
+            p.errors,
+            vec!["forge".to_string()],
+            "failed loader surfaces in errors"
+        );
     }
 
     #[test]
@@ -7716,7 +9337,10 @@ mod tests {
         let got = parse_loader_probe(&err).expect_err("error payload is an Err");
         assert!(got.contains("mll"), "reason is visible: {got}");
         let bare = serde_json::json!({"ok": true});
-        assert!(parse_loader_probe(&bare).is_err(), "loaders array is required");
+        assert!(
+            parse_loader_probe(&bare).is_err(),
+            "loaders array is required"
+        );
     }
 
     #[test]
@@ -7730,23 +9354,39 @@ mod tests {
             errors: vec![],
         };
         let (ids, names, vers) = probe_rows(&p);
-        assert_eq!(ids, vec!["vanilla", "fabric", "quilt"], "vanilla first, unsupported excluded");
+        assert_eq!(
+            ids,
+            vec!["vanilla", "fabric", "quilt"],
+            "vanilla first, unsupported excluded"
+        );
         assert_eq!(names, vec!["Vanilla", "Fabric", "Quilt"]);
         assert_eq!(vers.get("fabric"), Some(&vec!["0.19.5".to_string()]));
-        assert!(!vers.contains_key("neoforge"), "unsupported never gets a row");
+        assert!(
+            !vers.contains_key("neoforge"),
+            "unsupported never gets a row"
+        );
     }
 
     #[test]
     fn probe_state_gates_dropdown_and_status() {
         // While probing, only Detecting disables the dropdown and shows
         // the detection status note.
-        assert!(!probe_ready(&ProbeState::Detecting), "loading state disables the dropdown");
-        assert_eq!(probe_status_text(&ProbeState::Detecting), "Detecting modloader support…");
+        assert!(
+            !probe_ready(&ProbeState::Detecting),
+            "loading state disables the dropdown"
+        );
+        assert_eq!(
+            probe_status_text(&ProbeState::Detecting),
+            "Detecting modloader support…"
+        );
         assert!(probe_ready(&ProbeState::Ready));
         assert_eq!(probe_status_text(&ProbeState::Ready), "");
         // un fallo es visible y vuelve a Vanilla (fila unica), nunca silencioso
         let failed = ProbeState::Failed("Modloader probe failed: boom".to_string());
-        assert!(probe_ready(&failed), "after a failed probe the dropdown re-enables on Vanilla");
+        assert!(
+            probe_ready(&failed),
+            "after a failed probe the dropdown re-enables on Vanilla"
+        );
         assert!(probe_status_text(&failed).contains("boom"));
     }
 
@@ -7770,11 +9410,24 @@ mod tests {
                 cache.entry("26.3".into()).or_default().java = Some(21);
             }
         }
-        assert_eq!(probe_spawns, 1, "second selection of 26.3 spawns no probe subprocess");
-        assert_eq!(java_spawns, 1, "second selection of 26.3 spawns no java subprocess");
+        assert_eq!(
+            probe_spawns, 1,
+            "second selection of 26.3 spawns no probe subprocess"
+        );
+        assert_eq!(
+            java_spawns, 1,
+            "second selection of 26.3 spawns no java subprocess"
+        );
         assert!(needs_probe(&cache, "1.21.1"), "other versions still probe");
-        assert_eq!(cache.get("26.3").and_then(|e| e.java), Some(21), "java cached");
-        assert!(cache.get("26.3").and_then(|e| e.probe.as_ref()).is_some(), "probe cached");
+        assert_eq!(
+            cache.get("26.3").and_then(|e| e.java),
+            Some(21),
+            "java cached"
+        );
+        assert!(
+            cache.get("26.3").and_then(|e| e.probe.as_ref()).is_some(),
+            "probe cached"
+        );
     }
 
     #[test]
@@ -7783,18 +9436,31 @@ mod tests {
         // transient and not cached; the next selection probes again.
         // Only a clean response enters the cache.
         let cache: Rc<RefCell<ProbeCache>> = Rc::new(RefCell::new(HashMap::new()));
-        cache_probe(&cache, "26.3", &LoaderProbe {
-            loaders: vec![("fabric".into(), true, vec!["0.19.5".into()])],
-            errors: vec!["neoforge: unversioned".to_string()],
-        });
-        assert!(needs_probe(&cache.borrow(), "26.3"),
-                "error probe must re-probe next time");
+        cache_probe(
+            &cache,
+            "26.3",
+            &LoaderProbe {
+                loaders: vec![("fabric".into(), true, vec!["0.19.5".into()])],
+                errors: vec!["neoforge: unversioned".to_string()],
+            },
+        );
+        assert!(
+            needs_probe(&cache.borrow(), "26.3"),
+            "error probe must re-probe next time"
+        );
         // respuesta limpia -> se cachea y no re-sondea
-        cache_probe(&cache, "26.3", &LoaderProbe {
-            loaders: vec![("fabric".into(), true, vec!["0.19.5".into()])],
-            errors: vec![],
-        });
-        assert!(!needs_probe(&cache.borrow(), "26.3"), "clean probe is cached");
+        cache_probe(
+            &cache,
+            "26.3",
+            &LoaderProbe {
+                loaders: vec![("fabric".into(), true, vec!["0.19.5".into()])],
+                errors: vec![],
+            },
+        );
+        assert!(
+            !needs_probe(&cache.borrow(), "26.3"),
+            "clean probe is cached"
+        );
     }
 
     #[test]
@@ -7805,7 +9471,11 @@ mod tests {
         assert_eq!(lv_mark("0.19.5"), "0.19.5", "stable builds remain unmarked");
         assert_eq!(lv_mark("latest"), "latest");
         assert_eq!(lv_unmark("26.3.0.51-beta (beta)"), "26.3.0.51-beta");
-        assert_eq!(lv_unmark("0.19.5"), "0.19.5", "unmarked versions remain unchanged");
+        assert_eq!(
+            lv_unmark("0.19.5"),
+            "0.19.5",
+            "unmarked versions remain unchanged"
+        );
         assert_eq!(lv_unmark("latest"), "latest");
     }
 
@@ -7818,12 +9488,17 @@ mod tests {
         let root = tmproot("legacy-del");
         std::env::set_var("HOME", &root); // test_env restores HOME when dropped.
         let leg = legacy_dir();
-        assert_eq!(leg,
+        assert_eq!(
+            leg,
             root.join(".config/CorkyTux/plugins/minecraft-launcher/instances"),
-            "legacy_dir() must be under the temporary HOME");
+            "legacy_dir() must be under the temporary HOME"
+        );
         let id = "corky-legacy-inst";
-        assert_eq!(inst_container(id, false), leg,
-            "a non-isolated ID uses the legacy container");
+        assert_eq!(
+            inst_container(id, false),
+            leg,
+            "a non-isolated ID uses the legacy container"
+        );
 
         let vdir = leg.join("versions").join(id);
         fs::create_dir_all(&vdir).unwrap();
@@ -7835,7 +9510,10 @@ mod tests {
             fs::remove_dir_all(&legacy_ver).unwrap();
         }
         assert!(!legacy_ver.exists(), "the legacy copy must disappear");
-        assert!(leg.exists(), "the legacy container remains; only the version is removed");
+        assert!(
+            leg.exists(),
+            "the legacy container remains; only the version is removed"
+        );
 
         let _ = fs::remove_dir_all(&root);
     }

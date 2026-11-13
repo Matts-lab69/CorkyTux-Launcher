@@ -46,7 +46,10 @@ const RULES: &[(&str, &str)] = &[
         "${1}\"<REDACTED>\"",
     ),
     // Authorization: Bearer <token>
-    (r#"(?i)(authorization\s*:\s*bearer\s+)(\S+)"#, "${1}<REDACTED>"),
+    (
+        r#"(?i)(authorization\s*:\s*bearer\s+)(\S+)"#,
+        "${1}<REDACTED>",
+    ),
     // x-api-key: <key>
     (r#"(?i)(x-api-key\s*:\s*)(\S+)"#, "${1}<REDACTED>"),
     // Xbox RpsTicket (d=<microsoft token>)
@@ -189,8 +192,14 @@ mod tests {
 
     #[test]
     fn json_token_fields_are_redacted() {
-        let out = red(r#"{"accessToken": "ACCESS_TOKEN_VALUE", "clientToken": "CLIENT_TOKEN_VALUE", "refresh_token": "REFRESH_TOKEN_VALUE"}"#);
-        for secret in ["ACCESS_TOKEN_VALUE", "CLIENT_TOKEN_VALUE", "REFRESH_TOKEN_VALUE"] {
+        let out = red(
+            r#"{"accessToken": "ACCESS_TOKEN_VALUE", "clientToken": "CLIENT_TOKEN_VALUE", "refresh_token": "REFRESH_TOKEN_VALUE"}"#,
+        );
+        for secret in [
+            "ACCESS_TOKEN_VALUE",
+            "CLIENT_TOKEN_VALUE",
+            "REFRESH_TOKEN_VALUE",
+        ] {
             assert!(!out.contains(secret), "redaction failed");
         }
         assert!(out.matches(REDACTED).count() == 3, "redaction failed");
@@ -198,7 +207,9 @@ mod tests {
 
     #[test]
     fn json_secret_fields_are_redacted() {
-        let out = red(r#"{"password": "PASSWORD_VALUE", "api_key": "API_KEY_VALUE", "user_code": "USER_CODE_VALUE"}"#);
+        let out = red(
+            r#"{"password": "PASSWORD_VALUE", "api_key": "API_KEY_VALUE", "user_code": "USER_CODE_VALUE"}"#,
+        );
         for secret in ["PASSWORD_VALUE", "API_KEY_VALUE", "USER_CODE_VALUE"] {
             assert!(!out.contains(secret), "redaction failed");
         }
@@ -230,10 +241,15 @@ mod tests {
 
     #[test]
     fn eos_exchange_code_is_redacted() {
-        let out = red(" -auth_login=LOGIN_VALUE -auth_password=EXCHANGE_CODE_VALUE -auth_type=exchangecode");
+        let out = red(
+            " -auth_login=LOGIN_VALUE -auth_password=EXCHANGE_CODE_VALUE -auth_type=exchangecode",
+        );
         assert!(!out.contains("EXCHANGE_CODE_VALUE"), "redaction failed");
         assert!(!out.contains("LOGIN_VALUE"), "redaction failed");
-        assert!(out.contains("-auth_password=<REDACTED>"), "redaction failed");
+        assert!(
+            out.contains("-auth_password=<REDACTED>"),
+            "redaction failed"
+        );
         assert!(out.contains("-auth_login=<REDACTED>"), "redaction failed");
         // The rest of the line stays readable.
         assert!(out.contains("-auth_type=exchangecode"), "redaction failed");
@@ -243,24 +259,43 @@ mod tests {
     fn eos_username_is_redacted() {
         let out = red("-auth_username=USERNAME_VALUE -epicuserid=USER_ID_VALUE");
         assert!(!out.contains("USERNAME_VALUE"), "redaction failed");
-        assert!(out.contains("-auth_username=<REDACTED>"), "redaction failed");
+        assert!(
+            out.contains("-auth_username=<REDACTED>"),
+            "redaction failed"
+        );
     }
 
     #[test]
     fn a_plain_line_is_untouched() {
         let out = red("[CorkyTux] Exit with return code 0");
-        assert!(out == "[CorkyTux] Exit with return code 0", "redaction failed");
+        assert!(
+            out == "[CorkyTux] Exit with return code 0",
+            "redaction failed"
+        );
     }
 
     #[test]
     fn sgdb_named_values_are_redacted_without_losing_labels() {
-        for name in ["CORKYTUX_STEAMGRIDDB_API_KEY", "CORKYTUX_SGDB_BUILTIN_KEY", "IntegrationApiKey"] {
+        for name in [
+            "CORKYTUX_STEAMGRIDDB_API_KEY",
+            "CORKYTUX_SGDB_BUILTIN_KEY",
+            "IntegrationApiKey",
+        ] {
             for label in [name.to_string(), name.to_lowercase()] {
                 for (input, expected) in [
                     (format!("{label}=SGDB_VALUE"), format!("{label}={REDACTED}")),
-                    (format!("{label} = 'SGDB_VALUE'"), format!("{label} = '{REDACTED}'")),
-                    (format!(r#"{{"{label}": "SGDB_VALUE"}}"#), format!(r#"{{"{label}": "{REDACTED}"}}"#)),
-                    (format!("error: {label}=SGDB_VALUE; request failed"), format!("error: {label}={REDACTED}; request failed")),
+                    (
+                        format!("{label} = 'SGDB_VALUE'"),
+                        format!("{label} = '{REDACTED}'"),
+                    ),
+                    (
+                        format!(r#"{{"{label}": "SGDB_VALUE"}}"#),
+                        format!(r#"{{"{label}": "{REDACTED}"}}"#),
+                    ),
+                    (
+                        format!("error: {label}=SGDB_VALUE; request failed"),
+                        format!("error: {label}={REDACTED}; request failed"),
+                    ),
                 ] {
                     assert!(red(&input) == expected, "named redaction failed");
                 }
@@ -270,9 +305,20 @@ mod tests {
 
     #[test]
     fn empty_named_values_do_not_consume_the_next_line() {
-        for name in ["CORKYTUX_STEAMGRIDDB_API_KEY", "CORKYTUX_SGDB_BUILTIN_KEY", "IntegrationApiKey"] {
-            for input in [format!("{name}= \nnext_line"), format!("{name}:\r\nnext_line"), format!("{name}=\"\"\nnext_line")] {
-                assert!(red(&input).ends_with("\nnext_line"), "line boundary changed");
+        for name in [
+            "CORKYTUX_STEAMGRIDDB_API_KEY",
+            "CORKYTUX_SGDB_BUILTIN_KEY",
+            "IntegrationApiKey",
+        ] {
+            for input in [
+                format!("{name}= \nnext_line"),
+                format!("{name}:\r\nnext_line"),
+                format!("{name}=\"\"\nnext_line"),
+            ] {
+                assert!(
+                    red(&input).ends_with("\nnext_line"),
+                    "line boundary changed"
+                );
             }
         }
     }
@@ -281,7 +327,10 @@ mod tests {
     fn builtin_absence_does_not_break_redaction() {
         // With no baked-in key the helper must be a no-op, not a panic.
         let out = red("[CorkyTux] SteamGridDB lookup started");
-        assert!(out == "[CorkyTux] SteamGridDB lookup started", "redaction failed");
+        assert!(
+            out == "[CorkyTux] SteamGridDB lookup started",
+            "redaction failed"
+        );
     }
 
     #[test]
@@ -295,9 +344,16 @@ mod tests {
     #[test]
     fn registered_secret_inside_request_error_is_redacted() {
         register_secret("REQERR_SECRET_VALUE");
-        let out = red("error sending request for url (https://api.example): REQERR_SECRET_VALUE now retrying");
+        let out = red(
+            "error sending request for url (https://api.example): REQERR_SECRET_VALUE now retrying",
+        );
         assert!(!out.contains("REQERR_SECRET_VALUE"), "redaction failed");
-        assert!(out.contains("error sending request for url (https://api.example): <REDACTED> now retrying"), "redaction failed");
+        assert!(
+            out.contains(
+                "error sending request for url (https://api.example): <REDACTED> now retrying"
+            ),
+            "redaction failed"
+        );
     }
 
     #[test]
@@ -305,7 +361,10 @@ mod tests {
         register_secret("A.B*(C)[D]_x");
         let out = red("weird value A.B*(C)[D]_x kept");
         assert!(!out.contains("A.B*(C)[D]_x"), "redaction failed");
-        assert!(out.contains("weird value <REDACTED> kept"), "redaction failed");
+        assert!(
+            out.contains("weird value <REDACTED> kept"),
+            "redaction failed"
+        );
     }
 
     #[test]
@@ -314,6 +373,9 @@ mod tests {
         register_secret("   ");
         register_secret("SHORT");
         let out = red("plain line SHORT values stay visible");
-        assert!(out == "plain line SHORT values stay visible", "redaction failed");
+        assert!(
+            out == "plain line SHORT values stay visible",
+            "redaction failed"
+        );
     }
 }

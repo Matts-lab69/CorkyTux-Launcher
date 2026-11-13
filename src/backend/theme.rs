@@ -1,17 +1,10 @@
 use glib::subclass::prelude::*;
-use gtk::prelude::*;
-use std::cell::RefCell;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub enum ThemeMode {
+    #[default]
     Dark,
     Light,
-}
-
-impl Default for ThemeMode {
-    fn default() -> Self {
-        ThemeMode::Dark
-    }
 }
 
 impl ThemeMode {
@@ -65,11 +58,17 @@ fn make_accent(id: u32, name: &str, primary: &str, hover: &str, pressed: &str) -
         id,
         name: name.into(),
         hex: primary.into(),
-        r, g, b,
+        r,
+        g,
+        b,
         hover_hex: hover.into(),
-        hr, hg, hb,
+        hr,
+        hg,
+        hb,
         pressed_hex: pressed.into(),
-        pr, pg, pb,
+        pr,
+        pg,
+        pb,
     }
 }
 
@@ -103,7 +102,7 @@ pub fn darken(hex: &str, amount: f64) -> String {
 
 mod imp {
     use super::*;
-    use glib::subclass::prelude::*;
+
     use std::cell::RefCell;
 
     #[derive(Default)]
@@ -199,44 +198,84 @@ impl ThemeManager {
     }
 
     pub fn bg(&self) -> &str {
-        if self.is_dark() { "#000000" } else { "#F4F1F8" }
+        if self.is_dark() {
+            "#000000"
+        } else {
+            "#F4F1F8"
+        }
     }
 
     pub fn panel(&self) -> &str {
-        if self.is_dark() { "#121212" } else { "#FFFFFF" }
+        if self.is_dark() {
+            "#121212"
+        } else {
+            "#FFFFFF"
+        }
     }
 
     pub fn card(&self) -> &str {
-        if self.is_dark() { "#181818" } else { "#FFFFFF" }
+        if self.is_dark() {
+            "#181818"
+        } else {
+            "#FFFFFF"
+        }
     }
 
     pub fn well(&self) -> &str {
-        if self.is_dark() { "#181818" } else { "#ECE8F2" }
+        if self.is_dark() {
+            "#181818"
+        } else {
+            "#ECE8F2"
+        }
     }
 
     pub fn hover(&self) -> &str {
-        if self.is_dark() { "#282828" } else { "#E3DCEE" }
+        if self.is_dark() {
+            "#282828"
+        } else {
+            "#E3DCEE"
+        }
     }
 
     pub fn border(&self) -> &str {
-        if self.is_dark() { "#282828" } else { "#D8D0E3" }
+        if self.is_dark() {
+            "#282828"
+        } else {
+            "#D8D0E3"
+        }
     }
 
     pub fn text_main(&self) -> &str {
-        if self.is_dark() { "#E0E0E0" } else { "#241F2E" }
+        if self.is_dark() {
+            "#E0E0E0"
+        } else {
+            "#241F2E"
+        }
     }
 
     pub fn text_sec(&self) -> &str {
-        if self.is_dark() { "#AAAAAA" } else { "#5B5468" }
+        if self.is_dark() {
+            "#AAAAAA"
+        } else {
+            "#5B5468"
+        }
     }
 
     pub fn text_muted(&self) -> &str {
-        if self.is_dark() { "#777777" } else { "#8A8296" }
+        if self.is_dark() {
+            "#777777"
+        } else {
+            "#8A8296"
+        }
     }
 
     pub fn accent_color(&self) -> String {
         let hex = self.accent().hex.clone();
-        if self.is_dark() { hex } else { darken(&hex, 0.22) }
+        if self.is_dark() {
+            hex
+        } else {
+            darken(&hex, 0.22)
+        }
     }
 
     pub fn accent_hover(&self) -> String {
@@ -263,16 +302,29 @@ impl ThemeManager {
 
     pub fn accent_rgb(&self) -> String {
         let a = self.accent();
-        format!("{},{},{}", (a.r * 255.0) as u32, (a.g * 255.0) as u32, (a.b * 255.0) as u32)
+        format!(
+            "{},{},{}",
+            (a.r * 255.0) as u32,
+            (a.g * 255.0) as u32,
+            (a.b * 255.0) as u32
+        )
     }
 
     pub fn accent_strip(&self) -> String {
         let a = self.accent();
         let luminance = 0.299 * a.r + 0.587 * a.g + 0.114 * a.b;
         let alpha = if self.is_dark() {
-            if luminance > 0.5 { 0.25 } else { 0.35 }
+            if luminance > 0.5 {
+                0.25
+            } else {
+                0.35
+            }
         } else {
-            if luminance > 0.5 { 0.15 } else { 0.25 }
+            if luminance > 0.5 {
+                0.15
+            } else {
+                0.25
+            }
         };
         format!(
             "rgba({},{},{},{})",
@@ -284,10 +336,18 @@ impl ThemeManager {
     }
 
     pub fn success(&self) -> &str {
-        if self.is_dark() { "#1db954" } else { "#198754" }
+        if self.is_dark() {
+            "#1db954"
+        } else {
+            "#198754"
+        }
     }
 
     pub fn danger(&self) -> &str {
-        if self.is_dark() { "#FF0040" } else { "#DC3545" }
+        if self.is_dark() {
+            "#FF0040"
+        } else {
+            "#DC3545"
+        }
     }
 }

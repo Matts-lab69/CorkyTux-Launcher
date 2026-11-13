@@ -86,7 +86,7 @@ enum RowState {
 /// all of them: that wait was the bug (a row in progress blocked the link even
 /// after another one had already failed).
 fn show_skip(states: &[RowState]) -> bool {
-    states.iter().any(|s| *s == RowState::Failed)
+    states.contains(&RowState::Failed)
 }
 
 /// Fixed neon green for "Ready": hardcoded on purpose, it does NOT follow the
@@ -137,7 +137,13 @@ pub fn short_reason(source: &str, text: &str) -> String {
             return "no connection".to_string();
         }
     }
-    for keyword in ["no space", "disk space", "errno 28", "espacio en disco", "sin espacio"] {
+    for keyword in [
+        "no space",
+        "disk space",
+        "errno 28",
+        "espacio en disco",
+        "sin espacio",
+    ] {
         if t.contains(keyword) {
             return "no disk space".to_string();
         }
@@ -176,9 +182,7 @@ fn install_pending(
                 let failures = v
                     .get("failed")
                     .and_then(|x| x.as_array())
-                    .map(|a| {
-                        a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>()
-                    })
+                    .map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>())
                     .unwrap_or_default();
                 for (id, name) in [(DepId::Legendary, "legendary"), (DepId::Gogdl, "gogdl")] {
                     // index_of only returns Some for a pending item.
@@ -208,7 +212,10 @@ fn install_pending(
         };
         send(InstallProgress::RowActive(i));
         let Some(bin) = helper else {
-            send(InstallProgress::RowFailed(i, "login helper missing".to_string()));
+            send(InstallProgress::RowFailed(
+                i,
+                "login helper missing".to_string(),
+            ));
             send(InstallProgress::Finished);
             return;
         };
@@ -221,7 +228,10 @@ fn install_pending(
         {
             Ok(c) => c,
             Err(e) => {
-                send(InstallProgress::RowFailed(i, short_reason("chrome", &e.to_string())));
+                send(InstallProgress::RowFailed(
+                    i,
+                    short_reason("chrome", &e.to_string()),
+                ));
                 send(InstallProgress::Finished);
                 return;
             }
@@ -263,9 +273,7 @@ fn install_pending(
                     .lines()
                     .rev()
                     .find(|l| l.contains("ERRO:"))
-                    .map(|l| {
-                        l.splitn(3, ':').nth(2).unwrap_or(l).trim().to_string()
-                    })
+                    .map(|l| l.splitn(3, ':').nth(2).unwrap_or(l).trim().to_string())
                     .unwrap_or_else(|| remaining.trim().to_string());
                 send(InstallProgress::RowFailed(i, short_reason("chrome", &msg)));
             }
@@ -325,7 +333,9 @@ pub fn present(
     sep.set_halign(gtk::Align::Fill);
     inner.append(&sep);
 
-    let intro = gtk::Label::new(Some("Stores needs these tools to work. They are downloaded once."));
+    let intro = gtk::Label::new(Some(
+        "Stores needs these tools to work. They are downloaded once.",
+    ));
     intro.set_halign(gtk::Align::Start);
     intro.set_wrap(true);
     intro.add_css_class("info-value");
@@ -337,7 +347,10 @@ pub fn present(
 
     let mut rows: Vec<RowWidgets> = Vec::new();
     for id in &pending {
-        let info = DEPS.iter().find(|d| d.id == *id).expect("DepId covered by DEPS");
+        let info = DEPS
+            .iter()
+            .find(|d| d.id == *id)
+            .expect("DepId covered by DEPS");
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.set_margin_top(4);
         row.set_margin_bottom(4);
@@ -532,8 +545,10 @@ pub fn present(
                             *s = RowState::Ready;
                         }
                         e.ready_count += 1;
-                        e.progress_bar.set_fraction(e.ready_count as f64 / e.total.max(1) as f64);
-                        e.progress_bar.set_text(Some(&format!("{} of {}", e.ready_count, e.total)));
+                        e.progress_bar
+                            .set_fraction(e.ready_count as f64 / e.total.max(1) as f64);
+                        e.progress_bar
+                            .set_text(Some(&format!("{} of {}", e.ready_count, e.total)));
                     }
                     InstallProgress::RowFailed(i, reason) => {
                         if let Some(f) = e.rows.get(i) {
@@ -594,33 +609,68 @@ mod tests {
 
     #[test]
     fn short_reason_detects_no_connection() {
-        assert_eq!(short_reason("setup", "gogdl: <urlopen error [Errno -2] Name or service not known>"), "no connection");
+        assert_eq!(
+            short_reason(
+                "setup",
+                "gogdl: <urlopen error [Errno -2] Name or service not known>"
+            ),
+            "no connection"
+        );
         // Compatibility fixtures for external diagnostics in a Spanish locale.
-        assert_eq!(short_reason("chrome", "fallo de red al conectar: bla"), "no connection");
-        assert_eq!(short_reason("chrome", "la descarga se cortó o falló tras 4 intentos"), "no connection");
+        assert_eq!(
+            short_reason("chrome", "fallo de red al conectar: bla"),
+            "no connection"
+        );
+        assert_eq!(
+            short_reason("chrome", "la descarga se cortó o falló tras 4 intentos"),
+            "no connection"
+        );
         // The login helper's own English wording.
-        assert_eq!(short_reason("chrome", "the download was cut off or failed after 4 attempts"), "no connection");
-        assert_eq!(short_reason("chrome", "the server rejected the download: 403"), "no connection");
+        assert_eq!(
+            short_reason(
+                "chrome",
+                "the download was cut off or failed after 4 attempts"
+            ),
+            "no connection"
+        );
+        assert_eq!(
+            short_reason("chrome", "the server rejected the download: 403"),
+            "no connection"
+        );
     }
 
     #[test]
     fn short_reason_detects_no_disk_space() {
-        assert_eq!(short_reason("setup", "gogdl: [Errno 28] No space left on device"), "no disk space");
-        assert_eq!(short_reason("chrome", "could not write to disk: no space left"), "no disk space");
+        assert_eq!(
+            short_reason("setup", "gogdl: [Errno 28] No space left on device"),
+            "no disk space"
+        );
+        assert_eq!(
+            short_reason("chrome", "could not write to disk: no space left"),
+            "no disk space"
+        );
         // Compatibility fixture for external diagnostics in a Spanish locale.
-        assert_eq!(short_reason("chrome", "no se pudo escribir en disco: sin espacio"), "no disk space");
+        assert_eq!(
+            short_reason("chrome", "no se pudo escribir en disco: sin espacio"),
+            "no disk space"
+        );
     }
 
     #[test]
     fn short_reason_preserves_unclassified_text() {
-        assert_eq!(short_reason("setup", "gogdl: permiso denegado"), "gogdl: permiso denegado");
+        assert_eq!(
+            short_reason("setup", "gogdl: permiso denegado"),
+            "gogdl: permiso denegado"
+        );
         assert_eq!(short_reason("setup", "   "), "unknown error");
     }
 
     #[test]
     fn all_three_dependencies_have_metadata() {
         assert_eq!(DEPS.len(), 3);
-        assert!(DEPS.iter().any(|d| d.id == DepId::Chromium && d.size == "~188 MB"));
+        assert!(DEPS
+            .iter()
+            .any(|d| d.id == DepId::Chromium && d.size == "~188 MB"));
     }
 
     /// The reported bug: row A Failed, row B still in progress (neither

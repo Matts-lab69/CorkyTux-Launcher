@@ -172,19 +172,18 @@ use adw::prelude::*;
 use gtk::{self, glib};
 
 use backend::config::ConfigManager;
-use backend::game_model::{GameModel, FilterMode};
+use backend::game_model::RecentModel;
+use backend::game_model::{FilterMode, GameModel};
 use backend::integration::IntegrationManager;
 use backend::plugins::PluginManager;
 use backend::proton::ProtonManager;
-use backend::game_model::RecentModel;
 use backend::theme::ThemeManager;
+use ui::center::CenterHandle;
 use ui::details_panel::DetailsPanel;
 use ui::helpers;
-use ui::sidebar::{Sidebar, GameCallback, FilterCallback};
-use ui::center::CenterHandle;
 use ui::log_modal::LogModal;
+use ui::sidebar::{FilterCallback, GameCallback, Sidebar};
 use ui::warnings::{WarningKind, WarningModal};
-use ui::proton_modal::ProtonModal;
 
 fn url_encode(s: &str) -> String {
     let mut out = String::new();
@@ -239,7 +238,7 @@ pub struct AppState {
     /// I refresh the Store cards after install/uninstall/import/remove
     /// (StoresView registers it; remove_modal invokes it since it owns no
     /// handle). Same path as manual Refresh.
-    pub stores_changed: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    pub stores_changed: ui::RefreshCallback,
 }
 
 impl AppState {
@@ -256,8 +255,13 @@ impl AppState {
         proton.detect_running_sessions();
 
         Self {
-            config, theme, game_model, recent_model,
-            proton, plugins, integration,
+            config,
+            theme,
+            game_model,
+            recent_model,
+            proton,
+            plugins,
+            integration,
             selected_game: Rc::new(RefCell::new(String::new())),
             install_warn_btn: Rc::new(RefCell::new(None)),
             install_warn_count: Rc::new(RefCell::new(None)),
@@ -272,124 +276,133 @@ fn build_details_panel(state: &AppState, window: &adw::ApplicationWindow) -> Det
     let state_clone = state.clone();
     let state_clone2 = state.clone();
     let win_clone = window.clone();
-    DetailsPanel::new(&state.theme, &state.proton, move |name| {
-        // QML parity: Play launches, Stop (same button) banks session time.
-        // Returns Err so the panel can show launch failures (used to be
-        // silent `let _ = ...`, leaving users with a dead button).
-        if state_clone.proton.is_game_running()
-            && state_clone.proton.session_game_name() == name
-        {
-            return match state_clone.proton.stop_game() {
-                Ok((game, secs)) => {
-                    if !game.is_empty() {
-                        // secs > 0: the ledger did not handle it (adopted
-                        // session); credit it here. secs == 0: the ledger
-                        // already credited, only reload the model.
-                        if secs > 0 {
-                            state_clone.game_model.increment_time_spent(&game, secs);
-                        } else {
-                            state_clone.game_model.reload_time_spent(&game);
+    DetailsPanel::new(
+        &state.theme,
+        &state.proton,
+        move |name| {
+            // QML parity: Play launches, Stop (same button) banks session time.
+            // Returns Err so the panel can show launch failures (used to be
+            // silent `let _ = ...`, leaving users with a dead button).
+            if state_clone.proton.is_game_running()
+                && state_clone.proton.session_game_name() == name
+            {
+                return match state_clone.proton.stop_game() {
+                    Ok((game, secs)) => {
+                        if !game.is_empty() {
+                            // secs > 0: the ledger did not handle it (adopted
+                            // session); credit it here. secs == 0: the ledger
+                            // already credited, only reload the model.
+                            if secs > 0 {
+                                state_clone.game_model.increment_time_spent(&game, secs);
+                            } else {
+                                state_clone.game_model.reload_time_spent(&game);
+                            }
+                            state_clone.game_model.touch_last_played(&game);
+                            state_clone.recent_model.refresh(30);
                         }
-                        state_clone.game_model.touch_last_played(&game);
-                        state_clone.recent_model.refresh(30);
+                        Ok(())
                     }
-                    Ok(())
-                }
-                Err(e) => Err(e),
-            };
-        }
-        // A parked session shows Stop too: stop that entry only, bank its
-        // time once, and leave the foreground session untouched.
-        if state_clone.proton.is_parked(&name) {
-            if let Some((game, secs)) = state_clone.proton.stop_parked(&name) {
-                if secs > 0 {
-                    state_clone.game_model.increment_time_spent(&game, secs);
-                } else {
-                    state_clone.game_model.reload_time_spent(&game);
-                }
-                state_clone.game_model.touch_last_played(&game);
-                state_clone.recent_model.refresh(30);
+                    Err(e) => Err(e),
+                };
             }
-            return Ok(());
-        }
-        state_clone.game_model.touch_last_played(&name);
-        state_clone.recent_model.refresh(30);
-        if state_clone.game_model.get_game(&name).is_some() {
-            match state_clone.proton.run_game(&name) {
-                Ok(()) => Ok(()),
-                Err(e) => {
-                    // Rescan first: the list may be stale (deleted externally).
-                    state_clone.proton.refresh_installed();
-                    if state_clone.proton.installed_protons().is_empty() {
-                        // Ask before downloading: No (neon red) / Yes (neon green).
-                        let cdlg = adw::Dialog::new();
-                        cdlg.set_title("Proton missing");
-                        cdlg.set_content_width(420);
-                        cdlg.set_content_height(210);
-                        let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
-                        outer.add_css_class("modal-bg");
-                        outer.set_hexpand(true);
-                        outer.set_vexpand(true);
-                        let inner = gtk::Box::new(gtk::Orientation::Vertical, 10);
-                        inner.set_hexpand(true);
-                        inner.set_vexpand(true);
-                        inner.set_margin_top(12);
-                        inner.set_margin_bottom(12);
-                        inner.set_margin_start(16);
-                        inner.set_margin_end(16);
-                        outer.append(&inner);
-                        let (header_row, x_btn) = helpers::modal_header("Proton missing");
-                        {
-                            let d0 = cdlg.clone();
-                            x_btn.connect_clicked(move |_| { d0.close(); });
-                        }
-                        inner.append(&header_row);
-                        let msg = gtk::Label::new(Some(
+            // A parked session shows Stop too: stop that entry only, bank its
+            // time once, and leave the foreground session untouched.
+            if state_clone.proton.is_parked(&name) {
+                if let Some((game, secs)) = state_clone.proton.stop_parked(&name) {
+                    if secs > 0 {
+                        state_clone.game_model.increment_time_spent(&game, secs);
+                    } else {
+                        state_clone.game_model.reload_time_spent(&game);
+                    }
+                    state_clone.game_model.touch_last_played(&game);
+                    state_clone.recent_model.refresh(30);
+                }
+                return Ok(());
+            }
+            state_clone.game_model.touch_last_played(&name);
+            state_clone.recent_model.refresh(30);
+            if state_clone.game_model.get_game(&name).is_some() {
+                match state_clone.proton.run_game(&name) {
+                    Ok(()) => Ok(()),
+                    Err(e) => {
+                        // Rescan first: the list may be stale (deleted externally).
+                        state_clone.proton.refresh_installed();
+                        if state_clone.proton.installed_protons().is_empty() {
+                            // Ask before downloading: No (neon red) / Yes (neon green).
+                            let cdlg = adw::Dialog::new();
+                            cdlg.set_title("Proton missing");
+                            cdlg.set_content_width(420);
+                            cdlg.set_content_height(210);
+                            let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                            outer.add_css_class("modal-bg");
+                            outer.set_hexpand(true);
+                            outer.set_vexpand(true);
+                            let inner = gtk::Box::new(gtk::Orientation::Vertical, 10);
+                            inner.set_hexpand(true);
+                            inner.set_vexpand(true);
+                            inner.set_margin_top(12);
+                            inner.set_margin_bottom(12);
+                            inner.set_margin_start(16);
+                            inner.set_margin_end(16);
+                            outer.append(&inner);
+                            let (header_row, x_btn) = helpers::modal_header("Proton missing");
+                            {
+                                let d0 = cdlg.clone();
+                                x_btn.connect_clicked(move |_| {
+                                    d0.close();
+                                });
+                            }
+                            inner.append(&header_row);
+                            let msg = gtk::Label::new(Some(
                             "The previous Proton was deleted. Continue with the automatic install of the latest Proton-GE?",
                         ));
-                        msg.set_halign(gtk::Align::Start);
-                        msg.set_wrap(true);
-                        inner.append(&msg);
-                        let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-                        let no_btn = gtk::Button::with_label("No");
-                        no_btn.add_css_class("neon-red");
-                        no_btn.set_hexpand(true);
-                        let yes_btn = gtk::Button::with_label("Yes");
-                        yes_btn.add_css_class("neon-green");
-                        yes_btn.set_hexpand(true);
-                        {
-                            let d0 = cdlg.clone();
-                            no_btn.connect_clicked(move |_| { d0.close(); });
+                            msg.set_halign(gtk::Align::Start);
+                            msg.set_wrap(true);
+                            inner.append(&msg);
+                            let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+                            let no_btn = gtk::Button::with_label("No");
+                            no_btn.add_css_class("neon-red");
+                            no_btn.set_hexpand(true);
+                            let yes_btn = gtk::Button::with_label("Yes");
+                            yes_btn.add_css_class("neon-green");
+                            yes_btn.set_hexpand(true);
+                            {
+                                let d0 = cdlg.clone();
+                                no_btn.connect_clicked(move |_| {
+                                    d0.close();
+                                });
+                            }
+                            {
+                                let d0 = cdlg.clone();
+                                let state_cc = state_clone.clone();
+                                let win_cc = win_clone.clone();
+                                yes_btn.connect_clicked(move |_| {
+                                    d0.close();
+                                    maybe_autoinstall_proton(&state_cc, &win_cc);
+                                });
+                            }
+                            row.append(&no_btn);
+                            row.append(&yes_btn);
+                            inner.append(&row);
+                            cdlg.set_child(Some(&outer));
+                            cdlg.present(Some(&win_clone));
+                            return Ok(());
                         }
-                        {
-                            let d0 = cdlg.clone();
-                            let state_cc = state_clone.clone();
-                            let win_cc = win_clone.clone();
-                            yes_btn.connect_clicked(move |_| {
-                                d0.close();
-                                maybe_autoinstall_proton(&state_cc, &win_cc);
-                            });
-                        }
-                        row.append(&no_btn);
-                        row.append(&yes_btn);
-                        inner.append(&row);
-                        cdlg.set_child(Some(&outer));
-                        cdlg.present(Some(&win_clone));
-                        return Ok(());
+                        Err(e)
                     }
-                    Err(e)
                 }
+            } else {
+                Err("Game not found".into())
             }
-        } else {
-            Err("Game not found".into())
-        }
-    }, move |msg| {
-        if let Some(name) = msg.strip_prefix("fav_on:") {
-            state_clone2.game_model.set_favorite(name, true);
-        } else if let Some(name) = msg.strip_prefix("fav_off:") {
-            state_clone2.game_model.set_favorite(name, false);
-        }
-    })
+        },
+        move |msg| {
+            if let Some(name) = msg.strip_prefix("fav_on:") {
+                state_clone2.game_model.set_favorite(name, true);
+            } else if let Some(name) = msg.strip_prefix("fav_off:") {
+                state_clone2.game_model.set_favorite(name, false);
+            }
+        },
+    )
 }
 
 /// The one way out: bank every live session (D2) and stop the loop.
@@ -415,7 +428,8 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     // here: GTK4 asserts on the display-singleton icon theme.)
     if let Some(display) = gtk::gdk::Display::default() {
         let it = gtk::IconTheme::for_display(&display);
-        let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()));
+        let home =
+            std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()));
         let exe = std::env::current_exe().unwrap_or_default();
         let xdg: Vec<std::path::PathBuf> = std::env::var("XDG_DATA_DIRS")
             .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string())
@@ -430,11 +444,23 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     }
 
     // Restore saved dimensions within the independent main-window minimum policy.
-    let saved_w: i32 = state.config.launcher_value("CkWinW").and_then(|s| s.parse().ok()).unwrap_or(1200).clamp(ui::layout::WINDOW_MIN_WIDTH, 10000);
-    let saved_h: i32 = state.config.launcher_value("CkWinH").and_then(|s| s.parse().ok()).unwrap_or(700).clamp(ui::layout::WINDOW_MIN_HEIGHT, 10000);
+    let saved_w: i32 = state
+        .config
+        .launcher_value("CkWinW")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1200)
+        .clamp(ui::layout::WINDOW_MIN_WIDTH, 10000);
+    let saved_h: i32 = state
+        .config
+        .launcher_value("CkWinH")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(700)
+        .clamp(ui::layout::WINDOW_MIN_HEIGHT, 10000);
     let window = adw::ApplicationWindow::builder()
-        .application(app).title("CorkyTux")
-        .default_width(saved_w).default_height(saved_h)
+        .application(app)
+        .title("CorkyTux")
+        .default_width(saved_w)
+        .default_height(saved_h)
         .build();
     window.set_size_request(ui::layout::WINDOW_MIN_WIDTH, ui::layout::WINDOW_MIN_HEIGHT);
     // Tray: the StatusNotifierItem service lives on its own thread and never
@@ -452,9 +478,12 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         let state_c = state.clone();
         let watcher_live = watcher_alive.clone();
         window.connect_close_request(move |win| {
-            let a = win.allocation();
-            state_c.config.set_launcher_value("CkWinW", &a.width().to_string());
-            state_c.config.set_launcher_value("CkWinH", &a.height().to_string());
+            state_c
+                .config
+                .set_launcher_value("CkWinW", &win.width().to_string());
+            state_c
+                .config
+                .set_launcher_value("CkWinH", &win.height().to_string());
             // Best-effort final checkpoint. The ledger is not closed: the
             // session stays live for adoption on the next start.
             if state_c.proton.is_game_running() {
@@ -485,7 +514,10 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                 match msg {
                     ui::tray::TrayMsg::Show => window_c.present(),
                     ui::tray::TrayMsg::Toggle => {
-                        if ui::tray::show_on_toggle(window_c.is_visible(), watcher_live.load(std::sync::atomic::Ordering::Relaxed)) {
+                        if ui::tray::show_on_toggle(
+                            window_c.is_visible(),
+                            watcher_live.load(std::sync::atomic::Ordering::Relaxed),
+                        ) {
                             window_c.present();
                         } else {
                             window_c.set_visible(false);
@@ -525,7 +557,8 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     body.set_halign(gtk::Align::Fill);
 
     let details = build_details_panel(&state, &window);
-    let details_ref: Rc<RefCell<Option<DetailsPanel>>> = Rc::new(RefCell::new(Some(details.clone())));
+    let details_ref: Rc<RefCell<Option<DetailsPanel>>> =
+        Rc::new(RefCell::new(Some(details.clone())));
 
     // Callback types
     let game_cb: GameCallback = Rc::new(RefCell::new(None));
@@ -536,8 +569,8 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     let center_handle_for_filter = center_handle.clone();
 
     // Filter callback
-    let sidebar_ref_for_filter: Rc<RefCell<Option<Rc<RefCell<Option<Sidebar>>>>>> =
-        Rc::new(RefCell::new(None));
+    type SidebarSlot = Rc<RefCell<Option<Sidebar>>>;
+    let sidebar_ref_for_filter: Rc<RefCell<Option<SidebarSlot>>> = Rc::new(RefCell::new(None));
     {
         let state_c = state.clone();
         let details_c = details_ref.clone();
@@ -576,17 +609,32 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
             if let Some(ref d) = *det.borrow() {
                 d.set_game(&name, &state_c.config);
             }
-            let (needs, needs_appimage, needs_rpg, send_exe, send_sid, send_slug) = match state_c.game_model.get_game(&name) {
-                Some(g) => {
-                    let app = g.source == crate::backend::game_model::GameSource::AppImage
-                        || g.executor == "appimage-launcher";
-                    let rpg = g.source == crate::backend::game_model::GameSource::RpgMaker
-                        || g.executor == "rpgmaker-runtime";
-                    // Retry if either banner or icon is missing (not just both)
-                    (g.banner.is_empty() || g.icon.is_empty(), app, rpg, g.executable.clone(), g.steam_id.clone(), g.lutris_slug.clone())
-                }
-                None => (false, false, false, String::new(), String::new(), String::new()),
-            };
+            let (needs, needs_appimage, needs_rpg, send_exe, send_sid, send_slug) =
+                match state_c.game_model.get_game(&name) {
+                    Some(g) => {
+                        let app = g.source == crate::backend::game_model::GameSource::AppImage
+                            || g.executor == "appimage-launcher";
+                        let rpg = g.source == crate::backend::game_model::GameSource::RpgMaker
+                            || g.executor == "rpgmaker-runtime";
+                        // Retry if either banner or icon is missing (not just both)
+                        (
+                            g.banner.is_empty() || g.icon.is_empty(),
+                            app,
+                            rpg,
+                            g.executable.clone(),
+                            g.steam_id.clone(),
+                            g.lutris_slug.clone(),
+                        )
+                    }
+                    None => (
+                        false,
+                        false,
+                        false,
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                    ),
+                };
             if needs && !art_inflight.borrow().contains(&name) {
                 art_inflight.borrow_mut().insert(name.clone());
                 let art_name = name.clone();
@@ -599,19 +647,32 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                 let send_name = art_name.clone();
                 std::thread::spawn(move || {
                     let sgdb_key = IntegrationManager::user_sgdb_key();
-                    let (mut i, mut b) = if needs_appimage {
-                        let i = IntegrationManager::extract_appimage_icon_static(&send_exe, &send_name);
+                    let (i, mut b) = if needs_appimage {
+                        let i =
+                            IntegrationManager::extract_appimage_icon_static(&send_exe, &send_name);
                         (i, None)
                     } else if needs_rpg {
                         let i = IntegrationManager::extract_rpg_icon_static(&send_exe, &send_name);
-                        let (_, b) = IntegrationManager::resolve_artwork_static(&send_name, &send_sid, &send_slug, sgdb_key.as_deref());
+                        let (_, b) = IntegrationManager::resolve_artwork_static(
+                            &send_name,
+                            &send_sid,
+                            &send_slug,
+                            sgdb_key.as_deref(),
+                        );
                         (i, b)
                     } else {
-                        let mut out = IntegrationManager::resolve_artwork_static(&send_name, &send_sid, &send_slug, sgdb_key.as_deref());
+                        let mut out = IntegrationManager::resolve_artwork_static(
+                            &send_name,
+                            &send_sid,
+                            &send_slug,
+                            sgdb_key.as_deref(),
+                        );
                         if out.0.is_none() {
                             let exe_path = send_exe.clone();
                             if exe_path.to_lowercase().ends_with(".exe") {
-                                out.0 = IntegrationManager::extract_exe_icon_static(&exe_path, &send_name);
+                                out.0 = IntegrationManager::extract_exe_icon_static(
+                                    &exe_path, &send_name,
+                                );
                             }
                         }
                         out
@@ -631,7 +692,8 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                         let cur = gm_c.get_game(&art_name3);
                         let cur_icon = cur.as_ref().map(|g| g.icon.clone()).unwrap_or_default();
                         let cur_banner = cur.as_ref().map(|g| g.banner.clone()).unwrap_or_default();
-                        let icon_path_ok = |p: &str| !p.is_empty() && std::path::Path::new(p).is_file();
+                        let icon_path_ok =
+                            |p: &str| !p.is_empty() && std::path::Path::new(p).is_file();
                         let mut icon = i.unwrap_or_default();
                         if !icon.is_empty() && !icon_path_ok(&icon) {
                             icon.clear();
@@ -653,7 +715,7 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                         if !banner.is_empty() && !banner_path_ok(&banner) {
                             banner.clear();
                         }
-                        if cur_banner.is_empty() || banner_path_ok(&cur_banner) == false {
+                        if cur_banner.is_empty() || !banner_path_ok(&cur_banner) {
                             // replace missing/broken
                         } else if !banner.is_empty() {
                             // keep both paths, set_artwork merges non-empty
@@ -681,7 +743,8 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
 
     // Build sidebar
     let page_cb: ui::sidebar::PageCallback = Rc::new(RefCell::new(None));
-    let sidebar = Sidebar::new_with_callbacks(&state.config, &state.theme, &game_cb, &filter_cb, &page_cb);
+    let sidebar =
+        Sidebar::new_with_callbacks(&state.config, &state.theme, &game_cb, &filter_cb, &page_cb);
     // Gate Minecraft/Stores entry buttons on installed plugins.
     sidebar.set_plugin_manager(&state.plugins);
     let sidebar_ref: Rc<RefCell<Option<Sidebar>>> = Rc::new(RefCell::new(Some(sidebar.clone())));
@@ -716,11 +779,13 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     {
         let separator = panel_separator.clone();
         let center = center.clone();
-        sidebar.widget.connect_visible_notify(move |sidebar_widget| {
-            let visible = sidebar_widget.is_visible();
-            separator.set_visible(visible);
-            center.set_sidebar_visible(visible);
-        });
+        sidebar
+            .widget
+            .connect_visible_notify(move |sidebar_widget| {
+                let visible = sidebar_widget.is_visible();
+                separator.set_visible(visible);
+                center.set_sidebar_visible(visible);
+            });
     }
 
     // Games / Minecraft / Stores pages inside the launcher (sidebar buttons).
@@ -735,7 +800,10 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     let content_stack = gtk::Stack::new();
     content_stack.set_hexpand(true);
     content_stack.set_vexpand(true);
-    content_stack.add_named(&center_handle.borrow().as_ref().unwrap().widget, Some("games"));
+    content_stack.add_named(
+        &center_handle.borrow().as_ref().unwrap().widget,
+        Some("games"),
+    );
     content_stack.add_named(&mc_view.widget, Some("minecraft"));
     content_stack.add_named(&stores_view.widget, Some("stores"));
     content_stack.set_visible_child_name("games");
@@ -823,7 +891,13 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     let ch_clone = center_handle.clone();
     let det_clone = details_ref.clone();
     add_btn.connect_clicked(move |_| {
-        ui::add_game::show_add_game_modal(&state_clone, &win_clone, &sb_clone, &ch_clone, &det_clone);
+        ui::add_game::show_add_game_modal(
+            &state_clone,
+            &win_clone,
+            &sb_clone,
+            &ch_clone,
+            &det_clone,
+        );
     });
     header.pack_start(&add_btn);
 
@@ -842,7 +916,13 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     let ch_clone2 = center_handle.clone();
     let det_clone2 = details_ref.clone();
     settings_btn.connect_clicked(move |_| {
-        ui::settings::show_settings_modal(&state_clone2, &win_clone2, &sb_clone2, &ch_clone2, &det_clone2);
+        ui::settings::show_settings_modal(
+            &state_clone2,
+            &win_clone2,
+            &sb_clone2,
+            &ch_clone2,
+            &det_clone2,
+        );
     });
     header.pack_end(&settings_btn);
 
@@ -852,8 +932,11 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     // count label shows how many); clicking re-checks off the main loop and
     // opens the shared modal. Visibility/counters update without restart via
     // refresh_warn_buttons() (wired to path fixes + Store changes).
-    let (prefix_warn_btn, prefix_warn_count) =
-        build_warn_button("corkytux-warning-symbolic", "warning", "Prefix path warnings");
+    let (prefix_warn_btn, prefix_warn_count) = build_warn_button(
+        "corkytux-warning-symbolic",
+        "warning",
+        "Prefix path warnings",
+    );
     let (install_warn_btn, install_warn_count) =
         build_warn_button("corkytux-error-symbolic", "error", "Install path warnings");
     {
@@ -941,14 +1024,14 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         if let Some(btn) = details.get_action_button("Debug") {
             btn.connect_clicked(move |_| {
                 let name = state_c.selected_game.borrow().clone();
-                if name.is_empty() { return; }
+                if name.is_empty() {
+                    return;
+                }
                 // Debug never launches. Live tail while running, snapshot
                 // once stopped (a frozen shot is why logs "ended at fsync").
                 let log_modal = LogModal::new(&state_c.theme, &name, &win);
                 let header = state_c.proton.debug_header(&name);
-                if state_c.proton.is_game_running()
-                    && state_c.proton.session_game_name() == name
-                {
+                if state_c.proton.is_game_running() && state_c.proton.session_game_name() == name {
                     log_modal.set_running(true);
                     log_modal.tail_game_log(&name, &state_c.proton, &header);
                 } else {
@@ -966,11 +1049,13 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     }
     {
         let state_c = state.clone();
-        let win = window.clone();
+        let _win = window.clone();
         if let Some(btn) = details.get_action_button("Wine") {
             btn.connect_clicked(move |b| {
                 let name = state_c.selected_game.borrow().clone();
-                if name.is_empty() { return; }
+                if name.is_empty() {
+                    return;
+                }
                 let popover = gtk::Popover::new();
                 let vbox = gtk::Box::new(gtk::Orientation::Vertical, 2);
                 let tools = [
@@ -1010,7 +1095,9 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         if let Some(btn) = details.get_action_button("Change exe") {
             btn.connect_clicked(move |_| {
                 let name = state_c.selected_game.borrow().clone();
-                if name.is_empty() { return; }
+                if name.is_empty() {
+                    return;
+                }
                 let dialog = adw::Dialog::new();
                 dialog.set_title("Change exe");
                 dialog.set_content_width(420);
@@ -1030,7 +1117,9 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                 let (exe_header, exe_x) = ui::helpers::modal_header("Change exe");
                 {
                     let dlg = dialog.clone();
-                    exe_x.connect_clicked(move |_| { dlg.close(); });
+                    exe_x.connect_clicked(move |_| {
+                        dlg.close();
+                    });
                 }
                 inner.append(&exe_header);
                 let sub = gtk::Label::new(Some("Select the executable Play will use"));
@@ -1044,7 +1133,10 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                 err_lbl.set_wrap(true);
                 err_lbl.add_css_class("warn-game");
                 inner.append(&err_lbl);
-                let main_path = state_c.config.game_value(&name, "MainPath").unwrap_or_default();
+                let main_path = state_c
+                    .config
+                    .game_value(&name, "MainPath")
+                    .unwrap_or_default();
                 let exes = if main_path.trim().is_empty() {
                     Vec::new()
                 } else {
@@ -1093,7 +1185,9 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                             return;
                         }
                         let stored = exe_c.replace('\\', "/");
-                        state_cc.config.set_game_value(&game_c, "Executable", &stored);
+                        state_cc
+                            .config
+                            .set_game_value(&game_c, "Executable", &stored);
                         dlg_c.close();
                     });
                     inner.append(&row_btn);
@@ -1108,7 +1202,9 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         if let Some(btn) = details.get_action_button("Folders") {
             btn.connect_clicked(move |_| {
                 let name = state_c.selected_game.borrow().clone();
-                if name.is_empty() { return; }
+                if name.is_empty() {
+                    return;
+                }
                 if let Some(path) = state_c.config.game_value(&name, "MainPath") {
                     if !path.is_empty() {
                         state_c.integration.open_folder(&path);
@@ -1122,14 +1218,23 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         if let Some(btn) = details.get_action_button("SteamDB") {
             btn.connect_clicked(move |_| {
                 let name = state_c.selected_game.borrow().clone();
-                if name.is_empty() { return; }
-                let sid = state_c.config.game_value(&name, "SteamID").unwrap_or_default();
+                if name.is_empty() {
+                    return;
+                }
+                let sid = state_c
+                    .config
+                    .game_value(&name, "SteamID")
+                    .unwrap_or_default();
                 if sid.is_empty() {
                     // C++ parity: search fallback when there is no AppID
                     state_c.integration.open_url(&format!(
-                        "https://steamdb.info/search/?q={}", url_encode(&name)));
+                        "https://steamdb.info/search/?q={}",
+                        url_encode(&name)
+                    ));
                 } else {
-                    state_c.integration.open_url(&format!("https://steamdb.info/app/{}/", sid));
+                    state_c
+                        .integration
+                        .open_url(&format!("https://steamdb.info/app/{}/", sid));
                 }
             });
         }
@@ -1139,13 +1244,22 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         if let Some(btn) = details.get_action_button("ProtonDB") {
             btn.connect_clicked(move |_| {
                 let name = state_c.selected_game.borrow().clone();
-                if name.is_empty() { return; }
-                let sid = state_c.config.game_value(&name, "SteamID").unwrap_or_default();
+                if name.is_empty() {
+                    return;
+                }
+                let sid = state_c
+                    .config
+                    .game_value(&name, "SteamID")
+                    .unwrap_or_default();
                 if sid.is_empty() {
                     state_c.integration.open_url(&format!(
-                        "https://www.protondb.com/search?q={}", url_encode(&name)));
+                        "https://www.protondb.com/search?q={}",
+                        url_encode(&name)
+                    ));
                 } else {
-                    state_c.integration.open_url(&format!("https://www.protondb.com/app/{}", sid));
+                    state_c
+                        .integration
+                        .open_url(&format!("https://www.protondb.com/app/{}", sid));
                 }
             });
         }
@@ -1155,13 +1269,22 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         if let Some(btn) = details.get_action_button("Steam") {
             btn.connect_clicked(move |_| {
                 let name = state_c.selected_game.borrow().clone();
-                if name.is_empty() { return; }
-                let sid = state_c.config.game_value(&name, "SteamID").unwrap_or_default();
+                if name.is_empty() {
+                    return;
+                }
+                let sid = state_c
+                    .config
+                    .game_value(&name, "SteamID")
+                    .unwrap_or_default();
                 if sid.is_empty() {
                     state_c.integration.open_url(&format!(
-                        "https://store.steampowered.com/search/?term={}", url_encode(&name)));
+                        "https://store.steampowered.com/search/?term={}",
+                        url_encode(&name)
+                    ));
                 } else {
-                    state_c.integration.open_url(&format!("steam://store/{}", sid));
+                    state_c
+                        .integration
+                        .open_url(&format!("steam://store/{}", sid));
                 }
             });
         }
@@ -1171,10 +1294,14 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         if let Some(btn) = details.get_action_button("GameFAQs") {
             btn.connect_clicked(move |_| {
                 let name = state_c.selected_game.borrow().clone();
-                if name.is_empty() { return; }
+                if name.is_empty() {
+                    return;
+                }
                 // Console game database (safe, long-standing community site)
                 state_c.integration.open_url(&format!(
-                    "https://gamefaqs.com/search?game={}", url_encode(&name)));
+                    "https://gamefaqs.com/search?game={}",
+                    url_encode(&name)
+                ));
             });
         }
     }
@@ -1183,10 +1310,14 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         if let Some(btn) = details.get_action_button("MobyGames") {
             btn.connect_clicked(move |_| {
                 let name = state_c.selected_game.borrow().clone();
-                if name.is_empty() { return; }
+                if name.is_empty() {
+                    return;
+                }
                 // Multi-platform database with covers/ratings (safe site)
                 state_c.integration.open_url(&format!(
-                    "https://www.mobygames.com/search/?q={}", url_encode(&name)));
+                    "https://www.mobygames.com/search/?q={}",
+                    url_encode(&name)
+                ));
             });
         }
     }
@@ -1199,13 +1330,20 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         if let Some(btn) = details.get_action_button("Settings") {
             btn.connect_clicked(move |_| {
                 let name = state_c.selected_game.borrow().clone();
-                if name.is_empty() { return; }
+                if name.is_empty() {
+                    return;
+                }
                 let state_cc = state_c.clone();
                 let sb_cc = sb_c.clone();
                 let ch_cc = ch_c.clone();
                 let det_cc = det_c.clone();
-                let is_app = state_c.game_model.get_game(&name)
-                    .map(|g| g.source == crate::backend::game_model::GameSource::AppImage || g.executor == "appimage-launcher")
+                let is_app = state_c
+                    .game_model
+                    .get_game(&name)
+                    .map(|g| {
+                        g.source == crate::backend::game_model::GameSource::AppImage
+                            || g.executor == "appimage-launcher"
+                    })
                     .unwrap_or(false);
                 if is_app {
                     ui::apps_settings::show_apps_settings_modal(&state_c, &win, &name, move || {
@@ -1269,12 +1407,15 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
         glib::timeout_add_local(std::time::Duration::from_secs(2), move || {
             // Checkpoint the session ledger every 60 s (30 ticks of 2 s).
             ledger_tick.set(ledger_tick.get() + 1);
-            if ledger_tick.get() % 30 == 0 {
+            if ledger_tick
+                .get()
+                .is_multiple_of(backend::session_ledger::CHECKPOINT_SECS / 2)
+            {
                 state_c.proton.ledger_checkpoint();
             }
             // Reap parked sessions every 10 s: each call spawns one pgrep (or
             // one box-rpg probe) per parked entry, so 2 s would be wasteful.
-            if ledger_tick.get() % 5 == 0 {
+            if ledger_tick.get().is_multiple_of(5) {
                 for name in state_c.proton.purge_dead() {
                     state_c.game_model.reload_time_spent(&name);
                     state_c.recent_model.refresh(30);
@@ -1306,7 +1447,7 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
                 }
             }
             // Keep the tray's "Playing" line current (every 10 s).
-            if ledger_tick.get() % 5 == 0 {
+            if ledger_tick.get().is_multiple_of(5) {
                 let current = if state_c.proton.is_game_running() {
                     Some(state_c.proton.session_game_name())
                 } else {
@@ -1434,7 +1575,7 @@ fn build_window(app: &adw::Application, background: bool) -> adw::ApplicationWin
     let quick_details = details.clone();
     let quick_state = state.clone();
     let quick_view = content_stack.clone();
-    let quick_body = body.clone();
+    let _quick_body = body.clone();
     let quick_window = window.clone();
     let quick = std::rc::Rc::new(move || {
         let selected_game = quick_state.selected_game.borrow().clone();
@@ -1572,7 +1713,11 @@ pub(crate) fn run_plugin_scans(
     }
     let plugins_dir = state.plugins.plugins_dir();
     let dir_s = game_dir.trim().to_string();
-    let prefix_s = state.proton.real_prefix_for(game_name).display().to_string();
+    let prefix_s = state
+        .proton
+        .real_prefix_for(game_name)
+        .display()
+        .to_string();
     let proton_s = state
         .config
         .game_value(game_name, "Proton")
@@ -1582,7 +1727,8 @@ pub(crate) fn run_plugin_scans(
     let prefix_c = prefix_s.clone();
     let proton_c = proton_s.clone();
     let dir_c = plugins_dir.clone();
-    let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<(String, String)>, Vec<(String, String)>)>();
+    let (tx, rx) =
+        std::sync::mpsc::channel::<(String, Vec<(String, String)>, Vec<(String, String)>)>();
     std::thread::spawn(move || {
         let s = PluginManager::scan_bundle_in(&plugins_dir, &dir_s, &prefix_s, &proton_s);
         let _ = tx.send((s.overrides, s.missing, s.optional));
@@ -1594,7 +1740,10 @@ pub(crate) fn run_plugin_scans(
         Ok((overrides, missing, optional)) => {
             // Apply DLL overrides unless the user already set custom ones.
             if !overrides.trim().is_empty() {
-                let cur = state_c.config.game_value(&game_c, "Overrides").unwrap_or_default();
+                let cur = state_c
+                    .config
+                    .game_value(&game_c, "Overrides")
+                    .unwrap_or_default();
                 if cur.trim().is_empty() {
                     state_c.game_model.set_overrides(&game_c, overrides.trim());
                 }
@@ -1653,7 +1802,9 @@ pub(crate) fn run_plugin_scans(
                 let (header_row, x_btn) = helpers::modal_header("Missing dependencies");
                 {
                     let d0 = cdlg.clone();
-                    x_btn.connect_clicked(move |_| { d0.close(); });
+                    x_btn.connect_clicked(move |_| {
+                        d0.close();
+                    });
                 }
                 inner.append(&header_row);
                 let mut body = format!(
@@ -1690,7 +1841,9 @@ pub(crate) fn run_plugin_scans(
                 yes_btn.set_hexpand(true);
                 {
                     let d0 = cdlg.clone();
-                    no_btn.connect_clicked(move |_| { d0.close(); });
+                    no_btn.connect_clicked(move |_| {
+                        d0.close();
+                    });
                 }
                 {
                     let d0 = cdlg.clone();
@@ -1712,7 +1865,9 @@ pub(crate) fn run_plugin_scans(
                             // import (Proton creates it on first launch);
                             // the installer refuses missing prefixes.
                             std::fs::create_dir_all(&prefix_t).ok();
-                            let r = PluginManager::dep_install_in(&dir_t, &prefix_t, &proton_t, &names_t, &game_t2);
+                            let r = PluginManager::dep_install_in(
+                                &dir_t, &prefix_t, &proton_t, &names_t, &game_t2,
+                            );
                             let _ = tx2.send(r);
                         });
                         let parent_ci = parent_cc.clone();
@@ -1725,7 +1880,9 @@ pub(crate) fn run_plugin_scans(
                                 helpers::present_msg(&parent_ci, "Dependency install failed", &e);
                                 glib::ControlFlow::Break
                             }
-                            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                glib::ControlFlow::Continue
+                            }
                             Err(_) => glib::ControlFlow::Break,
                         });
                     });
@@ -1755,7 +1912,11 @@ pub(crate) fn confirm_install_deps(
         return;
     }
     let plugins_dir = state.plugins.plugins_dir();
-    let prefix = state.proton.real_prefix_for(game_name).display().to_string();
+    let prefix = state
+        .proton
+        .real_prefix_for(game_name)
+        .display()
+        .to_string();
     let proton = state
         .config
         .game_value(game_name, "Proton")
@@ -1781,7 +1942,9 @@ pub(crate) fn confirm_install_deps(
     let (header_row, x_btn) = helpers::modal_header("Missing dependencies");
     {
         let d0 = cdlg.clone();
-        x_btn.connect_clicked(move |_| { d0.close(); });
+        x_btn.connect_clicked(move |_| {
+            d0.close();
+        });
     }
     inner.append(&header_row);
     let msg = gtk::Label::new(Some(&format!(
@@ -1801,7 +1964,9 @@ pub(crate) fn confirm_install_deps(
     yes_btn.set_hexpand(true);
     {
         let d0 = cdlg.clone();
-        no_btn.connect_clicked(move |_| { d0.close(); });
+        no_btn.connect_clicked(move |_| {
+            d0.close();
+        });
     }
     {
         let d0 = cdlg.clone();
@@ -1817,20 +1982,29 @@ pub(crate) fn confirm_install_deps(
             let game_t = game_c.clone();
             std::thread::spawn(move || {
                 std::fs::create_dir_all(&prefix_t).ok();
-                let r = PluginManager::dep_install_in(&dir_t, &prefix_t, &proton_t, &ids_t, &game_t);
+                let r =
+                    PluginManager::dep_install_in(&dir_t, &prefix_t, &proton_t, &ids_t, &game_t);
                 let _ = tx2.send(r);
             });
             let parent_ci = parent_c.clone();
             let game_ci = game_c.clone();
             glib::idle_add_local(move || match rx2.try_recv() {
                 Ok(Ok(m)) => {
-                    helpers::present_msg(&parent_ci, "Dependencies installed", &format!("{}: {}", game_ci, m));
+                    helpers::present_msg(
+                        &parent_ci,
+                        "Dependencies installed",
+                        &format!("{}: {}", game_ci, m),
+                    );
                     glib::ControlFlow::Break
                 }
-                    Ok(Err(e)) => {
-                        helpers::present_msg(&parent_ci, "Dependency install failed", &format!("{}: {}", game_ci, e));
-                        glib::ControlFlow::Break
-                    }
+                Ok(Err(e)) => {
+                    helpers::present_msg(
+                        &parent_ci,
+                        "Dependency install failed",
+                        &format!("{}: {}", game_ci, e),
+                    );
+                    glib::ControlFlow::Break
+                }
                 Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
                 Err(_) => glib::ControlFlow::Break,
             });
@@ -1878,7 +2052,14 @@ pub(crate) fn run_plugin_scans_batch(
     let dir_c = plugins_dir.clone();
     // (name, overrides, missing, optional, prefix, proton)
     let (tx, rx) = std::sync::mpsc::channel::<
-        Vec<(String, String, Vec<(String, String)>, Vec<(String, String)>, String, String)>,
+        Vec<(
+            String,
+            String,
+            Vec<(String, String)>,
+            Vec<(String, String)>,
+            String,
+            String,
+        )>,
     >();
     std::thread::spawn(move || {
         let mut out = Vec::new();
@@ -1896,7 +2077,10 @@ pub(crate) fn run_plugin_scans_batch(
             let mut optionals: Vec<String> = Vec::new();
             for (name, overrides, missing, optional, prefix, proton) in &results {
                 if !overrides.trim().is_empty() {
-                    let cur = state_c.config.game_value(name, "Overrides").unwrap_or_default();
+                    let cur = state_c
+                        .config
+                        .game_value(name, "Overrides")
+                        .unwrap_or_default();
                     if cur.trim().is_empty() {
                         state_c.game_model.set_overrides(name, overrides.trim());
                     }
@@ -1953,7 +2137,9 @@ pub(crate) fn run_plugin_scans_batch(
                 let (header_row, x_btn) = helpers::modal_header("Missing dependencies");
                 {
                     let d0 = cdlg.clone();
-                    x_btn.connect_clicked(move |_| { d0.close(); });
+                    x_btn.connect_clicked(move |_| {
+                        d0.close();
+                    });
                 }
                 inner.append(&header_row);
                 let mut body = format!(
@@ -1979,7 +2165,9 @@ pub(crate) fn run_plugin_scans_batch(
                 yes_btn.set_hexpand(true);
                 {
                     let d0 = cdlg.clone();
-                    no_btn.connect_clicked(move |_| { d0.close(); });
+                    no_btn.connect_clicked(move |_| {
+                        d0.close();
+                    });
                 }
                 {
                     let d0 = cdlg.clone();
@@ -1994,7 +2182,9 @@ pub(crate) fn run_plugin_scans_batch(
                             let mut done = Vec::new();
                             for (n, prefix, proton, ids) in needy_t {
                                 std::fs::create_dir_all(&prefix).ok();
-                                match PluginManager::dep_install_in(&dir_t, &prefix, &proton, &ids, &n) {
+                                match PluginManager::dep_install_in(
+                                    &dir_t, &prefix, &proton, &ids, &n,
+                                ) {
                                     Ok(m) => done.push(format!("{}: {}", n, m)),
                                     Err(e) => done.push(format!("{} failed: {}", n, e)),
                                 }
@@ -2004,10 +2194,16 @@ pub(crate) fn run_plugin_scans_batch(
                         let parent_ci = parent_cc.clone();
                         glib::idle_add_local(move || match rx2.try_recv() {
                             Ok(done) => {
-                                helpers::present_msg(&parent_ci, "Dependencies installed", &done.join("\n"));
+                                helpers::present_msg(
+                                    &parent_ci,
+                                    "Dependencies installed",
+                                    &done.join("\n"),
+                                );
                                 glib::ControlFlow::Break
                             }
-                            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                glib::ControlFlow::Continue
+                            }
                             Err(_) => glib::ControlFlow::Break,
                         });
                     });
@@ -2061,7 +2257,9 @@ pub(crate) fn maybe_autoinstall_proton(state: &AppState, parent: &adw::Applicati
     let (header_row, x_btn) = helpers::modal_header("Downloading Proton");
     {
         let d0 = dlg.clone();
-        x_btn.connect_clicked(move |_| { d0.close(); });
+        x_btn.connect_clicked(move |_| {
+            d0.close();
+        });
     }
     inner.append(&header_row);
     let info_lbl = gtk::Label::new(Some(
@@ -2082,13 +2280,15 @@ pub(crate) fn maybe_autoinstall_proton(state: &AppState, parent: &adw::Applicati
     hide_btn.set_width_request(120);
     {
         let d0 = dlg.clone();
-        hide_btn.connect_clicked(move |_| { d0.close(); });
+        hide_btn.connect_clicked(move |_| {
+            d0.close();
+        });
     }
     inner.append(&hide_btn);
     dlg.set_child(Some(&outer));
     dlg.present(Some(parent));
     let parent_c = parent.clone();
-    let dlg_c = dlg.clone();
+    let _dlg_c = dlg.clone();
     let bar_c = bar.clone();
     let info_c = info_lbl.clone();
     let hide_c = hide_btn.clone();
@@ -2152,7 +2352,10 @@ pub(crate) fn maybe_autoinstall_proton(state: &AppState, parent: &adw::Applicati
         match rx.try_recv() {
             Ok(Ok((tag, dest))) => {
                 state_c.proton.refresh_installed();
-                let cur = state_c.config.launcher_value("defaultProton").unwrap_or_default();
+                let cur = state_c
+                    .config
+                    .launcher_value("defaultProton")
+                    .unwrap_or_default();
                 if cur.trim().is_empty() {
                     state_c.config.set_launcher_value("defaultProton", &tag);
                 }
@@ -2201,7 +2404,11 @@ fn main() {
     // --background is ours, not GApplication's: keep it out of the args the
     // application parses.
     let background = args.iter().any(|a| a == "--background");
-    let app_args: Vec<String> = args.iter().filter(|a| *a != "--background").cloned().collect();
+    let app_args: Vec<String> = args
+        .iter()
+        .filter(|a| *a != "--background")
+        .cloned()
+        .collect();
     // Health probe for the self-updater: print and exit before GTK, the
     // display, or any config I/O. Output is exactly "corkytux X.Y.Z".
     // Only a lone `--version` counts: `corkytux --version --play X` and
@@ -2282,11 +2489,16 @@ fn main() {
     {
         let (n, bytes) = crate::ui::minecraft_view::prune_icon_cache(512 * 1024 * 1024, 1500);
         if n > 0 {
-            eprintln!("[CorkyTux] icon cache pruned: {} files, {} MB freed", n, bytes / 1024 / 1024);
+            eprintln!(
+                "[CorkyTux] icon cache pruned: {} files, {} MB freed",
+                n,
+                bytes / 1024 / 1024
+            );
         }
     }
     let app = adw::Application::builder()
-        .application_id("com.corkytux.CorkyTux").build();
+        .application_id("com.corkytux.CorkyTux")
+        .build();
     app.connect_activate(move |app| {
         // One window, one AppState, one poller: a second launch (the desktop
         // entry while the app runs) activates this instance and just presents.

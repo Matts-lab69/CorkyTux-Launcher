@@ -1,9 +1,8 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 use std::rc::Rc;
 
-use crate::AppState;
 use crate::ui::helpers;
+use crate::AppState;
 
 fn card(title: &str) -> (gtk::Box, gtk::Box) {
     let frame = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -26,7 +25,7 @@ fn save_entry(state: &AppState, game: &str, key: &str, entry: &gtk::Entry) {
     let k = key.to_string();
     let state_c = state.clone();
     entry.connect_changed(move |e| {
-        state_c.config.set_game_value(&held, &k, &e.text().to_string());
+        state_c.config.set_game_value(&held, &k, e.text().as_ref());
     });
 }
 
@@ -35,7 +34,9 @@ fn save_switch(state: &AppState, game: &str, key: &str, sw: &gtk::Switch) {
     let k = key.to_string();
     let state_c = state.clone();
     sw.connect_active_notify(move |s| {
-        state_c.config.set_game_value(&held, &k, &s.is_active().to_string());
+        state_c
+            .config
+            .set_game_value(&held, &k, &s.is_active().to_string());
     });
 }
 
@@ -82,7 +83,11 @@ fn expand_tilde(s: &str) -> String {
     s.to_string()
 }
 
-fn build_view_tab(state: &AppState, game_name: &str, name_holder: &Rc<std::cell::RefCell<String>>) -> gtk::Box {
+fn build_view_tab(
+    state: &AppState,
+    game_name: &str,
+    name_holder: &Rc<std::cell::RefCell<String>>,
+) -> gtk::Box {
     let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
     page.set_margin_top(12);
     page.set_margin_bottom(12);
@@ -103,7 +108,12 @@ fn build_view_tab(state: &AppState, game_name: &str, name_holder: &Rc<std::cell:
     let (icon_frame, icon_inner) = card("Icon");
     let icon_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     let icon_entry = gtk::Entry::new();
-    icon_entry.set_text(&state.config.game_value(game_name, "Icon").unwrap_or_default());
+    icon_entry.set_text(
+        &state
+            .config
+            .game_value(game_name, "Icon")
+            .unwrap_or_default(),
+    );
     icon_entry.set_hexpand(true);
     icon_entry.set_placeholder_text(Some("Path to icon image"));
     let browse = helpers::icon_button("folder", state.theme.is_dark(), "Choose icon image");
@@ -111,7 +121,10 @@ fn build_view_tab(state: &AppState, game_name: &str, name_holder: &Rc<std::cell:
         let state_c = state.clone();
         let e = icon_entry.clone();
         browse.connect_clicked(move |_| {
-            if let Some(p) = state_c.config.pick_file("Select icon", &["png", "jpg", "svg"]) {
+            if let Some(p) = state_c
+                .config
+                .pick_file("Select icon", &["png", "jpg", "svg"])
+            {
                 e.set_text(&p.display().to_string());
             }
         });
@@ -123,7 +136,12 @@ fn build_view_tab(state: &AppState, game_name: &str, name_holder: &Rc<std::cell:
     page.append(&icon_frame);
     let (banner_frame, banner_inner) = card("Banner / Cover");
     let banner_entry = gtk::Entry::new();
-    banner_entry.set_text(&state.config.game_value(game_name, "Banner").unwrap_or_default());
+    banner_entry.set_text(
+        &state
+            .config
+            .game_value(game_name, "Banner")
+            .unwrap_or_default(),
+    );
     banner_entry.set_hexpand(true);
     banner_entry.set_placeholder_text(Some("Path to banner image"));
     save_entry(state, game_name, "Banner", &banner_entry);
@@ -141,7 +159,12 @@ fn build_app_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWin
     let (file_frame, file_inner) = card("AppImage File");
     let path_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     let path_entry = gtk::Entry::new();
-    path_entry.set_text(&state.config.game_value(game_name, "Executable").unwrap_or_default());
+    path_entry.set_text(
+        &state
+            .config
+            .game_value(game_name, "Executable")
+            .unwrap_or_default(),
+    );
     path_entry.set_hexpand(true);
     path_entry.set_editable(false);
     path_entry.add_css_class("path-entry");
@@ -152,12 +175,19 @@ fn build_app_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWin
         let e = path_entry.clone();
         let game_c = game_name.to_string();
         change_btn.connect_clicked(move |_| {
-            if let Some(p) = state_c.config.pick_file("Select AppImage", &["AppImage", "appimage"]) {
+            if let Some(p) = state_c
+                .config
+                .pick_file("Select AppImage", &["AppImage", "appimage"])
+            {
                 let s = p.display().to_string();
                 e.set_text(&s);
                 state_c.config.set_game_value(&game_c, "Executable", &s);
                 if let Some(parent) = p.parent() {
-                    state_c.config.set_game_value(&game_c, "MainPath", &parent.display().to_string());
+                    state_c.config.set_game_value(
+                        &game_c,
+                        "MainPath",
+                        &parent.display().to_string(),
+                    );
                 }
             }
         });
@@ -173,7 +203,7 @@ fn build_app_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWin
         let e = path_entry.clone();
         let l = exe_lbl.clone();
         Rc::new(move || {
-            let p = expand_tilde(&e.text().to_string());
+            let p = expand_tilde(e.text().as_ref());
             let path = std::path::Path::new(&p);
             if !path.is_file() {
                 l.set_text("File not found");
@@ -204,7 +234,7 @@ fn build_app_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWin
         let e = path_entry.clone();
         let u = update_exe.clone();
         fix_btn.connect_clicked(move |_| {
-            let p = expand_tilde(&e.text().to_string());
+            let p = expand_tilde(e.text().as_ref());
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -221,13 +251,23 @@ fn build_app_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWin
     page.append(&file_frame);
     let (args_frame, args_inner) = card("Arguments & Environment");
     let args_entry = gtk::Entry::new();
-    args_entry.set_text(&state.config.game_value(game_name, "LaunchArgs").unwrap_or_default());
+    args_entry.set_text(
+        &state
+            .config
+            .game_value(game_name, "LaunchArgs")
+            .unwrap_or_default(),
+    );
     args_entry.set_hexpand(true);
     args_entry.set_placeholder_text(Some("Extra args, e.g. --no-sandbox"));
     save_entry(state, game_name, "LaunchArgs", &args_entry);
     args_inner.append(&args_entry);
     let env_entry = gtk::Entry::new();
-    env_entry.set_text(&state.config.game_value(game_name, "Environment").unwrap_or_default());
+    env_entry.set_text(
+        &state
+            .config
+            .game_value(game_name, "Environment")
+            .unwrap_or_default(),
+    );
     env_entry.set_hexpand(true);
     env_entry.set_placeholder_text(Some("KEY=VAL KEY2=VAL2"));
     save_entry(state, game_name, "Environment", &env_entry);
@@ -297,14 +337,22 @@ fn build_system_tab(state: &AppState, game_name: &str) -> gtk::Box {
     page.set_margin_start(20);
     page.set_margin_end(20);
     let (sys_frame, sys_inner) = card("System");
-    let get_flag = |k: &str| state.config.game_value(game_name, k).map(|v| v == "true").unwrap_or(false);
+    let get_flag = |k: &str| {
+        state
+            .config
+            .game_value(game_name, k)
+            .map(|v| v == "true")
+            .unwrap_or(false)
+    };
     let (gm_row, gm_sw) = switch_row("GameMode", "gamemoderun wrapper", get_flag("GameMode"));
     save_switch(state, game_name, "GameMode", &gm_sw);
     sys_inner.append(&gm_row);
     let (mh_row, mh_sw) = switch_row("MangoHud", "MANGOHUD=1 overlay", get_flag("MangoHud"));
     save_switch(state, game_name, "MangoHud", &mh_sw);
     sys_inner.append(&mh_row);
-    let note = gtk::Label::new(Some("AppImages run natively: no Proton, no prefix, no Wine tools."));
+    let note = gtk::Label::new(Some(
+        "AppImages run natively: no Proton, no prefix, no Wine tools.",
+    ));
     note.set_halign(gtk::Align::Start);
     note.set_wrap(true);
     note.set_opacity(0.6);
@@ -330,14 +378,17 @@ pub fn show_apps_settings_modal(
     header_row.set_margin_end(8);
     {
         let dlg = dialog.clone();
-        x_btn.connect_clicked(move |_| { dlg.close(); });
+        x_btn.connect_clicked(move |_| {
+            dlg.close();
+        });
     }
     let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
     content.add_css_class("modal-bg");
     content.append(&header_row);
     let page_stack = gtk::Stack::new();
     page_stack.set_vexpand(true);
-    let name_holder: Rc<std::cell::RefCell<String>> = Rc::new(std::cell::RefCell::new(game_name.to_string()));
+    let name_holder: Rc<std::cell::RefCell<String>> =
+        Rc::new(std::cell::RefCell::new(game_name.to_string()));
     let view_page = build_view_tab(state, game_name, &name_holder);
     page_stack.add_titled(&view_page, Some("view"), "View");
     let app_page = build_app_tab(state, game_name, parent);
@@ -373,14 +424,18 @@ pub fn show_apps_settings_modal(
         indicator.set_visible(i == 0);
         col.append(&indicator);
         btn.set_child(Some(&col));
-        if i == 0 { btn.set_active(true); }
+        if i == 0 {
+            btn.set_active(true);
+        }
         btn_box.append(&btn);
         tab_bar.append(&btn_box);
         tab_buttons.push(btn);
         tab_indicators.push(indicator);
         let _ = id;
     }
-    for btn in &tab_buttons[1..] { btn.set_group(Some(&tab_buttons[0])); }
+    for btn in &tab_buttons[1..] {
+        btn.set_group(Some(&tab_buttons[0]));
+    }
     for (i, (_, id, _)) in tabs.iter().enumerate() {
         let stack = page_stack.clone();
         let tab_id = id.to_string();
@@ -388,7 +443,9 @@ pub fn show_apps_settings_modal(
         let my_ind = tab_indicators[i].clone();
         tab_buttons[i].connect_clicked(move |_| {
             stack.set_visible_child_name(&tab_id);
-            for ind in &all_ind { ind.set_visible(false); }
+            for ind in &all_ind {
+                ind.set_visible(false);
+            }
             my_ind.set_visible(true);
         });
     }
@@ -404,12 +461,13 @@ pub fn show_apps_settings_modal(
     let orig_c = game_name.to_string();
     dialog.connect_closed(move |_| {
         let new_name = holder_c.borrow().trim().to_string();
-        if !new_name.is_empty() && new_name != orig_c {
-            if state_c.game_model.get_game(&new_name).is_none() {
-                state_c.game_model.rename_game(&orig_c, &new_name);
-                crate::backend::shortcuts::rename(&orig_c, &new_name);
-                *state_c.selected_game.borrow_mut() = new_name;
-            }
+        if !new_name.is_empty()
+            && new_name != orig_c
+            && state_c.game_model.get_game(&new_name).is_none()
+        {
+            state_c.game_model.rename_game(&orig_c, &new_name);
+            crate::backend::shortcuts::rename(&orig_c, &new_name);
+            *state_c.selected_game.borrow_mut() = new_name;
         }
         state_c.recent_model.refresh(30);
         on_close();

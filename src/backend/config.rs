@@ -1,5 +1,4 @@
 use glib::subclass::prelude::*;
-use gtk::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
@@ -83,7 +82,7 @@ impl IniFile {
         result
     }
 
-    pub fn to_string(&self) -> String {
+    pub fn serialize(&self) -> String {
         let mut out = String::new();
         for (key, value) in &self.global_keys {
             out.push_str(&format!("{}={}\n", key, value));
@@ -121,11 +120,7 @@ impl IniFile {
             s.keys
                 .iter()
                 .find(|(k, _)| k == key)
-                .or_else(|| {
-                    s.keys
-                        .iter()
-                        .find(|(k, _)| k.eq_ignore_ascii_case(key))
-                })
+                .or_else(|| s.keys.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)))
                 .map(|(_, v)| v.clone())
         })
     }
@@ -134,7 +129,8 @@ impl IniFile {
         let sec = self.get_section_mut(section);
         // Collapse case-variants so a write never leaves "banner=" and
         // "Banner=" duplicates behind.
-        sec.keys.retain(|(k, _)| !(k != key && k.eq_ignore_ascii_case(key)));
+        sec.keys
+            .retain(|(k, _)| !(k != key && k.eq_ignore_ascii_case(key)));
         if let Some(entry) = sec.keys.iter_mut().find(|(k, _)| k == key) {
             entry.1 = value.to_string();
         } else {
@@ -162,9 +158,15 @@ impl IniFile {
     }
 }
 
+impl std::fmt::Display for IniFile {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.serialize())
+    }
+}
+
 mod imp {
     use super::*;
-    use glib::subclass::prelude::*;
+
     use std::cell::RefCell;
     use std::path::PathBuf;
 
@@ -336,7 +338,11 @@ impl ConfigManager {
                         .map(|d| d.as_secs().to_string())
                         .unwrap_or_default()
                 });
-            let stem = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let stem = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
             let bak = path.with_file_name(format!("{stem}.bak-{ts}"));
             if path.exists() {
                 match fs::copy(&path, &bak) {
@@ -348,8 +354,10 @@ impl ConfigManager {
                 }
             }
         }
-        let tmp = path.with_file_name(
-            format!("{}.tmp", path.file_name().unwrap_or_default().to_string_lossy()));
+        let tmp = path.with_file_name(format!(
+            "{}.tmp",
+            path.file_name().unwrap_or_default().to_string_lossy()
+        ));
         let committed = fs::write(&tmp, &data).is_ok() && fs::rename(&tmp, &path).is_ok();
         if !committed {
             let _ = fs::remove_file(&tmp);
@@ -402,12 +410,7 @@ impl ConfigManager {
             .to_string_lossy()
             .to_string();
         let seq = LAUNCHER_TMP_SEQ.fetch_add(1, Ordering::Relaxed);
-        let tmp = parent.join(format!(
-            ".{}.{}.{}.new",
-            file_name,
-            std::process::id(),
-            seq
-        ));
+        let tmp = parent.join(format!(".{}.{}.{}.new", file_name, std::process::id(), seq));
         // create_new(true) is O_CREAT|O_EXCL: a stale tmp is never reused.
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
@@ -472,7 +475,10 @@ impl ConfigManager {
     }
 
     pub fn set_game_value(&self, game: &str, key: &str, value: &str) {
-        self.imp().games_ini.borrow_mut().set_value(game, key, value);
+        self.imp()
+            .games_ini
+            .borrow_mut()
+            .set_value(game, key, value);
         self.save_games_ini();
     }
 
@@ -487,6 +493,7 @@ impl ConfigManager {
         let lock_path = self.games_ini_path().with_file_name("Games.ini.lock");
         let lock = std::fs::OpenOptions::new()
             .create(true)
+            .truncate(false)
             .write(true)
             .open(&lock_path)
             .map_err(|e| format!("cannot open Games.ini.lock: {}", e))?;
@@ -511,7 +518,9 @@ impl ConfigManager {
             .unwrap_or(0);
         let next = current.saturating_add(delta);
         self.set_game_value(game, "TimeSpent", &next.to_string());
-        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN); }
+        unsafe {
+            libc::flock(lock.as_raw_fd(), libc::LOCK_UN);
+        }
         Ok(())
     }
 
@@ -547,13 +556,24 @@ impl ConfigManager {
         self.imp().launcher_ini.borrow().get_value(section, key)
     }
 
-    pub fn set_launcher_value_in(&self, section: &str, key: &str, value: &str) -> Result<(), String> {
-        self.imp().launcher_ini.borrow_mut().set_value(section, key, value);
+    pub fn set_launcher_value_in(
+        &self,
+        section: &str,
+        key: &str,
+        value: &str,
+    ) -> Result<(), String> {
+        self.imp()
+            .launcher_ini
+            .borrow_mut()
+            .set_value(section, key, value);
         self.save_launcher_ini()
     }
 
     pub fn remove_launcher_value_in(&self, section: &str, key: &str) -> Result<(), String> {
-        self.imp().launcher_ini.borrow_mut().remove_value(section, key);
+        self.imp()
+            .launcher_ini
+            .borrow_mut()
+            .remove_value(section, key);
         self.save_launcher_ini()
     }
 
@@ -585,14 +605,17 @@ impl ConfigManager {
     }
 
     pub fn pick_file(&self, title: &str, extensions: &[&str]) -> Option<PathBuf> {
-        let filter_strs: Vec<String> = extensions
-            .iter()
-            .map(|e| format!("*.{}", e))
-            .collect();
+        let filter_strs: Vec<String> = extensions.iter().map(|e| format!("*.{}", e)).collect();
         let filter = filter_strs.join(" ");
         if Command::new("zenity").arg("--version").output().is_ok() {
             let output = Command::new("zenity")
-                .args(["--file-selection", "--title", title, "--file-filter", &filter])
+                .args([
+                    "--file-selection",
+                    "--title",
+                    title,
+                    "--file-filter",
+                    &filter,
+                ])
                 .output()
                 .ok()?;
             if output.status.success() {
@@ -668,17 +691,21 @@ impl ConfigManager {
         // Steam's per-user compatibilitytools.d and the system Proton builds
         // are never configured by the user but are valid Proton installs.
         if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-            for root in [home.join(".local/share/Steam"),
-                         home.join(".steam/steam"),
-                         home.join(".var/app/com.valvesoftware.Steam/data/Steam")] {
+            for root in [
+                home.join(".local/share/Steam"),
+                home.join(".steam/steam"),
+                home.join(".var/app/com.valvesoftware.Steam/data/Steam"),
+            ] {
                 let compat = root.join("compatibilitytools.d");
                 if !paths.contains(&compat) {
                     paths.push(compat);
                 }
             }
         }
-        for system in [PathBuf::from("/usr/share/proton"),
-                       PathBuf::from("/usr/lib/proton")] {
+        for system in [
+            PathBuf::from("/usr/share/proton"),
+            PathBuf::from("/usr/lib/proton"),
+        ] {
             if !paths.contains(&system) {
                 paths.push(system);
             }
@@ -700,10 +727,7 @@ impl ConfigManager {
     }
 
     fn shared_slug(proton_name: &str) -> String {
-        let base = proton_name
-            .rsplit('/')
-            .next()
-            .unwrap_or(proton_name);
+        let base = proton_name.rsplit('/').next().unwrap_or(proton_name);
         let slug: String = base
             .chars()
             .map(|c| {
@@ -758,9 +782,7 @@ impl ConfigManager {
             .collect();
         let mut candidate = dir.join(&base);
         let mut i = 2;
-        while candidate.is_dir()
-            || taken.iter().any(|p| p == &candidate.display().to_string())
-        {
+        while candidate.is_dir() || taken.iter().any(|p| p == &candidate.display().to_string()) {
             candidate = dir.join(format!("{}-{}", base, i));
             i += 1;
         }
@@ -835,7 +857,8 @@ impl ConfigManager {
             list.push(proton_name.to_string());
             self.set_launcher_value("sharedPrefixes", &list.join(","));
         }
-        let path = self.prefixes_dir()
+        let path = self
+            .prefixes_dir()
             .join(format!("shared-{}", Self::shared_slug(proton_name)));
         fs::create_dir_all(&path).ok();
         path
@@ -852,8 +875,7 @@ impl ConfigManager {
         if p.is_empty() {
             return false;
         }
-        let bc =
-            std::fs::canonicalize(base).unwrap_or_else(|_| base.to_path_buf());
+        let bc = std::fs::canonicalize(base).unwrap_or_else(|_| base.to_path_buf());
         match std::fs::canonicalize(p) {
             Ok(pc) => pc == bc || pc.starts_with(&bc),
             Err(_) => false,
@@ -969,9 +991,7 @@ mod dirs {
     use std::path::PathBuf;
 
     pub fn home_dir() -> Option<PathBuf> {
-        std::env::var("HOME")
-            .ok()
-            .map(PathBuf::from)
+        std::env::var("HOME").ok().map(PathBuf::from)
     }
 }
 
@@ -1016,12 +1036,18 @@ mod tests {
         }
         cfg.set_launcher_value("K", "v2");
         // Link preserved, content updated through it, mode kept.
-        assert!(std::fs::symlink_metadata(&ini).unwrap().file_type().is_symlink());
+        assert!(std::fs::symlink_metadata(&ini)
+            .unwrap()
+            .file_type()
+            .is_symlink());
         assert!(std::fs::read_to_string(&target).unwrap().contains("v2"));
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(std::fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o600);
+            assert_eq!(
+                std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
         }
         // No orphan tmp files.
         let orphans: Vec<_> = std::fs::read_dir(cfg.config_dir())
@@ -1120,8 +1146,14 @@ mod tests {
         let shared = base.join("shared-proton-x");
         let inner = shared.join("pfx");
         std::fs::create_dir_all(&inner).unwrap();
-        assert!(ConfigManager::is_shared_prefix_user(&shared, &inner.display().to_string()));
-        assert!(ConfigManager::is_shared_prefix_user(&shared, &shared.display().to_string()));
+        assert!(ConfigManager::is_shared_prefix_user(
+            &shared,
+            &inner.display().to_string()
+        ));
+        assert!(ConfigManager::is_shared_prefix_user(
+            &shared,
+            &shared.display().to_string()
+        ));
         assert!(ConfigManager::is_shared_prefix_user(
             &shared,
             &format!("{}/", inner.display())
@@ -1130,7 +1162,10 @@ mod tests {
         assert!(!ConfigManager::is_shared_prefix_user(&shared, "   "));
         let elsewhere = base.join("Other");
         std::fs::create_dir_all(&elsewhere).unwrap();
-        assert!(!ConfigManager::is_shared_prefix_user(&shared, &elsewhere.display().to_string()));
+        assert!(!ConfigManager::is_shared_prefix_user(
+            &shared,
+            &elsewhere.display().to_string()
+        ));
         // Missing paths resolve to nothing: stale records stay out of
         // every base (prune/settings clear them by stored value instead).
         assert!(!ConfigManager::is_shared_prefix_user(
@@ -1140,7 +1175,10 @@ mod tests {
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(&shared, base.join("link")).unwrap();
-            assert!(ConfigManager::is_shared_prefix_user(&shared, &base.join("link").display().to_string()));
+            assert!(ConfigManager::is_shared_prefix_user(
+                &shared,
+                &base.join("link").display().to_string()
+            ));
         }
         let _ = std::fs::remove_dir_all(&base);
     }
@@ -1155,7 +1193,10 @@ mod tests {
         let indiv = base.join("Doom");
         std::fs::create_dir_all(&indiv).unwrap();
         let pairs = vec![
-            ("Linked".to_string(), shared.join("pfx").display().to_string()),
+            (
+                "Linked".to_string(),
+                shared.join("pfx").display().to_string(),
+            ),
             ("Empty".to_string(), String::new()),
             ("Individual".to_string(), indiv.display().to_string()),
         ];
@@ -1178,11 +1219,17 @@ mod tests {
             Vec::<String>::new()
         );
         assert_eq!(
-            cleared.iter().find(|(n, _)| n == "Individual").map(|(_, p)| p.clone()),
+            cleared
+                .iter()
+                .find(|(n, _)| n == "Individual")
+                .map(|(_, p)| p.clone()),
             Some(indiv.display().to_string())
         );
         assert_eq!(
-            cleared.iter().find(|(n, _)| n == "Empty").map(|(_, p)| p.clone()),
+            cleared
+                .iter()
+                .find(|(n, _)| n == "Empty")
+                .map(|(_, p)| p.clone()),
             Some(String::new())
         );
         let _ = std::fs::remove_dir_all(&base);
@@ -1240,7 +1287,9 @@ mod tests {
     #[test]
     fn remove_unknown_prefix_errors_without_touching_disk() {
         let cfg = ConfigManager::new();
-        let err = cfg.remove_shared_prefix("corky-no-such-prefix-xyz").unwrap_err();
+        let err = cfg
+            .remove_shared_prefix("corky-no-such-prefix-xyz")
+            .unwrap_err();
         assert!(err.contains("Unknown shared prefix"), "{}", err);
     }
 
@@ -1274,10 +1323,7 @@ mod tests {
         // Unsafe chars become underscores; the leading folder part is
         // dropped (no nested paths, no traversal). Collisions suffix up.
         let weird = cfg.individual_prefix_path("B:C*D?");
-        assert_eq!(
-            weird.file_name().and_then(|n| n.to_str()),
-            Some("B_C_D_")
-        );
+        assert_eq!(weird.file_name().and_then(|n| n.to_str()), Some("B_C_D_"));
         assert!(!weird.exists());
         let evil = cfg.individual_prefix_path("../../evil");
         assert_eq!(evil.file_name().and_then(|n| n.to_str()), Some("evil"));
@@ -1309,7 +1355,10 @@ mod tests {
         cfg.set_game_value("Full", "PrefixPath", "/games/full/pfx");
         assert_eq!(cfg.migrate_empty_prefixes(), 1);
         let want = cfg.prefixes_dir().join("Proton").display().to_string();
-        assert_eq!(cfg.game_value("Proton", "PrefixPath").as_deref(), Some(want.as_str()));
+        assert_eq!(
+            cfg.game_value("Proton", "PrefixPath").as_deref(),
+            Some(want.as_str())
+        );
         assert_eq!(
             cfg.game_value("Shared", "PrefixPath").as_deref(),
             Some("/gone/shared/pfx")
@@ -1335,8 +1384,14 @@ mod tests {
         cfg.set_game_value("SteamSrc", "PrefixPath", "");
         cfg.set_game_value("SteamSrc", "Source", "Steam");
         assert_eq!(cfg.migrate_empty_prefixes(), 0);
-        assert_eq!(cfg.game_value("SteamGame", "PrefixPath").as_deref(), Some(""));
-        assert_eq!(cfg.game_value("SteamSrc", "PrefixPath").as_deref(), Some(""));
+        assert_eq!(
+            cfg.game_value("SteamGame", "PrefixPath").as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            cfg.game_value("SteamSrc", "PrefixPath").as_deref(),
+            Some("")
+        );
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -1350,10 +1405,22 @@ mod tests {
         std::env::set_var("HOME", &base);
         let cfg = ConfigManager::for_test_dir(&base);
         let paths = cfg.all_proton_paths();
-        match prev_home { Some(v) => std::env::set_var("HOME", v), None => std::env::remove_var("HOME") }
-        let has_compat = paths.iter().any(|p| p.to_string_lossy().contains("compatibilitytools.d"));
-        let has_system = paths.iter().any(|p| p == std::path::Path::new("/usr/share/proton") || p == std::path::Path::new("/usr/lib/proton"));
-        assert!(has_compat, "missing steam compatibilitytools.d path: {:?}", paths);
+        match prev_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
+        let has_compat = paths
+            .iter()
+            .any(|p| p.to_string_lossy().contains("compatibilitytools.d"));
+        let has_system = paths.iter().any(|p| {
+            p == std::path::Path::new("/usr/share/proton")
+                || p == std::path::Path::new("/usr/lib/proton")
+        });
+        assert!(
+            has_compat,
+            "missing steam compatibilitytools.d path: {:?}",
+            paths
+        );
         assert!(has_system, "missing system proton path: {:?}", paths);
         let _ = std::fs::remove_dir_all(&base);
     }

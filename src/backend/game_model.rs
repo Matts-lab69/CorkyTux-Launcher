@@ -1,13 +1,10 @@
 use glib::subclass::prelude::*;
-use gtk::prelude::*;
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub enum GameSource {
+    #[default]
     Manual,
     Lutris,
     Steam,
@@ -17,12 +14,6 @@ pub enum GameSource {
     Epic,
     Gog,
     RpgMaker,
-}
-
-impl Default for GameSource {
-    fn default() -> Self {
-        GameSource::Manual
-    }
 }
 
 impl GameSource {
@@ -73,8 +64,7 @@ pub fn steam_compat_path(main_path: &str, steam_id: &str) -> Option<std::path::P
     if sid.is_empty() {
         return None;
     }
-    let mut current: Option<&std::path::Path> =
-        Some(std::path::Path::new(main_path.trim()));
+    let mut current: Option<&std::path::Path> = Some(std::path::Path::new(main_path.trim()));
     while let Some(p) = current {
         if p.file_name().and_then(|n| n.to_str()) == Some("steamapps") {
             return Some(p.join("compatdata").join(sid));
@@ -200,26 +190,66 @@ impl GameEntry {
             ("Executor".into(), self.executor.clone()),
         ];
         // Legacy fields I keep writing for old configs
-        if !self.lutris_runner.is_empty() { pairs.push(("LutrisRunner".into(), self.lutris_runner.clone())); }
-        if !self.environment.is_empty() { pairs.push(("Environment".into(), self.environment.clone())); }
-        if !self.args_before.is_empty() { pairs.push(("ArgsBefore".into(), self.args_before.clone())); }
-        if !self.args_after.is_empty() { pairs.push(("ArgsAfter".into(), self.args_after.clone())); }
-        if self.steam_overlay { pairs.push(("SteamOverlay".into(), "true".into())); }
-        if self.steam_runtime { pairs.push(("SteamRuntime".into(), "true".into())); }
-        if self.use_umu { pairs.push(("UseUmu".into(), "true".into())); }
-        if self.use_shared_prefix { pairs.push(("UseSharedPrefix".into(), "true".into())); }
-        if !self.shared_prefix_name.is_empty() { pairs.push(("SharedPrefix".into(), self.shared_prefix_name.clone())); }
-        if self.wined3d { pairs.push(("UseWined3d".into(), "true".into())); }
-        if self.native_wayland { pairs.push(("NativeWayland".into(), "true".into())); }
-        if self.game_mode { pairs.push(("GameMode".into(), "true".into())); }
-        if self.mango_hud { pairs.push(("MangoHud".into(), "true".into())); }
-        if !self.lutris_slug.is_empty() { pairs.push(("LutrisSlug".into(), self.lutris_slug.clone())); }
-        if !self.fake_steam_id.is_empty() { pairs.push(("FakeSteamID".into(), self.fake_steam_id.clone())); }
-        if !self.install_size.is_empty() { pairs.push(("InstallSize".into(), self.install_size.clone())); }
-        if !self.heroic_store.is_empty() { pairs.push(("HeroicStore".into(), self.heroic_store.clone())); }
-        if !self.heroic_app_id.is_empty() { pairs.push(("HeroicAppId".into(), self.heroic_app_id.clone())); }
-        if self.heroic_eac { pairs.push(("HeroicEac".into(), "true".into())); }
-        if self.heroic_battleye { pairs.push(("HeroicBattlEye".into(), "true".into())); }
+        if !self.lutris_runner.is_empty() {
+            pairs.push(("LutrisRunner".into(), self.lutris_runner.clone()));
+        }
+        if !self.environment.is_empty() {
+            pairs.push(("Environment".into(), self.environment.clone()));
+        }
+        if !self.args_before.is_empty() {
+            pairs.push(("ArgsBefore".into(), self.args_before.clone()));
+        }
+        if !self.args_after.is_empty() {
+            pairs.push(("ArgsAfter".into(), self.args_after.clone()));
+        }
+        if self.steam_overlay {
+            pairs.push(("SteamOverlay".into(), "true".into()));
+        }
+        if self.steam_runtime {
+            pairs.push(("SteamRuntime".into(), "true".into()));
+        }
+        if self.use_umu {
+            pairs.push(("UseUmu".into(), "true".into()));
+        }
+        if self.use_shared_prefix {
+            pairs.push(("UseSharedPrefix".into(), "true".into()));
+        }
+        if !self.shared_prefix_name.is_empty() {
+            pairs.push(("SharedPrefix".into(), self.shared_prefix_name.clone()));
+        }
+        if self.wined3d {
+            pairs.push(("UseWined3d".into(), "true".into()));
+        }
+        if self.native_wayland {
+            pairs.push(("NativeWayland".into(), "true".into()));
+        }
+        if self.game_mode {
+            pairs.push(("GameMode".into(), "true".into()));
+        }
+        if self.mango_hud {
+            pairs.push(("MangoHud".into(), "true".into()));
+        }
+        if !self.lutris_slug.is_empty() {
+            pairs.push(("LutrisSlug".into(), self.lutris_slug.clone()));
+        }
+        if !self.fake_steam_id.is_empty() {
+            pairs.push(("FakeSteamID".into(), self.fake_steam_id.clone()));
+        }
+        if !self.install_size.is_empty() {
+            pairs.push(("InstallSize".into(), self.install_size.clone()));
+        }
+        if !self.heroic_store.is_empty() {
+            pairs.push(("HeroicStore".into(), self.heroic_store.clone()));
+        }
+        if !self.heroic_app_id.is_empty() {
+            pairs.push(("HeroicAppId".into(), self.heroic_app_id.clone()));
+        }
+        if self.heroic_eac {
+            pairs.push(("HeroicEac".into(), "true".into()));
+        }
+        if self.heroic_battleye {
+            pairs.push(("HeroicBattlEye".into(), "true".into()));
+        }
         for (k, v) in &self.emu_settings {
             pairs.push((format!("emu_{}", k), v.clone()));
         }
@@ -238,7 +268,7 @@ pub enum FilterMode {
 
 mod imp {
     use super::*;
-    use glib::subclass::prelude::*;
+
     use std::cell::RefCell;
 
     #[derive(Default)]
@@ -286,7 +316,12 @@ impl GameModel {
     }
 
     pub fn get_game(&self, name: &str) -> Option<GameEntry> {
-        self.imp().games.borrow().iter().find(|g| g.name == name).cloned()
+        self.imp()
+            .games
+            .borrow()
+            .iter()
+            .find(|g| g.name == name)
+            .cloned()
     }
 
     /// Keep the larger banked playtime when a game is re-added or imported.
@@ -305,12 +340,14 @@ impl GameModel {
         // session accounting already banked. Keep the larger TimeSpent (the
         // import may bring less than CorkyTux already counted) and the more
         // recent LastPlayed.
-        if let Some(existing) = config.game_value(&entry.name, "TimeSpent")
+        if let Some(existing) = config
+            .game_value(&entry.name, "TimeSpent")
             .and_then(|v| v.parse::<u64>().ok())
         {
             entry.time_spent = Self::merge_time_spent(existing, entry.time_spent);
         }
-        if let Some(existing) = config.game_value(&entry.name, "LastPlayed")
+        if let Some(existing) = config
+            .game_value(&entry.name, "LastPlayed")
             .and_then(|v| v.parse::<u64>().ok())
         {
             entry.last_played = Self::merge_last_played(existing, entry.last_played);
@@ -370,8 +407,10 @@ impl GameModel {
     }
 
     pub fn rename_game(&self, old_name: &str, new_name: &str) {
-        if old_name == new_name { return; }
-        let config = super::ConfigManager::new();
+        if old_name == new_name {
+            return;
+        }
+        let _config = super::ConfigManager::new();
         if let Some(mut entry) = self.get_game(old_name) {
             entry.name = new_name.to_string();
             self.remove_game(old_name);
@@ -448,10 +487,10 @@ impl GameModel {
                 filtered.retain(|g| g.favorite);
             }
             FilterMode::Az => {
-                filtered.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                filtered.sort_by_key(|a| a.name.to_lowercase());
             }
             FilterMode::MostPlayed => {
-                filtered.sort_by(|a, b| b.time_spent.cmp(&a.time_spent));
+                filtered.sort_by_key(|game| std::cmp::Reverse(game.time_spent));
             }
             FilterMode::Recent => {
                 // I match the legacy layout here: Recently Added means reverse
@@ -465,7 +504,7 @@ impl GameModel {
     pub fn ordered_names(&self) -> Vec<String> {
         let games = self.imp().games.borrow().clone();
         let mut names: Vec<String> = games.iter().map(|g| g.name.clone()).collect();
-        names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        names.sort_by_key(|a| a.to_lowercase());
         names
     }
 
@@ -476,7 +515,7 @@ impl GameModel {
 
 mod recent_imp {
     use super::*;
-    use glib::subclass::prelude::*;
+
     use std::cell::RefCell;
 
     #[derive(Default)]
@@ -514,11 +553,9 @@ impl RecentModel {
             .iter()
             .map(|n| GameEntry::from_config(n, &config))
             .filter(|g| g.last_played > 0)
-            .filter(|g| {
-                g.source != GameSource::AppImage && g.executor != "appimage-launcher"
-            })
+            .filter(|g| g.source != GameSource::AppImage && g.executor != "appimage-launcher")
             .collect();
-        entries.sort_by(|a, b| b.last_played.cmp(&a.last_played));
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.last_played));
         entries.truncate(top_n);
         *self.imp().entries.borrow_mut() = entries;
     }
@@ -566,10 +603,7 @@ mod tests {
             Some(lib.join("steamapps/compatdata/999"))
         );
         assert_eq!(steam_compat_path(&main.display().to_string(), ""), None);
-        assert_eq!(
-            steam_compat_path("/games/plain", "945360"),
-            None
-        );
+        assert_eq!(steam_compat_path("/games/plain", "945360"), None);
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -605,8 +639,15 @@ mod tests {
             time_spent: 100,
             ..Default::default()
         });
-        let after: u64 = cfg.game_value("Game", "TimeSpent").unwrap().parse().unwrap();
-        match prev_home { Some(v) => std::env::set_var("HOME", v), None => std::env::remove_var("HOME") }
+        let after: u64 = cfg
+            .game_value("Game", "TimeSpent")
+            .unwrap()
+            .parse()
+            .unwrap();
+        match prev_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
         let _ = std::fs::remove_dir_all(&base);
         assert_eq!(after, 500);
     }

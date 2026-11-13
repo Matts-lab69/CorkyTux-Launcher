@@ -12,7 +12,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const SCHEMA_VERSION: u32 = 1;
-pub const CHECKPOINT_SECS: u64 = 60;
+pub const CHECKPOINT_SECS: u32 = 60;
 /// A wall-clock jump larger than this is treated as a clock change.
 pub const MAX_DELTA_SECS: u64 = 24 * 3600;
 
@@ -176,6 +176,7 @@ pub fn close_credit(outcome: FinishOutcome, elapsed_secs: u64) -> u64 {
 }
 
 impl SessionLedger {
+    #[cfg(test)]
     pub fn new(game_name: &str, pid: u32, pid_starttime: u64, now: u64) -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
@@ -234,7 +235,10 @@ impl SessionLedger {
 
 /// `~/.local/share/CorkyTux/sessions`, created with mode 0700.
 pub fn sessions_dir(home: &Path) -> PathBuf {
-    home.join(".local").join("share").join("CorkyTux").join("sessions")
+    home.join(".local")
+        .join("share")
+        .join("CorkyTux")
+        .join("sessions")
 }
 
 pub fn ensure_dir(dir: &Path) -> std::io::Result<()> {
@@ -285,7 +289,7 @@ pub fn remove(dir: &Path, pid: u32) {
 
 /// Moving a corrupt ledger to `*.bad` keeps it for inspection and makes the
 /// next recovery skip it. Never panics.
-pub fn move_bad(dir: &Path, path: &Path) {
+pub fn move_bad(_dir: &Path, path: &Path) {
     let bad = path.with_extension("json.bad");
     let _ = fs::rename(path, bad);
 }
@@ -305,7 +309,9 @@ struct LedgerLock(std::fs::File);
 impl Drop for LedgerLock {
     fn drop(&mut self) {
         use std::os::unix::io::AsRawFd;
-        unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN); }
+        unsafe {
+            libc::flock(self.0.as_raw_fd(), libc::LOCK_UN);
+        }
     }
 }
 
@@ -313,6 +319,7 @@ fn lock_ledger(dir: &Path) -> Result<LedgerLock, String> {
     use std::os::unix::io::AsRawFd;
     let lock = std::fs::OpenOptions::new()
         .create(true)
+        .truncate(false)
         .write(true)
         .open(dir.join("ledger.lock"))
         .map_err(|e| format!("cannot open ledger.lock: {}", e))?;
@@ -421,7 +428,10 @@ pub fn adopt_ledger(
         }
         remove(dir, pid);
     }
-    save(dir, &SessionLedger::with_start(game, pid, pid_starttime, start_unix))?;
+    save(
+        dir,
+        &SessionLedger::with_start(game, pid, pid_starttime, start_unix),
+    )?;
     Ok(AdoptLedger::Created)
 }
 
@@ -468,7 +478,7 @@ pub struct HeadlessTick {
 /// session has finished.
 pub fn headless_tick(tick_count: u32, finished: bool) -> HeadlessTick {
     HeadlessTick {
-        checkpoint: tick_count > 0 && tick_count % 30 == 0,
+        checkpoint: tick_count > 0 && tick_count.is_multiple_of(30),
         close: finished,
     }
 }
@@ -548,8 +558,8 @@ pub fn recover<C: Clock>(
     }
     // Sweep tombstones older than 24 h so they do not grow forever.
     if let Ok(entries) = fs::read_dir(dir) {
-        let cutoff = std::time::SystemTime::now()
-            .checked_sub(std::time::Duration::from_secs(24 * 3600));
+        let cutoff =
+            std::time::SystemTime::now().checked_sub(std::time::Duration::from_secs(24 * 3600));
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("closed") {
@@ -613,12 +623,17 @@ pub fn pid_alive_with_starttime(pid: u32, starttime: u64) -> bool {
     let Ok(stat) = fs::read_to_string(format!("/proc/{}/stat", pid)) else {
         return false;
     };
-    let Some(rp) = stat.rfind(')') else { return false };
+    let Some(rp) = stat.rfind(')') else {
+        return false;
+    };
     let rest: Vec<&str> = stat[rp + 1..].split_whitespace().collect();
     if rest.len() < 20 {
         return false;
     }
-    rest[19].parse::<u64>().map(|s| s == starttime).unwrap_or(false)
+    rest[19]
+        .parse::<u64>()
+        .map(|s| s == starttime)
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -658,9 +673,14 @@ mod closed_tests {
     fn recovery_preserves_closed_records_instead_of_quarantining_them() {
         for (tag, records) in [
             ("recover-empty", Vec::new()),
-            ("recover-records", vec![ClosedRecord {
-                pid: 42, starttime: 700, closed_at: 1_000,
-            }]),
+            (
+                "recover-records",
+                vec![ClosedRecord {
+                    pid: 42,
+                    starttime: 700,
+                    closed_at: 1_000,
+                }],
+            ),
         ] {
             let dir = tmp(tag);
             save_closed(&dir, &records).unwrap();
@@ -668,10 +688,14 @@ mod closed_tests {
             fs::write(dir.join("999.json"), "not a session ledger").unwrap();
             let mut credits = Vec::new();
             for _ in 0..2 {
-                assert_eq!(recover(&dir, &SystemClock, &|_, _| false, &mut |g, d| {
-                    credits.push((g.to_owned(), d));
-                    Ok(())
-                }).unwrap(), 0);
+                assert_eq!(
+                    recover(&dir, &SystemClock, &|_, _| false, &mut |g, d| {
+                        credits.push((g.to_owned(), d));
+                        Ok(())
+                    })
+                    .unwrap(),
+                    0
+                );
                 assert_eq!(fs::read(closed_json_path(&dir)).ok(), Some(before.clone()));
                 assert_eq!(load_closed(&dir), records);
                 assert!(!dir.join("closed.json.bad").exists());
@@ -716,10 +740,14 @@ mod tests {
     }
     impl Creditor {
         fn new() -> Self {
-            Self { total: 0, calls: Vec::new() }
+            Self {
+                total: 0,
+                calls: Vec::new(),
+            }
         }
         fn credit(&mut self, game: &str, d: u64) -> Result<(), String> {
-            self.total = crate::backend::game_model::GameModel::merge_time_spent(self.total, self.total + d);
+            self.total =
+                crate::backend::game_model::GameModel::merge_time_spent(self.total, self.total + d);
             self.calls.push((game.to_string(), d));
             Ok(())
         }
@@ -738,9 +766,15 @@ mod tests {
         let mut c = Creditor::new();
         save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
         *clock.0.borrow_mut() = 1060;
-        assert_eq!(checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap(), 60);
+        assert_eq!(
+            checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap(),
+            60
+        );
         *clock.0.borrow_mut() = 1120;
-        assert_eq!(checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap(), 60);
+        assert_eq!(
+            checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap(),
+            60
+        );
         assert_eq!(c.total, 120);
         assert_eq!(load(&dir, 42).unwrap().credited_until, 1120);
     }
@@ -767,7 +801,13 @@ mod tests {
         let clock = FakeClock(Rc::new(RefCell::new(1000)));
         let mut c = Creditor::new();
         save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
-        let n = recover(&dir, &clock, &|pid, st| pid == 42 && st == 7, &mut |g, d| c.credit(g, d)).unwrap();
+        let n = recover(
+            &dir,
+            &clock,
+            &|pid, st| pid == 42 && st == 7,
+            &mut |g, d| c.credit(g, d),
+        )
+        .unwrap();
         assert_eq!(n, 0);
         assert_eq!(load(&dir, 42).unwrap().credited_until, 1000);
         assert_eq!(c.total, 0);
@@ -779,7 +819,13 @@ mod tests {
         let clock = FakeClock(Rc::new(RefCell::new(1000)));
         let mut c = Creditor::new();
         save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
-        let n = recover(&dir, &clock, &|pid, st| pid == 42 && st == 99, &mut |g, d| c.credit(g, d)).unwrap();
+        let n = recover(
+            &dir,
+            &clock,
+            &|pid, st| pid == 42 && st == 99,
+            &mut |g, d| c.credit(g, d),
+        )
+        .unwrap();
         assert_eq!(n, 1);
         assert!(load(&dir, 42).is_none());
     }
@@ -802,7 +848,10 @@ mod tests {
         let mut c = Creditor::new();
         save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
         *clock.0.borrow_mut() = 900;
-        assert_eq!(checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap(), 0);
+        assert_eq!(
+            checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap(),
+            0
+        );
         assert_eq!(c.total, 0);
     }
 
@@ -827,9 +876,13 @@ mod tests {
         save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
         *clock.0.borrow_mut() = 1060;
         checkpoint(&dir, 42, &clock, &mut |_g, d| {
-            existing = crate::backend::game_model::GameModel::merge_time_spent(existing, existing.saturating_add(d));
+            existing = crate::backend::game_model::GameModel::merge_time_spent(
+                existing,
+                existing.saturating_add(d),
+            );
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(existing, 5060);
     }
 
@@ -841,7 +894,11 @@ mod tests {
         let clock = FakeClock(Rc::new(RefCell::new(1000)));
         save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
         let dm = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
-        let fm = fs::metadata(ledger_path(&dir, 42)).unwrap().permissions().mode() & 0o777;
+        let fm = fs::metadata(ledger_path(&dir, 42))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
         assert_eq!(dm, 0o700);
         assert_eq!(fm, 0o600);
     }
@@ -897,9 +954,13 @@ mod tests {
         save(&dir, &SessionLedger::new("Game", 42, 7, clock.now())).unwrap();
         *clock.0.borrow_mut() = 1060;
         finish(&dir, 42, &clock, &mut |_g, d| {
-            existing = crate::backend::game_model::GameModel::merge_time_spent(existing, existing.saturating_add(d));
+            existing = crate::backend::game_model::GameModel::merge_time_spent(
+                existing,
+                existing.saturating_add(d),
+            );
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(existing, 5060);
     }
 
@@ -1040,7 +1101,13 @@ mod tests {
         checkpoint(&dir, 42, &clock, &mut |g, d| c.credit(g, d)).unwrap();
         mark_ended(&dir, 42, 1200).unwrap();
         // The pid is still visible, but ended_at means the close started.
-        let n = recover(&dir, &clock, &|pid, st| pid == 42 && st == 7, &mut |g, d| c.credit(g, d)).unwrap();
+        let n = recover(
+            &dir,
+            &clock,
+            &|pid, st| pid == 42 && st == 7,
+            &mut |g, d| c.credit(g, d),
+        )
+        .unwrap();
         assert_eq!(n, 1);
         assert_eq!(c.total, 200);
         assert!(load(&dir, 42).is_none());
@@ -1168,9 +1235,15 @@ mod tests {
         *b.0.borrow_mut() = 1060;
         checkpoint(&dir, 42, &a, &mut |g, d| c.credit(g, d)).unwrap();
         // The second "process" at the same wall time must credit 0.
-        assert_eq!(checkpoint(&dir, 42, &b, &mut |g, d| c.credit(g, d)).unwrap(), 0);
+        assert_eq!(
+            checkpoint(&dir, 42, &b, &mut |g, d| c.credit(g, d)).unwrap(),
+            0
+        );
         *b.0.borrow_mut() = 1120;
-        assert_eq!(checkpoint(&dir, 42, &b, &mut |g, d| c.credit(g, d)).unwrap(), 60);
+        assert_eq!(
+            checkpoint(&dir, 42, &b, &mut |g, d| c.credit(g, d)).unwrap(),
+            60
+        );
         assert_eq!(c.total, 120);
     }
 
@@ -1231,7 +1304,9 @@ mod tests {
         assert!(out.is_err());
         assert_eq!(c.total, 0);
         assert_eq!(load(&dir, 42).unwrap().credited_until, 1000);
-        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN); }
+        unsafe {
+            libc::flock(lock.as_raw_fd(), libc::LOCK_UN);
+        }
     }
 
     #[test]
@@ -1272,7 +1347,9 @@ mod tests {
         assert_eq!(out.unwrap(), 0);
         assert_eq!(c.total, 0);
         assert!(load(&dir, 42).is_some());
-        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN); }
+        unsafe {
+            libc::flock(lock.as_raw_fd(), libc::LOCK_UN);
+        }
     }
 
     #[test]
@@ -1299,7 +1376,9 @@ mod tests {
         assert!(load(&dir, 42).is_some());
         assert!(load(&dir, 43).is_some());
         // Released: the next pass finishes both, once each.
-        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN); }
+        unsafe {
+            libc::flock(lock.as_raw_fd(), libc::LOCK_UN);
+        }
         let out = recover(&dir, &clock, &|_, _| false, &mut |g, d| c.credit(g, d));
         assert_eq!(out.unwrap(), 2);
         assert_eq!(c.total, 400);
@@ -1358,7 +1437,10 @@ pub fn pid_starttime(pid: u32) -> Option<u64> {
 mod extra_tests {
     #[test]
     fn delta_clamps_to_a_day() {
-        assert_eq!(super::delta(0, super::MAX_DELTA_SECS + 5), super::MAX_DELTA_SECS);
+        assert_eq!(
+            super::delta(0, super::MAX_DELTA_SECS + 5),
+            super::MAX_DELTA_SECS
+        );
         assert_eq!(super::delta(10, 5), 0);
         assert_eq!(super::delta(10, 70), 60);
     }

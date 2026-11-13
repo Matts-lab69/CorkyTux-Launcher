@@ -27,7 +27,8 @@ struct Snapshot {
 fn snapshot(state: &AppState) -> Result<Snapshot, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
     let dirs = self_update::InstallDirs::fixed(&PathBuf::from(home));
-    let exe = std::env::current_exe().map_err(|e| format!("cannot locate running binary: {}", e))?;
+    let exe =
+        std::env::current_exe().map_err(|e| format!("cannot locate running binary: {}", e))?;
     if !self_update::installed_here(&exe, &dirs.install_dir) {
         return Err("This build was not installed with install.sh; update manually".into());
     }
@@ -87,8 +88,7 @@ pub fn restart_pending() -> bool {
     self_update::install_pending_restart()
 }
 
-static PENDING: std::sync::Mutex<Option<(String, Vec<String>)>> =
-    std::sync::Mutex::new(None);
+static PENDING: std::sync::Mutex<Option<(String, Vec<String>)>> = std::sync::Mutex::new(None);
 
 fn pending_restart() -> Option<(String, Vec<String>)> {
     PENDING.lock().ok().and_then(|g| g.clone())
@@ -139,7 +139,11 @@ fn start_check(state: &AppState, parent: &adw::ApplicationWindow, manual: bool) 
     // click gets a note; an automatic check returns silently.
     let Some(check_guard) = self_update::CheckGuard::acquire() else {
         if manual {
-            show_note(parent, "Launcher updates", "A check is already in progress.");
+            show_note(
+                parent,
+                "Launcher updates",
+                "A check is already in progress.",
+            );
         }
         return;
     };
@@ -152,7 +156,10 @@ fn start_check(state: &AppState, parent: &adw::ApplicationWindow, manual: bool) 
             return;
         }
     };
-    let skip = state.config.launcher_value("skipUpdateVersion").unwrap_or_default();
+    let skip = state
+        .config
+        .launcher_value("skipUpdateVersion")
+        .unwrap_or_default();
     let etag = state.config.launcher_value("lastUpdateEtag");
     let (tx, rx) = mpsc::channel::<CheckMsg>();
     std::thread::spawn(move || {
@@ -168,7 +175,11 @@ fn start_check(state: &AppState, parent: &adw::ApplicationWindow, manual: bool) 
                 Ok(info) => {
                     let _ = self_update::store_cached_latest(&snap.downloads_dir, body);
                     let skipped = !skip.trim().is_empty() && skip.trim() == info.tag;
-                    match self_update::decide_update(&snap.current, &info, if manual { "" } else { &skip }) {
+                    match self_update::decide_update(
+                        &snap.current,
+                        &info,
+                        if manual { "" } else { &skip },
+                    ) {
                         self_update::UpdateDecision::Available => {
                             CheckMsg::Available(info, etag, skipped && manual)
                         }
@@ -180,7 +191,8 @@ fn start_check(state: &AppState, parent: &adw::ApplicationWindow, manual: bool) 
         let decide_cached = || -> Option<CheckMsg> {
             let info = self_update::read_cached_latest(&snap.downloads_dir)?;
             let skipped = !skip.trim().is_empty() && skip.trim() == info.tag;
-            match self_update::decide_update(&snap.current, &info, if manual { "" } else { &skip }) {
+            match self_update::decide_update(&snap.current, &info, if manual { "" } else { &skip })
+            {
                 self_update::UpdateDecision::Available => {
                     Some(CheckMsg::Available(info, etag.clone(), skipped && manual))
                 }
@@ -270,7 +282,9 @@ fn record_check(state: &AppState, etag: Option<&str>) {
     // no matching ETag recorded.
     if let Some(tag) = etag {
         if !tag.trim().is_empty() {
-            state.config.set_launcher_value("lastUpdateEtag", tag.trim());
+            state
+                .config
+                .set_launcher_value("lastUpdateEtag", tag.trim());
         }
     }
     state
@@ -299,7 +313,12 @@ fn show_error(parent: &adw::ApplicationWindow, text: &str) {
     show_note(parent, "Update failed", text);
 }
 
-fn show_available(state: &AppState, parent: &adw::ApplicationWindow, info: self_update::ReleaseInfo, was_skipped: bool) {
+fn show_available(
+    state: &AppState,
+    parent: &adw::ApplicationWindow,
+    info: self_update::ReleaseInfo,
+    was_skipped: bool,
+) {
     let (dlg, col) = dialog_shell("Launcher update available", 480);
     let title = gtk::Label::new(Some(&format!("CorkyTux {} is available", info.tag)));
     title.set_halign(gtk::Align::Start);
@@ -363,7 +382,11 @@ enum DlMsg {
     Done(Result<Vec<String>, String>),
 }
 
-fn start_download(state: &AppState, parent: &adw::ApplicationWindow, info: self_update::ReleaseInfo) {
+fn start_download(
+    state: &AppState,
+    parent: &adw::ApplicationWindow,
+    info: self_update::ReleaseInfo,
+) {
     let snap = match snapshot(state) {
         Ok(s) => s,
         Err(e) => {
@@ -424,7 +447,11 @@ fn start_download(state: &AppState, parent: &adw::ApplicationWindow, info: self_
             Ok(DlMsg::Progress(done, total)) => {
                 if total > 0 {
                     bar.set_fraction(done as f64 / total as f64);
-                    bar.set_text(Some(&format!("{} / {} MB", done / 1_048_576, total / 1_048_576)));
+                    bar.set_text(Some(&format!(
+                        "{} / {} MB",
+                        done / 1_048_576,
+                        total / 1_048_576
+                    )));
                 } else {
                     bar.pulse();
                 }
@@ -474,16 +501,17 @@ fn download_and_install(
     let _ = tx.send(DlMsg::Status("Downloading…".into()));
     // Single flight is held by the caller: sweep other runs' stale
     // leftovers first. Verified tarballs and latest.json never match.
-    self_update::sweep_stale_downloads(
-        &snap.downloads_dir,
-        self_update::SWEEP_MAX_AGE_SECS,
-    );
+    self_update::sweep_stale_downloads(&snap.downloads_dir, self_update::SWEEP_MAX_AGE_SECS);
     let asset = self_update::select_asset(info)?;
     // Validate the optional checksums.txt size before anything is fetched.
     let sums = self_update::select_checksums_asset(info)?;
     let tarball = snap.downloads_dir.join(&asset.name);
-    let part = snap.downloads_dir.join(self_update::partial_name(&asset.name));
-    let staging = snap.downloads_dir.join(self_update::staging_name(&info.tag));
+    let part = snap
+        .downloads_dir
+        .join(self_update::partial_name(&asset.name));
+    let staging = snap
+        .downloads_dir
+        .join(self_update::staging_name(&info.tag));
     let cleanup_all = || {
         self_update::cleanup(&[staging.as_path(), part.as_path(), tarball.as_path()]);
     };
@@ -502,11 +530,16 @@ fn download_and_install(
     let progress = |done: u64, total: u64| {
         let _ = tx.send(DlMsg::Progress(done, total));
     };
-    self_update::download_asset(&asset.browser_download_url, &part, asset.size, &progress, cancel)
-        .map_err(|e| {
-            cleanup_all();
-            e
-        })?;
+    self_update::download_asset(
+        &asset.browser_download_url,
+        &part,
+        asset.size,
+        &progress,
+        cancel,
+    )
+    .inspect_err(|_e| {
+        cleanup_all();
+    })?;
     if cancelled() {
         return fail("download cancelled".into());
     }
@@ -524,7 +557,9 @@ fn download_and_install(
         if !self_update::asset_origin_ok(&sums.browser_download_url, &info.tag, &sums.name) {
             return fail("checksums.txt URL is not from this repository. Aborted.".into());
         }
-        let sums_part = snap.downloads_dir.join(self_update::partial_name("checksums.txt"));
+        let sums_part = snap
+            .downloads_dir
+            .join(self_update::partial_name("checksums.txt"));
         let sums_file = snap.downloads_dir.join("checksums.txt");
         let dl = self_update::download_asset_limited(
             &sums.browser_download_url,
@@ -567,9 +602,8 @@ fn download_and_install(
     if let Err(e) = self_update::verify_artifact(&tarball, &want) {
         return fail(e);
     }
-    let staged = self_update::extract_tarball(&tarball, &staging).map_err(|e| {
+    let staged = self_update::extract_tarball(&tarball, &staging).inspect_err(|_e| {
         cleanup_all();
-        e
     })?;
     let _ = tx.send(DlMsg::Status("Installing…".into()));
     let dirs = self_update::InstallDirs {
@@ -582,9 +616,8 @@ fn download_and_install(
     if !self_update::needs_update(&snap.current, &info.version) {
         return fail(format!("You are up to date (v{}).", snap.current));
     }
-    let log = self_update::install_if_healthy(&staged, &dirs, &info.version).map_err(|e| {
+    let log = self_update::install_if_healthy(&staged, &dirs, &info.version).inspect_err(|_e| {
         cleanup_all();
-        e
     })?;
     // The install landed. The caller raises the restart flag and releases
     // the run guard atomically via `UpdateRunGuard::finish_installed`.
@@ -604,7 +637,11 @@ fn show_restart(state: &AppState, parent: &adw::ApplicationWindow, tag: &str, lo
         let game = state.proton.session_game_name();
         col.append(&body_label(&format!(
             "{} is still running. Restarting the launcher will not stop your game.",
-            if game.is_empty() { "A game".into() } else { game }
+            if game.is_empty() {
+                "A game".into()
+            } else {
+                game
+            }
         )));
     }
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
@@ -670,7 +707,11 @@ mod tests {
         }
     }
 
-    struct EnvVarGuard(&'static str, Option<std::ffi::OsString>, crate::test_env::EnvGuard);
+    struct EnvVarGuard(
+        &'static str,
+        Option<std::ffi::OsString>,
+        crate::test_env::EnvGuard,
+    );
 
     impl EnvVarGuard {
         fn set(key: &'static str, value: &std::path::Path) -> Self {
@@ -978,7 +1019,8 @@ mod tests {
             .expect("the installed binary must answer --version");
         assert!(snap.install_dir.join("assets").is_dir());
         assert!(
-            log.iter().any(|line| line.contains("Plugins were not updated")),
+            log.iter()
+                .any(|line| line.contains("Plugins were not updated")),
             "log: {:?}",
             log
         );
