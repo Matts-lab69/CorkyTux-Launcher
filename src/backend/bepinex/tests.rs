@@ -7,6 +7,191 @@ use zip::write::SimpleFileOptions;
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn bepinex_visible_and_activation_override_keys_agree() {
+    let mut game =
+        std::collections::HashMap::from([("overrides".to_string(), "dxgi=b".to_string())]);
+    assert_eq!(override_key(&game), "Overrides");
+    game.insert("custom_dll_overrides".into(), String::new());
+    assert_eq!(override_key(&game), "custom_dll_overrides");
+}
+
+#[test]
+fn bepinex_download_authorization_is_bound_to_target_and_checksum_policy() {
+    let mono = mono();
+    let il2cpp = Target {
+        runtime: Runtime::Il2Cpp,
+        arch: Arch::X64,
+    };
+    assert!(authorize(
+        mono,
+        Authorization {
+            target: mono,
+            allow_unverified: false
+        }
+    )
+    .is_ok());
+    assert!(authorize(
+        il2cpp,
+        Authorization {
+            target: mono,
+            allow_unverified: true
+        }
+    )
+    .is_err());
+    assert!(authorize(
+        il2cpp,
+        Authorization {
+            target: il2cpp,
+            allow_unverified: false
+        }
+    )
+    .is_err());
+    assert!(authorize(
+        il2cpp,
+        Authorization {
+            target: il2cpp,
+            allow_unverified: true
+        }
+    )
+    .is_ok());
+    assert!(authorize(
+        Target {
+            arch: Arch::X86,
+            ..il2cpp
+        },
+        Authorization {
+            target: il2cpp,
+            allow_unverified: true
+        }
+    )
+    .is_err());
+}
+
+fn mono_game() -> Fixture {
+    let root = Fixture::new();
+    let mut pe = vec![0; 256];
+    pe[..2].copy_from_slice(b"MZ");
+    pe[0x3c..0x40].copy_from_slice(&128u32.to_le_bytes());
+    pe[128..132].copy_from_slice(b"PE\0\0");
+    pe[132..134].copy_from_slice(&0x8664u16.to_le_bytes());
+    std::fs::write(root.0.join("Game.exe"), pe).unwrap();
+    std::fs::create_dir_all(root.0.join("Game_Data/Managed")).unwrap();
+    root
+}
+
+fn change_to_il2cpp(root: &Fixture) {
+    std::fs::create_dir_all(root.0.join("Game_Data/il2cpp_data")).unwrap();
+    std::fs::write(root.0.join("GameAssembly.dll"), b"il2cpp").unwrap();
+}
+
+#[test]
+fn bepinex_stale_mono_confirmation_never_requests_a_download() {
+    let root = mono_game();
+    change_to_il2cpp(&root);
+    let requested = std::cell::Cell::new(false);
+    let result = enable_with_fetch(
+        &root.0,
+        std::path::Path::new("Game.exe"),
+        "",
+        Authorization {
+            target: mono(),
+            allow_unverified: false,
+        },
+        |_| {
+            requested.set(true);
+            Err("unexpected download".into())
+        },
+    );
+    assert!(result.is_err());
+    assert!(!requested.get());
+    assert!(!root.0.join(MANIFEST).exists());
+}
+
+#[test]
+fn bepinex_runtime_change_during_download_aborts_before_installation() {
+    let root = mono_game();
+    let result = enable_with_fetch(
+        &root.0,
+        std::path::Path::new("Game.exe"),
+        "",
+        Authorization {
+            target: mono(),
+            allow_unverified: false,
+        },
+        |_| {
+            change_to_il2cpp(&root);
+            Ok(archive(None))
+        },
+    );
+    assert!(result.is_err());
+    assert!(!root.0.join(MANIFEST).exists());
+    assert!(!root.0.join("winhttp.dll").exists());
+}
+
+#[test]
+fn bepinex_atomic_removal_preserves_a_concurrent_replacement() {
+    let root = Fixture::new();
+    std::fs::write(root.0.join("winhttp.dll"), b"owned loader").unwrap();
+    let capability = fs::Root::open(&root.0).unwrap();
+    let captured = capability.capture("winhttp.dll").unwrap().unwrap();
+    std::fs::write(root.0.join("winhttp.dll"), b"concurrent replacement").unwrap();
+    assert!(captured
+        .remove_if_matches(&package::digest(b"owned loader"), package::MAX_FILE)
+        .unwrap());
+    assert_eq!(
+        std::fs::read(root.0.join("winhttp.dll")).unwrap(),
+        b"concurrent replacement"
+    );
+}
+
+#[test]
+fn bepinex_atomic_removal_restores_a_modified_file() {
+    let root = Fixture::new();
+    std::fs::write(root.0.join("winhttp.dll"), b"modified loader").unwrap();
+    let capability = fs::Root::open(&root.0).unwrap();
+    let captured = capability.capture("winhttp.dll").unwrap().unwrap();
+    assert!(!captured
+        .remove_if_matches(&package::digest(b"owned loader"), package::MAX_FILE)
+        .unwrap());
+    assert_eq!(
+        std::fs::read(root.0.join("winhttp.dll")).unwrap(),
+        b"modified loader"
+    );
+}
+
+#[test]
+fn bepinex_manifest_rejects_ini_injection_before_removal() {
+    let root = Fixture::new();
+    let change = install_archive(&root.0, mono(), &archive(None), None, "").unwrap();
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.0.join(MANIFEST)).unwrap()).unwrap();
+    manifest["overrides_before"] = serde_json::json!("dxgi=n\n[Injected]\nExecutable=other");
+    std::fs::write(
+        root.0.join(MANIFEST),
+        serde_json::to_vec(&manifest).unwrap(),
+    )
+    .unwrap();
+    assert!(disable(&root.0, &change.overrides).is_err());
+    assert!(root.0.join("winhttp.dll").is_file());
+}
+
+#[test]
+fn bepinex_manifest_rejects_unrelated_override_restoration() {
+    let root = Fixture::new();
+    let change = install_archive(&root.0, mono(), &archive(None), None, "").unwrap();
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.0.join(MANIFEST)).unwrap()).unwrap();
+    manifest["overrides_before"] = serde_json::json!("version=n");
+    std::fs::write(
+        root.0.join(MANIFEST),
+        serde_json::to_vec(&manifest).unwrap(),
+    )
+    .unwrap();
+    assert!(disable(&root.0, &change.overrides).is_err());
+    assert!(root.0.join("winhttp.dll").is_file());
+}
+
+#[test]
 fn bepinex_detection_does_not_claim_an_unrelated_winhttp_loader() {
     let root = Fixture::new();
     std::fs::create_dir_all(root.0.join("BepInEx/core")).unwrap();
