@@ -598,6 +598,23 @@ pub fn show_settings_modal(
     }
     outer.append(&header_row);
 
+    let tutorial_button = gtk::Button::with_label("View tutorial");
+    tutorial_button.add_css_class("settings-btn");
+    tutorial_button.set_halign(gtk::Align::Start);
+    tutorial_button.set_margin_start(16);
+    tutorial_button.set_margin_bottom(8);
+    let tutorial_dialog = dialog.clone();
+    let tutorial_window = parent.clone();
+    tutorial_button.connect_clicked(move |_| {
+        gio::prelude::ActionGroupExt::activate_action(
+            &tutorial_window,
+            crate::backend::tutorial::ACTION,
+            None,
+        );
+        tutorial_dialog.close();
+    });
+    outer.append(&tutorial_button);
+
     let page_stack = gtk::Stack::new();
     page_stack.set_vexpand(true);
     page_stack.set_hhomogeneous(false);

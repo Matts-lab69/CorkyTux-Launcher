@@ -35,5 +35,6 @@ pub mod minecraft_view;
 mod rail_loader;
 pub mod stores_view;
 pub mod tray;
+pub mod tutorial;
 pub mod update_dialog;
 pub mod warnings;
