@@ -17,6 +17,7 @@ pub mod self_update;
 pub mod session_ledger;
 pub mod shortcuts;
 pub mod theme;
+pub mod tutorial;
 
 pub use config::ConfigManager;
 pub use integration::IntegrationManager;
