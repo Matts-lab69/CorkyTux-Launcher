@@ -387,8 +387,13 @@ fn build_run_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWin
     // ---- Launch options card ----
     let (opts_frame, opts_inner) = make_frame("Launch options");
     let overrides_entry: Rc<RefCell<Option<gtk::Entry>>> = Rc::new(RefCell::new(None));
+    let dll_override_key = crate::ui::bepinex_settings::key(state, game_name);
     for (label, key, placeholder) in [
-        ("DLL overrides (WINEDLLOVERRIDES)", "Overrides", "d3d11=n,b"),
+        (
+            "DLL overrides (WINEDLLOVERRIDES)",
+            dll_override_key,
+            "d3d11=n,b",
+        ),
         (
             "Environment variables",
             "Environment",
@@ -410,11 +415,12 @@ fn build_run_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWin
         lbl.add_css_class("time-label");
         opts_inner.append(&lbl);
         let entry = gtk::Entry::new();
+        entry.set_widget_name(key);
         entry.set_text(&state.config.game_value(game_name, key).unwrap_or_default());
         entry.set_hexpand(true);
         entry.set_placeholder_text(Some(placeholder));
         opts_inner.append(&entry);
-        if key == "Overrides" {
+        if key == dll_override_key {
             *overrides_entry.borrow_mut() = Some(entry.clone());
         }
         save_entry(state, game_name, key, &entry);
@@ -448,6 +454,13 @@ fn build_run_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWin
         save_switch(state, game_name, key, &sw);
     }
 
+    crate::ui::bepinex_settings::append(
+        &opts_inner,
+        state,
+        game_name,
+        parent,
+        overrides_entry.clone(),
+    );
     cols.append(&opts_frame);
 
     // ---- Dependencies & DLL overrides card ----
