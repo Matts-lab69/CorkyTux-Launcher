@@ -1,3 +1,4 @@
+pub mod bepinex;
 pub mod config;
 pub mod dll_overrides;
 pub mod download_integrity;

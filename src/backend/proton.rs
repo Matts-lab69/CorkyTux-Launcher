@@ -1698,7 +1698,7 @@ impl ProtonManager {
                 }
                 *self.imp().session_prefix.borrow_mut() = real_prefix.display().to_string();
                 *self.imp().session_proton_dir.borrow_mut() = proton_path.display().to_string();
-                let wrapped_cmd = if game_mode {
+                let mut wrapped_cmd = if game_mode {
                     let mut gm = Command::new("gamemoderun");
                     gm.arg(leg_cmd.get_program());
                     for arg in leg_cmd.get_args() {
@@ -1713,6 +1713,7 @@ impl ProtonManager {
                 } else {
                     leg_cmd
                 };
+                super::bepinex::configure_launch(&mut wrapped_cmd, &game)?;
                 // Bottles-style sandbox: prefix + game read-write; Proton,
                 // legendary, tools and their config read-only / read-write
                 // depending on the case.
@@ -1966,7 +1967,7 @@ impl ProtonManager {
         super::dll_overrides::apply(&mut final_cmd, &game)?;
 
         // Wrapper GameMode (gamemoderun antepuesto al programa completo)
-        let wrapped_cmd = if game_mode {
+        let mut wrapped_cmd = if game_mode {
             let mut gm = Command::new("gamemoderun");
             gm.arg(final_cmd.get_program());
             for arg in final_cmd.get_args() {
@@ -1982,6 +1983,7 @@ impl ProtonManager {
             final_cmd
         };
 
+        super::bepinex::configure_launch(&mut wrapped_cmd, &game)?;
         let runner_name = if use_umu { "umu" } else { "proton" };
         if steam_debug_enabled() {
             log_steam_readiness("before-game-spawn", &home_dir().unwrap_or_default());

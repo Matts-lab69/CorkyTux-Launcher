@@ -425,6 +425,7 @@ fn build_run_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWin
         lbl.add_css_class("time-label");
         opts_inner.append(&lbl);
         let entry = gtk::Entry::new();
+        entry.set_widget_name(key);
         entry.set_text(&state.config.game_value(game_name, key).unwrap_or_default());
         entry.set_hexpand(true);
         entry.set_placeholder_text(Some(placeholder));
@@ -466,6 +467,13 @@ fn build_run_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWin
         save_switch(state, game_name, key, &sw);
     }
 
+    crate::ui::bepinex_settings::append(
+        &opts_inner,
+        state,
+        game_name,
+        parent,
+        overrides_entry.clone(),
+    );
     cols.append(&opts_frame);
 
     // ---- Dependencies & DLL overrides card ----
