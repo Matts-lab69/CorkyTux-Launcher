@@ -77,7 +77,11 @@ impl ProcProvider for RealProc {
             return out;
         };
         for entry in entries.flatten() {
-            let Some(pid) = entry.file_name().to_str().and_then(|s| s.parse::<u32>().ok()) else {
+            let Some(pid) = entry
+                .file_name()
+                .to_str()
+                .and_then(|s| s.parse::<u32>().ok())
+            else {
                 continue;
             };
             let base = Path::new("/proc").join(pid.to_string());
@@ -112,7 +116,11 @@ pub fn find_process(
     provider: &dyn ProcProvider,
     predicate: impl Fn(&ProcEntry) -> bool,
 ) -> Option<u32> {
-    provider.processes().into_iter().find(|p| predicate(p)).map(|p| p.pid)
+    provider
+        .processes()
+        .into_iter()
+        .find(|p| predicate(p))
+        .map(|p| p.pid)
 }
 
 pub fn any_process(predicate: impl Fn(&ProcEntry) -> bool) -> bool {
@@ -161,11 +169,6 @@ pub fn pgrep_like_match(cmdline: &str, pattern: &str) -> bool {
     cmdline.contains(&literal)
 }
 
-/// Process with this comm (no `pidof`).
-pub fn process_named(comm: &str) -> bool {
-    any_process(|p| p.comm == comm)
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SteamKind {
     Native,
@@ -175,31 +178,25 @@ pub enum SteamKind {
 
 /// Steam client detection without running flatpak or snap.
 pub fn steam_kind(provider: &dyn ProcProvider) -> Option<SteamKind> {
-    provider
-        .processes()
-        .into_iter()
-        .find_map(|p| {
-            let joined = p.cmdline.join(" ");
-            if p.exe.starts_with("/snap/steam")
-                || joined.contains("/snap/steam")
-                || p.exe.contains("snap/steam")
-            {
-                return Some(SteamKind::Snap);
-            }
-            if p.exe.contains("com.valvesoftware.Steam")
-                || joined.contains("com.valvesoftware.Steam")
-                || p.comm.contains("bwrap") && joined.contains("steam")
-            {
-                return Some(SteamKind::Flatpak);
-            }
-            if p.comm == "steam"
-                || p.exe.ends_with("/steam")
-                || joined.contains("/steam ")
-            {
-                return Some(SteamKind::Native);
-            }
-            None
-        })
+    provider.processes().into_iter().find_map(|p| {
+        let joined = p.cmdline.join(" ");
+        if p.exe.starts_with("/snap/steam")
+            || joined.contains("/snap/steam")
+            || p.exe.contains("snap/steam")
+        {
+            return Some(SteamKind::Snap);
+        }
+        if p.exe.contains("com.valvesoftware.Steam")
+            || joined.contains("com.valvesoftware.Steam")
+            || p.comm.contains("bwrap") && joined.contains("steam")
+        {
+            return Some(SteamKind::Flatpak);
+        }
+        if p.comm == "steam" || p.exe.ends_with("/steam") || joined.contains("/steam ") {
+            return Some(SteamKind::Native);
+        }
+        None
+    })
 }
 
 pub fn steam_running() -> bool {
@@ -229,7 +226,12 @@ mod tests {
 
     #[test]
     fn steam_native_flatpak_and_snap() {
-        let native = Fake(vec![proc(10, "steam", "/usr/bin/steam", &["/usr/bin/steam"])]);
+        let native = Fake(vec![proc(
+            10,
+            "steam",
+            "/usr/bin/steam",
+            &["/usr/bin/steam"],
+        )]);
         assert_eq!(steam_kind(&native), Some(SteamKind::Native));
 
         let flatpak = Fake(vec![proc(
@@ -277,17 +279,25 @@ mod tests {
     fn pgrep_shapes_match_like_pgrep() {
         let path = "/games/Game.AppImage";
         let exact = ["/games/Game.AppImage", "--foo"];
-        assert!(pgrep_like_match(&exact.join(" "), &format!("^{}( |$)", path)));
+        assert!(pgrep_like_match(
+            &exact.join(" "),
+            &format!("^{}( |$)", path)
+        ));
         assert!(pgrep_like_match(path, &format!("^{}( |$)", path)));
-        assert!(!pgrep_like_match(&format!("{}.bak --x", path), &format!("^{}( |$)", path)));
+        assert!(!pgrep_like_match(
+            &format!("{}.bak --x", path),
+            &format!("^{}( |$)", path)
+        ));
         // Unanchored is a substring match, exactly like `pgrep -f`.
         assert!(pgrep_like_match(&format!("{}.bak --x", path), path));
         assert!(pgrep_like_match("/games/Game.AppImage", path));
         let mounted = "/tmp/.mount_GameX/usr/bin/game";
         assert!(pgrep_like_match(mounted, "^/tmp/.mount_GameX/"));
-        assert!(!pgrep_like_match("/tmp/.mount_OtherX/game", "^/tmp/.mount_GameX/"));
+        assert!(!pgrep_like_match(
+            "/tmp/.mount_OtherX/game",
+            "^/tmp/.mount_GameX/"
+        ));
         // A literal with regex metacharacters escaped still matches.
         assert!(pgrep_like_match("/games/a.b.exe", &"/games/a\\.b\\.exe"));
     }
-
 }

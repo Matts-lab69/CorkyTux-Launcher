@@ -21,6 +21,7 @@ pub fn columns_for_width(width_sp: i32) -> u32 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub enum DetailsMode {
     Library,
     Lateral,
@@ -37,6 +38,7 @@ pub fn grid_columns(width: i32) -> u32 {
 /// Pure layout policy for the details panel. Under 900 px the panel replaces
 /// the library (with the panel's close button as "back"); from 900 to 1399 it
 /// floats over it; from 1400 it sits beside it.
+#[cfg(test)]
 pub fn layout_mode(width: i32, panel_open: bool) -> DetailsMode {
     if !panel_open {
         return DetailsMode::Library;
@@ -64,7 +66,10 @@ mod tests {
 
     #[test]
     fn gamepad_window_minimum_contains_settings_and_dialog_insets() {
-        assert_eq!((super::WINDOW_MIN_WIDTH, super::WINDOW_MIN_HEIGHT), (900, 650));
+        assert_eq!(
+            (super::WINDOW_MIN_WIDTH, super::WINDOW_MIN_HEIGHT),
+            (900, 650)
+        );
         assert_eq!(super::WINDOW_MIN_WIDTH - super::SETTINGS_WIDTH, 180);
         assert_eq!(super::WINDOW_MIN_HEIGHT - super::SETTINGS_HEIGHT, 130);
     }

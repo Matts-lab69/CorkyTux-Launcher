@@ -1,11 +1,10 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::AppState;
 use crate::ui::details_panel::DetailsPanel;
 use crate::ui::game_card::build_game_card;
+use crate::AppState;
 
 pub struct CenterHandle {
     pub widget: gtk::Box,
@@ -29,7 +28,8 @@ impl Clone for CenterHandle {
 
 impl CenterHandle {
     pub fn set_sidebar_visible(&self, visible: bool) {
-        self.center_col.set_margin_start(if visible { 8 } else { 24 });
+        self.center_col
+            .set_margin_start(if visible { 8 } else { 24 });
     }
 
     pub fn rebuild(&self, state: &AppState, details: &Rc<RefCell<Option<DetailsPanel>>>) {
@@ -37,16 +37,21 @@ impl CenterHandle {
         let entries = state.recent_model.entries();
         self.empty_label.set_visible(entries.is_empty());
         for entry in &entries {
-            let card = build_game_card(entry, &state.config, details, &state.selected_game, None, None, true);
+            let card = build_game_card(
+                entry,
+                &state.config,
+                details,
+                &state.selected_game,
+                None,
+                None,
+                true,
+            );
             self.flow.append(&card);
         }
     }
 }
 
-pub fn build_center(
-    state: &AppState,
-    details: &Rc<RefCell<Option<DetailsPanel>>>,
-) -> CenterHandle {
+pub fn build_center(state: &AppState, details: &Rc<RefCell<Option<DetailsPanel>>>) -> CenterHandle {
     let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
     vbox.set_hexpand(true);
     vbox.set_vexpand(true);
@@ -112,7 +117,15 @@ pub fn build_center(
     recent_inner.append(&empty_label);
     if !entries.is_empty() {
         for entry in &entries {
-            let card = build_game_card(entry, &state.config, details, &state.selected_game, None, None, true);
+            let card = build_game_card(
+                entry,
+                &state.config,
+                details,
+                &state.selected_game,
+                None,
+                None,
+                true,
+            );
             flow.append(&card);
         }
     }

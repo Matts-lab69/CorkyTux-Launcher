@@ -1,13 +1,14 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::backend::config::ConfigManager;
 use crate::backend::game_model::GameSource;
-use crate::backend::import_move::{self, ExecPlan, ImportMode, MoveCandidate, MoveOutcome, Preflight};
-use crate::backend::theme::{ThemeManager, ThemeMode, all_accents};
+use crate::backend::import_move::{
+    self, ExecPlan, ImportMode, MoveCandidate, MoveOutcome, Preflight,
+};
+use crate::backend::theme::{all_accents, ThemeManager, ThemeMode};
 use crate::ui::helpers;
 use crate::ui::import_manager;
 use crate::AppState;
@@ -64,7 +65,11 @@ fn heroic_candidates(doc: &serde_json::Value, state: &AppState) -> Vec<MoveCandi
         .unwrap_or_default()
         .iter()
         .filter_map(|g| {
-            let title = g.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let title = g
+                .get("title")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
             let ipath = g
                 .get("install_path")
                 .and_then(|x| x.as_str())
@@ -80,7 +85,11 @@ fn heroic_candidates(doc: &serde_json::Value, state: &AppState) -> Vec<MoveCandi
                 return None;
             }
             let store = g.get("store").and_then(|x| x.as_str()).unwrap_or("epic");
-            let exe = g.get("executable").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let exe = g
+                .get("executable")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
             Some(MoveCandidate {
                 label: title,
                 store_tag: if store == "gog" { "GOG" } else { "Epic" }.to_string(),
@@ -140,7 +149,7 @@ fn bulk_import_via_manager<F>(
     let ready: Rc<F> = Rc::new(on_ready);
     let parent_poll = parent.clone();
     let label_poll = label.to_string();
-    let tag_poll = tag_dir.clone();
+    let tag_poll = tag_dir;
     let cands_poll = cands.clone();
     let dir_poll = games_dir.clone();
 
@@ -155,8 +164,8 @@ fn bulk_import_via_manager<F>(
             // invocation to retain the Fn contract.
             let parent_a2 = parent_a.clone();
             let pf2 = pf.clone();
-            let tag_a = tag_poll.clone();
-            import_manager::ask(&parent_a, &label_poll, &tag_a, &pf, move |mode| {
+            let tag_a = tag_poll;
+            import_manager::ask(&parent_a, &label_poll, tag_a, &pf, move |mode| {
                 let Some(mode) = mode else { return };
                 let ready_b = ready_a.clone();
                 let parent_b = parent_a2.clone();
@@ -426,14 +435,29 @@ fn import_heroic_entries(
         .cloned()
         .unwrap_or_default();
     let mut imported = 0;
-    let def_proton = state.config.launcher_value("defaultProton").unwrap_or_default();
+    let def_proton = state
+        .config
+        .launcher_value("defaultProton")
+        .unwrap_or_default();
     for g in &games {
-        let title = g.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let title = g
+            .get("title")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
         if title.is_empty() || state.game_model.get_game(&title).is_some() {
             continue;
         }
-        let store = g.get("store").and_then(|x| x.as_str()).unwrap_or("epic").to_string();
-        let app_id = g.get("app_id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let store = g
+            .get("store")
+            .and_then(|x| x.as_str())
+            .unwrap_or("epic")
+            .to_string();
+        let app_id = g
+            .get("app_id")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
         let orig_ipath = g
             .get("install_path")
             .and_then(|x| x.as_str())
@@ -442,7 +466,11 @@ fn import_heroic_entries(
         if orig_ipath.is_empty() || !Path::new(&orig_ipath).exists() {
             continue;
         }
-        let exe = g.get("executable").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let exe = g
+            .get("executable")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
 
         // Permanent mode takes main_path and executable from the executed plan.
         let (main_path, executable) = match moved.get(&title) {
@@ -548,7 +576,9 @@ pub fn show_settings_modal(
     header_row.set_margin_end(8);
     {
         let dlg = dialog.clone();
-        x_btn.connect_clicked(move |_| { dlg.close(); });
+        x_btn.connect_clicked(move |_| {
+            dlg.close();
+        });
     }
     // Pollers below stop when the dialog closes (no zombie 100ms wakeups).
     let dlg_alive: Rc<Cell<bool>> = Rc::new(Cell::new(true));
@@ -593,9 +623,11 @@ pub fn show_settings_modal(
     theme_label.add_css_class("settings-title");
     visuals_page.append(&theme_label);
 
-    let theme_sub = gtk::Label::new(Some("Dark is the default look. Light is easier on bright screens."));
+    let theme_sub = gtk::Label::new(Some(
+        "Dark is the default look. Light is easier on bright screens.",
+    ));
     theme_sub.add_css_class("time-label");
-    
+
     theme_sub.set_wrap(true);
     theme_sub.set_halign(gtk::Align::Start);
     visuals_page.append(&theme_sub);
@@ -670,9 +702,11 @@ pub fn show_settings_modal(
     accent_label.add_css_class("settings-title");
     visuals_page.append(&accent_label);
 
-    let accent_sub = gtk::Label::new(Some("Choose an accent color for buttons, switches, and highlights"));
+    let accent_sub = gtk::Label::new(Some(
+        "Choose an accent color for buttons, switches, and highlights",
+    ));
     accent_sub.add_css_class("time-label");
-    
+
     accent_sub.set_wrap(true);
     accent_sub.set_halign(gtk::Align::Start);
     visuals_page.append(&accent_sub);
@@ -706,13 +740,17 @@ pub fn show_settings_modal(
             dlg_acc.queue_draw();
             ps_acc.queue_draw();
         });
-        if accent.id == current_accent { btn.set_active(true); }
+        if accent.id == current_accent {
+            btn.set_active(true);
+        }
         let col = (i % 5) as i32;
         let row = (i / 5) as i32;
         accent_grid.attach(&btn, col, row, 1, 1);
         accent_btns.push(btn);
     }
-    for btn in &accent_btns[1..] { btn.set_group(Some(&accent_btns[0])); }
+    for btn in &accent_btns[1..] {
+        btn.set_group(Some(&accent_btns[0]));
+    }
     visuals_page.append(&accent_grid);
     page_stack.add_titled(&scroll_page(&visuals_page), Some("visuals"), "Visuals");
 
@@ -732,7 +770,7 @@ pub fn show_settings_modal(
 
     // Created early so path rows can trigger a proton rescan + UI rebuild
     // when a proton path changes (otherwise new paths stay undetected).
-    let rebuild_proton_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let rebuild_proton_slot: crate::ui::RefreshCallback = Rc::new(RefCell::new(None));
     let make_editable_row = |label: &str, config_key: &str, base: &str, state: &AppState| {
         let col = gtk::Box::new(gtk::Orientation::Vertical, 4);
         col.set_margin_top(6);
@@ -761,7 +799,9 @@ pub fn show_settings_modal(
         browse_btn.connect_clicked(move |_| {
             if let Some(path) = state_c.config.pick_folder(&format!("Select {}", label_str)) {
                 entry_c.set_text(&path.display().to_string());
-                state_c.config.set_launcher_value(&key, &path.display().to_string());
+                state_c
+                    .config
+                    .set_launcher_value(&key, &path.display().to_string());
                 if key.starts_with("protonsPath") {
                     state_c.proton.refresh_installed();
                     if let Some(r) = slot_c.borrow().clone() {
@@ -788,13 +828,13 @@ pub fn show_settings_modal(
         let save_c = save_path.clone();
         let entry_c2 = entry.clone();
         entry.connect_activate(move |_| {
-            save_c(&entry_c2.text().to_string());
+            save_c(entry_c2.text().as_ref());
         });
         let save_c = save_path.clone();
         let entry_c3 = entry.clone();
         let focus = gtk::EventControllerFocus::new();
         focus.connect_leave(move |_| {
-            save_c(&entry_c3.text().to_string());
+            save_c(entry_c3.text().as_ref());
         });
         entry.add_controller(focus);
         row.append(&entry);
@@ -804,9 +844,24 @@ pub fn show_settings_modal(
         col
     };
 
-    paths_page.append(&make_editable_row("Proton Path 1", "protonsPath", "protons", state));
-    paths_page.append(&make_editable_row("Proton Path 2 (optional)", "protonsPath2", "", state));
-    paths_page.append(&make_editable_row("Proton Path 3 (optional)", "protonsPath3", "", state));
+    paths_page.append(&make_editable_row(
+        "Proton Path 1",
+        "protonsPath",
+        "protons",
+        state,
+    ));
+    paths_page.append(&make_editable_row(
+        "Proton Path 2 (optional)",
+        "protonsPath2",
+        "",
+        state,
+    ));
+    paths_page.append(&make_editable_row(
+        "Proton Path 3 (optional)",
+        "protonsPath3",
+        "",
+        state,
+    ));
 
     // Shared Prefixes section
     let shared_title = gtk::Label::new(Some("Shared Prefixes"));
@@ -817,7 +872,7 @@ pub fn show_settings_modal(
     let shared_desc = gtk::Label::new(Some("Create shared Wine/Proton prefixes. Each is tied to a specific Proton version. Games using that Proton will share the same prefix."));
     shared_desc.set_wrap(true);
     shared_desc.set_halign(gtk::Align::Center);
-    
+
     shared_desc.add_css_class("time-label");
     paths_page.append(&shared_desc);
 
@@ -855,7 +910,9 @@ pub fn show_settings_modal(
             let (header_row, x_btn) = helpers::modal_header("Add shared prefix");
             {
                 let d0 = dlg.clone();
-                x_btn.connect_clicked(move |_| { d0.close(); });
+                x_btn.connect_clicked(move |_| {
+                    d0.close();
+                });
             }
             col.append(&header_row);
             let lbl = gtk::Label::new(Some("Proton version for this shared prefix:"));
@@ -877,7 +934,7 @@ pub fn show_settings_modal(
             if installed.is_empty() {
                 let empty = gtk::Label::new(Some("No Proton builds installed yet."));
                 empty.set_halign(gtk::Align::Start);
-                
+
                 empty.add_css_class("time-label");
                 col.append(&empty);
             }
@@ -890,7 +947,9 @@ pub fn show_settings_modal(
             add.set_hexpand(true);
             add.set_sensitive(!installed.is_empty());
             let d1 = dlg.clone();
-            cancel.connect_clicked(move |_| { d1.close(); });
+            cancel.connect_clicked(move |_| {
+                d1.close();
+            });
             let d2 = dlg.clone();
             let state_cc = state_c.clone();
             let list_cc = list_c.clone();
@@ -938,11 +997,18 @@ pub fn show_settings_modal(
     let installed_names = state.proton.installed_protons();
     let default_proton = gtk::DropDown::new(None::<gtk::StringList>, None::<gtk::Expression>);
     let def_sl = gtk::StringList::new(&["(none)"]);
-    for p in &installed_names { def_sl.append(p); }
+    for p in &installed_names {
+        def_sl.append(p);
+    }
     default_proton.set_model(Some(&def_sl.clone().upcast::<gio::ListModel>()));
-    let current_default = state.config.launcher_value("defaultProton").unwrap_or_default();
+    let current_default = state
+        .config
+        .launcher_value("defaultProton")
+        .unwrap_or_default();
     default_proton.set_selected(
-        installed_names.iter().position(|p| *p == current_default)
+        installed_names
+            .iter()
+            .position(|p| *p == current_default)
             .map(|i| (i + 1) as u32)
             .unwrap_or(0),
     );
@@ -961,8 +1027,10 @@ pub fn show_settings_modal(
     proton_factory.connect_bind(|_, object| {
         if let Some(item) = object.downcast_ref::<gtk::ListItem>() {
             if let (Some(value), Some(label)) = (
-                item.item().and_then(|obj| obj.downcast::<gtk::StringObject>().ok()),
-                item.child().and_then(|obj| obj.downcast::<gtk::Label>().ok()),
+                item.item()
+                    .and_then(|obj| obj.downcast::<gtk::StringObject>().ok()),
+                item.child()
+                    .and_then(|obj| obj.downcast::<gtk::Label>().ok()),
             ) {
                 label.set_text(&value.string());
                 label.set_tooltip_text(Some(&value.string()));
@@ -1008,7 +1076,8 @@ pub fn show_settings_modal(
                     .map(|o| o.property::<String>("string"))
                     .filter(|v| v != "(none)")
                     .unwrap_or_default();
-                if state_c2.config.launcher_value("defaultProton").as_deref() != Some(val.as_str()) {
+                if state_c2.config.launcher_value("defaultProton").as_deref() != Some(val.as_str())
+                {
                     state_c2.config.set_launcher_value("defaultProton", &val);
                 }
             });
@@ -1028,11 +1097,15 @@ pub fn show_settings_modal(
         let b = gtk::ToggleButton::with_label(label);
         b.add_css_class("filter-btn");
         b.set_hexpand(true);
-        if id == "all" { b.set_active(true); }
+        if id == "all" {
+            b.set_active(true);
+        }
         filter_box.append(&b);
         filter_btns.push(b);
     }
-    for b in &filter_btns[1..] { b.set_group(Some(&filter_btns[0])); }
+    for b in &filter_btns[1..] {
+        b.set_group(Some(&filter_btns[0]));
+    }
     protons_page.append(&filter_box);
 
     // Status + progress
@@ -1083,7 +1156,9 @@ pub fn show_settings_modal(
     path_cancel.add_css_class("settings-btn");
     {
         let pp = path_picker.clone();
-        path_cancel.connect_clicked(move |_| { pp.set_visible(false); });
+        path_cancel.connect_clicked(move |_| {
+            pp.set_visible(false);
+        });
     }
     path_picker.append(&path_cancel);
     protons_page.append(&path_picker);
@@ -1095,7 +1170,7 @@ pub fn show_settings_modal(
     let pending_dl: Rc<RefCell<Option<(String, String)>>> = Rc::new(RefCell::new(None));
 
     // Forward slot so the installed-list Remove also refreshes Available.
-    let rebuild_avail_early: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let rebuild_avail_early: crate::ui::RefreshCallback = Rc::new(RefCell::new(None));
     // Rebuild installed list (+ default dropdown, so new paths show up)
     let rebuild_installed = {
         let ibox = installed_box.clone();
@@ -1122,7 +1197,10 @@ pub fn show_settings_modal(
             // Settings open — the "3 releases" bug.
             rebuilding_c.set(true);
             def_drop.set_model(Some(&def_sl.clone().upcast::<gio::ListModel>()));
-            let cur_def = state_c.config.launcher_value("defaultProton").unwrap_or_default();
+            let cur_def = state_c
+                .config
+                .launcher_value("defaultProton")
+                .unwrap_or_default();
             def_drop.set_selected(
                 fresh_names
                     .iter()
@@ -1177,7 +1255,7 @@ pub fn show_settings_modal(
                     inner.append(&badge);
                 } else if npaths > 0 {
                     let badge = gtk::Label::new(Some("Unknown"));
-                    
+
                     badge.add_css_class("time-label");
                     inner.append(&badge);
                 }
@@ -1212,7 +1290,7 @@ pub fn show_settings_modal(
     rebuild_installed_rc();
 
     // Rebuild available list (filter-aware)
-    let rebuild_avail_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let rebuild_avail_slot: crate::ui::RefreshCallback = Rc::new(RefCell::new(None));
     let rebuild_avail = {
         let abox = avail_box.clone();
         let releases_c = releases.clone();
@@ -1234,8 +1312,12 @@ pub fn show_settings_modal(
             let installed = state_c.proton.installed_protons();
             let mut shown = 0;
             for (tag, url, source) in releases_c.borrow().iter() {
-                if filter == "cachy" && source != "cachy" { continue; }
-                if filter == "ge" && source != "ge" { continue; }
+                if filter == "cachy" && source != "cachy" {
+                    continue;
+                }
+                if filter == "ge" && source != "ge" {
+                    continue;
+                }
                 shown += 1;
                 let card = gtk::Frame::new(None);
                 card.add_css_class("page-card");
@@ -1244,7 +1326,11 @@ pub fn show_settings_modal(
                 inner.set_margin_bottom(4);
                 inner.set_margin_start(8);
                 inner.set_margin_end(8);
-                let prefix = if source == "cachy" { "[CachyOS] " } else { "[GE] " };
+                let prefix = if source == "cachy" {
+                    "[CachyOS] "
+                } else {
+                    "[GE] "
+                };
                 let lbl = gtk::Label::new(Some(&format!("{}{}", prefix, tag)));
                 lbl.add_css_class("details-title");
                 lbl.set_halign(gtk::Align::Start);
@@ -1271,7 +1357,12 @@ pub fn show_settings_modal(
                 let avail_slot_cc = avail_slot_c.clone();
                 let proton_slot_cc = proton_slot_c.clone();
                 action.connect_clicked(move |_| {
-                    if state_cc.proton.installed_protons().iter().any(|n| n == &tag_c) {
+                    if state_cc
+                        .proton
+                        .installed_protons()
+                        .iter()
+                        .any(|n| n == &tag_c)
+                    {
                         let _ = state_cc.proton.remove_proton(&tag_c);
                         state_cc.proton.refresh_installed();
                         state_cc.game_model.load_from_disk();
@@ -1292,9 +1383,11 @@ pub fn show_settings_modal(
                         }
                         *pending_cc.borrow_mut() = Some((tag_c.clone(), url_c.clone()));
                         for (i, p) in paths.iter().enumerate() {
-                            let b = gtk::Button::with_label(
-                                &format!("Path {} — {}", i + 1, p.display()),
-                            );
+                            let b = gtk::Button::with_label(&format!(
+                                "Path {} — {}",
+                                i + 1,
+                                p.display()
+                            ));
                             b.add_css_class("settings-btn");
                             b.set_halign(gtk::Align::Fill);
                             let tag_cc = tag_c.clone();
@@ -1308,9 +1401,7 @@ pub fn show_settings_modal(
                                 picker_ccc.set_visible(false);
                                 status_ccc.set_text(&format!("Downloading {}...", tag_cc));
                                 bar_ccc.set_fraction(0.0);
-                                start_proton_download(
-                                    &ptx_ccc, &tag_cc, &url_cc, &dest,
-                                );
+                                start_proton_download(&ptx_ccc, &tag_cc, &url_cc, &dest);
                             });
                             picker_rows_cc.append(&b);
                         }
@@ -1318,7 +1409,9 @@ pub fn show_settings_modal(
                     } else {
                         status_cc.set_text(&format!("Downloading {}...", tag_c));
                         bar_cc.set_fraction(0.0);
-                        let dest = paths.first().cloned()
+                        let dest = paths
+                            .first()
+                            .cloned()
                             .unwrap_or_else(|| state_cc.proton.default_download_dir());
                         start_proton_download(&ptx_cc, &tag_c, &url_c, &dest);
                     }
@@ -1329,7 +1422,7 @@ pub fn show_settings_modal(
             }
             if shown == 0 {
                 let hint = gtk::Label::new(Some("Press Refresh to load releases."));
-                
+
                 hint.add_css_class("time-label");
                 abox.append(&hint);
             }
@@ -1486,32 +1579,43 @@ pub fn show_settings_modal(
     let mangohud_avail = mh_comp.available;
     let umu_avail = state.proton.is_umu_available();
 
-    let misc_switch = |key: &str, label: &str, default_on: bool, enabled: bool, state: &AppState| {
-        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        row.set_margin_top(4);
-        let lbl = gtk::Label::new(Some(label));
-        lbl.add_css_class("info-value");
-        lbl.set_halign(gtk::Align::Start);
-        lbl.set_hexpand(true);
-        lbl.set_wrap(true);
-        let sw = gtk::Switch::new();
-        sw.set_halign(gtk::Align::End);
-        sw.set_sensitive(enabled);
-        let current_val = state.config.launcher_value(key)
-            .map(|v| v == "1")
-            .unwrap_or(default_on);
-        sw.set_active(current_val);
-        let state_clone = state.clone();
-        let key_owned = key.to_string();
-        sw.connect_active_notify(move |switch| {
-            state_clone.config.set_launcher_value(&key_owned, if switch.is_active() { "1" } else { "0" });
-        });
-        row.append(&lbl);
-        row.append(&sw);
-        row
-    };
+    let misc_switch =
+        |key: &str, label: &str, default_on: bool, enabled: bool, state: &AppState| {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            row.set_margin_top(4);
+            let lbl = gtk::Label::new(Some(label));
+            lbl.add_css_class("info-value");
+            lbl.set_halign(gtk::Align::Start);
+            lbl.set_hexpand(true);
+            lbl.set_wrap(true);
+            let sw = gtk::Switch::new();
+            sw.set_halign(gtk::Align::End);
+            sw.set_sensitive(enabled);
+            let current_val = state
+                .config
+                .launcher_value(key)
+                .map(|v| v == "1")
+                .unwrap_or(default_on);
+            sw.set_active(current_val);
+            let state_clone = state.clone();
+            let key_owned = key.to_string();
+            sw.connect_active_notify(move |switch| {
+                state_clone
+                    .config
+                    .set_launcher_value(&key_owned, if switch.is_active() { "1" } else { "0" });
+            });
+            row.append(&lbl);
+            row.append(&sw);
+            row
+        };
 
-    misc_inner.append(&misc_switch("controllerSupport", "Controller support", true, true, state));
+    misc_inner.append(&misc_switch(
+        "controllerSupport",
+        "Controller support",
+        true,
+        true,
+        state,
+    ));
     let tray_hint = gtk::Label::new(Some(
         "Closing the window keeps CorkyTux in the system tray. Use Quit in the tray menu to exit. Without a tray host, closing exits the app.",
     ));
@@ -1550,48 +1654,98 @@ pub fn show_settings_modal(
         row.append(&sw);
         misc_inner.append(&row);
     }
-    misc_inner.append(&misc_switch("gamesUsesWined3d", "Use wined3d instead of DXVK", false, true, state));
-    misc_inner.append(&misc_switch("gamesUsesWayland", "Prefer Wayland driver", false, true, state));
-    misc_inner.append(&misc_switch("gamesUsesSteamRuntime", "Use Steam Runtime for Proton games", true, true, state));
-    let runtime_note = gtk::Label::new(Some("Provides 32-bit audio/video libs on pure 64-bit systems"));
+    misc_inner.append(&misc_switch(
+        "gamesUsesWined3d",
+        "Use wined3d instead of DXVK",
+        false,
+        true,
+        state,
+    ));
+    misc_inner.append(&misc_switch(
+        "gamesUsesWayland",
+        "Prefer Wayland driver",
+        false,
+        true,
+        state,
+    ));
+    misc_inner.append(&misc_switch(
+        "gamesUsesSteamRuntime",
+        "Use Steam Runtime for Proton games",
+        true,
+        true,
+        state,
+    ));
+    let runtime_note = gtk::Label::new(Some(
+        "Provides 32-bit audio/video libs on pure 64-bit systems",
+    ));
     runtime_note.set_halign(gtk::Align::Start);
     runtime_note.set_wrap(true);
-    
+
     runtime_note.add_css_class("time-label");
     misc_inner.append(&runtime_note);
-    misc_inner.append(&misc_switch("gamesUsesUmu", "Use umu-launcher (unified Proton runner)", false, true, state));
-    misc_inner.append(&misc_switch("checkUpdatesOnStartup", "Check for updates on startup", false, true, state));
+    misc_inner.append(&misc_switch(
+        "gamesUsesUmu",
+        "Use umu-launcher (unified Proton runner)",
+        false,
+        true,
+        state,
+    ));
+    misc_inner.append(&misc_switch(
+        "checkUpdatesOnStartup",
+        "Check for updates on startup",
+        false,
+        true,
+        state,
+    ));
     let umu_status = gtk::Label::new(Some(if umu_avail {
         "umu-run: ready"
     } else {
         "umu-run: not installed (toggle stays available; install umu to use it)"
     }));
     umu_status.set_halign(gtk::Align::Start);
-    
+
     umu_status.set_wrap(true);
     umu_status.add_css_class("time-label");
     misc_inner.append(&umu_status);
-    misc_inner.append(&misc_switch("gamesUsesGameMode", "Use GameMode for new games", false, gamemode_avail, state));
+    misc_inner.append(&misc_switch(
+        "gamesUsesGameMode",
+        "Use GameMode for new games",
+        false,
+        gamemode_avail,
+        state,
+    ));
     let gm_status = gtk::Label::new(Some(
         &crate::backend::proton::ProtonManager::component_status_text(&gm_comp, "GameMode"),
     ));
     gm_status.set_halign(gtk::Align::Start);
     gm_status.set_wrap(true);
-    
+
     gm_status.add_css_class("time-label");
     misc_inner.append(&gm_status);
-    misc_inner.append(&misc_switch("gamesUsesMangoHud", "Use MangoHud for new games", false, mangohud_avail, state));
+    misc_inner.append(&misc_switch(
+        "gamesUsesMangoHud",
+        "Use MangoHud for new games",
+        false,
+        mangohud_avail,
+        state,
+    ));
     let mh_status = gtk::Label::new(Some(
         &crate::backend::proton::ProtonManager::component_status_text(&mh_comp, "MangoHud"),
     ));
     mh_status.set_halign(gtk::Align::Start);
     mh_status.set_wrap(true);
-    
+
     mh_status.add_css_class("time-label");
     misc_inner.append(&mh_status);
 
     let bw_ok = crate::backend::isolation::bwrap_available();
-    misc_inner.append(&misc_switch("IsolateNewPrefixes", "Isolate new Wine/Proton prefixes (bubblewrap sandbox)", false, bw_ok, state));
+    misc_inner.append(&misc_switch(
+        "IsolateNewPrefixes",
+        "Isolate new Wine/Proton prefixes (bubblewrap sandbox)",
+        false,
+        bw_ok,
+        state,
+    ));
     let bw_status = gtk::Label::new(Some(if bw_ok {
         "bubblewrap: ready — new games without an explicit choice launch sandboxed (private $HOME, prefix + game folder only)"
     } else {
@@ -1639,10 +1793,10 @@ pub fn show_settings_modal(
 
     // Slot so rows rebuilt by refresh can re-trigger a full rebuild
     // (e.g. the emulator-manager arrow toggle).
-    let rebuild_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let rebuild_slot: crate::ui::RefreshCallback = Rc::new(RefCell::new(None));
     // Slot for the Available-plugins (registry) list so delete handlers
     // can refresh it without a network round-trip.
-    let rebuild_reg_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let rebuild_reg_slot: crate::ui::RefreshCallback = Rc::new(RefCell::new(None));
     // Rebuild installed plugin cards
     let rebuild_plugins = {
         let ibox = installed_box.clone();
@@ -1660,7 +1814,7 @@ pub fn show_settings_modal(
             let list = state_c.plugins.list_plugins();
             if list.is_empty() {
                 let empty = gtk::Label::new(Some("No plugins installed."));
-                
+
                 empty.add_css_class("time-label");
                 ibox.append(&empty);
                 return;
@@ -1676,7 +1830,8 @@ pub fn show_settings_modal(
                 if p.plugin_type == crate::backend::plugins::PluginType::EmulatorManager {
                     // Expandable emulator-manager row (arrow IS the toggle button)
                     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                    let arrow = gtk::Button::with_label(if *emu_exp_c.borrow() { "▼" } else { "▶" });
+                    let arrow =
+                        gtk::Button::with_label(if *emu_exp_c.borrow() { "▼" } else { "▶" });
                     arrow.set_width_request(32);
                     arrow.set_valign(gtk::Align::Center);
                     arrow.add_css_class("settings-btn");
@@ -1692,7 +1847,10 @@ pub fn show_settings_modal(
                                 let tx2 = pltx_cc.clone();
                                 let dir = state_cc.plugins.plugins_dir();
                                 std::thread::spawn(move || {
-                                    let list = crate::backend::plugins::PluginManager::list_emulators_in(&dir);
+                                    let list =
+                                        crate::backend::plugins::PluginManager::list_emulators_in(
+                                            &dir,
+                                        );
                                     let _ = tx2.send(PluginTabMsg::Emus(list));
                                 });
                             }
@@ -1702,8 +1860,13 @@ pub fn show_settings_modal(
                         });
                     }
                     let name_lbl = gtk::Label::new(Some(&format!(
-                        "{}{}", p.name,
-                        if p.version.is_empty() { String::new() } else { format!("  v{}", p.version) }
+                        "{}{}",
+                        p.name,
+                        if p.version.is_empty() {
+                            String::new()
+                        } else {
+                            format!("  v{}", p.version)
+                        }
                     )));
                     name_lbl.add_css_class("details-title");
                     name_lbl.set_halign(gtk::Align::Start);
@@ -1735,7 +1898,7 @@ pub fn show_settings_modal(
                         let desc = gtk::Label::new(None);
                         desc.set_markup(&crate::ui::markdown::markdown_to_pango(&p.description));
                         desc.set_halign(gtk::Align::Start);
-                        
+
                         desc.set_wrap(true);
                         desc.add_css_class("time-label");
                         inner.append(&desc);
@@ -1754,8 +1917,13 @@ pub fn show_settings_modal(
                     let col = gtk::Box::new(gtk::Orientation::Vertical, 2);
                     col.set_hexpand(true);
                     let name_lbl = gtk::Label::new(Some(&format!(
-                        "{}{}", p.name,
-                        if p.version.is_empty() { String::new() } else { format!("  v{}", p.version) }
+                        "{}{}",
+                        p.name,
+                        if p.version.is_empty() {
+                            String::new()
+                        } else {
+                            format!("  v{}", p.version)
+                        }
                     )));
                     name_lbl.add_css_class("details-title");
                     name_lbl.set_halign(gtk::Align::Start);
@@ -1765,15 +1933,18 @@ pub fn show_settings_modal(
                         let desc = gtk::Label::new(None);
                         desc.set_markup(&crate::ui::markdown::markdown_to_pango(&p.description));
                         desc.set_halign(gtk::Align::Start);
-                        
+
                         desc.set_wrap(true);
                         desc.add_css_class("time-label");
                         col.append(&desc);
                     }
                     if !p.capabilities.is_empty() {
-                        let caps = gtk::Label::new(Some(&format!("Capabilities: {}", p.capabilities.join(", "))));
+                        let caps = gtk::Label::new(Some(&format!(
+                            "Capabilities: {}",
+                            p.capabilities.join(", ")
+                        )));
                         caps.set_halign(gtk::Align::Start);
-                        
+
                         caps.set_wrap(true);
                         caps.add_css_class("time-label");
                         col.append(&caps);
@@ -1848,25 +2019,37 @@ pub fn show_settings_modal(
                 rbox.remove(&child);
             }
             let installed = state_c.plugins.list_plugins();
-            let installed_ids: Vec<String> = installed.iter().map(|p| p.id.to_lowercase()).collect();
-            let installed_names: Vec<String> = installed.iter().map(|p| {
-                let n = p.name.clone();
-                let lower = n.to_lowercase();
-                // strip trailing " v1.2" like C++
-                match lower.rfind(" v") {
-                    Some(i) if lower[i + 2..].chars().all(|c| c.is_ascii_digit() || c == '.') => {
-                        lower[..i].trim().to_string()
+            let installed_ids: Vec<String> =
+                installed.iter().map(|p| p.id.to_lowercase()).collect();
+            let installed_names: Vec<String> = installed
+                .iter()
+                .map(|p| {
+                    let n = p.name.clone();
+                    let lower = n.to_lowercase();
+                    // strip trailing " v1.2" like C++
+                    match lower.rfind(" v") {
+                        Some(i)
+                            if lower[i + 2..]
+                                .chars()
+                                .all(|c| c.is_ascii_digit() || c == '.') =>
+                        {
+                            lower[..i].trim().to_string()
+                        }
+                        _ => lower.trim().to_string(),
                     }
-                    _ => lower.trim().to_string(),
-                }
-            }).collect();
+                })
+                .collect();
             let mut shown = 0;
             for e in reg_c.borrow().iter() {
                 let rtag = e.tag.to_lowercase();
                 let rname = {
                     let lower = e.name.to_lowercase();
                     match lower.rfind(" v") {
-                        Some(i) if lower[i + 2..].chars().all(|c| c.is_ascii_digit() || c == '.') => {
+                        Some(i)
+                            if lower[i + 2..]
+                                .chars()
+                                .all(|c| c.is_ascii_digit() || c == '.') =>
+                        {
                             lower[..i].trim().to_string()
                         }
                         _ => lower.trim().to_string(),
@@ -1893,7 +2076,8 @@ pub fn show_settings_modal(
                 inner.set_margin_end(10);
                 let col = gtk::Box::new(gtk::Orientation::Vertical, 2);
                 col.set_hexpand(true);
-                let name_lbl = gtk::Label::new(Some(if e.name.is_empty() { &e.tag } else { &e.name }));
+                let name_lbl =
+                    gtk::Label::new(Some(if e.name.is_empty() { &e.tag } else { &e.name }));
                 name_lbl.add_css_class("details-title");
                 name_lbl.set_halign(gtk::Align::Start);
                 name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -1901,7 +2085,7 @@ pub fn show_settings_modal(
                 if !e.description.is_empty() {
                     let desc = gtk::Label::new(Some(&e.description));
                     desc.set_halign(gtk::Align::Start);
-                    
+
                     desc.set_wrap(true);
                     desc.add_css_class("time-label");
                     col.append(&desc);
@@ -1909,7 +2093,7 @@ pub fn show_settings_modal(
                 if !e.date.is_empty() {
                     let date = gtk::Label::new(Some(&e.date));
                     date.set_halign(gtk::Align::Start);
-                    
+
                     date.add_css_class("time-label");
                     col.append(&date);
                 }
@@ -1931,7 +2115,9 @@ pub fn show_settings_modal(
                     let url2 = url_c.clone();
                     std::thread::spawn(move || {
                         let res = crate::backend::plugins::PluginManager::download_plugin_in(
-                            &dir, &tag2, &url2,
+                            &dir,
+                            &tag2,
+                            &url2,
                             |f, bps| {
                                 let _ = tx2.send(PluginTabMsg::Progress(f, bps));
                             },
@@ -2003,7 +2189,9 @@ pub fn show_settings_modal(
                         // refresh registry view (installed now filtered out)
                         let tx2 = pltx_poll.clone();
                         std::thread::spawn(move || {
-                            if let Ok(list) = crate::backend::plugins::PluginManager::fetch_registry() {
+                            if let Ok(list) =
+                                crate::backend::plugins::PluginManager::fetch_registry()
+                            {
                                 let _ = tx2.send(PluginTabMsg::Registry(Ok(list)));
                             }
                         });
@@ -2023,7 +2211,8 @@ pub fn show_settings_modal(
                         let tx2 = pltx_poll.clone();
                         let dir = state_c.plugins.plugins_dir();
                         std::thread::spawn(move || {
-                            let list = crate::backend::plugins::PluginManager::list_emulators_in(&dir);
+                            let list =
+                                crate::backend::plugins::PluginManager::list_emulators_in(&dir);
                             let _ = tx2.send(PluginTabMsg::Emus(list));
                         });
                     }
@@ -2065,9 +2254,11 @@ pub fn show_settings_modal(
     int_title.set_halign(gtk::Align::Center);
     int_title.add_css_class("settings-title");
     integrations_page.append(&int_title);
-    let int_sub = gtk::Label::new(Some("Connect external platforms. Local scans need no API key."));
+    let int_sub = gtk::Label::new(Some(
+        "Connect external platforms. Local scans need no API key.",
+    ));
     int_sub.set_halign(gtk::Align::Start);
-    
+
     int_sub.set_wrap(true);
     int_sub.add_css_class("time-label");
     integrations_page.append(&int_sub);
@@ -2116,13 +2307,15 @@ pub fn show_settings_modal(
     art_status.set_halign(gtk::Align::Start);
     art_status.set_wrap(true);
     art_status.add_css_class("time-label");
-    art_status.set_text(if state.integration.api_key().trim().is_empty()
-        && crate::backend::IntegrationManager::user_sgdb_key().is_none()
-    {
-        "Artwork disabled: add your SteamGridDB key to download covers and icons."
-    } else {
-        "Artwork enabled."
-    });
+    art_status.set_text(
+        if state.integration.api_key().trim().is_empty()
+            && crate::backend::IntegrationManager::user_sgdb_key().is_none()
+        {
+            "Artwork disabled: add your SteamGridDB key to download covers and icons."
+        } else {
+            "Artwork enabled."
+        },
+    );
     art_col.append(&art_status);
     art_card.set_child(Some(&art_col));
     integrations_page.append(&art_card);
@@ -2146,8 +2339,14 @@ pub fn show_settings_modal(
     });
 
     for (source_name, desc) in [
-        ("Steam", "Import installed Steam games with their existing Proton prefixes"),
-        ("Lutris", "Largest Linux gaming platform – scan installed Lutris games"),
+        (
+            "Steam",
+            "Import installed Steam games with their existing Proton prefixes",
+        ),
+        (
+            "Lutris",
+            "Largest Linux gaming platform – scan installed Lutris games",
+        ),
     ] {
         let card = gtk::Frame::new(None);
         card.add_css_class("page-card");
@@ -2226,7 +2425,7 @@ pub fn show_settings_modal(
         col.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         let desc_lbl = gtk::Label::new(Some(desc));
         desc_lbl.set_halign(gtk::Align::Start);
-        
+
         desc_lbl.set_wrap(true);
         desc_lbl.add_css_class("time-label");
         col.append(&desc_lbl);
@@ -2264,7 +2463,10 @@ pub fn show_settings_modal(
             status_c.set_text("Scanning Heroic…");
             let (tx, rx) = std::sync::mpsc::channel::<Result<serde_json::Value, String>>();
             std::thread::spawn(move || {
-                let _ = tx.send(crate::backend::external::StoreManager::heroic_scan().map_err(|e| e.to_string()));
+                let _ = tx.send(
+                    crate::backend::external::StoreManager::heroic_scan()
+                        .map_err(|e| e.to_string()),
+                );
             });
             let state_c = state_clone.clone();
             let status_cc = status_c.clone();
@@ -2304,9 +2506,11 @@ pub fn show_settings_modal(
         row.append(&scan);
         col.append(&row);
         col.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-        let desc_lbl = gtk::Label::new(Some("Import Epic/GOG games installed by Heroic, with their anti-cheat runtime flags"));
+        let desc_lbl = gtk::Label::new(Some(
+            "Import Epic/GOG games installed by Heroic, with their anti-cheat runtime flags",
+        ));
         desc_lbl.set_halign(gtk::Align::Start);
-        
+
         desc_lbl.set_wrap(true);
         desc_lbl.add_css_class("time-label");
         col.append(&desc_lbl);
@@ -2370,16 +2574,18 @@ pub fn show_settings_modal(
         let umu_status_lbl = gtk::Label::new(Some("Checking…"));
         umu_status_lbl.set_halign(gtk::Align::Start);
         umu_status_lbl.set_hexpand(true);
-        
+
         umu_status_lbl.add_css_class("time-label");
         row.append(&lbl);
         row.append(&umu_btn);
         col.append(&row);
         col.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         col.append(&umu_status_lbl);
-        let desc_lbl = gtk::Label::new(Some("Unified Linux Wine runner used for Heroic-style launches"));
+        let desc_lbl = gtk::Label::new(Some(
+            "Unified Linux Wine runner used for Heroic-style launches",
+        ));
         desc_lbl.set_halign(gtk::Align::Start);
-        
+
         desc_lbl.set_wrap(true);
         desc_lbl.add_css_class("time-label");
         col.append(&desc_lbl);
@@ -2388,20 +2594,29 @@ pub fn show_settings_modal(
         {
             let (tx, rx) = std::sync::mpsc::channel::<bool>();
             std::thread::spawn(move || {
-                let _ = tx.send(crate::backend::external::StoreManager::umu_status().ok()
-                    .and_then(|d| d.get("available").and_then(|x| x.as_bool()))
-                    .unwrap_or(false));
+                let _ = tx.send(
+                    crate::backend::external::StoreManager::umu_status()
+                        .ok()
+                        .and_then(|d| d.get("available").and_then(|x| x.as_bool()))
+                        .unwrap_or(false),
+                );
             });
             let btn = umu_btn.clone();
             let lbl = umu_status_lbl.clone();
-            glib::timeout_add_local(std::time::Duration::from_millis(100), move || match rx.try_recv() {
-                Ok(avail) => {
-                    lbl.set_text(if avail { "Installed." } else { "Not installed." });
-                    btn.set_label(if avail { "Reinstall" } else { "Install" });
-                    glib::ControlFlow::Break
+            glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+                match rx.try_recv() {
+                    Ok(avail) => {
+                        lbl.set_text(if avail {
+                            "Installed."
+                        } else {
+                            "Not installed."
+                        });
+                        btn.set_label(if avail { "Reinstall" } else { "Install" });
+                        glib::ControlFlow::Break
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                    Err(_) => glib::ControlFlow::Break,
                 }
-                Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-                Err(_) => glib::ControlFlow::Break,
             });
         }
         {
@@ -2411,31 +2626,33 @@ pub fn show_settings_modal(
                 lbl.set_text("Installing umu-launcher…");
                 let rx = crate::backend::external::StoreManager::spawn_umu_setup();
                 let btn = b.clone();
-                crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
-                    match ev {
-                        crate::backend::plugin_process::PluginEvent::Progress { stage, .. } => {
-                            lbl.set_text(&stage.unwrap_or_default());
-                            true
-                        }
-                        crate::backend::plugin_process::PluginEvent::Done(val) => {
-                            let p = val.get("path").and_then(|x| x.as_str()).unwrap_or("");
-                            lbl.set_text(&format!("Installed: {}", p));
-                            btn.set_label("Reinstall");
-                            btn.set_sensitive(true);
-                            false
-                        }
-                        crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
-                            lbl.set_text(&format!("Failed: {}", message));
-                            btn.set_sensitive(true);
-                            false
-                        }
-                        _ => true,
+                crate::backend::plugin_process::pump_to_idle(rx, move |ev| match ev {
+                    crate::backend::plugin_process::PluginEvent::Progress { stage, .. } => {
+                        lbl.set_text(&stage.unwrap_or_default());
+                        true
                     }
+                    crate::backend::plugin_process::PluginEvent::Done(val) => {
+                        let p = val.get("path").and_then(|x| x.as_str()).unwrap_or("");
+                        lbl.set_text(&format!("Installed: {}", p));
+                        btn.set_label("Reinstall");
+                        btn.set_sensitive(true);
+                        false
+                    }
+                    crate::backend::plugin_process::PluginEvent::Error { message, .. } => {
+                        lbl.set_text(&format!("Failed: {}", message));
+                        btn.set_sensitive(true);
+                        false
+                    }
+                    _ => true,
                 });
             });
         }
     }
-    page_stack.add_titled(&scroll_page(&integrations_page), Some("integrations"), "Integrations");
+    page_stack.add_titled(
+        &scroll_page(&integrations_page),
+        Some("integrations"),
+        "Integrations",
+    );
 
     // About page
     let about_page = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -2444,18 +2661,20 @@ pub fn show_settings_modal(
     let about_logo = gtk::Image::new();
     about_logo.set_pixel_size(120);
     let logo_path = helpers::asset_path("corkytux");
-    if let Some(tex) = helpers::load_texture(&logo_path) { about_logo.set_paintable(Some(&tex)); }
+    if let Some(tex) = helpers::load_texture(&logo_path) {
+        about_logo.set_paintable(Some(&tex));
+    }
     about_page.append(&about_logo);
     let about_name = gtk::Label::new(Some("CorkyTux"));
     about_name.add_css_class("details-title");
     about_page.append(&about_name);
     let about_ver = gtk::Label::new(Some(&app_version()));
     about_ver.add_css_class("time-label");
-    
+
     about_page.append(&about_ver);
     let about_author = gtk::Label::new(Some("by Matts-lab69"));
     about_author.add_css_class("time-label");
-    
+
     about_page.append(&about_author);
 
     let github_btn = gtk::Button::new();
@@ -2470,7 +2689,8 @@ pub fn show_settings_modal(
     github_btn.set_margin_top(12);
     github_btn.connect_clicked(|_| {
         let _ = std::process::Command::new("xdg-open")
-            .arg("https://github.com/Matts-lab69/corkytux").spawn();
+            .arg("https://github.com/Matts-lab69/corkytux")
+            .spawn();
     });
     about_page.append(&github_btn);
 
@@ -2511,10 +2731,23 @@ pub fn show_settings_modal(
     tab_bar.set_valign(gtk::Align::Center);
 
     let tabs = [
-        ("palette", "Visuals"), ("fileview", "Paths"), ("proton17", "Protons"),
-        ("settings", "Misc"), ("plugins", "Plugins"), ("openIn", "Integrations"), ("about", "About"),
+        ("palette", "Visuals"),
+        ("fileview", "Paths"),
+        ("proton17", "Protons"),
+        ("settings", "Misc"),
+        ("plugins", "Plugins"),
+        ("openIn", "Integrations"),
+        ("about", "About"),
     ];
-    let tab_ids = ["visuals", "paths", "protons", "misc", "plugins", "integrations", "about"];
+    let tab_ids = [
+        "visuals",
+        "paths",
+        "protons",
+        "misc",
+        "plugins",
+        "integrations",
+        "about",
+    ];
     let mut tab_buttons = Vec::new();
     let mut tab_indicators: Vec<gtk::Box> = Vec::new();
 
@@ -2543,11 +2776,17 @@ pub fn show_settings_modal(
 
         btn.set_child(Some(&col));
 
-        if *id == "visuals" { btn.set_active(true); }
+        if *id == "visuals" {
+            btn.set_active(true);
+        }
 
         btn_box.append(&btn);
-        if i == 0 { btn_box.set_margin_start(2); }
-        if i == tabs.len() - 1 { btn_box.set_margin_end(2); }
+        if i == 0 {
+            btn_box.set_margin_start(2);
+        }
+        if i == tabs.len() - 1 {
+            btn_box.set_margin_end(2);
+        }
         btn_box.set_margin_top(1);
         btn_box.set_margin_bottom(1);
 
@@ -2556,7 +2795,9 @@ pub fn show_settings_modal(
         tab_indicators.push(indicator);
     }
 
-    for btn in &tab_buttons[1..] { btn.set_group(Some(&tab_buttons[0])); }
+    for btn in &tab_buttons[1..] {
+        btn.set_group(Some(&tab_buttons[0]));
+    }
 
     // Second pass: hide the indicator of any other tab (before or after), not
     // just the ones already built.
@@ -2567,7 +2808,9 @@ pub fn show_settings_modal(
         let my_ind = tab_indicators[i].clone();
         tab_buttons[i].connect_clicked(move |_| {
             stack.set_visible_child_name(&tab_id);
-            for ind in &all_ind { ind.set_visible(false); }
+            for ind in &all_ind {
+                ind.set_visible(false);
+            }
             my_ind.set_visible(true);
         });
     }
@@ -2665,7 +2908,7 @@ fn rebuild_emu_rows(
     let list = emu_list.borrow().clone();
     if list.is_empty() {
         let hint = gtk::Label::new(Some("No emulators reported by emulator-manager."));
-        
+
         hint.add_css_class("time-label");
         emu_box.append(&hint);
         return;
@@ -2683,7 +2926,8 @@ fn rebuild_emu_rows(
         icon_slot.set_valign(gtk::Align::Center);
         icon_slot.set_width_request(48);
         icon_slot.set_height_request(48);
-        let icon_texture = emulator_icon_path(&emu.name).and_then(|path| helpers::load_texture(&path));
+        let icon_texture =
+            emulator_icon_path(&emu.name).and_then(|path| helpers::load_texture(&path));
         if let Some(texture) = icon_texture {
             // Use GtkPicture, not GtkImage. GtkImage:pixel-size affects only
             // ICON_NAME images (per GTK GIR), not a paintable. Papirus SVGs
@@ -2723,7 +2967,11 @@ fn rebuild_emu_rows(
         // Linked and System states render as compact badges next to the name
         // (line 1); System keeps its static warning to the right.
         let status_text: Option<&str> = if emu.source.is_empty() {
-            if emu.native { Some("Linked") } else { None }
+            if emu.native {
+                Some("Linked")
+            } else {
+                None
+            }
         } else {
             match emu.source.as_str() {
                 "linked" => Some("Linked"),
@@ -2780,7 +3028,10 @@ fn rebuild_emu_rows(
         let show_btn = if emu.source.is_empty() {
             !emu.native
         } else {
-            matches!(emu.source.as_str(), "system" | "appimage" | "none" | "linked")
+            matches!(
+                emu.source.as_str(),
+                "system" | "appimage" | "none" | "linked"
+            )
         };
         if show_btn {
             if is_pin {
@@ -2818,7 +3069,11 @@ fn rebuild_emu_rows(
             if is_linked {
                 btn.add_css_class("emu-unlink-action");
             }
-            let remove_c = if emu.source.is_empty() { emu.installed } else { is_appimage };
+            let remove_c = if emu.source.is_empty() {
+                emu.installed
+            } else {
+                is_appimage
+            };
             if remove_c {
                 btn.add_css_class("danger-btn");
             }
@@ -2835,7 +3090,11 @@ fn rebuild_emu_rows(
             let tx_c = tx.clone();
             // Rebuild-proof lock: if a refresh rebuilds this row while the
             // operation is still in flight, the fresh button starts disabled.
-            let busy = emu_status.borrow().get(&emu.name).map(|s| s == "Working…").unwrap_or(false);
+            let busy = emu_status
+                .borrow()
+                .get(&emu.name)
+                .map(|s| s == "Working…")
+                .unwrap_or(false);
             if busy {
                 btn.set_sensitive(false);
             }
@@ -2848,7 +3107,9 @@ fn rebuild_emu_rows(
                 }
                 b.set_sensitive(false);
                 st_c.set_text("Working…");
-                status_c.borrow_mut().insert(name_c.clone(), "Working…".to_string());
+                status_c
+                    .borrow_mut()
+                    .insert(name_c.clone(), "Working…".to_string());
                 let tx2 = tx_c.clone();
                 let dir = state_c.plugins.plugins_dir();
                 let name2 = name_c.clone();
@@ -2861,7 +3122,9 @@ fn rebuild_emu_rows(
                     } else if remove_c {
                         crate::backend::plugins::PluginManager::remove_emulator_in(&dir, &name2)
                     } else if is_pin {
-                        crate::backend::plugins::PluginManager::link_emulator_in(&dir, &name2, &path2)
+                        crate::backend::plugins::PluginManager::link_emulator_in(
+                            &dir, &name2, &path2,
+                        )
                     } else {
                         crate::backend::plugins::PluginManager::install_emulator_in(&dir, &name2)
                     };
@@ -2878,12 +3141,12 @@ fn start_proton_download(
     tx: &std::sync::mpsc::Sender<ProtonTabMsg>,
     tag: &str,
     url: &str,
-    dest: &std::path::PathBuf,
+    dest: &std::path::Path,
 ) {
     let tx2 = tx.clone();
     let tag2 = tag.to_string();
     let url2 = url.to_string();
-    let dest2 = dest.clone();
+    let dest2 = dest.to_path_buf();
     std::thread::spawn(move || {
         let res = crate::backend::proton::ProtonManager::download_proton(
             &tag2,
@@ -2893,7 +3156,7 @@ fn start_proton_download(
                 let _ = tx2.send(ProtonTabMsg::Progress(f, bps));
             },
         );
-        let _ = tx2.send(ProtonTabMsg::Downloaded(res.map(|_| tag2).map_err(|e| e)));
+        let _ = tx2.send(ProtonTabMsg::Downloaded(res.map(|_| tag2)));
     });
 }
 
@@ -3081,8 +3344,10 @@ enum LinkRow {
 /// (name, source, executor, steam_id, proton, prefix, use_shared,
 /// isolated). Steam, emulator/AppImage and prefix-less entries never
 /// appear. Linked-here rows render checked and insensitive.
+type SharedPrefixGame = (String, String, String, String, String, String, bool, bool);
+
 fn link_rows(
-    games: &[(String, String, String, String, String, String, bool, bool)],
+    games: &[SharedPrefixGame],
     shared_name: &str,
     shared_path: &str,
 ) -> Vec<(String, LinkRow)> {
@@ -3125,7 +3390,9 @@ fn link_rows(
             Some(o) => out.push((name.clone(), LinkRow::OtherShared(o))),
             None => out.push((
                 name.clone(),
-                LinkRow::Free { isolated: *isolated },
+                LinkRow::Free {
+                    isolated: *isolated,
+                },
             )),
         }
     }
@@ -3164,12 +3431,7 @@ fn copy_saves(old_prefix: &std::path::Path, new_prefix: &std::path::Path) -> Res
 
 /// Persist one game link: shared flag, prefix path, no stale override.
 /// No-op for Steam games: Steam owns their prefix.
-fn link_game_to_shared(
-    config: &ConfigManager,
-    game: &str,
-    shared_name: &str,
-    shared_path: &str,
-) {
+fn link_game_to_shared(config: &ConfigManager, game: &str, shared_name: &str, shared_path: &str) {
     if crate::backend::game_model::is_steam_game(
         &config.game_value(game, "Source").unwrap_or_default(),
         &config.game_value(game, "SteamID").unwrap_or_default(),
@@ -3199,12 +3461,27 @@ fn show_link_games_dialog(
     let mut attrs = Vec::new();
     for name in state.game_model.ordered_names() {
         let source = state.config.game_value(&name, "Source").unwrap_or_default();
-        let executor = state.config.game_value(&name, "Executor").unwrap_or_default();
-        let steam_id = state.config.game_value(&name, "SteamID").unwrap_or_default();
+        let executor = state
+            .config
+            .game_value(&name, "Executor")
+            .unwrap_or_default();
+        let steam_id = state
+            .config
+            .game_value(&name, "SteamID")
+            .unwrap_or_default();
         let proton = state.config.game_value(&name, "Proton").unwrap_or_default();
-        let prefix = state.config.game_value(&name, "PrefixPath").unwrap_or_default();
-        let use_shared = state.config.game_value(&name, "UseSharedPrefix").unwrap_or_default();
-        let isolated = state.config.game_value(&name, "Isolated").unwrap_or_default();
+        let prefix = state
+            .config
+            .game_value(&name, "PrefixPath")
+            .unwrap_or_default();
+        let use_shared = state
+            .config
+            .game_value(&name, "UseSharedPrefix")
+            .unwrap_or_default();
+        let isolated = state
+            .config
+            .game_value(&name, "Isolated")
+            .unwrap_or_default();
         attrs.push((
             name,
             source,
@@ -3286,9 +3563,14 @@ fn show_link_games_dialog(
         let sub = match row {
             LinkRow::LinkedHere => Some("Already uses this prefix".to_string()),
             LinkRow::OtherShared(o) => Some(format!("Uses shared prefix {}", o)),
-            LinkRow::WrongProton(p) => {
-                Some(format!("Requires a different Proton{}", if p.is_empty() { String::new() } else { format!(" ({})", p) }))
-            }
+            LinkRow::WrongProton(p) => Some(format!(
+                "Requires a different Proton{}",
+                if p.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", p)
+                }
+            )),
             LinkRow::Free { .. } => None,
         };
         if let Some(t) = sub {
@@ -3312,7 +3594,10 @@ fn show_link_games_dialog(
         let checks_c = checks.clone();
         let warn_c = iso_warn.clone();
         let refresh_iso = Rc::new(move || {
-            let any = checks_c.borrow().iter().any(|(_, c, iso)| *iso && c.is_active());
+            let any = checks_c
+                .borrow()
+                .iter()
+                .any(|(_, c, iso)| *iso && c.is_active());
             warn_c.set_visible(any);
         });
         let r2 = refresh_iso.clone();
@@ -3429,7 +3714,10 @@ fn link_picked_games(
         return;
     }
     let game = picked[idx].clone();
-    let old = state.config.game_value(&game, "PrefixPath").unwrap_or_default();
+    let old = state
+        .config
+        .game_value(&game, "PrefixPath")
+        .unwrap_or_default();
     let needs_choice = !old.trim().is_empty()
         && crate::ui::remove_modal::path_within(
             &state.config.prefixes_dir(),
@@ -3437,7 +3725,15 @@ fn link_picked_games(
         );
     if !needs_choice {
         link_game_to_shared(&state.config, &game, shared_name, shared_path);
-        link_picked_games(state, list_box, shared_name, shared_path, picked, idx + 1, failed);
+        link_picked_games(
+            state,
+            list_box,
+            shared_name,
+            shared_path,
+            picked,
+            idx + 1,
+            failed,
+        );
         return;
     }
     show_prefix_choice_dialog(
@@ -3534,18 +3830,26 @@ fn show_prefix_choice_dialog(
             d0.close();
             let mut failed = failed_c.clone();
             let next = |failed: Vec<String>| {
-                link_picked_games(&state_c, &list_c, &name_c, &path_c, &picked_c, idx + 1, failed);
+                link_picked_games(
+                    &state_c,
+                    &list_c,
+                    &name_c,
+                    &path_c,
+                    &picked_c,
+                    idx + 1,
+                    failed,
+                );
             };
             let choice = drop.selected();
             if choice == 1 {
                 // Copy saves: drive_c/users without overwriting.
                 let oldp = std::path::PathBuf::from(&old_c);
                 let newp = std::path::PathBuf::from(&path_c);
-                if !crate::ui::remove_modal::path_within(
-                    &state_c.config.prefixes_dir(),
-                    &oldp,
-                ) {
-                    failed.push(format!("{} (previous prefix outside CorkyTux data, left intact)", game_c));
+                if !crate::ui::remove_modal::path_within(&state_c.config.prefixes_dir(), &oldp) {
+                    failed.push(format!(
+                        "{} (previous prefix outside CorkyTux data, left intact)",
+                        game_c
+                    ));
                     next(failed);
                     return;
                 }
@@ -3563,15 +3867,7 @@ fn show_prefix_choice_dialog(
             }
             if choice == 2 {
                 confirm_delete_old_prefix(
-                    &list_c,
-                    &state_c,
-                    &name_c,
-                    &path_c,
-                    &game_c,
-                    &old_c,
-                    &picked_c,
-                    idx,
-                    failed,
+                    &list_c, &state_c, &name_c, &path_c, &game_c, &old_c, &picked_c, idx, failed,
                 );
                 return;
             }
@@ -3658,15 +3954,24 @@ fn confirm_delete_old_prefix(
             d0.close();
             let mut failed = failed_c.clone();
             let next = |failed: Vec<String>| {
-                link_picked_games(&state_c, &list_c, &name_c, &path_c, &picked_c, idx + 1, failed);
+                link_picked_games(
+                    &state_c,
+                    &list_c,
+                    &name_c,
+                    &path_c,
+                    &picked_c,
+                    idx + 1,
+                    failed,
+                );
             };
             let oldp = std::path::PathBuf::from(&old_c);
-            if !crate::ui::remove_modal::path_within(
-                &state_c.config.prefixes_dir(),
-                &oldp,
-            ) || !crate::ui::remove_modal::prefix_delete_safe(&state_c, &game_c, &oldp)
+            if !crate::ui::remove_modal::path_within(&state_c.config.prefixes_dir(), &oldp)
+                || !crate::ui::remove_modal::prefix_delete_safe(&state_c, &game_c, &oldp)
             {
-                failed.push(format!("{} (previous prefix not safe to delete, left intact)", game_c));
+                failed.push(format!(
+                    "{} (previous prefix not safe to delete, left intact)",
+                    game_c
+                ));
                 next(failed);
                 return;
             }
@@ -3844,12 +4149,7 @@ fn confirm_unlink_shared(
 
 /// Confirm dialog for deleting an unused shared prefix. Deletes only on
 /// "Remove" and surfaces the real error (deny or filesystem) in the dialog.
-fn confirm_remove_shared(
-    anchor: &gtk::Button,
-    state: &AppState,
-    name: String,
-    list_box: gtk::Box,
-) {
+fn confirm_remove_shared(anchor: &gtk::Button, state: &AppState, name: String, list_box: gtk::Box) {
     let dlg = adw::Dialog::new();
     dlg.set_title("Remove shared prefix");
     dlg.set_content_width(420);
@@ -3927,13 +4227,14 @@ fn confirm_remove_shared(
     dlg.present(anchor.root().as_ref());
 }
 
-fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {    while let Some(child) = list_box.first_child() {
+fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {
+    while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }
     let names = state.config.shared_prefixes();
     if names.is_empty() {
         let empty = gtk::Label::new(Some("No shared prefixes created yet."));
-        
+
         empty.add_css_class("time-label");
         list_box.append(&empty);
         return;
@@ -3952,12 +4253,14 @@ fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {    while let Som
         name_lbl.set_halign(gtk::Align::Start);
         name_lbl.add_css_class("info-label");
         let path_lbl = gtk::Label::new(Some(
-            &state.config.shared_prefix_path(name)
+            &state
+                .config
+                .shared_prefix_path(name)
                 .map(|p| p.display().to_string())
                 .unwrap_or_default(),
         ));
         path_lbl.set_halign(gtk::Align::Start);
-        
+
         path_lbl.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
         path_lbl.add_css_class("time-label");
         col.append(&name_lbl);
@@ -3990,13 +4293,21 @@ fn refresh_shared_list(list_box: &gtk::Box, state: &AppState) {    while let Som
             };
             if !crate::ui::remove_modal::prefix_delete_safe(&state_c, "", &base) {
                 let pairs = state_c.config.all_game_prefixes();
-                let users = crate::backend::config::ConfigManager::shared_prefix_users(&base, &pairs);
+                let users =
+                    crate::backend::config::ConfigManager::shared_prefix_users(&base, &pairs);
                 let detail = if users.is_empty() {
                     "The path is not safe to delete.".to_string()
                 } else {
                     format!("Still used by: {}", users.join(", "))
                 };
-                confirm_shared_blocked(&btn_c, &state_c, &list_c, &name_c, &base.display().to_string(), &detail);
+                confirm_shared_blocked(
+                    &btn_c,
+                    &state_c,
+                    &list_c,
+                    &name_c,
+                    &base.display().to_string(),
+                    &detail,
+                );
                 return;
             }
             confirm_remove_shared(&btn_c, &state_c, name_c.clone(), list_c.clone());
@@ -4030,7 +4341,11 @@ mod tests {
         std::fs::create_dir_all(shared.join("pfx")).unwrap();
         let indiv = base.join("Doom");
         std::fs::create_dir_all(&indiv).unwrap();
-        cfg.set_game_value("Linked", "PrefixPath", &shared.join("pfx").display().to_string());
+        cfg.set_game_value(
+            "Linked",
+            "PrefixPath",
+            &shared.join("pfx").display().to_string(),
+        );
         cfg.set_game_value("Linked", "UseSharedPrefix", "true");
         cfg.set_game_value("Linked", "SharedPrefix", "proton-x");
         cfg.set_game_value("Empty", "PrefixPath", "");
@@ -4052,7 +4367,10 @@ mod tests {
             cfg.game_value("Linked", "PrefixPath").as_deref(),
             Some(expect_linked.as_str())
         );
-        assert_eq!(cfg.game_value("Linked", "SharedPrefix").as_deref(), Some(""));
+        assert_eq!(
+            cfg.game_value("Linked", "SharedPrefix").as_deref(),
+            Some("")
+        );
         assert_eq!(cfg.game_value("Empty", "PrefixPath").as_deref(), Some(""));
         assert_eq!(
             cfg.game_value("Solo", "PrefixPath").as_deref(),
@@ -4091,12 +4409,50 @@ mod tests {
     fn link_rows_filter_steam_emu_and_prefixless() {
         let rows = link_rows(
             &[
-                g("SteamGame", "Steam", "", "123", "proton-x", "", false, false),
+                g(
+                    "SteamGame",
+                    "Steam",
+                    "",
+                    "123",
+                    "proton-x",
+                    "",
+                    false,
+                    false,
+                ),
                 g("SteamId", "Manual", "", "456", "proton-x", "", false, false),
-                g("Emu", "Manual", "some-emu", "", "proton-x", "", false, false),
-                g("App", "AppImage", "appimage-launcher", "", "", "", false, false),
-                g("Rpg", "RPGMaker", "rpgmaker-runtime", "", "", "", false, false),
-                g("Wine", "Manual", "", "", "proton-x", "/pfx/wine", false, true),
+                g(
+                    "Emu", "Manual", "some-emu", "", "proton-x", "", false, false,
+                ),
+                g(
+                    "App",
+                    "AppImage",
+                    "appimage-launcher",
+                    "",
+                    "",
+                    "",
+                    false,
+                    false,
+                ),
+                g(
+                    "Rpg",
+                    "RPGMaker",
+                    "rpgmaker-runtime",
+                    "",
+                    "",
+                    "",
+                    false,
+                    false,
+                ),
+                g(
+                    "Wine",
+                    "Manual",
+                    "",
+                    "",
+                    "proton-x",
+                    "/pfx/wine",
+                    false,
+                    true,
+                ),
             ],
             "proton-x",
             "/pfx/shared-proton-x",
@@ -4104,10 +4460,7 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(
             rows[0],
-            (
-                "Wine".to_string(),
-                LinkRow::Free { isolated: true }
-            )
+            ("Wine".to_string(), LinkRow::Free { isolated: true })
         );
     }
 
@@ -4115,8 +4468,26 @@ mod tests {
     fn link_rows_mark_linked_other_and_wrong_proton() {
         let rows = link_rows(
             &[
-                g("Mine", "Manual", "", "", "proton-x", "/pfx/shared-proton-x/pfx", true, false),
-                g("Other", "Manual", "", "", "proton-x", "/pfx/other", true, false),
+                g(
+                    "Mine",
+                    "Manual",
+                    "",
+                    "",
+                    "proton-x",
+                    "/pfx/shared-proton-x/pfx",
+                    true,
+                    false,
+                ),
+                g(
+                    "Other",
+                    "Manual",
+                    "",
+                    "",
+                    "proton-x",
+                    "/pfx/other",
+                    true,
+                    false,
+                ),
                 g("New", "Manual", "", "", "proton-y", "", false, false),
             ],
             "proton-x",
@@ -4203,7 +4574,10 @@ mod tests {
             &roots,
             &std::path::PathBuf::from("/home/u/.local/share/Steam/steamapps/compatdata/0")
         ));
-        assert!(!crate::ui::remove_modal::path_within(&roots, &base.join("gone")));
+        assert!(!crate::ui::remove_modal::path_within(
+            &roots,
+            &base.join("gone")
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -4247,23 +4621,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-        #[test]
+    #[test]
     fn emulator_icon_resolves_installed_layout_and_source_tree_layout() {
         // An empty home_dir fixture prevents installed-path interference.
         let tmp_home = mktmp("corky_icon_home");
-        std::fs::create_dir_all(tmp_home.join(".local/share/corkytux/assets/icons/emulators")).unwrap();
+        std::fs::create_dir_all(tmp_home.join(".local/share/corkytux/assets/icons/emulators"))
+            .unwrap();
 
         // 1) Binario instalado: assets junto al ejecutable.
         let install_root = mktmp("corky_icon_install");
         std::fs::create_dir_all(install_root.join("assets/icons/emulators")).unwrap();
-        std::fs::write(install_root.join("assets/icons/emulators/azahar.svg"), "<svg/>").unwrap();
+        std::fs::write(
+            install_root.join("assets/icons/emulators/azahar.svg"),
+            "<svg/>",
+        )
+        .unwrap();
         assert!(emulator_icon_path_from_dir(&install_root, &tmp_home, "azahar").is_some());
         assert!(emulator_icon_path_from_dir(&install_root, &tmp_home, "nope").is_none());
 
         // 2) Source tree: binary in target/debug, assets in the repository root.
         let repo_root = mktmp("corky_icon_repo");
         std::fs::create_dir_all(repo_root.join("assets/icons/emulators")).unwrap();
-        std::fs::write(repo_root.join("assets/icons/emulators/desmume.svg"), "<svg/>").unwrap();
+        std::fs::write(
+            repo_root.join("assets/icons/emulators/desmume.svg"),
+            "<svg/>",
+        )
+        .unwrap();
         let deep = repo_root.join("target/debug");
         std::fs::create_dir_all(&deep).unwrap();
         assert!(emulator_icon_path_from_dir(&deep, &tmp_home, "desmume").is_some());

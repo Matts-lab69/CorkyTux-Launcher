@@ -1,5 +1,4 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 use gtk::{self, glib};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -25,7 +24,13 @@ pub fn write_saved_log(home: &str, game_name: &str, text: &str) -> std::io::Resu
     std::fs::create_dir_all(&dir).ok();
     let safe_game: String = game_name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let path = format!("{}/{} ({}).log", dir, safe_game, ts);
     let safe_text = crate::backend::redact::redact_secrets(text);
@@ -37,8 +42,7 @@ pub fn write_saved_log(home: &str, game_name: &str, text: &str) -> std::io::Resu
         opts.mode(0o600);
     }
     use std::io::Write;
-    opts.open(&path)?
-        .write_all(safe_text.as_bytes())?;
+    opts.open(&path)?.write_all(safe_text.as_bytes())?;
     Ok(path)
 }
 
@@ -46,9 +50,7 @@ pub struct LogModal {
     dialog: adw::Dialog,
     log_buffer: gtk::TextBuffer,
     status_label: gtk::Label,
-    game_name: String,
     search_mark: gtk::TextMark,
-    parent: gtk::Widget,
     scroll: gtk::ScrolledWindow,
 }
 
@@ -75,7 +77,9 @@ impl LogModal {
         header_row.set_margin_top(4);
         {
             let dlg = dialog.clone();
-            x_btn.connect_clicked(move |_| { dlg.close(); });
+            x_btn.connect_clicked(move |_| {
+                dlg.close();
+            });
         }
         inner.append(&header_row);
 
@@ -84,7 +88,9 @@ impl LogModal {
         status_label.add_css_class("details-title");
         inner.append(&status_label);
 
-        let hint = gtk::Label::new(Some("If there are errors, you can figure it out yourself or send the log to the community."));
+        let hint = gtk::Label::new(Some(
+            "If there are errors, you can figure it out yourself or send the log to the community.",
+        ));
         hint.set_halign(gtk::Align::Start);
         hint.set_wrap(true);
         hint.set_opacity(0.6);
@@ -107,11 +113,19 @@ impl LogModal {
         {
             let tags = log_buffer.tag_table();
             let err_tag = gtk::TextTag::new(Some("log-err"));
-            err_tag.set_foreground(Some(if theme.is_dark() { "#FF7A7A" } else { "#C92A2A" }));
+            err_tag.set_foreground(Some(if theme.is_dark() {
+                "#FF7A7A"
+            } else {
+                "#C92A2A"
+            }));
             err_tag.set_weight(700);
             tags.add(&err_tag);
             let warn_tag = gtk::TextTag::new(Some("log-warn"));
-            warn_tag.set_foreground(Some(if theme.is_dark() { "#FFC94D" } else { "#8A5A00" }));
+            warn_tag.set_foreground(Some(if theme.is_dark() {
+                "#FFC94D"
+            } else {
+                "#8A5A00"
+            }));
             tags.add(&warn_tag);
             let hit_tag = gtk::TextTag::new(Some("log-hit"));
             hit_tag.set_background(Some("#1E88E5"));
@@ -144,8 +158,8 @@ impl LogModal {
                     return;
                 }
                 // Clear old hit highlight.
-                let (mut s, mut e) = buf_c.bounds();
-                buf_c.remove_tag_by_name("log-hit", &mut s, &mut e);
+                let (s, e) = buf_c.bounds();
+                buf_c.remove_tag_by_name("log-hit", &s, &e);
                 let mut it = if reset {
                     buf_c.start_iter()
                 } else {
@@ -160,7 +174,11 @@ impl LogModal {
                     it.backward_search(&needle, gtk::TextSearchFlags::CASE_INSENSITIVE, None)
                 };
                 let found = found.or_else(|| {
-                    let edge = if forward { buf_c.start_iter() } else { buf_c.end_iter() };
+                    let edge = if forward {
+                        buf_c.start_iter()
+                    } else {
+                        buf_c.end_iter()
+                    };
                     if forward {
                         edge.forward_search(&needle, gtk::TextSearchFlags::CASE_INSENSITIVE, None)
                     } else {
@@ -207,7 +225,9 @@ impl LogModal {
         close_btn.add_css_class("neon-red");
         close_btn.set_hexpand(true);
         let dlg = dialog.clone();
-        close_btn.connect_clicked(move |_| { dlg.close(); });
+        close_btn.connect_clicked(move |_| {
+            dlg.close();
+        });
 
         let save_btn = gtk::Button::with_label("Save");
         save_btn.add_css_class("neon-green");
@@ -229,7 +249,11 @@ impl LogModal {
                     crate::ui::helpers::present_msg(&parent_c, "Log saved", &path);
                 }
                 Err(e) => {
-                    crate::ui::helpers::present_msg(&parent_c, "Could not save log", &e.to_string());
+                    crate::ui::helpers::present_msg(
+                        &parent_c,
+                        "Could not save log",
+                        &e.to_string(),
+                    );
                 }
             }
         });
@@ -241,7 +265,13 @@ impl LogModal {
 
         dialog.set_child(Some(&content));
 
-        Self { dialog, log_buffer, status_label, game_name: game_name.to_string(), search_mark, parent: parent.upcast_ref::<gtk::Widget>().clone(), scroll }
+        Self {
+            dialog,
+            log_buffer,
+            status_label,
+            search_mark,
+            scroll,
+        }
     }
 
     pub fn set_log(&self, text: &str) {
@@ -253,8 +283,8 @@ impl LogModal {
     }
 
     fn search_mark_reset(&self) {
-        let mut start = self.log_buffer.start_iter();
-        self.log_buffer.move_mark(&self.search_mark, &mut start);
+        let start = self.log_buffer.start_iter();
+        self.log_buffer.move_mark(&self.search_mark, &start);
     }
 
     /// Lutris-style levels: err* lines red/bold, *warn* amber.
@@ -326,7 +356,9 @@ impl LogModal {
             let fp_now = std::fs::metadata(crate::backend::proton::ProtonManager::log_path(&game))
                 .ok()
                 .map(|m| {
-                    let t = m.modified().ok()
+                    let t = m
+                        .modified()
+                        .ok()
                         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                         .map(|d| d.as_secs())
                         .unwrap_or(0);
@@ -380,14 +412,19 @@ mod tests {
         assert!(!content.contains("secretExchangeCode"), "{}", content);
         assert!(content.contains("-auth_password=<REDACTED>"), "{}", content);
         assert!(content.contains("plain line"), "{}", content);
-        assert_eq!(mode(std::path::Path::new(&path)), 0o600, "the saved log must be owner-only");
+        assert_eq!(
+            mode(std::path::Path::new(&path)),
+            0o600,
+            "the saved log must be owner-only"
+        );
         let _ = std::fs::remove_dir_all(&home);
     }
 
     #[cfg(unix)]
     #[test]
     fn saved_log_name_cannot_escape_the_logs_dir() {
-        let home = std::env::temp_dir().join(format!("corky_saved_log_escape_{}", std::process::id()));
+        let home =
+            std::env::temp_dir().join(format!("corky_saved_log_escape_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(&home).unwrap();
         let path = write_saved_log(home.to_str().unwrap(), "../../etc/passwd", "x").expect("save");

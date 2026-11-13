@@ -212,9 +212,8 @@ fn download_zip(progreso: &dyn Fn(u8, u64)) -> Result<std::path::PathBuf, String
                 // The rename is atomic inside the same filesystem: either the
                 // whole zip is there or nothing is.
                 let _ = std::fs::remove_file(&final_zip);
-                std::fs::rename(&parcial, &final_zip).map_err(|e| {
-                    format!("could not finalize the download: {}", e)
-                })?;
+                std::fs::rename(&parcial, &final_zip)
+                    .map_err(|e| format!("could not finalize the download: {}", e))?;
                 return Ok(final_zip);
             }
             Err(e) => {
@@ -266,21 +265,22 @@ fn descargar_de(
 
     // If the server says how big it is, I use that; if not, I estimate from the
     // size actually downloaded so far.
-    let total = resp
-        .content_length()
-        .filter(|n| *n > 0)
-        .unwrap_or(esperado);
+    let total = resp.content_length().filter(|n| *n > 0).unwrap_or(esperado);
 
-    let f = std::fs::File::create(destino).map_err(|e| format!("could not create the temp file: {}", e))?;
+    let f = std::fs::File::create(destino)
+        .map_err(|e| format!("could not create the temp file: {}", e))?;
     let mut w = std::io::BufWriter::new(f);
     let mut buf = vec![0u8; 64 * 1024];
     let mut hecho: u64 = 0;
     let mut ultimo_pct = 0u8;
 
     loop {
-        let n = resp
-            .read(&mut buf)
-            .map_err(|e| format!("the connection was cut halfway ({} of {} bytes): {}", hecho, total, e))?;
+        let n = resp.read(&mut buf).map_err(|e| {
+            format!(
+                "the connection was cut halfway ({} of {} bytes): {}",
+                hecho, total, e
+            )
+        })?;
         if n == 0 {
             break;
         }
@@ -331,7 +331,10 @@ fn ensure_chrome_con(progreso: &dyn Fn(u8, u64)) -> Result<PathBuf, String> {
         if p.is_file() {
             return Ok(p);
         }
-        return Err(format!("CORKYTUX_CHROME no apunta a un archivo: {}", p.display()));
+        return Err(format!(
+            "CORKYTUX_CHROME no apunta a un archivo: {}",
+            p.display()
+        ));
     }
     // The pinned cache goes first: it's the version I know and tested against
     // hCaptcha, and most people (on Firefox) have nothing usable in PATH
@@ -366,7 +369,8 @@ fn ensure_chrome_con(progreso: &dyn Fn(u8, u64)) -> Result<PathBuf, String> {
     let zip = download_zip(progreso)?;
 
     let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("could not create {}: {}", dir.display(), e))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("could not create {}: {}", dir.display(), e))?;
     unzip(&zip, &dir)?;
     let _ = std::fs::remove_file(&zip);
 
@@ -430,7 +434,9 @@ fn mark_tree_exec(dir: &Path) -> Result<(), String> {
 
 fn make_exec(p: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
-    let mut perm = std::fs::metadata(p).map_err(|e| e.to_string())?.permissions();
+    let mut perm = std::fs::metadata(p)
+        .map_err(|e| e.to_string())?
+        .permissions();
     perm.set_mode(0o755);
     std::fs::set_permissions(p, perm).map_err(|e| e.to_string())
 }
@@ -555,7 +561,8 @@ impl Cdp {
             Some(i) => (&rest[..i], &rest[i..]),
             None => (rest, "/"),
         };
-        let mut sock = TcpStream::connect(hostport).map_err(|e| format!("could not connect: {}", e))?;
+        let mut sock =
+            TcpStream::connect(hostport).map_err(|e| format!("could not connect: {}", e))?;
         sock.set_nodelay(true).ok();
 
         // The key value is arbitrary for a local server, but I send 16 random
@@ -578,7 +585,10 @@ impl Cdp {
         }
         let head = String::from_utf8_lossy(&raw);
         if !head.starts_with("HTTP/1.1 101") {
-            return Err(format!("handshake rechazado: {}", head.lines().next().unwrap_or("")));
+            return Err(format!(
+                "handshake rechazado: {}",
+                head.lines().next().unwrap_or("")
+            ));
         }
         Ok(Cdp {
             sock,
@@ -599,9 +609,15 @@ impl Cdp {
         let deadline = Instant::now() + timeout;
         loop {
             if Instant::now() > deadline {
-                return Err(format!("{} no respondio en {} s", method, timeout.as_secs()));
+                return Err(format!(
+                    "{} no respondio en {} s",
+                    method,
+                    timeout.as_secs()
+                ));
             }
-            self.sock.set_read_timeout(Some(Duration::from_millis(1500))).ok();
+            self.sock
+                .set_read_timeout(Some(Duration::from_millis(1500)))
+                .ok();
             match self.recv_text() {
                 Ok(txt) => {
                     let Ok(v) = serde_json::from_str::<Value>(&txt) else {
@@ -674,7 +690,11 @@ impl Cdp {
         }
         // Chromium doesn't mask (it's the server), but I accept masked frames
         // just in case.
-        let mask = if masked { self.read_exact(4)? } else { Vec::new() };
+        let mask = if masked {
+            self.read_exact(4)?
+        } else {
+            Vec::new()
+        };
         let mut data = self.read_exact(len as usize)?;
         if masked && !mask.is_empty() {
             for (i, b) in data.iter_mut().enumerate() {
@@ -731,8 +751,16 @@ fn base64(data: &[u8]) -> String {
         let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
         out.push(T[(n >> 18) as usize & 63] as char);
         out.push(T[(n >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
-        out.push(if chunk.len() > 2 { T[n as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            T[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            T[n as usize & 63] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -795,8 +823,8 @@ fn run(url: &str) -> Result<String, Failure> {
     // is the `about:blank` the helper launched, so with no criteria the first
     // tab wins like before. I keep its target ID so I can find that tab again
     // on reconnect even after it has navigated.
-    let (ws, mut target_id) = wait_for_page(port, Duration::from_secs(90), None, &[])
-        .map_err(|e| (why::SESSION, e))?;
+    let (ws, mut target_id) =
+        wait_for_page(port, Duration::from_secs(90), None, &[]).map_err(|e| (why::SESSION, e))?;
     let cdp = Cdp::connect(&ws).map_err(|e| (why::SESSION, e))?;
     cleanup.cdp = Some(cdp);
 
@@ -804,7 +832,11 @@ fn run(url: &str) -> Result<String, Failure> {
         .cdp
         .as_mut()
         .expect("acaba de insertarse")
-        .call("Page.navigate", json!({ "url": url }), Duration::from_secs(60))
+        .call(
+            "Page.navigate",
+            json!({ "url": url }),
+            Duration::from_secs(60),
+        )
         .map_err(|e| (why::NAV, format!("could not open the login URL: {}", e)))?;
 
     // I bring the freshly opened window to the front once: if you were busy
@@ -837,7 +869,11 @@ fn run(url: &str) -> Result<String, Failure> {
                 format!(
                     "the login did not complete in {} s; the last URL was: {}",
                     LOGIN_TIMEOUT.as_secs(),
-                    if last_url.is_empty() { "(not read)".into() } else { last_url }
+                    if last_url.is_empty() {
+                        "(not read)".into()
+                    } else {
+                        last_url
+                    }
                 ),
             ));
         }
@@ -994,8 +1030,7 @@ fn wait_for_page(
                         .iter()
                         .filter(|t| {
                             t.get("type").and_then(|x| x.as_str()) == Some("page")
-                                && t
-                                    .get("webSocketDebuggerUrl")
+                                && t.get("webSocketDebuggerUrl")
                                     .and_then(|x| x.as_str())
                                     .is_some()
                         })
@@ -1004,10 +1039,7 @@ fn wait_for_page(
                         return Ok(par);
                     }
                     last = if paginas.is_empty() {
-                        format!(
-                            "the browser returned no tabs yet ({} target(s))",
-                            arr.len()
-                        )
+                        format!("the browser returned no tabs yet ({} target(s))", arr.len())
                     } else {
                         format!(
                             "there are {} tab(s) but none is the login tab (neither by ID nor by domain)",
@@ -1269,38 +1301,54 @@ mod tests {
     #[test]
     fn gog_code_en_la_url() {
         assert_eq!(
-            from_url("https://embed.gog.com/on_login_success?origin=client&code=abc123XYZ").as_deref(),
+            from_url("https://embed.gog.com/on_login_success?origin=client&code=abc123XYZ")
+                .as_deref(),
             Some("abc123XYZ")
         );
     }
 
     #[test]
     fn gog_code_en_el_fragmento() {
-        assert_eq!(from_url("https://auth.gog.com/auth/callback#code=frag999").as_deref(), Some("frag999"));
+        assert_eq!(
+            from_url("https://auth.gog.com/auth/callback#code=frag999").as_deref(),
+            Some("frag999")
+        );
     }
 
     #[test]
     fn authorizationCode_gana_a_code() {
         // Epic calls theirs authorizationCode; if a URL carries both, the one
         // I redeem is Epic's.
-        assert_eq!(from_url("https://x/?code=generic&authorizationCode=epicOne").as_deref(), Some("epicOne"));
+        assert_eq!(
+            from_url("https://x/?code=generic&authorizationCode=epicOne").as_deref(),
+            Some("epicOne")
+        );
     }
 
     #[test]
     fn sid_es_el_ultimo_recurso() {
-        assert_eq!(from_url("https://www.epicgames.com/id/api/redirect?sid=SESSION42").as_deref(), Some("SESSION42"));
+        assert_eq!(
+            from_url("https://www.epicgames.com/id/api/redirect?sid=SESSION42").as_deref(),
+            Some("SESSION42")
+        );
     }
 
     #[test]
     fn una_url_sin_codigo_no_inventa_uno() {
-        assert_eq!(from_url("https://www.epicgames.com/id/login?redirectUrl=https%3A%2F%2Fx"), None);
+        assert_eq!(
+            from_url("https://www.epicgames.com/id/login?redirectUrl=https%3A%2F%2Fx"),
+            None
+        );
     }
 
     /// The exact body Epic returns, measured against the live site.
     #[test]
     fn el_json_real_de_epic_da_el_codigo() {
         let b = r#"{"warning":"Do not share this code with any 3rd party service.","redirectUrl":"https://localhost/launcher/authorized","authorizationCode":"eyJhbGciOiJFUzI1NiJ9.abc-_123","exchangeCode":null,"sid":null}"#;
-        assert_eq!(from_body(b).as_deref(), Some("eyJhbGciOiJFUzI1NiJ9.abc-_123"));
+        assert_eq!(
+            from_body(b).as_deref(),
+            Some("eyJhbGciOiJFUzI1NiJ9.abc-_123")
+        );
     }
 
     /// The same body without a session: `authorizationCode` comes back `null`.
@@ -1344,9 +1392,7 @@ mod tests {
         assert!(socket_muerto(
             "Runtime.evaluate: the browser closed the connection"
         ));
-        assert!(socket_muerto(
-            "Runtime.evaluate: Broken pipe (os error 32)"
-        ));
+        assert!(socket_muerto("Runtime.evaluate: Broken pipe (os error 32)"));
         assert!(socket_muerto(
             "Runtime.evaluate: Connection reset by peer (os error 104)"
         ));
@@ -1356,9 +1402,7 @@ mod tests {
     /// those keep going through the warn-and-retry path like before.
     #[test]
     fn socket_muerto_no_confunde_navegacion_ni_timeout() {
-        assert!(!socket_muerto(
-            "Runtime.evaluate did not answer in 10 s"
-        ));
+        assert!(!socket_muerto("Runtime.evaluate did not answer in 10 s"));
         assert!(!socket_muerto(
             "Runtime.evaluate: {\"code\":-32000,\"message\":\"No session\"}"
         ));
@@ -1430,7 +1474,11 @@ mod tests {
         );
         let pags = [&exito, &popup];
         assert_eq!(
-            elegir_pestana(&pags, Some("ID-CERRADA"), &["auth.gog.com", "embed.gog.com"]),
+            elegir_pestana(
+                &pags,
+                Some("ID-CERRADA"),
+                &["auth.gog.com", "embed.gog.com"]
+            ),
             Some((
                 "ws://127.0.0.1:9/devtools/page/BBB".to_string(),
                 "ID-NEW".to_string()
@@ -1444,7 +1492,11 @@ mod tests {
     #[test]
     fn elegir_pestana_sin_coincidencia_devuelve_none() {
         let a = pagina("about:blank", "ID-A", "ws://127.0.0.1:9/devtools/page/AAA");
-        let b = pagina("chrome://newtab/", "ID-B", "ws://127.0.0.1:9/devtools/page/BBB");
+        let b = pagina(
+            "chrome://newtab/",
+            "ID-B",
+            "ws://127.0.0.1:9/devtools/page/BBB",
+        );
         let pags = [&a, &b];
         assert_eq!(
             elegir_pestana(&pags, Some("ID-OTRA"), &["auth.gog.com"]),
@@ -1456,7 +1508,11 @@ mod tests {
     #[test]
     fn elegir_pestana_sin_criterio_gana_la_primera() {
         let a = pagina("about:blank", "ID-A", "ws://127.0.0.1:9/devtools/page/AAA");
-        let b = pagina("chrome://newtab/", "ID-B", "ws://127.0.0.1:9/devtools/page/BBB");
+        let b = pagina(
+            "chrome://newtab/",
+            "ID-B",
+            "ws://127.0.0.1:9/devtools/page/BBB",
+        );
         let pags = [&a, &b];
         assert_eq!(
             elegir_pestana(&pags, None, &[]),
@@ -1488,8 +1544,14 @@ mod tests {
     fn url_en_dominios_compara_por_host() {
         let doms = ["auth.gog.com", "embed.gog.com"];
         assert!(url_en_dominios("https://auth.gog.com/auth?x=1", &doms));
-        assert!(url_en_dominios("https://embed.gog.com/on_login_success", &doms));
-        assert!(!url_en_dominios("https://accounts.google.com/o/oauth2/auth", &doms));
+        assert!(url_en_dominios(
+            "https://embed.gog.com/on_login_success",
+            &doms
+        ));
+        assert!(!url_en_dominios(
+            "https://accounts.google.com/o/oauth2/auth",
+            &doms
+        ));
         assert!(!url_en_dominios("about:blank", &doms));
     }
 
@@ -1527,14 +1589,15 @@ mod tests {
     fn wait_for_page_reencuentra_por_id_aunque_la_url_haya_cambiado() {
         let cuerpo = r#"[{"type":"page","url":"https://accounts.google.com/o/oauth2/consent?x=1","id":"ID-MAIN","webSocketDebuggerUrl":"ws://127.0.0.1:9/devtools/page/AAA"},{"type":"page","url":"https://auth.gog.com/auth?client_id=1","id":"ID-POPUP","webSocketDebuggerUrl":"ws://127.0.0.1:9/devtools/page/BBB"}]"#;
         let port = servir_lista_fija(cuerpo);
-        let (ws, id) = wait_for_page(port, Duration::from_secs(5), Some("ID-MAIN"), &["auth.gog.com"])
-            .expect("the login tab is present by ID");
+        let (ws, id) = wait_for_page(
+            port,
+            Duration::from_secs(5),
+            Some("ID-MAIN"),
+            &["auth.gog.com"],
+        )
+        .expect("the login tab is present by ID");
         assert_eq!(id, "ID-MAIN", "reconnected to the wrong tab");
-        assert!(
-            ws.ends_with("/AAA"),
-            "picked the wrong tab: {}",
-            ws
-        );
+        assert!(ws.ends_with("/AAA"), "picked the wrong tab: {}", ws);
     }
 
     /// Several tabs and neither the ID nor any domain matches: it fails on the
@@ -1545,8 +1608,13 @@ mod tests {
         let cuerpo = r#"[{"type":"page","url":"about:blank","id":"ID-A","webSocketDebuggerUrl":"ws://127.0.0.1:9/devtools/page/AAA"},{"type":"page","url":"chrome://newtab/","id":"ID-B","webSocketDebuggerUrl":"ws://127.0.0.1:9/devtools/page/BBB"}]"#;
         let port = servir_lista_fija(cuerpo);
         let t0 = Instant::now();
-        let err = wait_for_page(port, Duration::from_secs(1), Some("ID-OTRA"), &["auth.gog.com"])
-            .expect_err("no tab is the login tab");
+        let err = wait_for_page(
+            port,
+            Duration::from_secs(1),
+            Some("ID-OTRA"),
+            &["auth.gog.com"],
+        )
+        .expect_err("no tab is the login tab");
         assert!(
             t0.elapsed() < Duration::from_secs(5),
             "hung for {} s instead of failing on the retry",

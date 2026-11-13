@@ -1,12 +1,11 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::backend::game_model::{GameEntry, GameSource};
-use crate::ui::sidebar::Sidebar;
 use crate::ui::center::CenterHandle;
 use crate::ui::details_panel::DetailsPanel;
+use crate::ui::sidebar::Sidebar;
 use crate::AppState;
 
 #[derive(Default)]
@@ -50,7 +49,9 @@ pub fn show_add_game_modal(
     let (header_row, x_btn) = crate::ui::helpers::modal_header("Add Game");
     {
         let dlg = dialog.clone();
-        x_btn.connect_clicked(move |_| { dlg.close(); });
+        x_btn.connect_clicked(move |_| {
+            dlg.close();
+        });
     }
     inner.append(&header_row);
 
@@ -187,7 +188,9 @@ pub fn show_add_game_modal(
     p1_cancel.set_halign(gtk::Align::Fill);
     {
         let dlg = dialog.clone();
-        p1_cancel.connect_clicked(move |_| { dlg.close(); });
+        p1_cancel.connect_clicked(move |_| {
+            dlg.close();
+        });
     }
     page1.append(&p1_cancel);
     stack.add_named(&page1, Some("exec"));
@@ -349,17 +352,38 @@ pub fn show_add_game_modal(
                     std::thread::spawn(move || {
                         let txt = match crate::backend::external::RpgMakerManager::scan(&dir_c) {
                             Ok(doc) => {
-                                let eng = doc.get("engine").and_then(|v| v.as_str()).unwrap_or("unknown");
+                                let eng = doc
+                                    .get("engine")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown");
                                 let var = doc.get("variant").and_then(|v| v.as_str()).unwrap_or("");
-                                let auth = doc.get("authoritative").and_then(|v| v.as_bool()).unwrap_or(false);
+                                let auth = doc
+                                    .get("authoritative")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
                                 match (eng, var) {
-                                    ("mv_mz", "mz") => format!("RPG Maker MZ {} — supported", if auth { "(verified)" } else { "(hint)" }),
-                                    ("mv_mz", _) => format!("RPG Maker MV {} — supported", if auth { "(verified)" } else { "(hint)" }),
-                                    ("2k3", _) => format!("RPG Maker 2000/2003 {} — supported", if auth { "(verified)" } else { "(hint)" }),
-                                    ("unsupported", _) => String::from("XP/VX/VX Ace — not supported (no portable runtime)"),
-                                    _ => doc.get("reason").and_then(|v| v.as_str())
+                                    ("mv_mz", "mz") => format!(
+                                        "RPG Maker MZ {} — supported",
+                                        if auth { "(verified)" } else { "(hint)" }
+                                    ),
+                                    ("mv_mz", _) => format!(
+                                        "RPG Maker MV {} — supported",
+                                        if auth { "(verified)" } else { "(hint)" }
+                                    ),
+                                    ("2k3", _) => format!(
+                                        "RPG Maker 2000/2003 {} — supported",
+                                        if auth { "(verified)" } else { "(hint)" }
+                                    ),
+                                    ("unsupported", _) => String::from(
+                                        "XP/VX/VX Ace — not supported (no portable runtime)",
+                                    ),
+                                    _ => doc
+                                        .get("reason")
+                                        .and_then(|v| v.as_str())
                                         .map(|r| format!("Not detected as RPG Maker: {}", r))
-                                        .unwrap_or_else(|| String::from("Not detected as RPG Maker")),
+                                        .unwrap_or_else(|| {
+                                            String::from("Not detected as RPG Maker")
+                                        }),
                                 }
                             }
                             Err(e) => format!("Detect failed: {}", e),
@@ -421,9 +445,14 @@ pub fn show_add_game_modal(
     let protons = state.proton.installed_protons();
     let proton_dropdown = gtk::DropDown::new(None::<gtk::StringList>, None::<gtk::Expression>);
     let sl = gtk::StringList::new(&[]);
-    for p in &protons { sl.append(p); }
+    for p in &protons {
+        sl.append(p);
+    }
     proton_dropdown.set_model(Some(&sl));
-    let def = state.config.launcher_value("defaultProton").unwrap_or_default();
+    let def = state
+        .config
+        .launcher_value("defaultProton")
+        .unwrap_or_default();
     if let Some(idx) = protons.iter().position(|p| *p == def) {
         proton_dropdown.set_selected(idx as u32);
     }
@@ -450,7 +479,10 @@ pub fn show_add_game_modal(
         let state_c = state.clone();
         let icon_e = icon_entry.clone();
         icon_browse.connect_clicked(move |_| {
-            if let Some(path) = state_c.config.pick_file("Select icon image", &["png", "jpg", "jpeg", "svg"]) {
+            if let Some(path) = state_c
+                .config
+                .pick_file("Select icon image", &["png", "jpg", "jpeg", "svg"])
+            {
                 icon_e.set_text(&path.display().to_string());
             }
         });
@@ -474,7 +506,10 @@ pub fn show_add_game_modal(
         let state_c = state.clone();
         let banner_e = banner_entry.clone();
         banner_browse.connect_clicked(move |_| {
-            if let Some(path) = state_c.config.pick_file("Select banner image", &["png", "jpg", "jpeg"]) {
+            if let Some(path) = state_c
+                .config
+                .pick_file("Select banner image", &["png", "jpg", "jpeg"])
+            {
                 banner_e.set_text(&path.display().to_string());
             }
         });
@@ -496,11 +531,15 @@ pub fn show_add_game_modal(
     // ---- Navigation ----
     {
         let goto_c = goto.clone();
-        p2_back.connect_clicked(move |_| { goto_c("exec"); });
+        p2_back.connect_clicked(move |_| {
+            goto_c("exec");
+        });
     }
     {
         let goto_c = goto.clone();
-        p3_back.connect_clicked(move |_| { goto_c("exe"); });
+        p3_back.connect_clicked(move |_| {
+            goto_c("exe");
+        });
     }
     // exe step title tracks the chosen runner (set by step-1 cards)
     {
@@ -529,7 +568,8 @@ pub fn show_add_game_modal(
             // C++ parity: .rar extracts first, then the unpacked files list
             if exe.to_lowercase().ends_with(".rar") {
                 let path = std::path::PathBuf::from(&exe);
-                let stem = path.file_stem()
+                let stem = path
+                    .file_stem()
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_else(|| "game".to_string());
                 let home = std::env::var("HOME").unwrap_or_default();
@@ -778,9 +818,8 @@ fn wine_candidates() -> Vec<&'static str> {
 
 fn emu_candidates() -> Vec<&'static str> {
     vec![
-        "zip", "7z", "rar", "nds", "n64", "z64", "v64", "sfc", "smc",
-        "gb", "gbc", "gba", "nes", "nez", "iso", "cso", "wbfs", "rvz",
-        "xci", "nsp", "cue", "bin", "chd", "pbp",
+        "zip", "7z", "rar", "nds", "n64", "z64", "v64", "sfc", "smc", "gb", "gbc", "gba", "nes",
+        "nez", "iso", "cso", "wbfs", "rvz", "xci", "nsp", "cue", "bin", "chd", "pbp",
     ]
 }
 
@@ -802,9 +841,13 @@ fn scan_candidates(dir: &str, emu: bool, executor: &str) -> Vec<String> {
     scan_dir_depth(std::path::Path::new(dir), &exts, 0, &mut out);
     out.sort_by(|a, b| {
         let la = std::path::Path::new(a)
-            .file_name().map(|n| n.len()).unwrap_or(usize::MAX);
+            .file_name()
+            .map(|n| n.len())
+            .unwrap_or(usize::MAX);
         let lb = std::path::Path::new(b)
-            .file_name().map(|n| n.len()).unwrap_or(usize::MAX);
+            .file_name()
+            .map(|n| n.len())
+            .unwrap_or(usize::MAX);
         la.cmp(&lb).then_with(|| a.cmp(b))
     });
     out.truncate(50);

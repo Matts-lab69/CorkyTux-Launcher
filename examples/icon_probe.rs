@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use gtk::prelude::*;
+use std::path::PathBuf;
 
 fn main() {
     gtk::init().expect("gtk init");
@@ -12,8 +12,19 @@ fn main() {
     theme.set_search_path(&refs);
 
     println!("search_path[0] = {:?}", bundled);
-    for name in ["epicgames-symbolic", "gogdotcom-symbolic", "applications-games-symbolic"] {
-        let paintable = theme.lookup_icon(name, &[], 16, 1, gtk::TextDirection::None, gtk::IconLookupFlags::empty());
+    for name in [
+        "epicgames-symbolic",
+        "gogdotcom-symbolic",
+        "applications-games-symbolic",
+    ] {
+        let paintable = theme.lookup_icon(
+            name,
+            &[],
+            16,
+            1,
+            gtk::TextDirection::None,
+            gtk::IconLookupFlags::empty(),
+        );
         match paintable.file().and_then(|f| f.path()) {
             Some(p) => println!("{name:24} -> Some({})", p.display()),
             None => println!("{name:24} -> Some(paintable) sin file"),

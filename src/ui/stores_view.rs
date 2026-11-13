@@ -1,16 +1,17 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use crate::AppState;
 use crate::backend::external::StoreManager;
-use crate::backend::import_move::{self, ExecPlan, ImportMode, MoveCandidate, MoveOutcome, Preflight};
+use crate::backend::import_move::{
+    self, ExecPlan, ImportMode, MoveCandidate, MoveOutcome, Preflight,
+};
 use crate::backend::plugin_process::{PluginEvent, ProcessKiller};
 use crate::ui::deps_modal::DepId;
 use crate::ui::helpers;
 use crate::ui::import_manager;
+use crate::AppState;
 
 #[derive(Clone)]
 struct StoreGame {
@@ -47,8 +48,16 @@ struct RailItem {
 
 /// I parse one `gog-rail` item with defaults: I drop it without id and title.
 fn parse_rail_item(o: &serde_json::Value) -> Option<RailItem> {
-    let id = o.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
-    let title = o.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let id = o
+        .get("id")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let title = o
+        .get("title")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
     if id.is_empty() && title.is_empty() {
         return None;
     }
@@ -66,8 +75,6 @@ fn parse_rail_item(o: &serde_json::Value) -> Option<RailItem> {
         store_url: strf("store_url"),
     })
 }
-
-
 
 pub struct StoresView {
     pub widget: gtk::ScrolledWindow,
@@ -146,11 +153,8 @@ impl StoresView {
                     let helper = login_helper_path().ok();
                     let v = vista.clone();
                     let parent = v.widget.clone();
-                    crate::ui::deps_modal::present(
-                        &parent,
-                        rows,
-                        helper,
-                        move |outcome| match outcome {
+                    crate::ui::deps_modal::present(&parent, rows, helper, move |outcome| {
+                        match outcome {
                             crate::ui::deps_modal::InstallOutcome::Ready => {
                                 // I re-check for real and refresh what installing unlocked.
                                 v.chequear_dependencias();
@@ -160,8 +164,8 @@ impl StoresView {
                                 }
                             }
                             crate::ui::deps_modal::InstallOutcome::Skip => {}
-                        },
-                    );
+                        }
+                    });
                 }
                 glib::ControlFlow::Break
             }
@@ -216,7 +220,11 @@ fn claimed_overlay(card: gtk::Button, theme: &crate::backend::theme::ThemeManage
     let overlay = gtk::Overlay::new();
     overlay.set_child(Some(&card));
     let band = helpers::parse_rgba(theme.success());
-    let ink = helpers::parse_rgba(if theme.is_dark() { "#FFFFFF" } else { theme.text_main() });
+    let ink = helpers::parse_rgba(if theme.is_dark() {
+        "#FFFFFF"
+    } else {
+        theme.text_main()
+    });
     let da = gtk::DrawingArea::new();
     da.set_can_target(false);
     da.set_halign(gtk::Align::Fill);
@@ -232,7 +240,12 @@ fn claimed_overlay(card: gtk::Button, theme: &crate::backend::theme::ThemeManage
         cr.rotate(std::f64::consts::FRAC_PI_4);
         let span = (w as f64).hypot(h as f64);
         cr.rectangle(-span, -thickness / 2.0, span * 2.0, thickness);
-        cr.set_source_rgba(band.red() as f64, band.green() as f64, band.blue() as f64, 1.0);
+        cr.set_source_rgba(
+            band.red() as f64,
+            band.green() as f64,
+            band.blue() as f64,
+            1.0,
+        );
         cr.fill_preserve().ok();
         cr.set_line_width(1.0);
         cr.set_source_rgba(0.0, 0.0, 0.0, 0.18);
@@ -291,7 +304,6 @@ fn card(title: &str) -> (gtk::Frame, gtk::Box) {
     (f, inner)
 }
 
-
 impl StoresView {
     pub fn new(
         state: &AppState,
@@ -341,7 +353,10 @@ impl StoresView {
         let stack = gtk::Stack::new();
         stack.set_vexpand(false);
         let mut btns: Vec<gtk::ToggleButton> = Vec::new();
-        for (label, _id, icon) in [("Epic Games", "epic", "epicgames-symbolic"), ("GOG", "gog", "gogdotcom-symbolic")] {
+        for (label, _id, icon) in [
+            ("Epic Games", "epic", "epicgames-symbolic"),
+            ("GOG", "gog", "gogdotcom-symbolic"),
+        ] {
             let btn = gtk::ToggleButton::new();
             btn.add_css_class("seg");
             btn.set_hexpand(true);
@@ -369,7 +384,8 @@ impl StoresView {
             Rc::new(RefCell::new(std::collections::HashMap::new()));
         let mut handles: Vec<StorePageHandle> = Vec::new();
         for store in ["epic", "gog"] {
-            let (page, handle) = Self::store_page(state, parent, sidebar, center, details, store, &deals_map);
+            let (page, handle) =
+                Self::store_page(state, parent, sidebar, center, details, store, &deals_map);
             stack.add_named(&page, Some(store));
             handles.push(handle);
         }
@@ -432,7 +448,11 @@ impl StoresView {
         let s = store.to_string();
 
         // auth card
-        let (auth_frame, auth_inner) = card(if store == "epic" { "Epic Games account" } else { "GOG account" });
+        let (auth_frame, auth_inner) = card(if store == "epic" {
+            "Epic Games account"
+        } else {
+            "GOG account"
+        });
         let login_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let auth_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let auth_badge = gtk::Label::new(Some("Checking…"));
@@ -498,34 +518,52 @@ impl StoresView {
             promo_scroll.set_child(Some(&promo_list));
             promo_inner.append(&promo_scroll);
             page.append(&promo_frame);
-            let (tx, rx) = std::sync::mpsc::channel::<Vec<(String, String, String, String, bool)>>();
+            let (tx, rx) =
+                std::sync::mpsc::channel::<Vec<(String, String, String, String, bool)>>();
             std::thread::spawn(move || {
-                let promos = StoreManager::free_promos().ok()
+                let promos = StoreManager::free_promos()
+                    .ok()
                     .and_then(|d| d.get("free_now").cloned())
-                    .and_then(|v| v.as_array().cloned()).unwrap_or_default()
-                    .into_iter().filter_map(|p| {
-                        Some((p.get("title")?.as_str()?.to_string(),
-                              p.get("description")?.as_str().unwrap_or("").to_string(),
-                              p.get("cover")?.as_str().unwrap_or("").to_string(),
-                              p.get("store_url")?.as_str().unwrap_or("").to_string()))
-                    }).collect::<Vec<_>>();
+                    .and_then(|v| v.as_array().cloned())
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|p| {
+                        Some((
+                            p.get("title")?.as_str()?.to_string(),
+                            p.get("description")?.as_str().unwrap_or("").to_string(),
+                            p.get("cover")?.as_str().unwrap_or("").to_string(),
+                            p.get("store_url")?.as_str().unwrap_or("").to_string(),
+                        ))
+                    })
+                    .collect::<Vec<_>>();
                 // I casefold owned titles for my "Claimed" ribbon.
                 // Library failure => empty set => no ribbons (never a
                 // false positive when the library can't be read).
                 let owned: std::collections::HashSet<String> = StoreManager::library("epic", false)
                     .ok()
                     .and_then(|d| d.get("games").cloned())
-                    .and_then(|v| v.as_array().cloned()).unwrap_or_default()
+                    .and_then(|v| v.as_array().cloned())
+                    .unwrap_or_default()
                     .into_iter()
-                    .filter_map(|g| g.get("title").and_then(|x| x.as_str()).map(|s| s.to_lowercase()))
+                    .filter_map(|g| {
+                        g.get("title")
+                            .and_then(|x| x.as_str())
+                            .map(|s| s.to_lowercase())
+                    })
                     .collect();
-                let _ = tx.send(promos.into_iter().map(|(t, d, c, u)| {
-                    let claimed = owned.contains(&t.to_lowercase());
-                    (t, d, c, u, claimed)
-                }).collect::<Vec<_>>());
+                let _ = tx.send(
+                    promos
+                        .into_iter()
+                        .map(|(t, d, c, u)| {
+                            let claimed = owned.contains(&t.to_lowercase());
+                            (t, d, c, u, claimed)
+                        })
+                        .collect::<Vec<_>>(),
+                );
             });
             let st = state.clone();
-            let no_det_f: Rc<RefCell<Option<crate::ui::details_panel::DetailsPanel>>> = Rc::new(RefCell::new(None));
+            let no_det_f: Rc<RefCell<Option<crate::ui::details_panel::DetailsPanel>>> =
+                Rc::new(RefCell::new(None));
             let no_sel_f: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
             crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
                 Ok(list) => {
@@ -548,7 +586,15 @@ impl StoresView {
                             let open: Rc<dyn Fn()> = Rc::new(move || {
                                 stc2.integration.open_url(&uc);
                             });
-                            let card = crate::ui::game_card::build_game_card(&entry, &st.config, &no_det_f, &no_sel_f, Some("GRATIS".to_string()), Some(open), false);
+                            let card = crate::ui::game_card::build_game_card(
+                                &entry,
+                                &st.config,
+                                &no_det_f,
+                                &no_sel_f,
+                                Some("GRATIS".to_string()),
+                                Some(open),
+                                false,
+                            );
                             card.set_tooltip_text(Some(&format!("{}\n{}", t, d)));
                             if claimed {
                                 promo_list.append(&claimed_overlay(card, &st.theme));
@@ -605,10 +651,10 @@ impl StoresView {
                 let shown: Rc<std::cell::Cell<usize>> = Rc::new(std::cell::Cell::new(0));
                 let page: Rc<std::cell::Cell<usize>> = Rc::new(std::cell::Cell::new(1));
                 let pages: Rc<std::cell::Cell<usize>> = Rc::new(std::cell::Cell::new(1));
-                let loader: Rc<RefCell<Option<Rc<dyn Fn(u64)>>>> = Rc::new(RefCell::new(None));
+                let loader: crate::ui::CallbackSlot<u64> = Rc::new(RefCell::new(None));
                 let epoch: Rc<std::cell::Cell<u64>> = Rc::new(std::cell::Cell::new(0));
-                let goto_slot: Rc<RefCell<Option<Rc<dyn Fn(usize)>>>> = Rc::new(RefCell::new(None));
-                let rebuild_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+                let goto_slot: crate::ui::CallbackSlot<usize> = Rc::new(RefCell::new(None));
+                let rebuild_slot: crate::ui::RefreshCallback = Rc::new(RefCell::new(None));
                 {
                     let list_c = deals_list.clone();
                     let epoch_c = epoch.clone();
@@ -629,7 +675,9 @@ impl StoresView {
                         loading_c.set(true);
                         let (tx, rx) = std::sync::mpsc::channel::<serde_json::Value>();
                         std::thread::spawn(move || {
-                            let _ = tx.send(StoreManager::epic_deals(start, PER_PAGE).unwrap_or_default());
+                            let _ = tx.send(
+                                StoreManager::epic_deals(start, PER_PAGE).unwrap_or_default(),
+                            );
                         });
                         let list_cc = list_c.clone();
                         let lbl_cc = lbl_c.clone();
@@ -650,24 +698,41 @@ impl StoresView {
                                     loading_cc.set(false);
                                     return glib::ControlFlow::Break;
                                 }
-                                let arr = doc.get("deals").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-                                let fetched = doc.get("fetched").and_then(|v| v.as_u64()).unwrap_or(arr.len() as u64);
-                                let has_more = doc.get("has_more").and_then(|v| v.as_bool()).unwrap_or(false);
-                                let start = doc.get("start").and_then(|v| v.as_u64()).unwrap_or(start);
+                                let arr = doc
+                                    .get("deals")
+                                    .and_then(|v| v.as_array())
+                                    .cloned()
+                                    .unwrap_or_default();
+                                let fetched = doc
+                                    .get("fetched")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(arr.len() as u64);
+                                let has_more = doc
+                                    .get("has_more")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
+                                let start =
+                                    doc.get("start").and_then(|v| v.as_u64()).unwrap_or(start);
                                 if doc.get("deals").is_none() {
                                     total_cc.set(next_cc.get());
                                 } else {
-                                    let real_total = doc.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+                                    let real_total =
+                                        doc.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
                                     next_cc.set(start + fetched);
                                     if real_total > 0 {
                                         total_cc.set(real_total.max(start + fetched));
                                     } else {
-                                        total_cc.set(start + fetched + if has_more { PER_PAGE } else { 0 });
+                                        total_cc.set(
+                                            start + fetched + if has_more { PER_PAGE } else { 0 },
+                                        );
                                     }
                                 }
                                 let mut added = 0usize;
-                                let no_det: Rc<RefCell<Option<crate::ui::details_panel::DetailsPanel>>> = Rc::new(RefCell::new(None));
-                                let no_sel: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
+                                let no_det: Rc<
+                                    RefCell<Option<crate::ui::details_panel::DetailsPanel>>,
+                                > = Rc::new(RefCell::new(None));
+                                let no_sel: Rc<RefCell<String>> =
+                                    Rc::new(RefCell::new(String::new()));
                                 for p in arr {
                                     let t = match p.get("title").and_then(|x| x.as_str()) {
                                         Some(s) if !s.is_empty() => s.to_string(),
@@ -676,26 +741,63 @@ impl StoresView {
                                     if !seen_cc.borrow_mut().insert(t.clone()) {
                                         continue;
                                     }
-                                    let d = p.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                                    let cover = p.get("cover").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                                    let pct = p.get("discount").and_then(|x| x.as_i64()).unwrap_or(0);
-                                    let price = p.get("price").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                                    let base = p.get("base_price").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                                    let ends = p.get("ends").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                                    let u = p.get("store_url").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    let d = p
+                                        .get("description")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let cover = p
+                                        .get("cover")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let pct =
+                                        p.get("discount").and_then(|x| x.as_i64()).unwrap_or(0);
+                                    let price = p
+                                        .get("price")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let base = p
+                                        .get("base_price")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let ends = p
+                                        .get("ends")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let u = p
+                                        .get("store_url")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
                                     let entry = crate::backend::game_model::GameEntry {
                                         name: t.clone(),
                                         banner: cover.clone(),
                                         source: crate::backend::game_model::GameSource::Epic,
                                         ..Default::default()
                                     };
-                                    let badge = if pct > 0 { Some(format!("-{}%", pct)) } else { None };
+                                    let badge = if pct > 0 {
+                                        Some(format!("-{}%", pct))
+                                    } else {
+                                        None
+                                    };
                                     let uc = u.clone();
                                     let stc2 = st_cc.clone();
                                     let open: Rc<dyn Fn()> = Rc::new(move || {
                                         stc2.integration.open_url(&uc);
                                     });
-                                    let card = crate::ui::game_card::build_game_card(&entry, &st_cc.config, &no_det, &no_sel, badge, Some(open), false);
+                                    let card = crate::ui::game_card::build_game_card(
+                                        &entry,
+                                        &st_cc.config,
+                                        &no_det,
+                                        &no_sel,
+                                        badge,
+                                        Some(open),
+                                        false,
+                                    );
                                     card.set_tooltip_text(Some(&format!("{}\n{}", t, d)));
                                     let cell = gtk::Box::new(gtk::Orientation::Vertical, 4);
                                     cell.append(&card);
@@ -716,21 +818,31 @@ impl StoresView {
                                 shown_cc.set(shown_cc.get() + added);
                                 loading_cc.set(false);
                                 let s = shown_cc.get();
-                                let npages = ((total_cc.get() + PER_PAGE - 1) / PER_PAGE).max(1) as usize;
+                                let npages = total_cc.get().div_ceil(PER_PAGE).max(1) as usize;
                                 pages_cc.set(npages);
                                 if s == 0 {
                                     lbl_cc.set_text("No offers right now.");
                                 } else if has_more {
-                                    lbl_cc.set_text(&format!("Page {} of ~{}", page_cc.get().max(1), npages));
+                                    lbl_cc.set_text(&format!(
+                                        "Page {} of ~{}",
+                                        page_cc.get().max(1),
+                                        npages
+                                    ));
                                 } else {
-                                    lbl_cc.set_text(&format!("Page {} of {}", page_cc.get().max(1), npages));
+                                    lbl_cc.set_text(&format!(
+                                        "Page {} of {}",
+                                        page_cc.get().max(1),
+                                        npages
+                                    ));
                                 }
                                 if let Some(r) = rebuild_cc.borrow().as_ref() {
                                     r();
                                 }
                                 glib::ControlFlow::Break
                             }
-                            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                glib::ControlFlow::Continue
+                            }
                             Err(_) => glib::ControlFlow::Break,
                         });
                     }) as Rc<dyn Fn(u64)>);
@@ -824,15 +936,16 @@ impl StoresView {
                     }) as Rc<dyn Fn()>);
                 }
                 // Register pager state so leaving the page can drop rows/covers.
-                deals_map.borrow_mut().insert(store.to_string(), DealsState {
-                    list: deals_list.clone(),
-                    lbl: deals_lbl.clone(),
-                    page: page.clone(),
-                    pages: pages.clone(),
-                    loader: loader.clone(),
-                    goto: goto_slot.clone(),
-                    epoch: epoch.clone(),
-                });
+                deals_map.borrow_mut().insert(
+                    store.to_string(),
+                    DealsState {
+                        list: deals_list.clone(),
+                        lbl: deals_lbl.clone(),
+                        page: page.clone(),
+                        goto: goto_slot.clone(),
+                        epoch: epoch.clone(),
+                    },
+                );
                 let first = goto_slot.borrow().as_ref().cloned();
                 if let Some(g) = first {
                     g(1);
@@ -857,9 +970,12 @@ impl StoresView {
             *go_search.borrow_mut() = {
                 let q = shop_q.clone();
                 Box::new(move || {
-                    let query: String = url_encode(&q.text().to_string());
+                    let query: String = url_encode(q.text().as_ref());
                     if !query.is_empty() {
-                        st2.integration.open_url(&format!("https://store.epicgames.com/en-US/browse?q={}&sortBy=relevancy", query));
+                        st2.integration.open_url(&format!(
+                            "https://store.epicgames.com/en-US/browse?q={}&sortBy=relevancy",
+                            query
+                        ));
                     }
                 })
             };
@@ -955,7 +1071,7 @@ impl StoresView {
         page.append(&incomplete_box);
 
         // I set this from StoresView after building the handles.
-        let reabrir: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+        let reabrir: crate::ui::RefreshCallback = Rc::new(RefCell::new(None));
         {
             let r = reabrir.clone();
             incomplete_btn.connect_clicked(move |_| {
@@ -1038,7 +1154,11 @@ impl StoresView {
                 let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
                 let store = vh.store.clone();
                 std::thread::spawn(move || {
-                    let _ = tx.send(StoreManager::logout(&store).map(|_| ()).map_err(|e| e.to_string()));
+                    let _ = tx.send(
+                        StoreManager::logout(&store)
+                            .map(|_| ())
+                            .map_err(|e| e.to_string()),
+                    );
                 });
                 let vv = vh.clone();
                 crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
@@ -1144,19 +1264,47 @@ impl StoresView {
                         res.remove(&c);
                     }
                     lbl.set_text("Searching GOG…");
-                    let (tx, rx) = std::sync::mpsc::channel::<Vec<(String, String, String, String, String, String)>>();
+                    let (tx, rx) = std::sync::mpsc::channel::<
+                        Vec<(String, String, String, String, String, String)>,
+                    >();
                     std::thread::spawn(move || {
-                        let _ = tx.send(StoreManager::gog_store_search(&query, 10).ok()
-                            .and_then(|d| d.get("results").cloned())
-                            .and_then(|v| v.as_array().cloned()).unwrap_or_default()
-                            .into_iter().map(|p| (
-                                p.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                p.get("cover").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                p.get("price").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                p.get("developer").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                p.get("store_url").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                p.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                            )).collect::<Vec<_>>());
+                        let _ = tx.send(
+                            StoreManager::gog_store_search(&query, 10)
+                                .ok()
+                                .and_then(|d| d.get("results").cloned())
+                                .and_then(|v| v.as_array().cloned())
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|p| {
+                                    (
+                                        p.get("title")
+                                            .and_then(|x| x.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        p.get("cover")
+                                            .and_then(|x| x.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        p.get("price")
+                                            .and_then(|x| x.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        p.get("developer")
+                                            .and_then(|x| x.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        p.get("store_url")
+                                            .and_then(|x| x.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        p.get("id")
+                                            .and_then(|x| x.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                    )
+                                })
+                                .collect::<Vec<_>>(),
+                        );
                     });
                     crate::backend::plugin_process::poll_once_local(rx, move |r2| match r2 {
                         Ok(items) => {
@@ -1166,7 +1314,10 @@ impl StoresView {
                             if items.is_empty() {
                                 lbl.set_text("No results.");
                             } else {
-                                lbl.set_text(&format!("{} result(s) — buying happens on gog.com", items.len()));
+                                lbl.set_text(&format!(
+                                    "{} result(s) — buying happens on gog.com",
+                                    items.len()
+                                ));
                             }
                             for (t, cover, price, dev, url, gid) in items {
                                 let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -1174,7 +1325,12 @@ impl StoresView {
                                     let img = gtk::Image::new();
                                     img.set_pixel_size(64);
                                     img.set_valign(gtk::Align::Center);
-                                    crate::ui::minecraft_view::load_mod_icon(&cover, &format!("gogshop-{}", gid), &img, 64);
+                                    crate::ui::minecraft_view::load_mod_icon(
+                                        &cover,
+                                        &format!("gogshop-{}", gid),
+                                        &img,
+                                        64,
+                                    );
                                     row.append(&img);
                                 }
                                 let mid = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -1190,12 +1346,18 @@ impl StoresView {
                                 mid.append(&sub);
                                 row.append(&mid);
                                 if !url.is_empty() {
-                                    let buy = gtk::Button::with_label(if price == "$0.00" { "Get" } else { "Buy" });
+                                    let buy = gtk::Button::with_label(if price == "$0.00" {
+                                        "Get"
+                                    } else {
+                                        "Buy"
+                                    });
                                     buy.add_css_class("add-btn");
                                     buy.set_valign(gtk::Align::Center);
                                     let stcc = stc.clone();
                                     let uc = url.clone();
-                                    buy.connect_clicked(move |_| { stcc.integration.open_url(&uc); });
+                                    buy.connect_clicked(move |_| {
+                                        stcc.integration.open_url(&uc);
+                                    });
                                     row.append(&buy);
                                 }
                                 res.append(&row);
@@ -1238,9 +1400,7 @@ struct DealsState {
     list: gtk::Box,
     lbl: gtk::Label,
     page: Rc<std::cell::Cell<usize>>,
-    pages: Rc<std::cell::Cell<usize>>,
-    loader: Rc<RefCell<Option<Rc<dyn Fn(u64)>>>>,
-    goto: Rc<RefCell<Option<Rc<dyn Fn(usize)>>>>,
+    goto: crate::ui::CallbackSlot<usize>,
     epoch: Rc<std::cell::Cell<u64>>,
 }
 
@@ -1272,7 +1432,8 @@ struct RailRow {
 
 impl TileStatus {
     fn apply_installed(&self, installed: bool) {
-        self.btn.set_label(if installed { "Import" } else { "Install" });
+        self.btn
+            .set_label(if installed { "Import" } else { "Install" });
         if installed {
             if self.inst_lbl.borrow().is_none() {
                 let ib = gtk::Label::new(Some("installed"));
@@ -1314,7 +1475,7 @@ struct StorePageHandle {
     incomplete_text: gtk::Label,
     browser_row: gtk::Box,
     blocked: Rc<std::cell::Cell<bool>>,
-    reabrir: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    reabrir: crate::ui::RefreshCallback,
     // I keep my GOG grid as full list + filtered/sorted in-memory view,
     // with toolbar query and sort mode (GOG tab only; I skip Epic).
     all_games: Rc<RefCell<Vec<StoreGame>>>,
@@ -1369,9 +1530,15 @@ impl StorePageHandle {
             let bins = st.get("bins").cloned().unwrap_or_default();
             let accs = st.get("accounts").cloned().unwrap_or_default();
             let _ = tx.send((
-                logged.get(&store).and_then(|x| x.as_bool()).unwrap_or(false),
+                logged
+                    .get(&store)
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or(false),
                 bins.get(&store).and_then(|x| x.as_bool()).unwrap_or(false),
-                accs.get(&store).and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                accs.get(&store)
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
             ));
         });
         let badge = self.auth_badge.clone();
@@ -1395,10 +1562,20 @@ impl StorePageHandle {
                     login_box.set_visible(false);
                     acc_row.set_visible(true);
                     acc_name.set_text(if name.is_empty() { &store } else { &name });
-                    let initial = name.trim().chars().next()
+                    let initial = name
+                        .trim()
+                        .chars()
+                        .next()
                         .map(|c| c.to_uppercase().to_string())
                         .filter(|s| !s.is_empty())
-                        .unwrap_or_else(|| store.trim().chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default());
+                        .unwrap_or_else(|| {
+                            store
+                                .trim()
+                                .chars()
+                                .next()
+                                .map(|c| c.to_uppercase().to_string())
+                                .unwrap_or_default()
+                        });
                     acc_avatar.set_text(&initial);
                     hint.set_visible(false);
                 } else {
@@ -1541,7 +1718,10 @@ impl StorePageHandle {
             return;
         };
         for (app_id, status) in map {
-            let installed = status.get("installed").and_then(|x| x.as_bool()).unwrap_or(false);
+            let installed = status
+                .get("installed")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false);
             if let Some(ts) = self.tiles.borrow().get(app_id) {
                 ts.apply_installed(installed);
             }
@@ -1575,14 +1755,20 @@ impl StorePageHandle {
                 if val.get("type").and_then(|x| x.as_str()) != Some("auth_url") {
                     return true;
                 }
-                let url = val.get("url").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let url = val
+                    .get("url")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 if url.is_empty() {
                     vh.login_btn.set_sensitive(true);
                     vh.auth_hint.set_visible(true);
-                    vh.auth_hint.set_text("The store helper did not return a login URL.");
+                    vh.auth_hint
+                        .set_text("The store helper did not return a login URL.");
                     return false;
                 }
-                vh.auth_hint.set_text("Opening a login window — sign in there.");
+                vh.auth_hint
+                    .set_text("Opening a login window — sign in there.");
                 vh.watch_login_helper(url);
                 false
             }
@@ -1608,7 +1794,8 @@ impl StorePageHandle {
             PluginEvent::Error { message, .. } => {
                 vh.login_btn.set_sensitive(true);
                 vh.auth_hint.set_visible(true);
-                vh.auth_hint.set_text(&format!("Login could not start: {}", message));
+                vh.auth_hint
+                    .set_text(&format!("Login could not start: {}", message));
                 false
             }
             _ => true,
@@ -1652,8 +1839,7 @@ impl StorePageHandle {
                 guard.set(false);
                 vh.login_btn.set_sensitive(true);
                 vh.auth_hint.set_visible(true);
-                vh.auth_hint
-                    .set_text(&login_failure_message(&why, &detail));
+                vh.auth_hint.set_text(&login_failure_message(&why, &detail));
                 glib::ControlFlow::Break
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
@@ -1693,7 +1879,11 @@ impl StorePageHandle {
                 crate::backend::plugin_process::PluginEvent::Done(val) => {
                     guard.set(false);
                     vh.login_btn.set_sensitive(true);
-                    let who = val.get("account").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let who = val
+                        .get("account")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     vh.state_toast("Logged in", if who.is_empty() { &vh.store } else { &who });
                     vh.refresh_auth(false);
                     vh.refresh_library(true);
@@ -1707,7 +1897,10 @@ impl StorePageHandle {
                     // binary (5), network (6) or other failures are already
                     // self-explanatory.
                     if code == Some(4) {
-                        vh.auth_hint.set_text(&format!("{} (codes expire fast — open ONE fresh tab and retry)", message));
+                        vh.auth_hint.set_text(&format!(
+                            "{} (codes expire fast — open ONE fresh tab and retry)",
+                            message
+                        ));
                     } else {
                         vh.auth_hint.set_text(&message);
                     }
@@ -1723,29 +1916,89 @@ impl StorePageHandle {
         while let Some(c) = self.flow.first_child() {
             self.flow.remove(&c);
         }
-        let (tx, rx) = std::sync::mpsc::channel::<Result<(Vec<StoreGame>, Option<String>), String>>();
+        let (tx, rx) =
+            std::sync::mpsc::channel::<Result<(Vec<StoreGame>, Option<String>), String>>();
         let store = self.store.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(StoreManager::library(&store, force).map(|d| {
-                let warn = d.get("warning").and_then(|x| x.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
-                let games = d.get("games").and_then(|x| x.as_array()).cloned().unwrap_or_default()
-                    .into_iter().map(|g| StoreGame {
-                        app_id: g.get("app_id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                        title: g.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                        category: g.get("category").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                        systems: g.get("systems").and_then(|x| x.as_array()).map(|a| {
-                            a.iter().filter_map(|x| x.as_str()).map(|s| s.to_string()).collect()
-                        }).unwrap_or_default(),
-                        version: g.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                        installed: g.get("installed").and_then(|x| x.as_bool()).unwrap_or(false),
-                        stale_registry: g.get("stale_registry").and_then(|x| x.as_bool()).unwrap_or(false),
-                        install_path: g.get("install_path").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                        executable: g.get("executable").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                        cover: g.get("cover").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                        description: g.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    }).collect::<Vec<_>>();
-                (games, warn)
-            }).map_err(|e| e.to_string()));
+            let _ = tx.send(
+                StoreManager::library(&store, force)
+                    .map(|d| {
+                        let warn = d
+                            .get("warning")
+                            .and_then(|x| x.as_str())
+                            .filter(|s| !s.is_empty())
+                            .map(|s| s.to_string());
+                        let games = d
+                            .get("games")
+                            .and_then(|x| x.as_array())
+                            .cloned()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|g| StoreGame {
+                                app_id: g
+                                    .get("app_id")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                title: g
+                                    .get("title")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                category: g
+                                    .get("category")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                systems: g
+                                    .get("systems")
+                                    .and_then(|x| x.as_array())
+                                    .map(|a| {
+                                        a.iter()
+                                            .filter_map(|x| x.as_str())
+                                            .map(|s| s.to_string())
+                                            .collect()
+                                    })
+                                    .unwrap_or_default(),
+                                version: g
+                                    .get("version")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                installed: g
+                                    .get("installed")
+                                    .and_then(|x| x.as_bool())
+                                    .unwrap_or(false),
+                                stale_registry: g
+                                    .get("stale_registry")
+                                    .and_then(|x| x.as_bool())
+                                    .unwrap_or(false),
+                                install_path: g
+                                    .get("install_path")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                executable: g
+                                    .get("executable")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                cover: g
+                                    .get("cover")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                description: g
+                                    .get("description")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                            })
+                            .collect::<Vec<_>>();
+                        (games, warn)
+                    })
+                    .map_err(|e| e.to_string()),
+            );
         });
         let vh = self.clone();
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
@@ -1760,7 +2013,11 @@ impl StorePageHandle {
                 // never an error page (I removed the old `die(3)` abort).
                 if let Some(w) = warn {
                     let cur = vh.lib_status.text().to_string();
-                    vh.lib_status.set_text(&format!("{} · partial: {}", cur, w.chars().take(80).collect::<String>()));
+                    vh.lib_status.set_text(&format!(
+                        "{} · partial: {}",
+                        cur,
+                        w.chars().take(80).collect::<String>()
+                    ));
                 }
                 crate::refresh_warn_buttons(&vh.state);
                 glib::ControlFlow::Break
@@ -1789,7 +2046,8 @@ impl StorePageHandle {
         drop(killer);
         self.desc_running.set(true);
         self.lib_status.set_text("Updating descriptions…");
-        let (rx, k) = StoreManager::spawn_refresh_library(self.store.clone(), "spanish".to_string());
+        let (rx, k) =
+            StoreManager::spawn_refresh_library(self.store.clone(), "spanish".to_string());
         *self.desc_killer.borrow_mut() = Some(k);
         let vh = self.clone();
         crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
@@ -1799,22 +2057,59 @@ impl StorePageHandle {
             match ev {
                 PluginEvent::Custom(val) => {
                     if val.get("type").and_then(|x| x.as_str()) == Some("library") {
-                        let games = val.get("games")
-                            .and_then(|x| x.as_array()).cloned().unwrap_or_default()
+                        let games = val
+                            .get("games")
+                            .and_then(|x| x.as_array())
+                            .cloned()
+                            .unwrap_or_default()
                             .into_iter()
                             .map(|g| StoreGame {
-                                app_id: g.get("app_id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                title: g.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                app_id: g
+                                    .get("app_id")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                title: g
+                                    .get("title")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
                                 // I build my Epic batch without category/systems (GOG-only fields).
                                 category: String::new(),
                                 systems: Vec::new(),
-                                version: g.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                installed: g.get("installed").and_then(|x| x.as_bool()).unwrap_or(false),
-                                stale_registry: g.get("stale_registry").and_then(|x| x.as_bool()).unwrap_or(false),
-                                install_path: g.get("install_path").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                executable: g.get("executable").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                cover: g.get("cover").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                                description: g.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                                version: g
+                                    .get("version")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                installed: g
+                                    .get("installed")
+                                    .and_then(|x| x.as_bool())
+                                    .unwrap_or(false),
+                                stale_registry: g
+                                    .get("stale_registry")
+                                    .and_then(|x| x.as_bool())
+                                    .unwrap_or(false),
+                                install_path: g
+                                    .get("install_path")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                executable: g
+                                    .get("executable")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                cover: g
+                                    .get("cover")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                description: g
+                                    .get("description")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
                             })
                             .collect::<Vec<_>>();
                         vh.render_games(&games);
@@ -1837,7 +2132,8 @@ impl StorePageHandle {
                     let updated = val.get("updated").and_then(|x| x.as_u64()).unwrap_or(0);
                     let total = val.get("total").and_then(|x| x.as_u64()).unwrap_or(0);
                     let msg = format!("{updated} of {total} updated");
-                    vh.lib_status.set_text(&format!("Descriptions updated · {msg}"));
+                    vh.lib_status
+                        .set_text(&format!("Descriptions updated · {msg}"));
                     vh.state_toast("Descriptions updated", &msg);
                     false
                 }
@@ -1848,7 +2144,6 @@ impl StorePageHandle {
                     vh.state_toast("Could not update the descriptions", &message);
                     false
                 }
-                _ => true,
             }
         });
     }
@@ -1897,7 +2192,8 @@ impl StorePageHandle {
             });
             return;
         }
-        self.lib_status.set_text(&format!("{} game(s)", games.len()));
+        self.lib_status
+            .set_text(&format!("{} game(s)", games.len()));
         for g in games {
             let (tile_w, _img_px, cover_h) = self.card_sizes();
             // Fixed tile: badge row + 2-line name + meta + margins.
@@ -1945,7 +2241,12 @@ impl StorePageHandle {
                 scrolled.set_can_target(false);
                 scrolled.set_child(Some(&pic));
                 let bound = tile_w * 2 * Self::ui_scale(&pic);
-                crate::ui::minecraft_view::load_cover_async(&g.cover, &format!("store-gog-{}", g.app_id), &pic, bound);
+                crate::ui::minecraft_view::load_cover_async(
+                    &g.cover,
+                    &format!("store-gog-{}", g.app_id),
+                    &pic,
+                    bound,
+                );
                 coverbox.append(&scrolled);
                 inner.append(&coverbox);
             }
@@ -1996,7 +2297,11 @@ impl StorePageHandle {
     /// focusable horizontal row. I construct them once; content arrives via
     /// load_rails.
     fn build_rail_sections(&self) {
-        for (list, title) in [("sale", "On Sale"), ("new", "Discover"), ("free", "Free to Keep")] {
+        for (list, title) in [
+            ("sale", "On Sale"),
+            ("new", "Discover"),
+            ("free", "Free to Keep"),
+        ] {
             let sec = gtk::Box::new(gtk::Orientation::Vertical, 4);
             let head = gtk::Label::new(Some(title));
             head.set_halign(gtk::Align::Start);
@@ -2200,11 +2505,18 @@ impl StorePageHandle {
             });
             b
         };
-        sec.pager.append(&mk("\u{00AB}", cur.saturating_sub(1), cur > 0, false));
+        sec.pager
+            .append(&mk("\u{00AB}", cur.saturating_sub(1), cur > 0, false));
         for n in 0..npages {
-            sec.pager.append(&mk(&(n + 1).to_string(), n, n != cur, n == cur));
+            sec.pager
+                .append(&mk(&(n + 1).to_string(), n, n != cur, n == cur));
         }
-        sec.pager.append(&mk("\u{00BB}", (cur + 1).min(npages - 1), cur + 1 < npages, false));
+        sec.pager.append(&mk(
+            "\u{00BB}",
+            (cur + 1).min(npages - 1),
+            cur + 1 < npages,
+            false,
+        ));
     }
 
     /// I build my rail card: shared portrait base + per-variant line + badge.
@@ -2340,7 +2652,11 @@ impl StorePageHandle {
         let outer = gtk::Box::new(gtk::Orientation::Vertical, 0);
         outer.add_css_class("page-card");
         outer.add_css_class("gog-tile");
-        let cover_url = if item.cover_h.is_empty() { &item.cover } else { &item.cover_h };
+        let cover_url = if item.cover_h.is_empty() {
+            &item.cover
+        } else {
+            &item.cover_h
+        };
         if !cover_url.is_empty() {
             let pic = gtk::Picture::new();
             pic.set_size_request(204, 124);
@@ -2394,59 +2710,63 @@ impl StorePageHandle {
         tile
     }
 
-/// GOG card "category · systems" line: each half hides when empty, since both
-/// fields are optional in GOG's response (`worksOn` arrives comma-broken,
-/// `category` can be empty).
-fn meta_line(category: &str, systems: &[String]) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    let cat = category.trim();
-    if !cat.is_empty() {
-        parts.push(cat.to_string());
+    /// GOG card "category · systems" line: each half hides when empty, since both
+    /// fields are optional in GOG's response (`worksOn` arrives comma-broken,
+    /// `category` can be empty).
+    fn meta_line(category: &str, systems: &[String]) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        let cat = category.trim();
+        if !cat.is_empty() {
+            parts.push(cat.to_string());
+        }
+        let sys: Vec<String> = systems
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !sys.is_empty() {
+            parts.push(sys.join(" · "));
+        }
+        parts.join(" · ")
     }
-    let sys: Vec<String> = systems
-        .iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-    if !sys.is_empty() {
-        parts.push(sys.join(" · "));
-    }
-    parts.join(" · ")
-}
 
-/// Title/category filter plus in-memory sort for the GOG grid. Pure and
-/// testable: the UI just applies it and renders.
-fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame> {
-    let q = query.trim().to_lowercase();
-    let mut v: Vec<StoreGame> = games
-        .iter()
-        .filter(|g| {
-            q.is_empty()
-                || g.title.to_lowercase().contains(&q)
-                || g.category.to_lowercase().contains(&q)
-        })
-        .cloned()
-        .collect();
-    match sort {
-        // Title Z–A.
-        1 => v.sort_by(|a, b| b.title.to_lowercase().cmp(&a.title.to_lowercase())),
-        // Installed first, then A–Z.
-        2 => v.sort_by(|a, b| {
-            b.installed
-                .cmp(&a.installed)
-                .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
-        }),
-        // Title A–Z (default: 0 and any unrecognized value).
-        _ => v.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
+    /// Title/category filter plus in-memory sort for the GOG grid. Pure and
+    /// testable: the UI just applies it and renders.
+    fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame> {
+        let q = query.trim().to_lowercase();
+        let mut v: Vec<StoreGame> = games
+            .iter()
+            .filter(|g| {
+                q.is_empty()
+                    || g.title.to_lowercase().contains(&q)
+                    || g.category.to_lowercase().contains(&q)
+            })
+            .cloned()
+            .collect();
+        match sort {
+            // Title Z–A.
+            1 => v.sort_by_key(|game| std::cmp::Reverse(game.title.to_lowercase())),
+            // Installed first, then A–Z.
+            2 => v.sort_by(|a, b| {
+                b.installed
+                    .cmp(&a.installed)
+                    .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+            }),
+            // Title A–Z (default: 0 and any unrecognized value).
+            _ => v.sort_by_key(|a| a.title.to_lowercase()),
+        }
+        v
     }
-    v
-}
 
     /// Card sizes per viewport: (tile width, cover px, cover height). Regular
     /// Epic 190 / GOG 170; compact in narrow windows.
     fn card_sizes(&self) -> (i32, i32, i32) {
         if self.store == "gog" {
-            if self.compact.get() { (140, 100, 120) } else { (170, 140, 160) }
+            if self.compact.get() {
+                (140, 100, 120)
+            } else {
+                (170, 140, 160)
+            }
         } else if self.compact.get() {
             (150, 110, 130)
         } else {
@@ -2465,17 +2785,18 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
         }
         // Coalesce rapid crossings of the 900 px breakpoint before rebuilding covers.
         let view = self.clone();
-        let source = glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
-            view.compact_src.borrow_mut().take();
-            if view.store == "gog" {
-                if !view.all_games.borrow().is_empty() {
-                    view.render_filtered();
+        let source =
+            glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
+                view.compact_src.borrow_mut().take();
+                if view.store == "gog" {
+                    if !view.all_games.borrow().is_empty() {
+                        view.render_filtered();
+                    }
+                } else if !view.epic_games.borrow().is_empty() {
+                    let games = view.epic_games.borrow().clone();
+                    view.render_games(&games);
                 }
-            } else if !view.epic_games.borrow().is_empty() {
-                let games = view.epic_games.borrow().clone();
-                view.render_games(&games);
-            }
-        });
+            });
         *self.compact_src.borrow_mut() = Some(source);
     }
 
@@ -2491,7 +2812,8 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
             });
             return;
         }
-        self.lib_status.set_text(&format!("{} game(s)", games.len()));
+        self.lib_status
+            .set_text(&format!("{} game(s)", games.len()));
         *self.epic_games.borrow_mut() = games.to_vec();
         for g in games {
             let (tile_w, _img_px, cover_h) = self.card_sizes();
@@ -2540,7 +2862,12 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
                 scrolled.set_can_target(false);
                 scrolled.set_child(Some(&pic));
                 let bound = tile_w * 2 * Self::ui_scale(&pic);
-                crate::ui::minecraft_view::load_cover_async(&g.cover, &format!("store-{}-{}", self.store, g.app_id), &pic, bound);
+                crate::ui::minecraft_view::load_cover_async(
+                    &g.cover,
+                    &format!("store-{}-{}", self.store, g.app_id),
+                    &pic,
+                    bound,
+                );
                 coverbox.append(&scrolled);
                 inner.append(&coverbox);
             }
@@ -2582,7 +2909,11 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
             // without a full re-render.
             self.tiles.borrow_mut().insert(
                 g.app_id.clone(),
-                Rc::new(TileStatus { brow: brow.clone(), inst_lbl: inst_lbl.clone(), btn: btn.clone() }),
+                Rc::new(TileStatus {
+                    brow: brow.clone(),
+                    inst_lbl: inst_lbl.clone(),
+                    btn: btn.clone(),
+                }),
             );
             let vh = self.clone();
             let game = g.clone();
@@ -2620,7 +2951,9 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
-            x_btn.connect_clicked(move |_| { d.close(); });
+            x_btn.connect_clicked(move |_| {
+                d.close();
+            });
         }
         self.load_game_info(&body, game, &dlg);
         dlg.present(Some(&self.parent));
@@ -2646,9 +2979,20 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
                 vh.render_game_info(&b2, &doc, &game_c, &dd0);
                 // Partial degradation: an incomplete sheet gets a warning
                 // instead of being shown as if it were whole.
-                if doc.get("partial").and_then(|x| x.as_bool()).unwrap_or(false) {
+                if doc
+                    .get("partial")
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or(false)
+                {
                     let w = doc.get("warning").and_then(|x| x.as_str()).unwrap_or("");
-                    b2.append(&note(&format!("Incomplete info{}.", if w.is_empty() { String::new() } else { format!(": {}", w.chars().take(90).collect::<String>()) })));
+                    b2.append(&note(&format!(
+                        "Incomplete info{}.",
+                        if w.is_empty() {
+                            String::new()
+                        } else {
+                            format!(": {}", w.chars().take(90).collect::<String>())
+                        }
+                    )));
                 }
                 glib::ControlFlow::Break
             }
@@ -2664,114 +3008,130 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
         });
     }
 
-    fn render_game_info(&self, body: &gtk::Box, doc: &serde_json::Value, game_c: &StoreGame, dd0: &adw::Dialog) {
+    fn render_game_info(
+        &self,
+        body: &gtk::Box,
+        doc: &serde_json::Value,
+        game_c: &StoreGame,
+        dd0: &adw::Dialog,
+    ) {
         while let Some(c) = body.first_child() {
             body.remove(&c);
         }
         let info = doc.get("info").cloned().unwrap_or_default();
-        let get = |k: &str, fb: &str| info.get(k).and_then(|x| x.as_str()).unwrap_or(fb).to_string();
+        let get = |k: &str, fb: &str| {
+            info.get(k)
+                .and_then(|x| x.as_str())
+                .unwrap_or(fb)
+                .to_string()
+        };
         let title = get("title", &game_c.title);
         let cover = get("cover", &game_c.cover);
         let mut desc = get("description", &game_c.description);
-                if desc.trim() == title.trim() {
-                    desc.clear();
-                }
-                let ver = get("version", &game_c.version);
-                let last_upd = get("last_updated", "");
-                let top = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-                if !cover.is_empty() {
-                    let img = gtk::Image::new();
-                    img.set_pixel_size(160);
-                    img.set_valign(gtk::Align::Start);
-                    // -v2 key on GOG only: the cover became vertical v2 while
-                    // the old PNGs are the horizontal background, so Epic keeps
-                    // its own key. Orphans stay, no cleanup.
-                    let ckey = if self.store == "gog" {
-                        format!("store-{}-info-v2", game_c.app_id)
-                    } else {
-                        format!("store-{}-info", game_c.app_id)
-                    };
-                    crate::ui::minecraft_view::load_mod_icon(&cover, &ckey, &img, 160);
-                    top.append(&img);
-                }
-                let tcol = gtk::Box::new(gtk::Orientation::Vertical, 4);
-                tcol.set_hexpand(true);
-                tcol.set_valign(gtk::Align::Fill);
-                let tt = gtk::Label::new(Some(&title));
-                tt.set_halign(gtk::Align::Start);
-                tt.set_wrap(true);
-                tt.add_css_class("details-title");
-                tcol.append(&tt);
-                // Version line only when a real description is present; otherwise
-                // the cascaded fallback below already carries it.
-                if !ver.is_empty() && !desc.is_empty() {
-                    let vs = gtk::Label::new(Some(&ver));
-                    vs.set_halign(gtk::Align::Start);
-                    vs.set_opacity(0.6);
-                    vs.add_css_class("time-label");
-                    tcol.append(&vs);
-                }
-                top.append(&tcol);
-                body.append(&top);
-                // Cascade: real description -> catalog version/date -> neutral
-                // message. "Epic catalog" makes clear the date is Epic's own
-                // record, not the local install time.
-                let na_text = if !ver.is_empty() {
-                    if last_upd.is_empty() {
-                        format!("Latest version: {ver} (Epic catalog record)")
-                    } else {
-                        format!("Latest version: {ver} (last update known to Epic: {last_upd})")
-                    }
-                } else {
-                    "No description available".to_string()
-                };
-                let has_desc = !desc.is_empty();
-                let shown = if has_desc { desc } else { na_text };
-                // Description (or its fallback) lives in its own scrolling
-                // container so the full text is always reachable. A GtkLabel
-                // can't drive a vertical ScrolledWindow: its natural height is
-                // measured at its natural (unwrapped) width, so the window
-                // collapses to ~2 lines, clips the text and never shows a bar.
-                // A read-only TextView reports its true wrapped height, so the
-                // viewport measures min(full_height, max_content_height) and
-                // GTK shows the scrollbar from the natural height alone — no
-                // char/line heuristics, robust to font size and width.
-                let tv = gtk::TextView::new();
-                tv.set_wrap_mode(gtk::WrapMode::WordChar);
-                tv.set_editable(false);
-                tv.set_cursor_visible(false);
-                tv.set_focusable(false);
-                tv.set_opacity(if has_desc { 1.0 } else { 0.6 });
-                tv.add_css_class("time-label");
-                tv.buffer().set_text(&shown);
-                let scr = gtk::ScrolledWindow::new();
-                scr.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-                scr.set_min_content_height(120);
-                scr.set_max_content_height(300);
-                scr.set_propagate_natural_height(true);
-                scr.set_vexpand(true);
-                scr.set_child(Some(&tv));
-                tcol.append(&scr);
-                // Source attribution: a single "Source: X" link. Steam/Wikipedia
-                // get a clickable label (hand cursor, hover underline,
-                // opens the source page); Epic stays plain text.
-                let desc_src = info.get("description_source").and_then(|x| x.as_str()).unwrap_or("");
-                if has_desc && !desc_src.is_empty() && desc_src != "fallback" {
-                    let label = match desc_src {
-                        "steam" => "Source: Steam",
-                        "wikipedia" => "Source: Wikipedia",
-                        "gog" => "Source: GOG",
-                        _ => "Source: Epic Store",
-                    };
-                    let url = info.get("source_url").and_then(|x| x.as_str())
-                        .filter(|u| !u.is_empty())
-                        .map(str::to_string);
-                    let tip = match desc_src {
-                        "wikipedia" => Some("Wikipedia text — CC BY-SA"),
-                        _ => None,
-                    };
-                    tcol.append(&helpers::source_link(&self.state, label, url, tip));
-                }
+        if desc.trim() == title.trim() {
+            desc.clear();
+        }
+        let ver = get("version", &game_c.version);
+        let last_upd = get("last_updated", "");
+        let top = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        if !cover.is_empty() {
+            let img = gtk::Image::new();
+            img.set_pixel_size(160);
+            img.set_valign(gtk::Align::Start);
+            // -v2 key on GOG only: the cover became vertical v2 while
+            // the old PNGs are the horizontal background, so Epic keeps
+            // its own key. Orphans stay, no cleanup.
+            let ckey = if self.store == "gog" {
+                format!("store-{}-info-v2", game_c.app_id)
+            } else {
+                format!("store-{}-info", game_c.app_id)
+            };
+            crate::ui::minecraft_view::load_mod_icon(&cover, &ckey, &img, 160);
+            top.append(&img);
+        }
+        let tcol = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        tcol.set_hexpand(true);
+        tcol.set_valign(gtk::Align::Fill);
+        let tt = gtk::Label::new(Some(&title));
+        tt.set_halign(gtk::Align::Start);
+        tt.set_wrap(true);
+        tt.add_css_class("details-title");
+        tcol.append(&tt);
+        // Version line only when a real description is present; otherwise
+        // the cascaded fallback below already carries it.
+        if !ver.is_empty() && !desc.is_empty() {
+            let vs = gtk::Label::new(Some(&ver));
+            vs.set_halign(gtk::Align::Start);
+            vs.set_opacity(0.6);
+            vs.add_css_class("time-label");
+            tcol.append(&vs);
+        }
+        top.append(&tcol);
+        body.append(&top);
+        // Cascade: real description -> catalog version/date -> neutral
+        // message. "Epic catalog" makes clear the date is Epic's own
+        // record, not the local install time.
+        let na_text = if !ver.is_empty() {
+            if last_upd.is_empty() {
+                format!("Latest version: {ver} (Epic catalog record)")
+            } else {
+                format!("Latest version: {ver} (last update known to Epic: {last_upd})")
+            }
+        } else {
+            "No description available".to_string()
+        };
+        let has_desc = !desc.is_empty();
+        let shown = if has_desc { desc } else { na_text };
+        // Description (or its fallback) lives in its own scrolling
+        // container so the full text is always reachable. A GtkLabel
+        // can't drive a vertical ScrolledWindow: its natural height is
+        // measured at its natural (unwrapped) width, so the window
+        // collapses to ~2 lines, clips the text and never shows a bar.
+        // A read-only TextView reports its true wrapped height, so the
+        // viewport measures min(full_height, max_content_height) and
+        // GTK shows the scrollbar from the natural height alone — no
+        // char/line heuristics, robust to font size and width.
+        let tv = gtk::TextView::new();
+        tv.set_wrap_mode(gtk::WrapMode::WordChar);
+        tv.set_editable(false);
+        tv.set_cursor_visible(false);
+        tv.set_focusable(false);
+        tv.set_opacity(if has_desc { 1.0 } else { 0.6 });
+        tv.add_css_class("time-label");
+        tv.buffer().set_text(&shown);
+        let scr = gtk::ScrolledWindow::new();
+        scr.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scr.set_min_content_height(120);
+        scr.set_max_content_height(300);
+        scr.set_propagate_natural_height(true);
+        scr.set_vexpand(true);
+        scr.set_child(Some(&tv));
+        tcol.append(&scr);
+        // Source attribution: a single "Source: X" link. Steam/Wikipedia
+        // get a clickable label (hand cursor, hover underline,
+        // opens the source page); Epic stays plain text.
+        let desc_src = info
+            .get("description_source")
+            .and_then(|x| x.as_str())
+            .unwrap_or("");
+        if has_desc && !desc_src.is_empty() && desc_src != "fallback" {
+            let label = match desc_src {
+                "steam" => "Source: Steam",
+                "wikipedia" => "Source: Wikipedia",
+                "gog" => "Source: GOG",
+                _ => "Source: Epic Store",
+            };
+            let url = info
+                .get("source_url")
+                .and_then(|x| x.as_str())
+                .filter(|u| !u.is_empty())
+                .map(str::to_string);
+            let tip = match desc_src {
+                "wikipedia" => Some("Wikipedia text — CC BY-SA"),
+                _ => None,
+            };
+            tcol.append(&helpers::source_link(&self.state, label, url, tip));
+        }
         let brow = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         brow.set_homogeneous(true);
         if let Some(url) = info.get("store_url").and_then(|x| x.as_str()) {
@@ -2780,11 +3140,17 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
                 open.add_css_class("settings-btn");
                 let st = self.state.clone();
                 let u = url.to_string();
-                open.connect_clicked(move |_| { st.integration.open_url(&u); });
+                open.connect_clicked(move |_| {
+                    st.integration.open_url(&u);
+                });
                 brow.append(&open);
             }
         }
-        let ib = gtk::Button::with_label(if game_c.installed { "Import to library" } else { "Install" });
+        let ib = gtk::Button::with_label(if game_c.installed {
+            "Import to library"
+        } else {
+            "Install"
+        });
         ib.add_css_class("add-btn");
         let vv = self.clone();
         let gc = game_c.clone();
@@ -2807,13 +3173,29 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
         let content = std::fs::read_to_string(path).ok()?;
         let doc: serde_json::Value = serde_json::from_str(&content).ok()?;
         let e = doc.get(app_id)?;
-        let desc = e.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let desc = e
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         if desc.is_empty() {
             return None;
         }
-        let src = e.get("source").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let url = e.get("source_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let lang = e.get("lang").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let src = e
+            .get("source")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let url = e
+            .get("source_url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let lang = e
+            .get("lang")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         Some((desc, src, url, lang))
     }
 
@@ -2855,12 +3237,18 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
     fn start_install(&self, game: &StoreGame) {
         let (bar, status) = self.progress(&format!("Installing {}", game.title));
         std::fs::create_dir_all(Self::default_games_dir(&self.store)).ok();
-        let rx = StoreManager::spawn_install(self.store.clone(), game.app_id.clone(), Self::default_games_dir(&self.store));
+        let rx = StoreManager::spawn_install(
+            self.store.clone(),
+            game.app_id.clone(),
+            Self::default_games_dir(&self.store),
+        );
         let vh = self.clone();
         let game_c = game.clone();
         crate::backend::plugin_process::pump_to_idle(rx, move |ev| {
             match ev {
-                crate::backend::plugin_process::PluginEvent::Progress { stage, percent, .. } => {
+                crate::backend::plugin_process::PluginEvent::Progress {
+                    stage, percent, ..
+                } => {
                     match percent {
                         Some(pc) => {
                             bar.set_fraction((pc / 100.0).clamp(0.0, 1.0));
@@ -2874,9 +3262,24 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
                 crate::backend::plugin_process::PluginEvent::Done(val) => {
                     bar.set_fraction(1.0);
                     status.set_text("Adding to library…");
-                    let ipath = val.get("install_path").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    let exe = val.get("executable").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    vh.import_to_library(&game_c.title, &vh.store, &game_c.app_id, &ipath, &exe, false, false);
+                    let ipath = val
+                        .get("install_path")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let exe = val
+                        .get("executable")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    vh.import_to_library(
+                        &game_c.title,
+                        &vh.store,
+                        &game_c.app_id,
+                        &ipath,
+                        &exe,
+                        (false, false),
+                    );
                     // In-place status update instead of a full re-render:
                     // the tile flips to "installed"/Import without flicker.
                     vh.schedule_status_check();
@@ -2938,14 +3341,20 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
         let game_c = game.clone();
         crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
             Ok(Ok(doc)) => {
-                let cleaned = doc.get("cleaned").and_then(|x| x.as_bool()).unwrap_or(false);
+                let cleaned = doc
+                    .get("cleaned")
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or(false);
                 let reason = doc.get("reason").and_then(|x| x.as_str()).unwrap_or("");
                 if cleaned || reason == "no_record" {
                     // Record dropped (or already gone): a fresh install now
                     // respects the base path instead of the stale folder.
                     vh.start_install(&game_c);
                 } else {
-                    vh.state_toast("Stale record", "Unexpected state; the game was not installed.");
+                    vh.state_toast(
+                        "Stale record",
+                        "Unexpected state; the game was not installed.",
+                    );
                 }
                 glib::ControlFlow::Break
             }
@@ -2960,9 +3369,22 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
         });
     }
 
-    fn import_to_library(&self, title: &str, store: &str, app_id: &str, install_path: &str, exe: &str, eac: bool, battleye: bool) {
+    fn import_to_library(
+        &self,
+        title: &str,
+        store: &str,
+        app_id: &str,
+        install_path: &str,
+        exe: &str,
+        anti_cheat: (bool, bool),
+    ) {
+        let (eac, battleye) = anti_cheat;
         let name = if self.state.game_model.get_game(title).is_some() {
-            format!("{} ({})", title, if store == "epic" { "Epic" } else { "GOG" })
+            format!(
+                "{} ({})",
+                title,
+                if store == "epic" { "Epic" } else { "GOG" }
+            )
         } else {
             title.to_string()
         };
@@ -2974,11 +3396,20 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
         // verified installed game always arrives with its real path; a
         // stale registry entry must go through Install instead.
         if install_path.trim().is_empty() {
-            self.state_toast("No install path", &format!("{} has no verified install folder. Install it first, then import.", title));
+            self.state_toast(
+                "No install path",
+                &format!(
+                    "{} has no verified install folder. Install it first, then import.",
+                    title
+                ),
+            );
             return;
         }
         if !std::path::Path::new(install_path).exists() {
-            self.state_toast("Not found on disk", &format!("{} is gone — reinstall it first.", install_path));
+            self.state_toast(
+                "Not found on disk",
+                &format!("{} is gone — reinstall it first.", install_path),
+            );
             return;
         }
         let main_path = install_path.to_string();
@@ -2991,8 +3422,18 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
         } else {
             format!("{}/{}", main_path.trim_end_matches('/'), exe)
         };
-        let proton = self.state.config.launcher_value("defaultProton").unwrap_or_default();
-        let prefix = self.state.config.base_path_for("prefixes").join(&name).display().to_string();
+        let proton = self
+            .state
+            .config
+            .launcher_value("defaultProton")
+            .unwrap_or_default();
+        let prefix = self
+            .state
+            .config
+            .base_path_for("prefixes")
+            .join(&name)
+            .display()
+            .to_string();
         let entry = crate::backend::game_model::GameEntry {
             name: name.clone(),
             executable,
@@ -3006,7 +3447,11 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
             time_spent: 0,
             last_played: 0,
             favorite: false,
-            source: crate::backend::game_model::GameSource::from_str(if store == "epic" { "Epic" } else { "GOG" }),
+            source: crate::backend::game_model::GameSource::from_str(if store == "epic" {
+                "Epic"
+            } else {
+                "GOG"
+            }),
             executor: String::new(),
             emu_settings: std::collections::HashMap::new(),
             lutris_runner: String::new(),
@@ -3076,7 +3521,9 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
             executable: PathBuf::from(&game.executable),
         }];
         let games_dir = import_manager::games_root().join(format!(
-            "{}-Games", if self.store == "epic" { "Epic" } else { "GOG" }));
+            "{}-Games",
+            if self.store == "epic" { "Epic" } else { "GOG" }
+        ));
 
         // I run preflight off my GTK thread: it walks the tree to measure it.
         let (tx, rx) = std::sync::mpsc::channel::<Preflight>();
@@ -3119,8 +3566,7 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
                     &game_c.app_id,
                     &game_c.install_path,
                     &game_c.executable,
-                    false,
-                    false,
+                    (false, false),
                 );
                 vh.schedule_status_check();
                 vh.refresh_library(false);
@@ -3133,11 +3579,19 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
     /// I run permanent mode: I move then register with the new paths. My
     /// progress stays indeterminate because I copy with `cp -a`, which
     /// reports no bytes; I show the total at the end.
-    fn start_move(&self, game: &StoreGame, cands: Vec<MoveCandidate>, pf: Preflight, mode: ImportMode) {
+    fn start_move(
+        &self,
+        game: &StoreGame,
+        cands: Vec<MoveCandidate>,
+        pf: Preflight,
+        mode: ImportMode,
+    ) {
         let (bar, status) = self.progress(&format!("Moving {}", game.title));
         status.set_text("Preparing the move…");
         let games_dir = import_manager::games_root().join(format!(
-            "{}-Games", if self.store == "epic" { "Epic" } else { "GOG" }));
+            "{}-Games",
+            if self.store == "epic" { "Epic" } else { "GOG" }
+        ));
 
         let (tx, rx) = std::sync::mpsc::channel::<(ExecPlan, Vec<(String, MoveOutcome)>)>();
         std::thread::spawn(move || {
@@ -3202,7 +3656,11 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
         if moved > 0 {
             self.state_toast(
                 "Moved to Games",
-                &format!("{} ({})", new_install.display(), import_move::human_bytes(moved)),
+                &format!(
+                    "{} ({})",
+                    new_install.display(),
+                    import_move::human_bytes(moved)
+                ),
             );
         }
         self.import_to_library(
@@ -3211,8 +3669,7 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
             &game.app_id,
             new_install.to_string_lossy().as_ref(),
             &new_exe,
-            false,
-            false,
+            (false, false),
         );
         self.schedule_status_check();
         self.refresh_library(false);
@@ -3243,17 +3700,20 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
         dlg.set_child(Some(&content));
         {
             let d = dlg.clone();
-            x_btn.connect_clicked(move |_| { d.close(); });
+            x_btn.connect_clicked(move |_| {
+                d.close();
+            });
         }
         {
             let d = dlg.clone();
-            hide.connect_clicked(move |_| { d.close(); });
+            hide.connect_clicked(move |_| {
+                d.close();
+            });
         }
         dlg.present(Some(&self.parent));
         (bar, status)
     }
 }
-
 
 /// I run `webdriver_login` and return its code, or my failure reason.
 ///
@@ -3262,9 +3722,7 @@ fn filter_and_sort(games: &[StoreGame], query: &str, sort: u32) -> Vec<StoreGame
 ///
 /// The caller's watchdog handles a process that hangs without output;
 /// this blocking wait does not enforce that deadline itself.
-fn spawn_login_helper(
-    url: String,
-) -> std::sync::mpsc::Receiver<Result<String, (String, String)>> {
+fn spawn_login_helper(url: String) -> std::sync::mpsc::Receiver<Result<String, (String, String)>> {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let _ = tx.send(run_login_helper(&url));
@@ -3341,7 +3799,10 @@ pub(crate) fn login_helper_path() -> Result<PathBuf, String> {
         if p.is_file() {
             return Ok(p);
         }
-        return Err(format!("CORKYTUX_LOGIN_HELPER is not a file: {}", p.display()));
+        return Err(format!(
+            "CORKYTUX_LOGIN_HELPER is not a file: {}",
+            p.display()
+        ));
     }
     let name = "webdriver_login";
     let mut tried: Vec<String> = Vec::new();
@@ -3450,7 +3911,7 @@ impl MissingDependencies {
 /// I run `webdriver_login --probe` and return whether Chromium is cached.
 ///
 /// I return `None` when my helper is missing or answers gibberish: my caller
-    /// treats it as missing (my modal offers to install it) instead of assuming.
+/// treats it as missing (my modal offers to install it) instead of assuming.
 fn probe_chrome_cached() -> Option<bool> {
     let bin = login_helper_path().ok()?;
     let out = std::process::Command::new(&bin)
@@ -3468,7 +3929,7 @@ fn probe_chrome_cached() -> Option<bool> {
 }
 
 /// I gather what is missing: my plugin bins (`status` without `--quick`, a real
-    /// check skipping my 60 s cache) + my Chromium cache (`--probe`). I reimplement nothing.
+/// check skipping my 60 s cache) + my Chromium cache (`--probe`). I reimplement nothing.
 fn current_missing_dependencies() -> MissingDependencies {
     let (leg_ok, gog_ok) = match StoreManager::status(false) {
         Ok(st) => {
@@ -3497,9 +3958,9 @@ fn current_missing_dependencies() -> MissingDependencies {
 }
 
 /// I pre-check Stores entry lightly, no network: bin presence (my plugin
-    /// `bins` subcommand, filesystem only) + my Chromium cache (`--probe`,
-    /// filesystem only). This is all I run on every entry; my full networked
-    /// check follows only when this flags something.
+/// `bins` subcommand, filesystem only) + my Chromium cache (`--probe`,
+/// filesystem only). This is all I run on every entry; my full networked
+/// check follows only when this flags something.
 fn current_dependency_precheck() -> MissingDependencies {
     let (leg_ok, gog_ok) = match StoreManager::bins() {
         Ok(v) => {
@@ -3530,9 +3991,9 @@ fn current_dependency_precheck() -> MissingDependencies {
 /// I translate my helper failure reason into an actionable message.
 ///
 /// I give every reason my helper can return its own message, and I end all
-    /// of them by asking for a retry. I never suggest disabling anything:
-    /// my helper profile is ephemeral and loads neither the user extensions
-    /// nor browser protections.
+/// of them by asking for a retry. I never suggest disabling anything:
+/// my helper profile is ephemeral and loads neither the user extensions
+/// nor browser protections.
 fn login_failure_message(why: &str, detail: &str) -> String {
     let base = match why {
         "chrome" => "CorkyTux could not prepare the browser it uses to show the login \
@@ -3616,7 +4077,11 @@ fi
     /// GOG remains blocked only for login.
     #[test]
     fn missing_legendary_granularity() {
-        let f = MissingDependencies { legendary: true, gogdl: false, chromium: true };
+        let f = MissingDependencies {
+            legendary: true,
+            gogdl: false,
+            chromium: true,
+        };
         assert!(f.has_missing());
         assert!(f.tab_blocked("epic"));
         assert!(!f.tab_blocked("gog"));
@@ -3629,7 +4094,11 @@ fi
     /// I cover missing gogdl only: mirror of my Epic case.
     #[test]
     fn missing_gogdl_granularity() {
-        let f = MissingDependencies { legendary: false, gogdl: true, chromium: true };
+        let f = MissingDependencies {
+            legendary: false,
+            gogdl: true,
+            chromium: true,
+        };
         assert!(!f.tab_blocked("epic"));
         assert!(f.tab_blocked("gog"));
         assert_eq!(f.for_store("epic"), vec!["login browser"]);
@@ -3641,7 +4110,11 @@ fi
     /// biblioteca de lo ya logueado sigue visible.
     #[test]
     fn missing_chromium_granularity() {
-        let f = MissingDependencies { legendary: false, gogdl: false, chromium: true };
+        let f = MissingDependencies {
+            legendary: false,
+            gogdl: false,
+            chromium: true,
+        };
         assert!(f.has_missing());
         assert!(!f.tab_blocked("epic"));
         assert!(!f.tab_blocked("gog"));
@@ -3652,17 +4125,28 @@ fi
     /// I cover everything missing: I block both tabs, three rows in order.
     #[test]
     fn all_dependencies_missing_granularity() {
-        let f = MissingDependencies { legendary: true, gogdl: true, chromium: true };
+        let f = MissingDependencies {
+            legendary: true,
+            gogdl: true,
+            chromium: true,
+        };
         assert!(f.tab_blocked("epic"));
         assert!(f.tab_blocked("gog"));
-        assert_eq!(f.modal_rows(), vec![DepId::Legendary, DepId::Gogdl, DepId::Chromium]);
+        assert_eq!(
+            f.modal_rows(),
+            vec![DepId::Legendary, DepId::Gogdl, DepId::Chromium]
+        );
     }
 
     /// I cover ONLY gogdl missing (legendary and Chromium present): one row, GOG
     /// blocked, Epic intact with login.
     #[test]
     fn only_gogdl_missing_granularity() {
-        let f = MissingDependencies { legendary: false, gogdl: true, chromium: false };
+        let f = MissingDependencies {
+            legendary: false,
+            gogdl: true,
+            chromium: false,
+        };
         assert!(f.has_missing());
         assert!(!f.tab_blocked("epic"));
         assert!(f.tab_blocked("gog"));
@@ -3675,7 +4159,11 @@ fi
     /// I cover ONLY legendary missing: mirror of my GOG case.
     #[test]
     fn only_legendary_missing_granularity() {
-        let f = MissingDependencies { legendary: true, gogdl: false, chromium: false };
+        let f = MissingDependencies {
+            legendary: true,
+            gogdl: false,
+            chromium: false,
+        };
         assert!(f.tab_blocked("epic"));
         assert!(!f.tab_blocked("gog"));
         assert!(!f.login_blocked());
@@ -3688,11 +4176,18 @@ fi
     /// completing (nothing missing) silences it.
     #[test]
     fn skip_cycle_does_not_silence_modal() {
-        let pending = MissingDependencies { legendary: false, gogdl: true, chromium: true };
+        let pending = MissingDependencies {
+            legendary: false,
+            gogdl: true,
+            chromium: true,
+        };
         assert!(pending.has_missing(), "before skip: show modal");
         // I mutate nothing persistent on skip: same value, same modal.
         let after_skip = pending;
-        assert!(after_skip.has_missing(), "after skip: show modal again on reentry");
+        assert!(
+            after_skip.has_missing(),
+            "after skip: show modal again on reentry"
+        );
         let complete = MissingDependencies::default();
         assert!(!complete.has_missing(), "complete: never again");
         assert!(complete.modal_rows().is_empty());
@@ -3743,9 +4238,7 @@ fi
         std::fs::write(&helper, STUB_HELPER_PROBE).unwrap();
         std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-        let chrome = base.join(
-            ".local/share/corkytux/chrome-154.0.8037.57/chrome-linux64/chrome",
-        );
+        let chrome = base.join(".local/share/corkytux/chrome-154.0.8037.57/chrome-linux64/chrome");
         std::fs::create_dir_all(chrome.parent().expect("parent of chrome")).unwrap();
         std::fs::write(&chrome, b"x").unwrap();
 
@@ -3774,7 +4267,11 @@ fi
         );
         assert_eq!(
             after,
-            MissingDependencies { legendary: true, gogdl: true, chromium: true },
+            MissingDependencies {
+                legendary: true,
+                gogdl: true,
+                chromium: true
+            },
             "all three gaps detected"
         );
         assert_eq!(after.modal_rows().len(), 3);
@@ -3794,10 +4291,7 @@ fi
             super::StorePageHandle::meta_line("", &["Linux".to_string()]),
             "Linux"
         );
-        assert_eq!(
-            super::StorePageHandle::meta_line("Adv", &[]),
-            "Adv"
-        );
+        assert_eq!(super::StorePageHandle::meta_line("Adv", &[]), "Adv");
         assert_eq!(
             super::StorePageHandle::meta_line("  ", &[String::new()]),
             ""
@@ -3820,10 +4314,17 @@ fi
             cover: String::new(),
             description: String::new(),
         };
-        let games = vec![g("Zeta", "RPG", false), g("alpha", "Adv", true), g("Mid", "RPG", false)];
+        let games = vec![
+            g("Zeta", "RPG", false),
+            g("alpha", "Adv", true),
+            g("Mid", "RPG", false),
+        ];
         // I check empty + default: all A-Z case-insensitive.
         let v = super::StorePageHandle::filter_and_sort(&games, "", 0);
-        assert_eq!(v.iter().map(|x| x.title.as_str()).collect::<Vec<_>>(), vec!["alpha", "Mid", "Zeta"]);
+        assert_eq!(
+            v.iter().map(|x| x.title.as_str()).collect::<Vec<_>>(),
+            vec!["alpha", "Mid", "Zeta"]
+        );
         // I match my filter on title or category.
         let v = super::StorePageHandle::filter_and_sort(&games, "rpg", 0);
         assert_eq!(v.len(), 2);
@@ -3851,10 +4352,8 @@ fi
         let r = super::parse_rail_item(&minimal).expect("minimal item");
         assert_eq!(r.cover, "");
         assert!(!r.free);
-        assert!(super::parse_rail_item(
-            &serde_json::json!({"cover": "x"})).is_none());
-        assert!(super::parse_rail_item(
-            &serde_json::json!({})).is_none());
+        assert!(super::parse_rail_item(&serde_json::json!({"cover": "x"})).is_none());
+        assert!(super::parse_rail_item(&serde_json::json!({})).is_none());
     }
 }
 

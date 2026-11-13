@@ -130,9 +130,15 @@ pub struct AssetInfo {
 /// Strict `vX.Y.Z` tag, no prerelease, no build metadata, no `qt-*`.
 /// Rejects anything `semver` would otherwise accept loosely.
 pub fn parse_tag_version(tag: &str) -> Result<semver::Version, String> {
-    let rest = tag.strip_prefix('v').ok_or_else(|| format!("bad tag (need vX.Y.Z): {}", tag))?;
+    let rest = tag
+        .strip_prefix('v')
+        .ok_or_else(|| format!("bad tag (need vX.Y.Z): {}", tag))?;
     let parts: Vec<&str> = rest.split('.').collect();
-    if parts.len() != 3 || parts.iter().any(|p| p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit())) {
+    if parts.len() != 3
+        || parts
+            .iter()
+            .any(|p| p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()))
+    {
         return Err(format!("bad tag (need vX.Y.Z): {}", tag));
     }
     semver::Version::parse(rest).map_err(|e| format!("bad tag {}: {}", tag, e))
@@ -162,7 +168,10 @@ pub fn parse_latest_release(json: &str) -> Result<ReleaseInfo, String> {
     if v.get("draft").and_then(|d| d.as_bool()).unwrap_or(false) {
         return Err("release is a draft".into());
     }
-    if v.get("prerelease").and_then(|d| d.as_bool()).unwrap_or(false) {
+    if v.get("prerelease")
+        .and_then(|d| d.as_bool())
+        .unwrap_or(false)
+    {
         return Err("release is a prerelease".into());
     }
     let tag = v
@@ -171,9 +180,17 @@ pub fn parse_latest_release(json: &str) -> Result<ReleaseInfo, String> {
         .ok_or("release has no tag_name")?;
     let version = parse_tag_version(tag)?;
     let mut assets = Vec::new();
-    let list = v.get("assets").and_then(|a| a.as_array()).cloned().unwrap_or_default();
+    let list = v
+        .get("assets")
+        .and_then(|a| a.as_array())
+        .cloned()
+        .unwrap_or_default();
     for a in &list {
-        let name = a.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+        let name = a
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .to_string();
         if name.is_empty() {
             continue;
         }
@@ -198,15 +215,23 @@ pub fn parse_latest_release(json: &str) -> Result<ReleaseInfo, String> {
     Ok(ReleaseInfo {
         tag: tag.to_string(),
         version,
-        name: v.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string(),
-        notes: v.get("body").and_then(|b| b.as_str()).unwrap_or("").to_string(),
+        name: v
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .to_string(),
+        notes: v
+            .get("body")
+            .and_then(|b| b.as_str())
+            .unwrap_or("")
+            .to_string(),
         assets,
     })
 }
 
 /// The one asset this machine may install: exact name match, which
 /// also pins it to the validated tag version and current arch.
-pub fn select_asset<'a>(info: &'a ReleaseInfo) -> Result<&'a AssetInfo, String> {
+pub fn select_asset(info: &ReleaseInfo) -> Result<&AssetInfo, String> {
     let want = expected_asset_name(&info.version);
     let asset = info
         .assets
@@ -226,9 +251,7 @@ pub fn select_asset<'a>(info: &'a ReleaseInfo) -> Result<&'a AssetInfo, String> 
 /// its published size must be non-zero and at most `CHECKSUMS_MAX_BYTES`
 /// so the download, the space check and the on-disk read share one
 /// small ceiling; a lying size is refused before anything is fetched.
-pub fn select_checksums_asset<'a>(
-    info: &'a ReleaseInfo,
-) -> Result<Option<&'a AssetInfo>, String> {
+pub fn select_checksums_asset(info: &ReleaseInfo) -> Result<Option<&AssetInfo>, String> {
     let Some(asset) = info.assets.iter().find(|a| a.name == "checksums.txt") else {
         return Ok(None);
     };
@@ -288,7 +311,7 @@ fn redirect_rejection_reason(url: &str, allowed: &[&str]) -> Option<String> {
         return Some("URL credentials are not allowed".into());
     }
     match parsed.host_str() {
-        Some(h) if allowed.iter().any(|a| h == *a) => {}
+        Some(h) if allowed.contains(&h) => {}
         Some(h) => return Some(format!("host {} is not allowed by the allowlist", h)),
         None => return Some("URL has no host".into()),
     }
@@ -370,7 +393,9 @@ fn log_redirect_hop(
 fn initial_request_rejection_reason(url: &str, allowed: &[&str]) -> Option<String> {
     #[cfg(test)]
     if let Some(hook) = test_host_override() {
-        if url::Url::parse(url).ok().and_then(|parsed| parsed.host_str().map(str::to_owned))
+        if url::Url::parse(url)
+            .ok()
+            .and_then(|parsed| parsed.host_str().map(str::to_owned))
             == Some(hook)
         {
             return None;
@@ -521,7 +546,6 @@ pub fn write_cached_etag(path: &std::path::Path, etag: &str) {
         }
         let _ = std::fs::write(path, etag);
         let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-        return;
     }
     #[cfg(not(unix))]
     {
@@ -549,9 +573,7 @@ pub fn get_guarded(
     #[cfg(not(test))]
     let test_relative_loopback_redirect = false;
     loop {
-        let reason = if redirects_followed == 0 {
-            initial_request_rejection_reason(&current, allowed)
-        } else if test_relative_loopback_redirect {
+        let reason = if redirects_followed == 0 || test_relative_loopback_redirect {
             initial_request_rejection_reason(&current, allowed)
         } else {
             redirect_rejection_reason(&current, allowed)
@@ -615,11 +637,7 @@ pub fn get_guarded(
         }
         // Not Modified is a cache response, not a redirect requiring Location.
         if matches!(status, 301 | 302 | 303 | 307 | 308) {
-            let Some(loc) = resp
-                .headers()
-                .get("location")
-                .and_then(|h| h.to_str().ok())
-            else {
+            let Some(loc) = resp.headers().get("location").and_then(|h| h.to_str().ok()) else {
                 log_redirect_hop(
                     url,
                     redirects_followed as usize,
@@ -848,7 +866,8 @@ pub fn download_asset_limited(
     }
     let cap = download_cap(expected_size, hard_cap);
     if let Some(parent) = dest_part.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("cannot create download dir: {}", e))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create download dir: {}", e))?;
         if let Some(free) = free_bytes(parent) {
             if free < cap + 8 * 1024 * 1024 {
                 return Err("not enough disk space for the download".into());
@@ -913,7 +932,8 @@ pub fn download_asset_limited(
         last_progress = Instant::now();
         progress(done, total);
     }
-    out.flush().map_err(|e| format!("cannot write download: {}", e))?;
+    out.flush()
+        .map_err(|e| format!("cannot write download: {}", e))?;
     drop(out);
     Ok(done)
 }
@@ -923,12 +943,13 @@ pub fn download_asset_limited(
 /// it) without touching download/install callers.
 pub fn verify_artifact(path: &Path, expected_hex: &str) -> Result<(), String> {
     use sha2::Digest;
-    let mut file =
-        std::fs::File::open(path).map_err(|e| format!("cannot read artifact: {}", e))?;
+    let mut file = std::fs::File::open(path).map_err(|e| format!("cannot read artifact: {}", e))?;
     let mut hasher = sha2::Sha256::new();
     let mut buf = [0u8; 64 * 1024];
     loop {
-        let n: usize = file.read(&mut buf).map_err(|e| format!("cannot read artifact: {}", e))?;
+        let n: usize = file
+            .read(&mut buf)
+            .map_err(|e| format!("cannot read artifact: {}", e))?;
         if n == 0 {
             break;
         }
@@ -1064,8 +1085,7 @@ pub fn extract_tarball_limited(
             }
         }
     }
-    let file =
-        std::fs::File::open(archive).map_err(|e| format!("cannot read tarball: {}", e))?;
+    let file = std::fs::File::open(archive).map_err(|e| format!("cannot read tarball: {}", e))?;
     let gz = flate2::read::GzDecoder::new(file);
     let mut ar = tar::Archive::new(gz);
     let entries = ar.entries().map_err(|e| format!("bad tarball: {}", e))?;
@@ -1086,7 +1106,10 @@ pub fn extract_tarball_limited(
         if !kind.is_file() && !kind.is_dir() {
             return Err("tarball contains a special file: refused".into());
         }
-        let rel = entry.path().map_err(|e| format!("bad tarball path: {}", e))?.into_owned();
+        let rel = entry
+            .path()
+            .map_err(|e| format!("bad tarball path: {}", e))?
+            .into_owned();
         // Strip the single top-level dir (corkytux-X.Y.Z/).
         let mut comps = rel.components().peekable();
         match comps.next() {
@@ -1139,7 +1162,8 @@ pub fn extract_tarball_limited(
             if name != "assets" && !name.starts_with("assets/") {
                 return Err(format!("unexpected directory in tarball: {}", name));
             }
-            std::fs::create_dir_all(&target).map_err(|e| format!("cannot stage {}: {}", name, e))?;
+            std::fs::create_dir_all(&target)
+                .map_err(|e| format!("cannot stage {}: {}", name, e))?;
             continue;
         }
         // Regular file: allowlisted name, then a counted copy so a
@@ -1200,8 +1224,9 @@ pub fn extract_tarball_limited(
 #[cfg(unix)]
 fn set_exec(path: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
-    let mut perms =
-        std::fs::metadata(path).map_err(|e| format!("cannot stat staged file: {}", e))?.permissions();
+    let mut perms = std::fs::metadata(path)
+        .map_err(|e| format!("cannot stat staged file: {}", e))?
+        .permissions();
     perms.set_mode(0o755);
     std::fs::set_permissions(path, perms).map_err(|e| format!("cannot chmod staged file: {}", e))
 }
@@ -1215,8 +1240,9 @@ fn set_exec(_path: &Path) -> Result<(), String> {
 #[cfg(unix)]
 fn set_plain(path: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
-    let mut perms =
-        std::fs::metadata(path).map_err(|e| format!("cannot stat staged file: {}", e))?.permissions();
+    let mut perms = std::fs::metadata(path)
+        .map_err(|e| format!("cannot stat staged file: {}", e))?
+        .permissions();
     perms.set_mode(0o644);
     std::fs::set_permissions(path, perms).map_err(|e| format!("cannot chmod staged file: {}", e))
 }
@@ -1261,7 +1287,10 @@ pub fn health_check(bin: &Path, expected: &semver::Version) -> Result<(), String
     let mut child = child.ok_or(last_err)?;
     let deadline = Instant::now() + HEALTH_TIMEOUT;
     loop {
-        match child.try_wait().map_err(|e| format!("health check failed: {}", e))? {
+        match child
+            .try_wait()
+            .map_err(|e| format!("health check failed: {}", e))?
+        {
             Some(status) => {
                 let mut text = String::new();
                 if let Some(mut o) = child.stdout.take() {
@@ -1326,8 +1355,7 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<(), String> {
     // links). A symlink cycle in a user-provided tree would recurse
     // without bound; a `symlink_metadata` walk would close that.
     std::fs::create_dir_all(dst).map_err(|e| format!("backup failed: {}", e))?;
-    let entries =
-        std::fs::read_dir(src).map_err(|e| format!("backup failed: {}", e))?;
+    let entries = std::fs::read_dir(src).map_err(|e| format!("backup failed: {}", e))?;
     for e in entries {
         let e = e.map_err(|e| format!("backup failed: {}", e))?;
         let (s, d) = (e.path(), dst.join(e.file_name()));
@@ -1400,9 +1428,7 @@ fn prune_install_backups(dirs: &InstallDirs) {
     let assets = dirs.install_dir.join("assets");
     let icon = dirs.icon_dir.join("corkytux.png");
     for p in [&bin, &helper, &assets, &icon, &dirs.desktop_file] {
-        if let (Some(parent), Some(name)) =
-            (p.parent(), p.file_name().and_then(|n| n.to_str()))
-        {
+        if let (Some(parent), Some(name)) = (p.parent(), p.file_name().and_then(|n| n.to_str())) {
             prune_backups(parent, &format!("{}.bak-", name), BACKUP_KEEP_NEWEST);
         }
     }
@@ -1499,7 +1525,9 @@ pub fn installed_here(exe: &Path, install_dir: &Path) -> bool {
     let exe_path = Path::new(s);
     let canon_exe = std::fs::canonicalize(exe_path).unwrap_or_else(|_| {
         match (
-            exe_path.parent().and_then(|p| std::fs::canonicalize(p).ok()),
+            exe_path
+                .parent()
+                .and_then(|p| std::fs::canonicalize(p).ok()),
             exe_path.file_name(),
         ) {
             (Some(dir), Some(file)) => dir.join(file),
@@ -1845,27 +1873,28 @@ fn desktop_quote_exec(path: &Path) -> String {
     let s = path.display().to_string();
     // Field codes first: a literal % never reaches the file single.
     let s = s.replace('%', "%%");
-    if !s.bytes().any(|b| matches!(
-        b,
-        b' '
-            | b'\t'
-            | b'"'
-            | b'\''
-            | b'\\'
-            | b'>'
-            | b'<'
-            | b'~'
-            | b'|'
-            | b'&'
-            | b';'
-            | b'$'
-            | b'*'
-            | b'?'
-            | b'#'
-            | b'('
-            | b')'
-            | b'`'
-    )) {
+    if !s.bytes().any(|b| {
+        matches!(
+            b,
+            b' ' | b'\t'
+                | b'"'
+                | b'\''
+                | b'\\'
+                | b'>'
+                | b'<'
+                | b'~'
+                | b'|'
+                | b'&'
+                | b';'
+                | b'$'
+                | b'*'
+                | b'?'
+                | b'#'
+                | b'('
+                | b')'
+                | b'`'
+        )
+    }) {
         return s;
     }
     // Layer 1: quoting escapes.
@@ -1890,7 +1919,9 @@ fn ensure_desktop_and_link(dirs: &InstallDirs) -> Vec<String> {
     // landed; cosmetics must not roll them back.
     let mut warnings: Vec<String> = Vec::new();
     let bin = dirs.install_dir.join("corkytux");
-    let link_ok = std::fs::read_link(&dirs.symlink).map(|t| t == bin).unwrap_or(false);
+    let link_ok = std::fs::read_link(&dirs.symlink)
+        .map(|t| t == bin)
+        .unwrap_or(false);
     if !link_ok {
         // Atomic swap through a tmp link, and only when the target is
         // missing or already a symlink: a real file or directory is
@@ -2207,7 +2238,9 @@ pub fn sweep_stale_downloads(dir: &Path, max_age_secs: u64) -> usize {
             .modified()
             .map(|t| {
                 now.saturating_sub(
-                    t.duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(now),
+                    t.duration_since(UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(now),
                 )
             })
             .unwrap_or(u64::MAX);
@@ -2229,11 +2262,7 @@ pub fn sweep_stale_downloads(dir: &Path, max_age_secs: u64) -> usize {
 }
 
 /// Whether the automatic startup check is due (manual checks bypass).
-pub fn should_auto_check(
-    enabled: bool,
-    last_check_unix: Option<u64>,
-    now_unix: u64,
-) -> bool {
+pub fn should_auto_check(enabled: bool, last_check_unix: Option<u64>, now_unix: u64) -> bool {
     if !enabled {
         return false;
     }
@@ -2244,7 +2273,10 @@ pub fn should_auto_check(
 }
 
 pub fn now_unix() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Cached `releases/latest` body, so a 304 can still be decided.
@@ -2395,7 +2427,10 @@ mod tests {
         assert_eq!(info.tag, "v3.10.0");
         assert_eq!(info.notes, "## Fixed\n\n- something\n");
         let asset = select_asset(&info).unwrap();
-        assert_eq!(asset.name, format!("corkytux-3.10.0-linux-{}.tar.gz", tarball_arch()));
+        assert_eq!(
+            asset.name,
+            format!("corkytux-3.10.0-linux-{}.tar.gz", tarball_arch())
+        );
         assert_eq!(
             asset.digest_sha256.as_deref(),
             Some("44e1e1f83346a61c953c464b7fdbc6af17aa621052d71f5dcddbedb6bad7f38e")
@@ -2429,9 +2464,18 @@ mod tests {
     #[test]
     fn update_decision_covers_equal_and_downgrade() {
         let cur = semver::Version::parse("3.1.2").unwrap();
-        assert!(!needs_update(&cur, &semver::Version::parse("3.1.2").unwrap()));
-        assert!(!needs_update(&cur, &semver::Version::parse("3.0.0").unwrap()));
-        assert!(needs_update(&cur, &semver::Version::parse("3.10.0").unwrap()));
+        assert!(!needs_update(
+            &cur,
+            &semver::Version::parse("3.1.2").unwrap()
+        ));
+        assert!(!needs_update(
+            &cur,
+            &semver::Version::parse("3.0.0").unwrap()
+        ));
+        assert!(needs_update(
+            &cur,
+            &semver::Version::parse("3.10.0").unwrap()
+        ));
     }
 
     #[test]
@@ -2439,7 +2483,10 @@ mod tests {
         let cur = semver::Version::parse("3.1.2").unwrap();
         let mut info = parse_latest_release(SAMPLE_JSON).unwrap();
         assert_eq!(decide_update(&cur, &info, ""), UpdateDecision::Available);
-        assert_eq!(decide_update(&cur, &info, "v3.10.0"), UpdateDecision::UpToDate);
+        assert_eq!(
+            decide_update(&cur, &info, "v3.10.0"),
+            UpdateDecision::UpToDate
+        );
         info.version = semver::Version::parse("3.1.2").unwrap();
         assert_eq!(decide_update(&cur, &info, ""), UpdateDecision::UpToDate);
         info.version = semver::Version::parse("3.0.0").unwrap();
@@ -2510,7 +2557,11 @@ mod tests {
     #[test]
     fn origin_pinning_rejects_foreign_repos() {
         let good = "https://github.com/Matts-lab69/CorkyTux-Launcher/releases/download/v3.10.0/corkytux-3.10.0-linux-x86_64.tar.gz";
-        assert!(asset_origin_ok(good, "v3.10.0", "corkytux-3.10.0-linux-x86_64.tar.gz"));
+        assert!(asset_origin_ok(
+            good,
+            "v3.10.0",
+            "corkytux-3.10.0-linux-x86_64.tar.gz"
+        ));
         assert!(!asset_origin_ok(
             "https://github.com/Other/Repo/releases/download/v3.10.0/corkytux-3.10.0-linux-x86_64.tar.gz",
             "v3.10.0",
@@ -2584,9 +2635,16 @@ mod tests {
             44e1e1f83346a61c953c464b7fdbc6af17aa621052d71f5dcddbedb6bad7f38e  \
             corkytux-3.10.0-linux-x86_64.tar.gz\n";
         let got = parse_checksums_txt(body, "corkytux-3.10.0-linux-x86_64.tar.gz").unwrap();
-        assert_eq!(got, "44e1e1f83346a61c953c464b7fdbc6af17aa621052d71f5dcddbedb6bad7f38e");
+        assert_eq!(
+            got,
+            "44e1e1f83346a61c953c464b7fdbc6af17aa621052d71f5dcddbedb6bad7f38e"
+        );
         assert!(parse_checksums_txt(body, "corkytux-9.9.9-linux-x86_64.tar.gz").is_err());
-        assert!(parse_checksums_txt("not a checksum line\n", "corkytux-3.10.0-linux-x86_64.tar.gz").is_err());
+        assert!(parse_checksums_txt(
+            "not a checksum line\n",
+            "corkytux-3.10.0-linux-x86_64.tar.gz"
+        )
+        .is_err());
     }
 
     #[test]
@@ -2594,19 +2652,36 @@ mod tests {
         let asset = AssetInfo {
             name: "corkytux-3.10.0-linux-x86_64.tar.gz".into(),
             browser_download_url: "https://github.com/x".into(),
-            digest_sha256: Some("44e1e1f83346a61c953c464b7fdbc6af17aa621052d71f5dcddbedb6bad7f38e".into()),
+            digest_sha256: Some(
+                "44e1e1f83346a61c953c464b7fdbc6af17aa621052d71f5dcddbedb6bad7f38e".into(),
+            ),
             size: 1,
         };
         assert_eq!(
             require_digest(&asset).unwrap(),
             "44e1e1f83346a61c953c464b7fdbc6af17aa621052d71f5dcddbedb6bad7f38e"
         );
-        let bare = AssetInfo { digest_sha256: None, ..asset.clone() };
+        let bare = AssetInfo {
+            digest_sha256: None,
+            ..asset.clone()
+        };
         assert!(require_digest(&bare).is_err());
         let body = "44e1e1f83346a61c953c464b7fdbc6af17aa621052d71f5dcddbedb6bad7f38e  corkytux-3.10.0-linux-x86_64.tar.gz\n";
-        assert!(checksums_agree(body, "corkytux-3.10.0-linux-x86_64.tar.gz", "44e1e1f83346a61c953c464b7fdbc6af17aa621052d71f5dcddbedb6bad7f38e").is_ok());
-        assert!(checksums_agree(body, "corkytux-3.10.0-linux-x86_64.tar.gz", &"0".repeat(64)).is_err());
-        assert!(checksums_agree("nope\n", "corkytux-3.10.0-linux-x86_64.tar.gz", "44e1e1f83346a61c953c464b7fdbc6af17aa621052d71f5dcddbedb6bad7f38e").is_err());
+        assert!(checksums_agree(
+            body,
+            "corkytux-3.10.0-linux-x86_64.tar.gz",
+            "44e1e1f83346a61c953c464b7fdbc6af17aa621052d71f5dcddbedb6bad7f38e"
+        )
+        .is_ok());
+        assert!(
+            checksums_agree(body, "corkytux-3.10.0-linux-x86_64.tar.gz", &"0".repeat(64)).is_err()
+        );
+        assert!(checksums_agree(
+            "nope\n",
+            "corkytux-3.10.0-linux-x86_64.tar.gz",
+            "44e1e1f83346a61c953c464b7fdbc6af17aa621052d71f5dcddbedb6bad7f38e"
+        )
+        .is_err());
     }
 
     #[test]
@@ -2627,7 +2702,10 @@ mod tests {
     fn install_layout_and_gate() {
         let home = PathBuf::from("/home/u");
         let dirs = InstallDirs::fixed(&home);
-        assert_eq!(dirs.install_dir, PathBuf::from("/home/u/.local/share/corkytux"));
+        assert_eq!(
+            dirs.install_dir,
+            PathBuf::from("/home/u/.local/share/corkytux")
+        );
         assert_eq!(dirs.symlink, PathBuf::from("/home/u/.local/bin/corkytux"));
         assert!(installed_here(
             &PathBuf::from("/home/u/.local/share/corkytux/corkytux"),
@@ -2641,7 +2719,10 @@ mod tests {
             &PathBuf::from("/home/u/src/target/release/corkytux"),
             &dirs.install_dir
         ));
-        assert!(!installed_here(&PathBuf::from("/tmp/fake/corkytux"), &dirs.install_dir));
+        assert!(!installed_here(
+            &PathBuf::from("/tmp/fake/corkytux"),
+            &dirs.install_dir
+        ));
     }
 
     #[test]
@@ -2661,9 +2742,15 @@ mod tests {
         let missing = via_link.join("corkytux-missing");
         assert!(!missing.exists());
         let dirs = InstallDirs::fixed(&base.join("link-home"));
-        assert!(installed_here(&via_link.join("corkytux"), &dirs.install_dir));
+        assert!(installed_here(
+            &via_link.join("corkytux"),
+            &dirs.install_dir
+        ));
         assert!(installed_here(&missing, &dirs.install_dir));
-        assert!(!installed_here(&base.join("link-home/other/corkytux"), &dirs.install_dir));
+        assert!(!installed_here(
+            &base.join("link-home/other/corkytux"),
+            &dirs.install_dir
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -2812,7 +2899,11 @@ mod tests {
         for (i, e) in evil.iter().enumerate() {
             let tar_path = raw_tar_gz(&dir, &format!("evil{}.tar.gz", i), &[*e]);
             let staging = dir.join(format!("stage{}", i));
-            assert!(extract_tarball(&tar_path, &staging).is_err(), "case {} accepted", e.0);
+            assert!(
+                extract_tarball(&tar_path, &staging).is_err(),
+                "case {} accepted",
+                e.0
+            );
             assert!(!staging.join("escape").exists());
         }
         // A clean tarball with just the binary is accepted.
@@ -3030,7 +3121,11 @@ mod tests {
         // 4 MiB of zeros compresses to ~4 KiB; limits are 1 MiB/file.
         let zeros = vec![0u8; 4 * 1024 * 1024];
         let tar_path = raw_tar_gz(&dir, "bomb.tar.gz", &[("pkg/corkytux", None, &zeros)]);
-        let tiny = ExtractLimits { max_total_bytes: 1024 * 1024, max_file_bytes: 1024 * 1024, max_entries: 100 };
+        let tiny = ExtractLimits {
+            max_total_bytes: 1024 * 1024,
+            max_file_bytes: 1024 * 1024,
+            max_entries: 100,
+        };
         assert!(extract_tarball_limited(&tar_path, &dir.join("stage"), &tiny).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3086,7 +3181,10 @@ mod tests {
         };
         let ver = semver::Version::parse("9.9.9").unwrap();
         assert!(install_if_healthy(&staged, &dirs, &ver).is_err());
-        assert_eq!(std::fs::read(install.join("corkytux")).unwrap(), b"original-binary");
+        assert_eq!(
+            std::fs::read(install.join("corkytux")).unwrap(),
+            b"original-binary"
+        );
         assert!(!install.join("corkytux.new").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3104,11 +3202,16 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perm = std::fs::metadata(staging.join("corkytux")).unwrap().permissions();
+            let mut perm = std::fs::metadata(staging.join("corkytux"))
+                .unwrap()
+                .permissions();
             perm.set_mode(0o755);
             std::fs::set_permissions(staging.join("corkytux"), perm).unwrap();
         }
-        let staged = Staged { binary: staging.join("corkytux"), ..Default::default() };
+        let staged = Staged {
+            binary: staging.join("corkytux"),
+            ..Default::default()
+        };
         let dirs = InstallDirs {
             install_dir: install.clone(),
             icon_dir: dir.join("icons"),
@@ -3118,7 +3221,10 @@ mod tests {
         let ver = semver::Version::parse("9.9.9").unwrap();
         let err = install_if_healthy(&staged, &dirs, &ver).expect_err("wrong version must fail");
         assert!(err.contains("wrong version"), "got: {}", err);
-        assert_eq!(std::fs::read(install.join("corkytux")).unwrap(), b"original-binary");
+        assert_eq!(
+            std::fs::read(install.join("corkytux")).unwrap(),
+            b"original-binary"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -3163,13 +3269,22 @@ mod tests {
         let ver = semver::Version::parse("9.9.9").unwrap();
         let err = install_if_healthy(&staged, &dirs, &ver).expect_err("helper install must fail");
         assert!(err.contains("Previous version restored"), "got: {}", err);
-        assert_eq!(std::fs::read(install.join("corkytux")).expect("rb-scaffold"), b"orig-bin");
+        assert_eq!(
+            std::fs::read(install.join("corkytux")).expect("rb-scaffold"),
+            b"orig-bin"
+        );
         #[cfg(unix)]
         assert_exec(&install.join("corkytux"));
         #[cfg(unix)]
         assert_exec(&install.join("corkytux"));
-        assert_eq!(std::fs::read(install.join("webdriver_login")).expect("rb-scaffold"), b"orig-helper");
-        assert_eq!(std::fs::read(assets.join("a.txt")).expect("rb-scaffold"), b"orig-asset");
+        assert_eq!(
+            std::fs::read(install.join("webdriver_login")).expect("rb-scaffold"),
+            b"orig-helper"
+        );
+        assert_eq!(
+            std::fs::read(assets.join("a.txt")).expect("rb-scaffold"),
+            b"orig-asset"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -3209,7 +3324,10 @@ mod tests {
         let err = install_if_healthy(&staged, &dirs, &ver).expect_err("must fail");
         assert!(err.contains("install failed"), "got: {}", err);
         assert!(err.contains("Previous version restored"), "got: {}", err);
-        assert_eq!(std::fs::read(install.join("corkytux")).expect("rb-scaffold"), b"orig-bin");
+        assert_eq!(
+            std::fs::read(install.join("corkytux")).expect("rb-scaffold"),
+            b"orig-bin"
+        );
         assert!(install.join("webdriver_login").is_dir());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3251,10 +3369,16 @@ mod tests {
         let ver = semver::Version::parse("9.9.9").unwrap();
         let err = install_if_healthy(&staged, &dirs, &ver).expect_err("assets install must fail");
         assert!(err.contains("Previous version restored"), "got: {}", err);
-        assert_eq!(std::fs::read(install.join("corkytux")).expect("rb-scaffold"), b"orig-bin");
+        assert_eq!(
+            std::fs::read(install.join("corkytux")).expect("rb-scaffold"),
+            b"orig-bin"
+        );
         #[cfg(unix)]
         assert_exec(&install.join("corkytux"));
-        assert_eq!(std::fs::read(install.join("webdriver_login")).expect("rb-scaffold"), b"orig-helper");
+        assert_eq!(
+            std::fs::read(install.join("webdriver_login")).expect("rb-scaffold"),
+            b"orig-helper"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -3295,7 +3419,10 @@ mod tests {
         let ver = semver::Version::parse("9.9.9").unwrap();
         let err = install_if_healthy(&staged, &dirs, &ver).expect_err("assets install must fail");
         assert!(err.contains("Previous version restored"), "got: {}", err);
-        assert_eq!(std::fs::read(install.join("corkytux")).expect("rb-scaffold"), b"orig-bin");
+        assert_eq!(
+            std::fs::read(install.join("corkytux")).expect("rb-scaffold"),
+            b"orig-bin"
+        );
         #[cfg(unix)]
         assert_exec(&install.join("corkytux"));
         assert!(
@@ -3314,7 +3441,10 @@ mod tests {
         let staging = dir.join("staging");
         std::fs::create_dir_all(&staging).expect("rb-scaffold");
         let bin = healthy_fake_binary(&staging, "corkytux");
-        let staged = Staged { binary: bin, ..Default::default() };
+        let staged = Staged {
+            binary: bin,
+            ..Default::default()
+        };
         let dirs = InstallDirs {
             install_dir: install.clone(),
             icon_dir: dir.join("icons"),
@@ -3338,7 +3468,10 @@ mod tests {
         let staging = dir.join("staging");
         std::fs::create_dir_all(&staging).unwrap();
         let bin = healthy_fake_binary(&staging, "corkytux");
-        let staged = Staged { binary: bin, ..Default::default() };
+        let staged = Staged {
+            binary: bin,
+            ..Default::default()
+        };
         // Case 1: existing symlink elsewhere is swapped atomically.
         let link = dir.join("link");
         #[cfg(unix)]
@@ -3363,8 +3496,13 @@ mod tests {
             desktop_file: dir.join("app2.desktop"),
             symlink: plain.clone(),
         };
-        let log = install_if_healthy(&staged, &dirs2, &ver).expect("real file must not fail install");
-        assert!(log.iter().any(|l| l.contains("Symlink skipped")), "log: {:?}", log);
+        let log =
+            install_if_healthy(&staged, &dirs2, &ver).expect("real file must not fail install");
+        assert!(
+            log.iter().any(|l| l.contains("Symlink skipped")),
+            "log: {:?}",
+            log
+        );
         assert_eq!(std::fs::read(&plain).unwrap(), b"do not touch");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3382,12 +3520,18 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink(install.join("corkytux"), &link).unwrap();
         let desk = dir.join("app.desktop");
-        let desk_content = format!("[Desktop Entry]\nExec={}\n", install.join("corkytux").display());
+        let desk_content = format!(
+            "[Desktop Entry]\nExec={}\n",
+            install.join("corkytux").display()
+        );
         std::fs::write(&desk, &desk_content).unwrap();
         let staging = dir.join("staging");
         std::fs::create_dir_all(&staging).unwrap();
         let bin = healthy_fake_binary(&staging, "corkytux");
-        let staged = Staged { binary: bin, ..Default::default() };
+        let staged = Staged {
+            binary: bin,
+            ..Default::default()
+        };
         let dirs = InstallDirs {
             install_dir: install.clone(),
             icon_dir: dir.join("icons"),
@@ -3460,12 +3604,12 @@ mod tests {
             let mut requests = Vec::new();
             for response in responses {
                 if let Ok((mut s, _)) = ln.accept() {
-                use std::io::{Read, Write};
-                let mut buf = [0u8; 4096];
+                    use std::io::{Read, Write};
+                    let mut buf = [0u8; 4096];
                     let len = s.read(&mut buf).unwrap_or(0);
                     requests.push(String::from_utf8_lossy(&buf[..len]).to_string());
-                let _ = s.write_all(&response);
-                let _ = s.flush();
+                    let _ = s.write_all(&response);
+                    let _ = s.flush();
                 } else {
                     break;
                 }
@@ -3530,21 +3674,35 @@ mod tests {
         assert_eq!(response.status().as_u16(), 200);
         let requests = requests.recv().unwrap();
         assert_eq!(requests.len(), 2);
-        assert!(requests.iter().all(|request| !request.to_ascii_lowercase().contains("authorization:")));
-        assert!(host_allowed_in("https://github.com/repo/releases/download/v1/a.tar.gz", ASSET_HOSTS));
-        assert!(host_allowed_in("https://release-assets.githubusercontent.com/file", ASSET_HOSTS));
+        assert!(requests
+            .iter()
+            .all(|request| !request.to_ascii_lowercase().contains("authorization:")));
+        assert!(host_allowed_in(
+            "https://github.com/repo/releases/download/v1/a.tar.gz",
+            ASSET_HOSTS
+        ));
+        assert!(host_allowed_in(
+            "https://release-assets.githubusercontent.com/file",
+            ASSET_HOSTS
+        ));
     }
 
     #[test]
     fn local_301_to_explicit_github_asset_host_is_allowed_without_following() {
         let location = "https://release-assets.githubusercontent.com/download/file";
-        let (url, requests) =
-            serve_replies(vec![redirect_response_status(301, location)]);
+        let (url, requests) = serve_replies(vec![redirect_response_status(301, location)]);
         let response = http_client().unwrap().get(&url).send().unwrap();
         assert_eq!(response.status().as_u16(), 301);
         let target = url::Url::parse(&url)
             .unwrap()
-            .join(response.headers().get("location").unwrap().to_str().unwrap())
+            .join(
+                response
+                    .headers()
+                    .get("location")
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+            )
             .unwrap()
             .to_string();
         assert!(redirect_rejection_reason(&target, ASSET_HOSTS).is_none());
@@ -3584,15 +3742,13 @@ mod tests {
             redirect_response_status(301, "/"),
         ]);
         let client = http_client().unwrap();
-        let loop_err = get_guarded(&client, &loop_url, None, ASSET_HOSTS, MAX_REDIRECTS)
-            .unwrap_err();
+        let loop_err =
+            get_guarded(&client, &loop_url, None, ASSET_HOSTS, MAX_REDIRECTS).unwrap_err();
         assert!(loop_err.contains("redirect limit of 5 hops exceeded"));
         assert_eq!(loop_requests.recv().unwrap().len(), 6);
 
-        let (chain_url, chain_requests) = serve_replies(vec![
-            redirect_response("/one"),
-            redirect_response("/two"),
-        ]);
+        let (chain_url, chain_requests) =
+            serve_replies(vec![redirect_response("/one"), redirect_response("/two")]);
         let chain_err = get_guarded(&client, &chain_url, None, ASSET_HOSTS, 1).unwrap_err();
         assert!(chain_err.contains("redirect limit of 1 hops exceeded"));
         assert!(chain_err.contains("HTTP 302"));
@@ -3718,7 +3874,10 @@ mod tests {
         let staging = dir.join("staging");
         std::fs::create_dir_all(&staging).unwrap();
         let bin = healthy_fake_binary(&staging, "corkytux");
-        let staged = Staged { binary: bin, ..Default::default() };
+        let staged = Staged {
+            binary: bin,
+            ..Default::default()
+        };
         let deskdir = dir.join("app.desktop");
         std::fs::create_dir_all(&deskdir).unwrap();
         let dirs = InstallDirs {
@@ -3729,10 +3888,16 @@ mod tests {
         };
         let ver = semver::Version::parse("9.9.9").unwrap();
         let log = install_if_healthy(&staged, &dirs, &ver).expect("desktop failure is not fatal");
-        assert!(log.iter().any(|l| l.contains("Desktop entry skipped")), "log: {:?}", log);
+        assert!(
+            log.iter().any(|l| l.contains("Desktop entry skipped")),
+            "log: {:?}",
+            log
+        );
         let content = std::fs::read(install.join("corkytux")).unwrap();
         assert!(
-            content.windows(b"corkytux 9.9.9".len()).any(|w| w == b"corkytux 9.9.9"),
+            content
+                .windows(b"corkytux 9.9.9".len())
+                .any(|w| w == b"corkytux 9.9.9"),
             "new binary in place"
         );
         #[cfg(unix)]
@@ -3780,7 +3945,10 @@ mod tests {
         let err = install_if_healthy(&staged, &dirs, &ver).expect_err("newline path must fail");
         assert!(err.contains("newline"), "got: {}", err);
         // Pre-flight refusal: original intact, no backups taken.
-        assert_eq!(std::fs::read(install.join("corkytux")).unwrap(), b"orig-bin");
+        assert_eq!(
+            std::fs::read(install.join("corkytux")).unwrap(),
+            b"orig-bin"
+        );
         assert!(!dir.join("app.desktop").exists());
         let leftovers: Vec<_> = std::fs::read_dir(&install)
             .unwrap()
@@ -3799,12 +3967,30 @@ mod tests {
         // truncated path matches; quoted, the full value matches.
         let bin_nl = PathBuf::from("/h/a\nb");
         assert!(!desktop_exec_matches("Exec=/h/a\\nb\n", &bin_nl));
-        assert!(desktop_exec_matches("Exec=/h/a\\nb\n", &PathBuf::from("/h/a")));
-        assert!(!desktop_exec_matches("Exec=/h/a\\tb\n", &PathBuf::from("/h/a\tb")));
-        assert!(!desktop_exec_matches("Exec=/h/a\\rb\n", &PathBuf::from("/h/a\rb")));
-        assert!(!desktop_exec_matches("Exec=/h/a\\sb\n", &PathBuf::from("/h/a b")));
-        assert!(!desktop_exec_matches("Exec=/h/a\\qb\n", &PathBuf::from("/h/aqb")));
-        assert!(!desktop_exec_matches("Exec=/h/ab\\\n", &PathBuf::from("/h/ab\\")));
+        assert!(desktop_exec_matches(
+            "Exec=/h/a\\nb\n",
+            &PathBuf::from("/h/a")
+        ));
+        assert!(!desktop_exec_matches(
+            "Exec=/h/a\\tb\n",
+            &PathBuf::from("/h/a\tb")
+        ));
+        assert!(!desktop_exec_matches(
+            "Exec=/h/a\\rb\n",
+            &PathBuf::from("/h/a\rb")
+        ));
+        assert!(!desktop_exec_matches(
+            "Exec=/h/a\\sb\n",
+            &PathBuf::from("/h/a b")
+        ));
+        assert!(!desktop_exec_matches(
+            "Exec=/h/a\\qb\n",
+            &PathBuf::from("/h/aqb")
+        ));
+        assert!(!desktop_exec_matches(
+            "Exec=/h/ab\\\n",
+            &PathBuf::from("/h/ab\\")
+        ));
         // Quoted layer-2 still applies inside quotes.
         assert!(desktop_exec_matches("Exec=\"/h/a\\nb\"\n", &bin_nl));
     }
@@ -3812,12 +3998,24 @@ mod tests {
     #[test]
     fn desktop_exec_matching() {
         let bin = PathBuf::from("/h/.local/share/corkytux/corkytux");
-        assert!(desktop_exec_matches("Exec=/h/.local/share/corkytux/corkytux\n", &bin));
-        assert!(desktop_exec_matches("Exec=/h/.local/share/corkytux/corkytux %U\n", &bin));
-        assert!(desktop_exec_matches("Exec=\"/h/.local/share/corkytux/corkytux\" %F\n", &bin));
+        assert!(desktop_exec_matches(
+            "Exec=/h/.local/share/corkytux/corkytux\n",
+            &bin
+        ));
+        assert!(desktop_exec_matches(
+            "Exec=/h/.local/share/corkytux/corkytux %U\n",
+            &bin
+        ));
+        assert!(desktop_exec_matches(
+            "Exec=\"/h/.local/share/corkytux/corkytux\" %F\n",
+            &bin
+        ));
         assert!(!desktop_exec_matches("Exec=/other/corkytux\n", &bin));
         assert!(!desktop_exec_matches("Name=CorkyTux\n", &bin));
-        assert_eq!(desktop_quote_exec(&bin), "/h/.local/share/corkytux/corkytux");
+        assert_eq!(
+            desktop_quote_exec(&bin),
+            "/h/.local/share/corkytux/corkytux"
+        );
         let spaced = PathBuf::from("/h/my games/corkytux");
         assert_eq!(desktop_quote_exec(&spaced), "\"/h/my games/corkytux\"");
         let tricky = PathBuf::from("/h/a$b`c\\d e/x");
@@ -3853,7 +4051,9 @@ mod tests {
             "\"/h/a\\\\`b c/x\""
         );
         // Every reserved character forces quoting.
-        for special in ["a b", "a\tb", "a&b", "a;b", "a'b", "a(b)", "a*b", "a?b", "a#b"] {
+        for special in [
+            "a b", "a\tb", "a&b", "a;b", "a'b", "a(b)", "a*b", "a?b", "a#b",
+        ] {
             let p = PathBuf::from(format!("/h/{}/x", special));
             let q = desktop_quote_exec(&p);
             assert!(q.starts_with('"') && q.ends_with('"'), "unquoted: {}", q);
@@ -3871,7 +4071,11 @@ mod tests {
         ] {
             let p = PathBuf::from(raw);
             let line = format!("Exec={}\n", desktop_quote_exec(&p));
-            assert!(desktop_exec_matches(&line, &p), "round-trip failed: {}", line);
+            assert!(
+                desktop_exec_matches(&line, &p),
+                "round-trip failed: {}",
+                line
+            );
         }
     }
 
@@ -3890,7 +4094,11 @@ mod tests {
         let dir = std::env::temp_dir().join("corky_upd_bigcache");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(CACHED_LATEST_FILE), "J".repeat((MAX_API_BODY + 16) as usize)).unwrap();
+        std::fs::write(
+            dir.join(CACHED_LATEST_FILE),
+            "J".repeat((MAX_API_BODY + 16) as usize),
+        )
+        .unwrap();
         assert!(read_cached_latest(&dir).is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3970,11 +4178,8 @@ mod tests {
         let mut handles = Vec::new();
         for _ in 0..8 {
             handles.push(std::thread::spawn(|| {
-                store_cached_latest(
-                    &std::env::temp_dir().join("corky_upd_conc"),
-                    SAMPLE_JSON,
-                )
-                .unwrap();
+                store_cached_latest(&std::env::temp_dir().join("corky_upd_conc"), SAMPLE_JSON)
+                    .unwrap();
             }));
         }
         for h in handles {
@@ -4069,7 +4274,11 @@ mod tests {
         let assets_new = staging.join("assets");
         std::fs::create_dir_all(&assets_new).unwrap();
         std::fs::write(assets_new.join("a.txt"), b"new").unwrap();
-        let staged = Staged { binary: bin, assets_dir: Some(assets_new), ..Default::default() };
+        let staged = Staged {
+            binary: bin,
+            assets_dir: Some(assets_new),
+            ..Default::default()
+        };
         let dirs = InstallDirs {
             install_dir: install,
             icon_dir: dir.join("icons"),
@@ -4153,11 +4362,7 @@ mod tests {
         std::fs::write(&path, b"not a dir").unwrap();
         let err = store_cached_latest(&path, SAMPLE_JSON).unwrap_err();
         assert!(err.contains("cannot cache release info"), "got: {}", err);
-        assert!(
-            err.contains("os error 17"),
-            "lost io cause: {}",
-            err
-        );
+        assert!(err.contains("os error 17"), "lost io cause: {}", err);
         let _ = std::fs::remove_file(&path);
     }
 
@@ -4179,11 +4384,7 @@ mod tests {
         perm.set_mode(0o755);
         std::fs::set_permissions(&dir, perm).unwrap();
         assert!(err.contains("cannot cache release info"), "got: {}", err);
-        assert!(
-            err.contains("os error 13"),
-            "lost io cause: {}",
-            err
-        );
+        assert!(err.contains("os error 13"), "lost io cause: {}", err);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -4247,7 +4448,10 @@ mod tests {
         );
         // The dir link is not a sweep candidate (lstat says symlink,
         // not dir), so it is left untouched and never recursed into.
-        assert!(std::fs::symlink_metadata(&link_dir).unwrap().file_type().is_symlink());
+        assert!(std::fs::symlink_metadata(&link_dir)
+            .unwrap()
+            .file_type()
+            .is_symlink());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -4399,7 +4603,10 @@ mod tests {
             "victim rewritten through the .part symlink"
         );
         assert!(
-            !std::fs::symlink_metadata(&part).unwrap().file_type().is_symlink(),
+            !std::fs::symlink_metadata(&part)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
             ".part stayed a symlink"
         );
         assert_eq!(std::fs::read(&part).unwrap(), b"hello");
@@ -4444,7 +4651,10 @@ mod tests {
             pre.keep(drop_me.clone());
             // Not disarmed: both are removed when the guard drops.
         }
-        assert!(!keep.exists() && !drop_me.exists(), "guard did not clean up");
+        assert!(
+            !keep.exists() && !drop_me.exists(),
+            "guard did not clean up"
+        );
         std::fs::write(&keep, b"k").unwrap();
         {
             let mut pre = PreOutcomeBackups::new();
@@ -4558,7 +4768,8 @@ mod tests {
         // The declared length alone is over the cap: fail before the
         // partial file is created, so nothing is written.
         let body = b"hello".to_vec();
-        let mut resp = b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n".to_vec();
+        let mut resp =
+            b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n".to_vec();
         resp.extend_from_slice(&body);
         let url = serve_once(resp);
         let dir = std::env::temp_dir().join("corky_upd_cl_cap");
@@ -4639,7 +4850,12 @@ mod tests {
             .unwrap()
             .permissions()
             .mode();
-        assert_eq!(icon_mode & 0o777, 0o644, "icon mode is {:o}", icon_mode & 0o777);
+        assert_eq!(
+            icon_mode & 0o777,
+            0o644,
+            "icon mode is {:o}",
+            icon_mode & 0o777
+        );
         // The binary, by contrast, stays executable.
         assert_ne!(
             std::fs::metadata(install.join("corkytux"))
@@ -4666,8 +4882,14 @@ mod tests {
             Some("Bearer t".to_string())
         );
         assert_eq!(authorization_for("https://github.com/x", Some("t")), None);
-        assert_eq!(authorization_for("https://objects.githubusercontent.com/x", Some("t")), None);
-        assert_eq!(authorization_for("http://api.github.com/x", Some("t")), None);
+        assert_eq!(
+            authorization_for("https://objects.githubusercontent.com/x", Some("t")),
+            None
+        );
+        assert_eq!(
+            authorization_for("http://api.github.com/x", Some("t")),
+            None
+        );
         assert_eq!(authorization_for("https://api.github.com/x", None), None);
     }
 
@@ -4707,5 +4929,4 @@ mod tests {
         assert_eq!(read_cached_etag(&path), Some("W/\"abc\"".to_string()));
         let _ = std::fs::remove_dir_all(&dir);
     }
-
 }

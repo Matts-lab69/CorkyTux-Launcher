@@ -1,7 +1,6 @@
 use adw::prelude::*;
 use gtk::gdk;
 use gtk::glib;
-use gtk::prelude::*;
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -10,9 +9,9 @@ use crate::backend::theme::ThemeManager;
 static IMG_INFLIGHT: AtomicU32 = AtomicU32::new(0);
 
 thread_local! {
-    static MAIN_CSS_PROVIDER: RefCell<Option<gtk::CssProvider>> = RefCell::new(None);
-    static ACCENT_CSS_PROVIDER: RefCell<Option<gtk::CssProvider>> = RefCell::new(None);
-    static THEMED_IMAGES: RefCell<Vec<(glib::WeakRef<gtk::Image>, String)>> = RefCell::new(Vec::new());
+    static MAIN_CSS_PROVIDER: RefCell<Option<gtk::CssProvider>> = const { RefCell::new(None) };
+    static ACCENT_CSS_PROVIDER: RefCell<Option<gtk::CssProvider>> = const { RefCell::new(None) };
+    static THEMED_IMAGES: RefCell<Vec<(glib::WeakRef<gtk::Image>, String)>> = const { RefCell::new(Vec::new()) };
     // Bounded RAM cache: every library re-render used to re-decode the same
     // PNGs from disk. Key includes mtime+size so replaced files never go stale.
     static TEX_CACHE: RefCell<(std::collections::HashMap<String, gdk::Texture>, Vec<String>)> =
@@ -23,7 +22,12 @@ const TEX_CACHE_MAX: usize = 64;
 
 fn tex_cache_key(path: &str) -> Option<String> {
     let m = std::fs::metadata(path).ok()?;
-    let mt = m.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+    let mt = m
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
     Some(format!("{}:{}:{}", path, mt, m.len()))
 }
 
@@ -42,7 +46,8 @@ pub fn img_slot_try_acquire() -> bool {
         if cur >= MAX {
             return false;
         }
-        match IMG_INFLIGHT.compare_exchange_weak(cur, cur + 1, Ordering::SeqCst, Ordering::Relaxed) {
+        match IMG_INFLIGHT.compare_exchange_weak(cur, cur + 1, Ordering::SeqCst, Ordering::Relaxed)
+        {
             Ok(_) => return true,
             Err(v) => cur = v,
         }
@@ -58,7 +63,12 @@ pub fn img_slot_release() {
 /// scrolling lists). Cache key includes the size, shares the 64-entry cap.
 pub fn load_thumb(path: &str, max_px: i32) -> Option<gdk::Texture> {
     let m = std::fs::metadata(path).ok()?;
-    let mt = m.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+    let mt = m
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
     let key = format!("thumb:{}:{}:{}:{}", path, mt, m.len(), max_px);
     if let Some(tex) = tex_cache_get(&key) {
         return Some(tex);
@@ -124,7 +134,8 @@ pub fn load_game_icon(name: &str, executable: &str, configured: &str) -> Option<
     let home = std::path::PathBuf::from(std::env::var_os("HOME")?);
     let roots = super::icons::data_roots(&home);
     super::icons::game_icon_candidates(&home, &roots, name, executable)
-        .iter().find_map(|path| load_texture(&path.to_string_lossy()))
+        .iter()
+        .find_map(|path| load_texture(&path.to_string_lossy()))
 }
 
 pub fn load_texture(path: &str) -> Option<gdk::Texture> {
@@ -239,7 +250,10 @@ pub fn load_themed_icon(name: &str, is_dark: bool) -> Option<gdk::Texture> {
     load_texture(&path)
         .or_else(|| {
             let other = if is_dark { "_dark.png" } else { ".png" };
-            load_texture(&format!("{}/.local/share/corkytux/assets/{}{}", home, name, other))
+            load_texture(&format!(
+                "{}/.local/share/corkytux/assets/{}{}",
+                home, name, other
+            ))
         })
         .or_else(|| load_texture(&asset_path(name)))
 }
@@ -535,41 +549,41 @@ pub fn icon_button(name: &str, is_dark: bool, tooltip: &str) -> gtk::Button {
 /// Stylesheet text, pure function of the theme. Split out so tests
 /// can assert dialog contrast without a display.
 pub(crate) fn main_css_text(theme: &ThemeManager) -> String {
-        let accent = theme.accent_color();
-        let bg = theme.bg();
-        let panel = theme.panel();
-        let card = theme.card();
-        let well = theme.well();
-        let border = theme.border();
-        let hover = theme.hover();
-        let text_main = theme.text_main();
-        let text_sec = theme.text_sec();
-        let text_muted = theme.text_muted();
-        let is_dark = theme.is_dark();
-        // I derive `{accent_ui}` for border/focus with >=3:1 contrast
-        // (WCAG 1.4.11) across the 10 accents in the light theme; in dark I use
-        // the base accent, which already passes >=3.85:1 against #121212. See DESIGN.md.
-        let accent_ui = if is_dark {
-            accent.clone()
-        } else {
-            format!("color-mix(in srgb, {} 30%, {})", text_main, accent)
-        };
+    let accent = theme.accent_color();
+    let bg = theme.bg();
+    let panel = theme.panel();
+    let card = theme.card();
+    let well = theme.well();
+    let border = theme.border();
+    let hover = theme.hover();
+    let text_main = theme.text_main();
+    let text_sec = theme.text_sec();
+    let text_muted = theme.text_muted();
+    let is_dark = theme.is_dark();
+    // I derive `{accent_ui}` for border/focus with >=3:1 contrast
+    // (WCAG 1.4.11) across the 10 accents in the light theme; in dark I use
+    // the base accent, which already passes >=3.85:1 against #121212. See DESIGN.md.
+    let accent_ui = if is_dark {
+        accent.clone()
+    } else {
+        format!("color-mix(in srgb, {} 30%, {})", text_main, accent)
+    };
 
-        let strip_color = accent_strip_color(theme);
-        let banner_bg = if is_dark { "#282828" } else { hover };
-        let tab_bar_bg = if is_dark { "#181818" } else { panel };
-        let search_bg = if is_dark { "#242424" } else { well };
-        let game_border = if is_dark { "transparent" } else { &border };
-        let game_border_width = if is_dark { "0" } else { "1" };
-        let action_bg = if is_dark { "#242424" } else { well };
-        let dialog_bg = if is_dark { "#1E1E1E" } else { panel };
-        let warn_dot = if is_dark { "#FFA726" } else { "#FB8C00" };
-        let on_accent = if is_dark { "#FFFFFF" } else { text_main };
-        // Neon fills are fixed brand greens/reds in both themes: dark ink
-        // stays legible on them in light and in dark (white fails dark).
-        let neon_ink = "#241F2E";
+    let strip_color = accent_strip_color(theme);
+    let banner_bg = if is_dark { "#282828" } else { hover };
+    let tab_bar_bg = if is_dark { "#181818" } else { panel };
+    let search_bg = if is_dark { "#242424" } else { well };
+    let game_border = if is_dark { "transparent" } else { border };
+    let game_border_width = if is_dark { "0" } else { "1" };
+    let action_bg = if is_dark { "#242424" } else { well };
+    let dialog_bg = if is_dark { "#1E1E1E" } else { panel };
+    let warn_dot = if is_dark { "#FFA726" } else { "#FB8C00" };
+    let on_accent = if is_dark { "#FFFFFF" } else { text_main };
+    // Neon fills are fixed brand greens/reds in both themes: dark ink
+    // stays legible on them in light and in dark (white fails dark).
+    let neon_ink = "#241F2E";
 
-        format!(
+    format!(
             "window.background {{ background-color: {bg}; color: {text_main}; }}\
              dialog.background {{ background-color: {dialog_bg}; color: {text_main}; border-radius: 12px; border: 1px solid {border}; }}\
              .top-bar {{ background-color: {bg}; min-height: 52px; padding: 0 16px; }}\
@@ -783,7 +797,6 @@ pub fn apply_theme_css(theme: &ThemeManager) {
         sm.set_color_scheme(adw::ColorScheme::PreferLight);
     }
 
-
     MAIN_CSS_PROVIDER.with(|cell| {
         let mut borrow = cell.borrow_mut();
         if let Some(provider) = borrow.take() {
@@ -806,7 +819,12 @@ pub fn apply_theme_css(theme: &ThemeManager) {
 /// it becomes a clickable link (pointer cursor, hover underline, opens in
 /// the launcher browser). Wikipedia/Steam pages pass their URL; Epic
 /// passes `None` so it stays plain text.
-pub fn source_link(state: &crate::AppState, label: &str, url: Option<String>, tooltip: Option<&str>) -> gtk::Label {
+pub fn source_link(
+    state: &crate::AppState,
+    label: &str,
+    url: Option<String>,
+    tooltip: Option<&str>,
+) -> gtk::Label {
     let l = gtk::Label::new(Some(label));
     l.set_halign(gtk::Align::Start);
     l.add_css_class("source-link");
@@ -833,7 +851,6 @@ pub fn source_link(state: &crate::AppState, label: &str, url: Option<String>, to
     l.add_controller(click);
     l
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -880,29 +897,43 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         };
-        assert!(root.join("ready").is_file(), "child did not reach the icon loader");
-        assert!(status.is_some_and(|s| s.success()), "inferred FIFO blocked waiting for a writer or child failed");
+        assert!(
+            root.join("ready").is_file(),
+            "child did not reach the icon loader"
+        );
+        assert!(
+            status.is_some_and(|s| s.success()),
+            "inferred FIFO blocked waiting for a writer or child failed"
+        );
     }
 
     #[test]
     fn gamepad_icon_fallback_decodes_cache_after_an_invalid_explicit_icon() {
-        let root = std::env::temp_dir()
-            .join(format!("gamepad-icon-decode-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("gamepad-icon-decode-{}", std::process::id()));
         let cache = root.join(".config/CorkyTux/icons");
         std::fs::create_dir_all(&cache).unwrap();
         let broken = root.join("broken.png");
         std::fs::write(&broken, b"invalid icon").unwrap();
         let cached = cache.join("openchamber.png");
         // Content sniffing also supports SVGs emitted under a PNG output filename.
-        std::fs::write(&cached, include_bytes!("../../assets/icons/hicolor/symbolic/ui/corkytux-window-close-symbolic.svg")).unwrap();
+        std::fs::write(
+            &cached,
+            include_bytes!(
+                "../../assets/icons/hicolor/symbolic/ui/corkytux-window-close-symbolic.svg"
+            ),
+        )
+        .unwrap();
         let mut candidates = vec![broken];
         candidates.extend(crate::ui::icons::game_icon_candidates(
-            &root, &[], "OpenChamber-2.5.2-linux-x86_64",
+            &root,
+            &[],
+            "OpenChamber-2.5.2-linux-x86_64",
             "/apps/OpenChamber-2.5.2-linux-x86_64.AppImage",
         ));
-        let (path, image) = candidates.iter().find_map(|path| {
-            load_pixbuf(&path.to_string_lossy()).map(|image| (path, image))
-        }).expect("cached icon must survive a missing/invalid configured icon");
+        let (path, image) = candidates
+            .iter()
+            .find_map(|path| load_pixbuf(&path.to_string_lossy()).map(|image| (path, image)))
+            .expect("cached icon must survive a missing/invalid configured icon");
         assert_eq!(path, &cached);
         assert!(image.width() > 0 && image.height() > 0);
         std::fs::remove_dir_all(root).unwrap();
@@ -974,7 +1005,11 @@ mod tests {
                 assert!(
                     ratio >= 4.5,
                     "{:?} {} {} on {} = {:.2}:1",
-                    mode.as_str(), selector, fg, bg, ratio
+                    mode.as_str(),
+                    selector,
+                    fg,
+                    bg,
+                    ratio
                 );
             }
             for selector in [".neon-green {", ".neon-red {"] {
@@ -984,7 +1019,11 @@ mod tests {
                 assert!(
                     ratio >= 3.0,
                     "{:?} {} {} on {} = {:.2}:1",
-                    mode.as_str(), selector, fg, fill, ratio
+                    mode.as_str(),
+                    selector,
+                    fg,
+                    fill,
+                    ratio
                 );
             }
             // Version/loader chips (Project dialog): chip ink on chip well.
@@ -994,7 +1033,10 @@ mod tests {
             assert!(
                 chip_ratio >= 4.5,
                 "{:?} .loader-tag {} on {} = {:.2}:1",
-                mode.as_str(), chip_fg, chip_bg, chip_ratio
+                mode.as_str(),
+                chip_fg,
+                chip_bg,
+                chip_ratio
             );
         }
     }
@@ -1077,7 +1119,6 @@ mod tests {
     }
 }
 
-
 /// Format a playtime in seconds as a human-readable string. Never truncates
 /// to whole hours: 13953 s -> "3 h 53 min", 3600 s -> "1 h", 60 s -> "1 min".
 pub fn format_playtime(secs: u64) -> String {
@@ -1095,16 +1136,15 @@ pub fn format_playtime(secs: u64) -> String {
     }
 }
 
-
-    #[test]
-    fn format_playtime_cases() {
-        assert_eq!(format_playtime(0), "<1 min");
-        assert_eq!(format_playtime(59), "<1 min");
-        assert_eq!(format_playtime(60), "1 min");
-        assert_eq!(format_playtime(3599), "59 min");
-        assert_eq!(format_playtime(3600), "1 h");
-        assert_eq!(format_playtime(3659), "1 h");
-        assert_eq!(format_playtime(13953), "3 h 52 min");
-        assert_eq!(format_playtime(36000), "10 h");
-        assert_eq!(format_playtime(360000), "100 h");
-    }
+#[test]
+fn format_playtime_cases() {
+    assert_eq!(format_playtime(0), "<1 min");
+    assert_eq!(format_playtime(59), "<1 min");
+    assert_eq!(format_playtime(60), "1 min");
+    assert_eq!(format_playtime(3599), "59 min");
+    assert_eq!(format_playtime(3600), "1 h");
+    assert_eq!(format_playtime(3659), "1 h");
+    assert_eq!(format_playtime(13953), "3 h 52 min");
+    assert_eq!(format_playtime(36000), "10 h");
+    assert_eq!(format_playtime(360000), "100 h");
+}

@@ -1,5 +1,4 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -28,7 +27,9 @@ pub fn show_game_settings_modal(
     header_row.set_margin_end(8);
     {
         let dlg = dialog.clone();
-        x_btn.connect_clicked(move |_| { dlg.close(); });
+        x_btn.connect_clicked(move |_| {
+            dlg.close();
+        });
     }
 
     let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -38,7 +39,10 @@ pub fn show_game_settings_modal(
     let page_stack = gtk::Stack::new();
     page_stack.set_vexpand(true);
 
-    let executor_val = state.config.game_value(game_name, "Executor").unwrap_or_default();
+    let executor_val = state
+        .config
+        .game_value(game_name, "Executor")
+        .unwrap_or_default();
     let is_rpg = executor_val == "rpgmaker-runtime";
     let is_emu = !executor_val.is_empty() && !is_rpg;
 
@@ -75,14 +79,21 @@ pub fn show_game_settings_modal(
     let tabs: Vec<(&str, &str, &str)> = if is_rpg {
         vec![("View", "view", "palette"), ("RPG Maker", "rpg", "startup")]
     } else if is_emu {
-        vec![("View", "view", "palette"), ("Emulator", "emulator", "startup")]
+        vec![
+            ("View", "view", "palette"),
+            ("Emulator", "emulator", "startup"),
+        ]
     } else {
-        vec![("View", "view", "palette"), ("Run", "run", "startup"), ("Graphics", "graphics", "graphics")]
+        vec![
+            ("View", "view", "palette"),
+            ("Run", "run", "startup"),
+            ("Graphics", "graphics", "graphics"),
+        ]
     };
     let mut tab_buttons: Vec<gtk::ToggleButton> = Vec::new();
     let mut tab_indicators: Vec<gtk::Box> = Vec::new();
 
-    for (i, (label, id, icon_name)) in tabs.iter().enumerate() {
+    for (i, (label, _id, icon_name)) in tabs.iter().enumerate() {
         let btn_box = gtk::Box::new(gtk::Orientation::Vertical, 1);
         btn_box.set_hexpand(true);
 
@@ -105,14 +116,18 @@ pub fn show_game_settings_modal(
         col.append(&indicator);
 
         btn.set_child(Some(&col));
-        if i == 0 { btn.set_active(true); }
+        if i == 0 {
+            btn.set_active(true);
+        }
 
         btn_box.append(&btn);
         tab_bar.append(&btn_box);
         tab_buttons.push(btn);
         tab_indicators.push(indicator);
     }
-    for btn in &tab_buttons[1..] { btn.set_group(Some(&tab_buttons[0])); }
+    for btn in &tab_buttons[1..] {
+        btn.set_group(Some(&tab_buttons[0]));
+    }
 
     for (i, (_, id, _)) in tabs.iter().enumerate() {
         let stack = page_stack.clone();
@@ -121,7 +136,9 @@ pub fn show_game_settings_modal(
         let my_ind = tab_indicators[i].clone();
         tab_buttons[i].connect_clicked(move |_| {
             stack.set_visible_child_name(&tab_id);
-            for ind in &all_ind { ind.set_visible(false); }
+            for ind in &all_ind {
+                ind.set_visible(false);
+            }
             my_ind.set_visible(true);
         });
     }
@@ -141,12 +158,13 @@ pub fn show_game_settings_modal(
         let holder_c = name_holder.clone();
         dialog.connect_closed(move |_| {
             let new_name = holder_c.borrow().trim().to_string();
-            if !new_name.is_empty() && new_name != game {
-                if state_c.game_model.get_game(&new_name).is_none() {
-                    state_c.game_model.rename_game(&game, &new_name);
-                    crate::backend::shortcuts::rename(&game, &new_name);
-                    *state_c.selected_game.borrow_mut() = new_name;
-                }
+            if !new_name.is_empty()
+                && new_name != game
+                && state_c.game_model.get_game(&new_name).is_none()
+            {
+                state_c.game_model.rename_game(&game, &new_name);
+                crate::backend::shortcuts::rename(&game, &new_name);
+                *state_c.selected_game.borrow_mut() = new_name;
             }
             state_c.recent_model.refresh(30);
             on_close();
@@ -162,7 +180,7 @@ fn save_entry(state: &AppState, game: &str, key: &str, entry: &gtk::Entry) {
     let k = key.to_string();
     let state_c = state.clone();
     entry.connect_changed(move |e| {
-        state_c.config.set_game_value(&held, &k, &e.text().to_string());
+        state_c.config.set_game_value(&held, &k, e.text().as_ref());
         // Prefix path edits update the header warning button/counter live.
         if k == "PrefixPath" {
             crate::refresh_warn_buttons(&state_c);
@@ -175,7 +193,9 @@ fn save_switch(state: &AppState, game: &str, key: &str, sw: &gtk::Switch) {
     let k = key.to_string();
     let state_c = state.clone();
     sw.connect_active_notify(move |s| {
-        state_c.config.set_game_value(&held, &k, &s.is_active().to_string());
+        state_c
+            .config
+            .set_game_value(&held, &k, &s.is_active().to_string());
     });
 }
 
@@ -241,8 +261,14 @@ fn build_view_tab(
     icon_preview.set_size_request(32, 32);
     icon_preview.set_content_fit(gtk::ContentFit::Contain);
     icon_preview.set_can_shrink(true);
-    let current_icon = state.config.game_value(game_name, "Icon").unwrap_or_default();
-    let executable = state.config.game_value(game_name, "Executable").unwrap_or_default();
+    let current_icon = state
+        .config
+        .game_value(game_name, "Icon")
+        .unwrap_or_default();
+    let executable = state
+        .config
+        .game_value(game_name, "Executable")
+        .unwrap_or_default();
     if let Some(tex) = helpers::load_preview(&expand_tilde(&current_icon), 64, 64)
         .or_else(|| helpers::load_game_icon(game_name, &executable, &current_icon))
     {
@@ -257,9 +283,12 @@ fn build_view_tab(
     let icon_browse = helpers::icon_button("folder", state.theme.is_dark(), "Choose icon image");
     let state_c = state.clone();
     let icon_e = icon_entry.clone();
-    let icon_p = icon_preview.clone();
+    let _icon_p = icon_preview.clone();
     icon_browse.connect_clicked(move |_| {
-        if let Some(path) = state_c.config.pick_file("Select icon", &["png", "jpg", "svg"]) {
+        if let Some(path) = state_c
+            .config
+            .pick_file("Select icon", &["png", "jpg", "svg"])
+        {
             icon_e.set_text(&path.display().to_string());
         }
     });
@@ -290,7 +319,10 @@ fn build_view_tab(
     banner_preview.set_can_shrink(true);
     banner_preview.set_vexpand(false);
     banner_preview.set_valign(gtk::Align::Center);
-    let current_banner = state.config.game_value(game_name, "Banner").unwrap_or_default();
+    let current_banner = state
+        .config
+        .game_value(game_name, "Banner")
+        .unwrap_or_default();
     if !current_banner.is_empty() {
         if let Some(tex) = helpers::load_preview(&expand_tilde(&current_banner), 160, 92) {
             banner_preview.set_paintable(Some(&tex));
@@ -302,11 +334,15 @@ fn build_view_tab(
     banner_entry.set_valign(gtk::Align::Center);
     banner_entry.set_placeholder_text(Some("Path to banner image"));
     banner_entry.add_css_class("path-entry");
-    let banner_browse = helpers::icon_button("folder", state.theme.is_dark(), "Choose banner image");
+    let banner_browse =
+        helpers::icon_button("folder", state.theme.is_dark(), "Choose banner image");
     let state_c2 = state.clone();
     let banner_e = banner_entry.clone();
     banner_browse.connect_clicked(move |_| {
-        if let Some(path) = state_c2.config.pick_file("Select banner", &["png", "jpg", "jpeg"]) {
+        if let Some(path) = state_c2
+            .config
+            .pick_file("Select banner", &["png", "jpg", "jpeg"])
+        {
             banner_e.set_text(&path.display().to_string());
         }
     });
@@ -331,11 +367,7 @@ fn build_view_tab(
     wrap_scroll(page)
 }
 
-fn build_run_tab(
-    state: &AppState,
-    game_name: &str,
-    parent: &adw::ApplicationWindow,
-) -> gtk::Box {
+fn build_run_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWindow) -> gtk::Box {
     let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
     page.set_margin_top(12);
     page.set_margin_bottom(12);
@@ -357,9 +389,21 @@ fn build_run_tab(
     let overrides_entry: Rc<RefCell<Option<gtk::Entry>>> = Rc::new(RefCell::new(None));
     for (label, key, placeholder) in [
         ("DLL overrides (WINEDLLOVERRIDES)", "Overrides", "d3d11=n,b"),
-        ("Environment variables", "Environment", "KEY=value KEY2=value2"),
-        ("Arguments before executable", "ArgsBefore", "Arguments passed before the executable"),
-        ("Arguments after executable", "ArgsAfter", "Arguments passed after the executable"),
+        (
+            "Environment variables",
+            "Environment",
+            "KEY=value KEY2=value2",
+        ),
+        (
+            "Arguments before executable",
+            "ArgsBefore",
+            "Arguments passed before the executable",
+        ),
+        (
+            "Arguments after executable",
+            "ArgsAfter",
+            "Arguments passed after the executable",
+        ),
     ] {
         let lbl = gtk::Label::new(Some(label));
         lbl.set_halign(gtk::Align::Start);
@@ -392,7 +436,9 @@ fn build_run_tab(
         let sw = gtk::Switch::new();
         sw.set_halign(gtk::Align::End);
         sw.set_active(
-            state.config.game_value(game_name, key)
+            state
+                .config
+                .game_value(game_name, key)
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
         );
@@ -412,7 +458,7 @@ fn build_run_tab(
         let dep_status = gtk::Label::new(Some("Not scanned yet."));
         dep_status.set_halign(gtk::Align::Start);
         dep_status.set_wrap(true);
-        
+
         dep_status.add_css_class("time-label");
         dep_inner.append(&dep_status);
         let scan_btn = gtk::Button::with_label("Scan now");
@@ -428,22 +474,40 @@ fn build_run_tab(
             scan_btn.connect_clicked(move |b| {
                 b.set_sensitive(false);
                 status_c.set_text("Scanning…");
-                let dir = state_c.config.game_value(&game_c, "MainPath").unwrap_or_default();
+                let dir = state_c
+                    .config
+                    .game_value(&game_c, "MainPath")
+                    .unwrap_or_default();
                 if dir.trim().is_empty() {
                     status_c.set_text("No install path set for this game.");
                     b.set_sensitive(true);
                     return;
                 }
-                let prefix = state_c.proton.real_prefix_for(&game_c).display().to_string();
-                let proton = state_c.config.game_value(&game_c, "Proton")
+                let prefix = state_c
+                    .proton
+                    .real_prefix_for(&game_c)
+                    .display()
+                    .to_string();
+                let proton = state_c
+                    .config
+                    .game_value(&game_c, "Proton")
                     .and_then(|w| state_c.proton.resolve_proton(&w).ok())
                     .map(|(_, p)| p.display().to_string())
                     .unwrap_or_default();
                 let plugins_dir = state_c.plugins.plugins_dir();
-                let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<(String, String)>, Vec<(String, String)>)>();
+                let (tx, rx) = std::sync::mpsc::channel::<(
+                    String,
+                    Vec<(String, String)>,
+                    Vec<(String, String)>,
+                )>();
                 let dir_t = dir.trim().to_string();
                 std::thread::spawn(move || {
-                    let s = crate::backend::plugins::PluginManager::scan_bundle_in(&plugins_dir, &dir_t, &prefix, &proton);
+                    let s = crate::backend::plugins::PluginManager::scan_bundle_in(
+                        &plugins_dir,
+                        &dir_t,
+                        &prefix,
+                        &proton,
+                    );
                     let _ = tx.send((s.overrides, s.missing, s.optional));
                 });
                 let state_cc = state_c.clone();
@@ -456,7 +520,9 @@ fn build_run_tab(
                     Ok((overrides, missing, optional)) => {
                         btn_c.set_sensitive(true);
                         if !overrides.trim().is_empty() {
-                            state_cc.game_model.set_overrides(&game_cc, overrides.trim());
+                            state_cc
+                                .game_model
+                                .set_overrides(&game_cc, overrides.trim());
                             if let Some(ref e) = *entry_cc.borrow() {
                                 e.set_text(overrides.trim());
                             }
@@ -465,24 +531,52 @@ fn build_run_tab(
                             status_cc.set_text("Scan done: nothing needed.");
                         }
                         if !missing.is_empty() {
-                            let names: Vec<String> = missing.iter().map(|(id, _)| id.clone()).collect();
-                            let descs: Vec<String> = missing.iter().map(|(id, d)| {
-                                if d == id { id.clone() } else { format!("{} ({})", id, d) }
-                            }).collect();
+                            let names: Vec<String> =
+                                missing.iter().map(|(id, _)| id.clone()).collect();
+                            let descs: Vec<String> = missing
+                                .iter()
+                                .map(|(id, d)| {
+                                    if d == id {
+                                        id.clone()
+                                    } else {
+                                        format!("{} ({})", id, d)
+                                    }
+                                })
+                                .collect();
                             let mut status = format!("Missing: {}.", descs.join(", "));
                             if !optional.is_empty() {
-                                let odescs: Vec<String> = optional.iter().map(|(id, d)| {
-                                    if d == id { id.clone() } else { format!("{} ({})", id, d) }
-                                }).collect();
-                                status.push_str(&format!(" Optional (not installed): {}.", odescs.join(", ")));
+                                let odescs: Vec<String> = optional
+                                    .iter()
+                                    .map(|(id, d)| {
+                                        if d == id {
+                                            id.clone()
+                                        } else {
+                                            format!("{} ({})", id, d)
+                                        }
+                                    })
+                                    .collect();
+                                status.push_str(&format!(
+                                    " Optional (not installed): {}.",
+                                    odescs.join(", ")
+                                ));
                             }
                             status_cc.set_text(&status);
                             crate::confirm_install_deps(&state_cc, &parent_cc, &game_cc, names);
                         } else if !optional.is_empty() {
-                            let odescs: Vec<String> = optional.iter().map(|(id, d)| {
-                                if d == id { id.clone() } else { format!("{} ({})", id, d) }
-                            }).collect();
-                            status_cc.set_text(&format!("Scan done: nothing required. Optional (not installed): {}.", odescs.join(", ")));
+                            let odescs: Vec<String> = optional
+                                .iter()
+                                .map(|(id, d)| {
+                                    if d == id {
+                                        id.clone()
+                                    } else {
+                                        format!("{} ({})", id, d)
+                                    }
+                                })
+                                .collect();
+                            status_cc.set_text(&format!(
+                                "Scan done: nothing required. Optional (not installed): {}.",
+                                odescs.join(", ")
+                            ));
                         }
                         glib::ControlFlow::Break
                     }
@@ -508,21 +602,38 @@ fn build_run_tab(
     let protons = state.proton.installed_protons();
     let mut proton_names = vec!["GE-Proton Latest".to_string()];
     proton_names.extend(protons.clone());
-    let current_proton = state.config.game_value(game_name, "Proton").unwrap_or_default();
+    let current_proton = state
+        .config
+        .game_value(game_name, "Proton")
+        .unwrap_or_default();
     let proton_dropdown = gtk::DropDown::new(None::<gtk::StringList>, None::<gtk::Expression>);
     let string_list = gtk::StringList::new(&[]);
-    for p in &proton_names { string_list.append(p); }
+    for p in &proton_names {
+        string_list.append(p);
+    }
     proton_dropdown.set_model(Some(&string_list.clone().upcast::<gio::ListModel>()));
     proton_dropdown.set_selected(
-        proton_names.iter().position(|p| *p == current_proton).unwrap_or(0) as u32,
+        proton_names
+            .iter()
+            .position(|p| *p == current_proton)
+            .unwrap_or(0) as u32,
     );
     pp_inner.append(&proton_dropdown);
 
     // Shared prefix: switch + read-only resolved path + chooser (no text field)
-    let original_prefix = state.config.game_value(game_name, "PrefixPath").unwrap_or_default();
+    let original_prefix = state
+        .config
+        .game_value(game_name, "PrefixPath")
+        .unwrap_or_default();
     let steam_game = crate::backend::game_model::is_steam_game(
-        &state.config.game_value(game_name, "Source").unwrap_or_default(),
-        &state.config.game_value(game_name, "SteamID").unwrap_or_default(),
+        &state
+            .config
+            .game_value(game_name, "Source")
+            .unwrap_or_default(),
+        &state
+            .config
+            .game_value(game_name, "SteamID")
+            .unwrap_or_default(),
     );
     let shared_active: std::rc::Rc<std::cell::RefCell<bool>> =
         std::rc::Rc::new(std::cell::RefCell::new(false));
@@ -571,13 +682,21 @@ fn build_run_tab(
         vd_lbl.add_css_class("time-label");
         pp_inner.append(&vd_lbl);
         let vd_check = gtk::CheckButton::with_label(&format!(
-            "Wine virtual desktop {} (borderless, no mode switches)", geom));
-        vd_check.set_active(!state.config.game_value(game_name, "WineVDesktop").unwrap_or_default().is_empty());
+            "Wine virtual desktop {} (borderless, no mode switches)",
+            geom
+        ));
+        vd_check.set_active(
+            !state
+                .config
+                .game_value(game_name, "WineVDesktop")
+                .unwrap_or_default()
+                .is_empty(),
+        );
         pp_inner.append(&vd_check);
         pp_inner.append(&{
             let n = gtk::Label::new(Some("If launching kills your desktop, turn this on."));
             n.set_halign(gtk::Align::Start);
-            
+
             n.add_css_class("time-label");
             n
         });
@@ -585,17 +704,27 @@ fn build_run_tab(
         let game_c = game_name.to_string();
         vd_check.connect_toggled(move |b| {
             let geom = ProtonManager::primary_display_size();
-            state_c.config.set_game_value(&game_c, "WineVDesktop",
-                if b.is_active() { &geom } else { "" });
+            state_c.config.set_game_value(
+                &game_c,
+                "WineVDesktop",
+                if b.is_active() { &geom } else { "" },
+            );
         });
     }
     // Epic Online Services auth: EOS games (Fall Guys…) refuse to start
     // without an exchange code. Auto-on for Heroic Epic imports.
     {
-        let src = state.config.game_value(game_name, "Source").unwrap_or_default();
-        let heroic = state.config.game_value(game_name, "HeroicStore").unwrap_or_default();
+        let src = state
+            .config
+            .game_value(game_name, "Source")
+            .unwrap_or_default();
+        let heroic = state
+            .config
+            .game_value(game_name, "HeroicStore")
+            .unwrap_or_default();
         if src == "Epic" || heroic == "epic" {
-            let eos_check = gtk::CheckButton::with_label("Epic Online Services auth (exchange code at launch)");
+            let eos_check =
+                gtk::CheckButton::with_label("Epic Online Services auth (exchange code at launch)");
             let cur = state.config.game_value(game_name, "EosAuth");
             eos_check.set_active(match cur.as_deref() {
                 Some("false") | Some("0") => false,
@@ -606,23 +735,39 @@ fn build_run_tab(
             let state_c = state.clone();
             let game_c = game_name.to_string();
             eos_check.connect_toggled(move |b| {
-                state_c.config.set_game_value(&game_c, "EosAuth", &b.is_active().to_string());
+                state_c
+                    .config
+                    .set_game_value(&game_c, "EosAuth", &b.is_active().to_string());
             });
         }
     }
     // Heroic anti-cheat runtimes: only for Epic/GOG games imported from Heroic.
-    if !state.config.game_value(game_name, "HeroicStore").unwrap_or_default().is_empty() {
+    if !state
+        .config
+        .game_value(game_name, "HeroicStore")
+        .unwrap_or_default()
+        .is_empty()
+    {
         let ac_lbl = gtk::Label::new(Some("Anti-cheat runtimes (Heroic)"));
         ac_lbl.set_halign(gtk::Align::Start);
         ac_lbl.set_margin_top(6);
         ac_lbl.add_css_class("time-label");
         pp_inner.append(&ac_lbl);
-        for (key, label) in [("HeroicEac", "Easy Anti-Cheat runtime"), ("HeroicBattlEye", "BattlEye runtime")] {
+        for (key, label) in [
+            ("HeroicEac", "Easy Anti-Cheat runtime"),
+            ("HeroicBattlEye", "BattlEye runtime"),
+        ] {
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
             let sw = gtk::Switch::new();
             sw.set_halign(gtk::Align::Start);
             sw.set_valign(gtk::Align::Center);
-            sw.set_active(state.config.game_value(game_name, key).map(|v| v == "true").unwrap_or(false));
+            sw.set_active(
+                state
+                    .config
+                    .game_value(game_name, key)
+                    .map(|v| v == "true")
+                    .unwrap_or(false),
+            );
             let lb = gtk::Label::new(Some(label));
             lb.add_css_class("info-value");
             lb.set_halign(gtk::Align::Start);
@@ -633,7 +778,9 @@ fn build_run_tab(
             let game_c = game_name.to_string();
             let key_c = key.to_string();
             sw.connect_active_notify(move |s| {
-                state_c.config.set_game_value(&game_c, &key_c, &s.is_active().to_string());
+                state_c
+                    .config
+                    .set_game_value(&game_c, &key_c, &s.is_active().to_string());
             });
         }
     }
@@ -645,7 +792,9 @@ fn build_run_tab(
     // individual path is prefixesDir/gameName.
     {
         let cur = original_prefix.clone();
-        let mut active = state.config.game_value(game_name, "UseSharedPrefix")
+        let mut active = state
+            .config
+            .game_value(game_name, "UseSharedPrefix")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
         if !active {
@@ -698,45 +847,65 @@ fn build_run_tab(
         shared_sw.connect_active_notify(move |sw| {
             let on = sw.is_active();
             *active_c.borrow_mut() = on;
-            state_c.config.set_game_value(&game_c, "UseSharedPrefix", &on.to_string());
+            state_c
+                .config
+                .set_game_value(&game_c, "UseSharedPrefix", &on.to_string());
             if on {
                 let names_cc = names_c.clone();
                 let names_for_list = names_cc.clone();
                 let sw_c = sw.clone();
-                open_shared_picker(&state_c, &win_c, &names_for_list, {
-                    let state_cc = state_c.clone();
-                    let game_cc = game_c.clone();
-                    let prefix_cc = prefix_e.clone();
-                    let proton_dd = proton_d.clone();
-                    let orig_cc = orig_c.clone();
-                    move |proton_name: String| {
-                        let sp = state_cc.config.add_shared_prefix(&proton_name);
-                        let full = format!("{}/pfx", sp.display());
-                        // Lock proton box to the shared proton
-                        if let Some(idx) = names_cc.iter().position(|p| *p == proton_name) {
-                            proton_dd.set_selected(idx as u32);
+                open_shared_picker(
+                    &state_c,
+                    &win_c,
+                    &names_for_list,
+                    {
+                        let state_cc = state_c.clone();
+                        let game_cc = game_c.clone();
+                        let prefix_cc = prefix_e.clone();
+                        let proton_dd = proton_d.clone();
+                        let orig_cc = orig_c.clone();
+                        move |proton_name: String| {
+                            let sp = state_cc.config.add_shared_prefix(&proton_name);
+                            let full = format!("{}/pfx", sp.display());
+                            // Lock proton box to the shared proton
+                            if let Some(idx) = names_cc.iter().position(|p| *p == proton_name) {
+                                proton_dd.set_selected(idx as u32);
+                            }
+                            state_cc
+                                .config
+                                .set_game_value(&game_cc, "Proton", &proton_name);
+                            prefix_cc.set_text(&full);
+                            state_cc
+                                .config
+                                .set_game_value(&game_cc, "PrefixPath", &full);
+                            prefix_cc.set_editable(false);
+                            proton_dd.set_sensitive(false);
+                            let _ = orig_cc;
+                            crate::refresh_warn_buttons(&state_cc);
                         }
-                        state_cc.config.set_game_value(&game_cc, "Proton", &proton_name);
-                        prefix_cc.set_text(&full);
-                        state_cc.config.set_game_value(&game_cc, "PrefixPath", &full);
-                        prefix_cc.set_editable(false);
-                        proton_dd.set_sensitive(false);
-                        let _ = orig_cc;
-                        crate::refresh_warn_buttons(&state_cc);
-                    }
-                }, move || {
-                    // C++ cancelSharedPrefix parity: revert the switch.
-                    sw_c.set_active(false);
-                });
+                    },
+                    move || {
+                        // C++ cancelSharedPrefix parity: revert the switch.
+                        sw_c.set_active(false);
+                    },
+                );
             } else {
                 let mut orig = orig_c.borrow().clone();
                 // If the remembered path is itself shared (or empty),
                 // rebuild the default individual path. Steam games keep
                 // whatever they have: Steam owns their prefix.
-                if is_shared_path(&state_c, &orig) && !crate::backend::game_model::is_steam_game(
-                    &state_c.config.game_value(&game_c, "Source").unwrap_or_default(),
-                    &state_c.config.game_value(&game_c, "SteamID").unwrap_or_default(),
-                ) {
+                if is_shared_path(&state_c, &orig)
+                    && !crate::backend::game_model::is_steam_game(
+                        &state_c
+                            .config
+                            .game_value(&game_c, "Source")
+                            .unwrap_or_default(),
+                        &state_c
+                            .config
+                            .game_value(&game_c, "SteamID")
+                            .unwrap_or_default(),
+                    )
+                {
                     orig = state_c
                         .config
                         .individual_prefix_path(&game_c)
@@ -771,8 +940,14 @@ fn build_run_tab(
             }
             let mut orig = orig_c.borrow().clone();
             let steam_game = crate::backend::game_model::is_steam_game(
-                &state_c.config.game_value(&game_c, "Source").unwrap_or_default(),
-                &state_c.config.game_value(&game_c, "SteamID").unwrap_or_default(),
+                &state_c
+                    .config
+                    .game_value(&game_c, "Source")
+                    .unwrap_or_default(),
+                &state_c
+                    .config
+                    .game_value(&game_c, "SteamID")
+                    .unwrap_or_default(),
             );
             if is_shared_path(&state_c, &orig) && !steam_game {
                 orig = state_c
@@ -793,11 +968,15 @@ fn build_run_tab(
     // never moved or modified; the sandbox exposes prefix + game folder +
     // GPU, audio/display and saves, hiding the rest of $HOME.
     let (iso_frame, iso_inner) = make_frame("Isolation");
-    let global_iso = state.config.launcher_value("IsolateNewPrefixes")
-        .map(|v| v == "1").unwrap_or(false);
-    let game_iso_raw = state.config.game_value(game_name, "Isolated");
-    let (eff_iso, _) = crate::backend::isolation::decide(
-        game_iso_raw.as_deref(), global_iso);
+    let global_iso = state
+        .config
+        .launcher_value("IsolateNewPrefixes")
+        .map(|v| v == "1")
+        .unwrap_or(false);
+    let game_iso_raw = state
+        .config
+        .game_value(game_name, crate::backend::isolation::GAME_KEY);
+    let (eff_iso, _) = crate::backend::isolation::decide(game_iso_raw.as_deref(), global_iso);
     let iso_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let iso_sw = gtk::Switch::new();
     iso_sw.set_halign(gtk::Align::End);
@@ -808,20 +987,29 @@ fn build_run_tab(
     iso_box.append(&iso_lbl);
     iso_box.append(&iso_sw);
     iso_inner.append(&iso_box);
-    let iso_sub = gtk::Label::new(Some(
-        if crate::backend::isolation::bwrap_available() {
-            "Runs under bubblewrap with a private $HOME (prefix, game folder, GPU, audio and saves stay visible)."
-        } else {
-            "bubblewrap missing: the game launches UNSANDBOXED with a warning."
-        }));
+    let iso_sub = gtk::Label::new(Some(if crate::backend::isolation::bwrap_available() {
+        "Runs under bubblewrap with a private $HOME (prefix, game folder, GPU, audio and saves stay visible)."
+    } else {
+        "bubblewrap missing: the game launches UNSANDBOXED with a warning."
+    }));
     iso_sub.set_halign(gtk::Align::Start);
     iso_sub.set_wrap(true);
     iso_sub.add_css_class("time-label");
     iso_inner.append(&iso_sub);
-    save_switch(state, game_name, "Isolated", &iso_sw);
+    save_switch(
+        state,
+        game_name,
+        crate::backend::isolation::GAME_KEY,
+        &iso_sw,
+    );
     let iso_paths = gtk::Entry::new();
     iso_paths.set_placeholder_text(Some("Extra writable paths, separated by ;"));
-    iso_paths.set_text(&state.config.game_value(game_name, "IsolatePaths").unwrap_or_default());
+    iso_paths.set_text(
+        &state
+            .config
+            .game_value(game_name, crate::backend::isolation::GAME_PATHS_KEY)
+            .unwrap_or_default(),
+    );
     let iso_note = gtk::Label::new(None);
     iso_note.set_halign(gtk::Align::Start);
     iso_note.set_wrap(true);
@@ -839,9 +1027,7 @@ fn build_run_tab(
                 if p.is_empty() {
                     continue;
                 }
-                if let Err(reason) =
-                    crate::backend::isolation::validate_isolate_path(&game_c, p)
-                {
+                if let Err(reason) = crate::backend::isolation::validate_isolate_path(&game_c, p) {
                     first_err = Some(format!("Not saved ({}): {}", reason, p));
                     break;
                 }
@@ -852,7 +1038,11 @@ fn build_run_tab(
                     note_c.set_visible(true);
                 }
                 None => {
-                    state_c.config.set_game_value(&game_c, "IsolatePaths", &text);
+                    state_c.config.set_game_value(
+                        &game_c,
+                        crate::backend::isolation::GAME_PATHS_KEY,
+                        &text,
+                    );
                     note_c.set_visible(false);
                 }
             }
@@ -865,7 +1055,10 @@ fn build_run_tab(
     // (foreign process), so I hide the option instead of promising something
     // that won't happen. Same condition run_game uses for the Steam path.
     {
-        let sid = state.config.game_value(game_name, "SteamID").unwrap_or_default();
+        let sid = state
+            .config
+            .game_value(game_name, "SteamID")
+            .unwrap_or_default();
         let sid = sid.trim().to_string();
         if (!sid.is_empty() && sid.chars().all(|c| c.is_ascii_digit())) || steam_game {
             iso_frame.set_visible(false);
@@ -895,8 +1088,14 @@ fn build_install_path_card(
     // Shared install-path validator (single source of truth). The Locate
     // control only appears for a deleted/moved folder; a missing executable
     // with the folder still present is handled by the Warnings dialog.
-    let exe_now = state.config.game_value(game_name, "Executable").unwrap_or_default();
-    let steam_id = state.config.game_value(game_name, "SteamID").unwrap_or_default();
+    let exe_now = state
+        .config
+        .game_value(game_name, "Executable")
+        .unwrap_or_default();
+    let steam_id = state
+        .config
+        .game_value(game_name, "SteamID")
+        .unwrap_or_default();
     match crate::ui::warnings::classify_install_path(&main_trim, &exe_now, &steam_id) {
         Some(crate::ui::warnings::InstallPathState::FolderMissing) => {}
         _ => return None,
@@ -927,7 +1126,10 @@ fn build_install_path_card(
     inner.append(&ok_lbl);
     inner.append(&locate_btn);
 
-    let old_exe = state.config.game_value(game_name, "Executable").unwrap_or_default();
+    let old_exe = state
+        .config
+        .game_value(game_name, "Executable")
+        .unwrap_or_default();
     let state_c = state.clone();
     let game_c = game_name.to_string();
     let parent_c = parent.clone();
@@ -995,13 +1197,14 @@ fn build_install_path_card(
                     // Selective, atomic Games.ini update — set_game_value
                     // only touches this key and save_games_ini writes via
                     // temp+rename.
-                    st_cc.config.set_game_value(&g_cc, "MainPath", &chosen2.display().to_string());
+                    st_cc
+                        .config
+                        .set_game_value(&g_cc, "MainPath", &chosen2.display().to_string());
                     if !rel.is_empty() {
                         let new_exe = chosen2.join(&rel).display().to_string();
                         st_cc.config.set_game_value(&g_cc, "Executable", &new_exe);
                     }
-                    let mut done_msg =
-                        format!("Install folder updated to {}", chosen2.display());
+                    let mut done_msg = format!("Install folder updated to {}", chosen2.display());
                     if let Some(note) = nested_prefix_note(&st_cc, &g_cc, &old_main_cc) {
                         done_msg.push_str(&format!("\n{}", note));
                     }
@@ -1043,7 +1246,9 @@ fn relative_exe(old_main: &str, exe: &str) -> String {
     if let Ok(rel) = ep.strip_prefix(mp) {
         return rel.display().to_string();
     }
-    ep.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+    ep.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default()
 }
 
 /// `Some(note)` when the previous install folder lived inside the stored
@@ -1051,11 +1256,17 @@ fn relative_exe(old_main: &str, exe: &str) -> String {
 /// fail to launch until the prefix is updated too. `None` when there is no
 /// stored prefix (emulator entries) or no nesting.
 fn nested_prefix_note(state: &AppState, game: &str, old_main: &str) -> Option<String> {
-    let prefix = state.config.game_value(game, "PrefixPath").unwrap_or_default();
+    let prefix = state
+        .config
+        .game_value(game, "PrefixPath")
+        .unwrap_or_default();
     if prefix.trim().is_empty() {
         return None;
     }
-    if nested_in(std::path::Path::new(&expand_tilde(old_main)), std::path::Path::new(&expand_tilde(&prefix))) {
+    if nested_in(
+        std::path::Path::new(&expand_tilde(old_main)),
+        std::path::Path::new(&expand_tilde(&prefix)),
+    ) {
         Some(format!(
             "Note: the previous folder was inside its Wine prefix ({}). The prefix still points at the old location — update Prefix path in the Run tab if the game fails to launch.",
             prefix
@@ -1114,10 +1325,14 @@ fn open_shared_picker(
     let (picker_header, picker_x) = helpers::modal_header("Shared Prefix");
     {
         let dlg_c = dialog.clone();
-        picker_x.connect_clicked(move |_| { dlg_c.close(); });
+        picker_x.connect_clicked(move |_| {
+            dlg_c.close();
+        });
     }
     inner.append(&picker_header);
-    let sub = gtk::Label::new(Some("Select an existing shared prefix or create a new one."));
+    let sub = gtk::Label::new(Some(
+        "Select an existing shared prefix or create a new one.",
+    ));
     sub.set_halign(gtk::Align::Start);
     sub.set_wrap(true);
 
@@ -1130,14 +1345,21 @@ fn open_shared_picker(
     let on_cancel = std::rc::Rc::new(on_cancel);
     let picked = std::rc::Rc::new(std::cell::Cell::new(false));
     // Skip the pseudo "GE-Proton Latest" entry for real dir mapping
-    for name in proton_names.iter().filter(|n| n.as_str() != "GE-Proton Latest") {
+    for name in proton_names
+        .iter()
+        .filter(|n| n.as_str() != "GE-Proton Latest")
+    {
         let already = existing.contains(name);
         let path = if already {
-            state.config.shared_prefix_path(name)
+            state
+                .config
+                .shared_prefix_path(name)
                 .map(|p| p.display().to_string())
                 .unwrap_or_default()
         } else {
-            state.config.prefixes_dir()
+            state
+                .config
+                .prefixes_dir()
                 .join(format!("shared-{}", name.replace('/', "_")))
                 .display()
                 .to_string()
@@ -1206,7 +1428,6 @@ fn open_shared_picker(
     dialog.present(Some(parent));
 }
 
-
 /// Human labels for emulator setting ids (C++ emulatorSettingLabel parity).
 fn emu_setting_label(id: &str) -> String {
     match id {
@@ -1241,7 +1462,10 @@ fn build_emulator_tab(
     page.set_margin_end(20);
     page.set_halign(gtk::Align::Fill);
 
-    let executor = state.config.game_value(game_name, "Executor").unwrap_or_default();
+    let executor = state
+        .config
+        .game_value(game_name, "Executor")
+        .unwrap_or_default();
     let emu_name = state.plugins.get_emulator_name(&executor);
     // Dynamic setting defs reported by emulator-manager (C++ parity)
     let defs: Vec<crate::backend::plugins::EmuSettingDef> = state
@@ -1270,7 +1494,10 @@ fn build_emulator_tab(
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
             let entry = gtk::Entry::new();
             entry.set_text(
-                &state.config.game_value(game_name, &format!("emu_{}", def.id)).unwrap_or_default(),
+                &state
+                    .config
+                    .game_value(game_name, &format!("emu_{}", def.id))
+                    .unwrap_or_default(),
             );
             entry.set_hexpand(true);
             let key = format!("emu_{}", def.id);
@@ -1306,7 +1533,9 @@ fn build_emulator_tab(
             let sw = gtk::Switch::new();
             sw.set_halign(gtk::Align::End);
             sw.set_valign(gtk::Align::Center);
-            let cur = state.config.game_value(game_name, &format!("emu_{}", def.id));
+            let cur = state
+                .config
+                .game_value(game_name, &format!("emu_{}", def.id));
             sw.set_active(match cur.as_deref() {
                 Some("true") | Some("1") => true,
                 Some("false") | Some("0") => false,
@@ -1329,11 +1558,7 @@ fn build_emulator_tab(
     wrap_scroll(page)
 }
 
-fn build_rpg_tab(
-    state: &AppState,
-    game_name: &str,
-    parent: &adw::ApplicationWindow,
-) -> gtk::Box {
+fn build_rpg_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWindow) -> gtk::Box {
     let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
     page.set_margin_top(12);
     page.set_margin_bottom(12);
@@ -1341,7 +1566,10 @@ fn build_rpg_tab(
     page.set_margin_end(20);
     page.set_halign(gtk::Align::Fill);
 
-    let exe = state.config.game_value(game_name, "Executable").unwrap_or_default();
+    let exe = state
+        .config
+        .game_value(game_name, "Executable")
+        .unwrap_or_default();
 
     let (eng_frame, eng_inner) = make_frame("Engine");
     let eng_lbl = gtk::Label::new(Some("Detecting…"));
@@ -1361,9 +1589,15 @@ fn build_rpg_tab(
         std::thread::spawn(move || {
             let txt = match crate::backend::external::RpgMakerManager::scan(&exe_c) {
                 Ok(doc) => {
-                    let eng = doc.get("engine").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let eng = doc
+                        .get("engine")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
                     let var = doc.get("variant").and_then(|v| v.as_str()).unwrap_or("");
-                    let auth = doc.get("authoritative").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let auth = doc
+                        .get("authoritative")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
                     let base = match (eng, var) {
                         ("mv_mz", "mz") => "RPG Maker MZ",
                         ("mv_mz", _) => "RPG Maker MV",
@@ -1416,7 +1650,10 @@ fn build_rpg_tab(
             std::thread::spawn(move || {
                 let r = crate::backend::external::RpgMakerManager::install_box();
                 let _ = tx.send(r.map(|v| {
-                    v.get("commit").and_then(|x| x.as_str()).unwrap_or("").to_string()
+                    v.get("commit")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string()
                 }));
             });
             let parent_cc = parent_c.clone();
@@ -1450,17 +1687,36 @@ fn build_rpg_tab(
         std::thread::spawn(move || {
             let txt = match crate::backend::external::RpgMakerManager::status() {
                 Ok(doc) => {
-                    if doc.get("box_rpg_installed").and_then(|v| v.as_bool()).unwrap_or(false) {
-                        let nw = doc.get("nwjs_runtimes").and_then(|v| v.as_array())
-                            .map(|a| a.len()).unwrap_or(0);
-                        let er = doc.get("easyrpg_runtimes").and_then(|v| v.as_array())
-                            .map(|a| a.len()).unwrap_or(0);
-                        let mode = doc.get("box_rpg_mode").and_then(|v| v.as_str()).unwrap_or("?");
-                        let commit = doc.get("box_rpg_commit").and_then(|v| v.as_str()).unwrap_or_default();
+                    if doc
+                        .get("box_rpg_installed")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                    {
+                        let nw = doc
+                            .get("nwjs_runtimes")
+                            .and_then(|v| v.as_array())
+                            .map(|a| a.len())
+                            .unwrap_or(0);
+                        let er = doc
+                            .get("easyrpg_runtimes")
+                            .and_then(|v| v.as_array())
+                            .map(|a| a.len())
+                            .unwrap_or(0);
+                        let mode = doc
+                            .get("box_rpg_mode")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("?");
+                        let commit = doc
+                            .get("box_rpg_commit")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default();
                         if commit.is_empty() {
                             format!("Ready ({}, NW.js: {}, EasyRPG: {})", mode, nw, er)
                         } else {
-                            format!("Ready ({} {}, NW.js: {}, EasyRPG: {})", mode, commit, nw, er)
+                            format!(
+                                "Ready ({} {}, NW.js: {}, EasyRPG: {})",
+                                mode, commit, nw, er
+                            )
                         }
                     } else {
                         String::from("Missing — press Install box-rpg to fetch the bundled copy.")
@@ -1483,7 +1739,12 @@ fn build_rpg_tab(
 
     let (rt_frame, rt_inner) = make_frame("Runtime");
     let rt_entry = gtk::Entry::new();
-    rt_entry.set_text(&state.config.game_value(game_name, "RpgRuntime").unwrap_or_default());
+    rt_entry.set_text(
+        &state
+            .config
+            .game_value(game_name, "RpgRuntime")
+            .unwrap_or_default(),
+    );
     rt_entry.set_hexpand(true);
     rt_entry.set_placeholder_text(Some("Pinned runtime version (empty = auto)"));
     save_entry(state, game_name, "RpgRuntime", &rt_entry);
@@ -1491,9 +1752,12 @@ fn build_rpg_tab(
     let rt_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     // Set below by the Installed-runtimes section; install buttons
     // trigger it so the list refreshes without reopening settings.
-    let rt_refresh: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let rt_refresh: crate::ui::RefreshCallback = Rc::new(RefCell::new(None));
     for kind in ["nwjs", "easyrpg"] {
-        let btn = gtk::Button::with_label(&format!("Install latest {}", if kind == "nwjs" { "NW.js" } else { "EasyRPG" }));
+        let btn = gtk::Button::with_label(&format!(
+            "Install latest {}",
+            if kind == "nwjs" { "NW.js" } else { "EasyRPG" }
+        ));
         btn.add_css_class("settings-btn");
         btn.set_hexpand(true);
         let parent_c = parent.clone();
@@ -1506,7 +1770,10 @@ fn build_rpg_tab(
             std::thread::spawn(move || {
                 let r = crate::backend::external::RpgMakerManager::install_runtime(&kind_t, None);
                 let _ = tx.send(r.map(|v| {
-                    v.get("installed_version").and_then(|x| x.as_str()).unwrap_or("").to_string()
+                    v.get("installed_version")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string()
                 }));
             });
             let parent_cc = parent_c.clone();
@@ -1516,7 +1783,11 @@ fn build_rpg_tab(
             glib::idle_add_local(move || match rx.try_recv() {
                 Ok(Ok(v)) => {
                     b_c.set_sensitive(true);
-                    helpers::present_msg(&parent_cc, "Runtime installed", &format!("{} {}", kind_cc, v));
+                    helpers::present_msg(
+                        &parent_cc,
+                        "Runtime installed",
+                        &format!("{} {}", kind_cc, v),
+                    );
                     if let Some(f) = refresh_c.borrow().as_ref() {
                         f();
                     }
@@ -1544,17 +1815,28 @@ fn build_rpg_tab(
     // consent). Both off = maximum sandbox.
     let (pm_frame, pm_inner) = make_frame("Permissions");
     for (key, label, sub) in [
-        ("RpgAllowNet", "Allow network",
-            "Shares host + internet with the game (online/self-updating games only)."),
-        ("RpgAllowWrites", "Allow game folder writes",
-            "Self-updating games can patch themselves. Never combine with untrusted games."),
+        (
+            "RpgAllowNet",
+            "Allow network",
+            "Shares host + internet with the game (online/self-updating games only).",
+        ),
+        (
+            "RpgAllowWrites",
+            "Allow game folder writes",
+            "Self-updating games can patch themselves. Never combine with untrusted games.",
+        ),
     ] {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let sw = gtk::Switch::new();
         sw.set_halign(gtk::Align::End);
         sw.set_valign(gtk::Align::Center);
-        sw.set_active(state.config.game_value(game_name, key)
-            .map(|v| v == "true").unwrap_or(false));
+        sw.set_active(
+            state
+                .config
+                .game_value(game_name, key)
+                .map(|v| v == "true")
+                .unwrap_or(false),
+        );
         let mid = gtk::Box::new(gtk::Orientation::Vertical, 0);
         mid.set_hexpand(true);
         let lbl = gtk::Label::new(Some(label));
@@ -1588,71 +1870,86 @@ fn build_rpg_tab(
         let do_refresh: Rc<dyn Fn()> = Rc::new({
             let rt_refresh_c = rt_refresh.clone();
             move || {
-            while let Some(c) = lr_c.first_child() {
-                lr_c.remove(&c);
-            }
-            let wait = gtk::Label::new(Some("Loading…"));
-            wait.set_halign(gtk::Align::Start);
-            wait.add_css_class("time-label");
-            lr_c.append(&wait);
-            let (tx, rx) = std::sync::mpsc::channel::<(Vec<String>, Vec<String>)>();
-            std::thread::spawn(move || {
-                let (nw, er) = match crate::backend::external::RpgMakerManager::status() {
-                    Ok(doc) => {
-                        let get = |k: &str| doc.get(k).and_then(|v| v.as_array()).cloned()
-                            .unwrap_or_default().into_iter()
-                            .filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>();
-                        (get("nwjs_runtimes"), get("easyrpg_runtimes"))
-                    }
-                    Err(_) => (Vec::new(), Vec::new()),
-                };
-                let _ = tx.send((nw, er));
-            });
-            let lr_c2 = lr_c.clone();
-            let parent_c2 = parent_c.clone();
-            let refresh_c = rt_refresh_c.clone();
-            glib::idle_add_local(move || match rx.try_recv() {
-                Ok((nw, er)) => {
-                    while let Some(c) = lr_c2.first_child() {
-                        lr_c2.remove(&c);
-                    }
-                    for (kind, items) in [("nwjs", nw), ("easyrpg", er)] {
-                        if items.is_empty() {
-                            let none = gtk::Label::new(Some(
-                                if kind == "nwjs" { "NW.js: none installed" }
-                                else { "EasyRPG Player: none installed" }));
-                            none.set_halign(gtk::Align::Start);
-                            none.add_css_class("time-label");
-                            lr_c2.append(&none);
-                            continue;
+                while let Some(c) = lr_c.first_child() {
+                    lr_c.remove(&c);
+                }
+                let wait = gtk::Label::new(Some("Loading…"));
+                wait.set_halign(gtk::Align::Start);
+                wait.add_css_class("time-label");
+                lr_c.append(&wait);
+                let (tx, rx) = std::sync::mpsc::channel::<(Vec<String>, Vec<String>)>();
+                std::thread::spawn(move || {
+                    let (nw, er) = match crate::backend::external::RpgMakerManager::status() {
+                        Ok(doc) => {
+                            let get = |k: &str| {
+                                doc.get(k)
+                                    .and_then(|v| v.as_array())
+                                    .cloned()
+                                    .unwrap_or_default()
+                                    .into_iter()
+                                    .filter_map(|v| v.as_str().map(str::to_string))
+                                    .collect::<Vec<_>>()
+                            };
+                            (get("nwjs_runtimes"), get("easyrpg_runtimes"))
                         }
-                        for line in items {
-                            let ver = line.split_whitespace().next().unwrap_or("").to_string();
-                            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                            let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
-                            col.set_hexpand(true);
-                            let v_lbl = gtk::Label::new(Some(
-                                &format!("{} ({})", ver, if kind == "nwjs" { "NW.js" } else { "EasyRPG" })));
-                            v_lbl.set_halign(gtk::Align::Start);
-                            v_lbl.add_css_class("info-value");
-                            col.append(&v_lbl);
-                            // Ruta completa en tooltip; visible recortada.
-                            let rest = line.split_whitespace().skip(1).collect::<Vec<_>>().join(" ");
-                            let p_lbl = gtk::Label::new(Some(&rest));
-                            p_lbl.set_halign(gtk::Align::Start);
-                            p_lbl.set_opacity(0.7);
-                            p_lbl.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-                            p_lbl.set_tooltip_text(Some(&rest));
-                            p_lbl.add_css_class("time-label");
-                            col.append(&p_lbl);
-                            row.append(&col);
-                            if !ver.is_empty() {
-                                let rm = gtk::Button::with_label("Remove");
-                                rm.add_css_class("flat");
-                                let kind_c = kind.to_string();
-                                let parent_c3 = parent_c2.clone();
-                                let refresh_c2 = refresh_c.clone();
-                                rm.connect_clicked(move |b| {
+                        Err(_) => (Vec::new(), Vec::new()),
+                    };
+                    let _ = tx.send((nw, er));
+                });
+                let lr_c2 = lr_c.clone();
+                let parent_c2 = parent_c.clone();
+                let refresh_c = rt_refresh_c.clone();
+                glib::idle_add_local(move || match rx.try_recv() {
+                    Ok((nw, er)) => {
+                        while let Some(c) = lr_c2.first_child() {
+                            lr_c2.remove(&c);
+                        }
+                        for (kind, items) in [("nwjs", nw), ("easyrpg", er)] {
+                            if items.is_empty() {
+                                let none = gtk::Label::new(Some(if kind == "nwjs" {
+                                    "NW.js: none installed"
+                                } else {
+                                    "EasyRPG Player: none installed"
+                                }));
+                                none.set_halign(gtk::Align::Start);
+                                none.add_css_class("time-label");
+                                lr_c2.append(&none);
+                                continue;
+                            }
+                            for line in items {
+                                let ver = line.split_whitespace().next().unwrap_or("").to_string();
+                                let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                                let col = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                                col.set_hexpand(true);
+                                let v_lbl = gtk::Label::new(Some(&format!(
+                                    "{} ({})",
+                                    ver,
+                                    if kind == "nwjs" { "NW.js" } else { "EasyRPG" }
+                                )));
+                                v_lbl.set_halign(gtk::Align::Start);
+                                v_lbl.add_css_class("info-value");
+                                col.append(&v_lbl);
+                                // Ruta completa en tooltip; visible recortada.
+                                let rest = line
+                                    .split_whitespace()
+                                    .skip(1)
+                                    .collect::<Vec<_>>()
+                                    .join(" ");
+                                let p_lbl = gtk::Label::new(Some(&rest));
+                                p_lbl.set_halign(gtk::Align::Start);
+                                p_lbl.set_opacity(0.7);
+                                p_lbl.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+                                p_lbl.set_tooltip_text(Some(&rest));
+                                p_lbl.add_css_class("time-label");
+                                col.append(&p_lbl);
+                                row.append(&col);
+                                if !ver.is_empty() {
+                                    let rm = gtk::Button::with_label("Remove");
+                                    rm.add_css_class("flat");
+                                    let kind_c = kind.to_string();
+                                    let parent_c3 = parent_c2.clone();
+                                    let refresh_c2 = refresh_c.clone();
+                                    rm.connect_clicked(move |b| {
                                     b.set_sensitive(false);
                                     let (tx2, rx2) = std::sync::mpsc::channel::<Result<String, String>>();
                                     let k2 = kind_c.clone();
@@ -1683,16 +1980,16 @@ fn build_rpg_tab(
                                         Err(_) => glib::ControlFlow::Break,
                                     });
                                 });
-                                row.append(&rm);
+                                    row.append(&rm);
+                                }
+                                lr_c2.append(&row);
                             }
-                            lr_c2.append(&row);
                         }
+                        glib::ControlFlow::Break
                     }
-                    glib::ControlFlow::Break
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-                Err(_) => glib::ControlFlow::Break,
-            });
+                    Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                    Err(_) => glib::ControlFlow::Break,
+                });
             }
         });
         *rt_refresh.borrow_mut() = Some(do_refresh.clone());
@@ -1725,7 +2022,10 @@ fn build_rpg_tab(
             std::thread::spawn(move || {
                 let r = crate::backend::external::RpgMakerManager::diagnose(&exe_t, None);
                 let _ = tx.send(r.map(|v| {
-                    v.get("report").and_then(|x| x.as_str()).unwrap_or("").to_string()
+                    v.get("report")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string()
                 }));
             });
             let dg_cc = dg_c.clone();
@@ -1733,7 +2033,11 @@ fn build_rpg_tab(
             glib::idle_add_local(move || match rx.try_recv() {
                 Ok(Ok(rep)) => {
                     b_c.set_sensitive(true);
-                    dg_cc.set_text(if rep.is_empty() { "(empty report)" } else { &rep });
+                    dg_cc.set_text(if rep.is_empty() {
+                        "(empty report)"
+                    } else {
+                        &rep
+                    });
                     glib::ControlFlow::Break
                 }
                 Ok(Err(e)) => {
@@ -1764,7 +2068,10 @@ fn build_graphics_tab(state: &AppState, game_name: &str) -> gtk::Box {
     page.set_halign(gtk::Align::Fill);
 
     // Per-arch availability (C++ graphicsComponentStatus parity)
-    let exe = state.config.game_value(game_name, "Executable").unwrap_or_default();
+    let exe = state
+        .config
+        .game_value(game_name, "Executable")
+        .unwrap_or_default();
     let gm_status = state.proton.component_status("gamemode", &exe);
     let mh_status = state.proton.component_status("mangohud", &exe);
     let gamemode_avail = gm_status.available;
@@ -1775,8 +2082,13 @@ fn build_graphics_tab(state: &AppState, game_name: &str) -> gtk::Box {
     let w3d_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let w3d_sw = gtk::Switch::new();
     w3d_sw.set_halign(gtk::Align::End);
-    w3d_sw.set_active(state.config.game_value(game_name, "UseWined3d")
-        .map(|v| v == "true").unwrap_or(false));
+    w3d_sw.set_active(
+        state
+            .config
+            .game_value(game_name, "UseWined3d")
+            .map(|v| v == "true")
+            .unwrap_or(false),
+    );
     let w3d_lbl = gtk::Label::new(Some("Use wined3d instead of DXVK"));
     w3d_lbl.add_css_class("info-value");
     w3d_lbl.set_hexpand(true);
@@ -1791,8 +2103,13 @@ fn build_graphics_tab(state: &AppState, game_name: &str) -> gtk::Box {
     let wl_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let wl_sw = gtk::Switch::new();
     wl_sw.set_halign(gtk::Align::End);
-    wl_sw.set_active(state.config.game_value(game_name, "NativeWayland")
-        .map(|v| v == "true").unwrap_or(false));
+    wl_sw.set_active(
+        state
+            .config
+            .game_value(game_name, "NativeWayland")
+            .map(|v| v == "true")
+            .unwrap_or(false),
+    );
     let wl_lbl = gtk::Label::new(Some("Native Wayland (disable XWayland)"));
     wl_lbl.add_css_class("info-value");
     wl_lbl.set_hexpand(true);
@@ -1807,10 +2124,19 @@ fn build_graphics_tab(state: &AppState, game_name: &str) -> gtk::Box {
     let gm_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let gm_sw = gtk::Switch::new();
     gm_sw.set_halign(gtk::Align::End);
-    gm_sw.set_active(state.config.game_value(game_name, "GameMode")
-        .map(|v| v == "true").unwrap_or(false));
+    gm_sw.set_active(
+        state
+            .config
+            .game_value(game_name, "GameMode")
+            .map(|v| v == "true")
+            .unwrap_or(false),
+    );
     gm_sw.set_sensitive(gamemode_avail);
-    let gm_lbl = gtk::Label::new(Some(if gamemode_avail { "GameMode" } else { "GameMode (not installed)" }));
+    let gm_lbl = gtk::Label::new(Some(if gamemode_avail {
+        "GameMode"
+    } else {
+        "GameMode (not installed)"
+    }));
     gm_lbl.set_hexpand(true);
     gm_box.append(&gm_lbl);
     gm_box.append(&gm_sw);
@@ -1827,10 +2153,19 @@ fn build_graphics_tab(state: &AppState, game_name: &str) -> gtk::Box {
     let mh_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let mh_sw = gtk::Switch::new();
     mh_sw.set_halign(gtk::Align::End);
-    mh_sw.set_active(state.config.game_value(game_name, "MangoHud")
-        .map(|v| v == "true").unwrap_or(false));
+    mh_sw.set_active(
+        state
+            .config
+            .game_value(game_name, "MangoHud")
+            .map(|v| v == "true")
+            .unwrap_or(false),
+    );
     mh_sw.set_sensitive(mangohud_avail);
-    let mh_lbl = gtk::Label::new(Some(if mangohud_avail { "MangoHud" } else { "MangoHud (not installed)" }));
+    let mh_lbl = gtk::Label::new(Some(if mangohud_avail {
+        "MangoHud"
+    } else {
+        "MangoHud (not installed)"
+    }));
     mh_lbl.set_hexpand(true);
     mh_box.append(&mh_lbl);
     mh_box.append(&mh_sw);

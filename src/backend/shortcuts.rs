@@ -119,7 +119,7 @@ fn description_for(game_name: &str, cfg: &super::ConfigManager) -> String {
             if let Some(d) = doc.get("description").and_then(|v| v.as_str()) {
                 let d = d.trim().to_string();
                 if !d.is_empty() {
-                    let _ = cfg.set_game_value(game_name, "Description", &d);
+                    cfg.set_game_value(game_name, "Description", &d);
                     return d;
                 }
             }
@@ -142,15 +142,17 @@ fn build_entry(name: &str) -> Result<String, String> {
         let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
         let roots = super::icon_sources::data_roots(&home);
         let executable = game.get("executable").map(String::as_str).unwrap_or("");
-        if let Some(found) = super::icon_sources::game_icon_candidates(&home, &roots, name, executable)
-            .into_iter().find(|path| {
-                let Some(bytes) = super::icon_io::read_icon_bytes(path) else {
-                    return false;
-                };
-                #[cfg(test)]
-                tests::after_icon_validation();
-                super::icon_io::decode_icon_bytes(&bytes).is_some()
-            })
+        if let Some(found) =
+            super::icon_sources::game_icon_candidates(&home, &roots, name, executable)
+                .into_iter()
+                .find(|path| {
+                    let Some(bytes) = super::icon_io::read_icon_bytes(path) else {
+                        return false;
+                    };
+                    #[cfg(test)]
+                    tests::after_icon_validation();
+                    super::icon_io::decode_icon_bytes(&bytes).is_some()
+                })
         {
             icon = found.to_string_lossy().into_owned();
         }
@@ -191,7 +193,8 @@ pub fn enable_app_menu(name: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).map_err(|e| e.to_string())?;
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644))
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -214,7 +217,8 @@ pub fn enable_desktop(name: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).map_err(|e| e.to_string())?;
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644))
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -283,9 +287,14 @@ mod tests {
             }));
         });
         let entry = super::build_entry("Race Safe").unwrap();
-        assert_eq!(std::fs::read(&cache).unwrap(), b"replacement is not an image");
-        assert!(entry.contains(&format!("Icon={}\n", cache.display())),
-                "icon validation must decode the original checked bytes, not reopen the replaced path");
+        assert_eq!(
+            std::fs::read(&cache).unwrap(),
+            b"replacement is not an image"
+        );
+        assert!(
+            entry.contains(&format!("Icon={}\n", cache.display())),
+            "icon validation must decode the original checked bytes, not reopen the replaced path"
+        );
         std::fs::remove_dir_all(&root).unwrap();
     }
 
@@ -298,8 +307,14 @@ mod tests {
         std::env::set_var("HOME", "/tmp/home-test");
         let got = app_menu_dir();
         // restore
-        match prev_xdg { Some(v) => std::env::set_var("XDG_DATA_HOME", v), None => std::env::remove_var("XDG_DATA_HOME") }
-        match prev_home { Some(v) => std::env::set_var("HOME", v), None => std::env::remove_var("HOME") }
+        match prev_xdg {
+            Some(v) => std::env::set_var("XDG_DATA_HOME", v),
+            None => std::env::remove_var("XDG_DATA_HOME"),
+        }
+        match prev_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
         assert_eq!(got, PathBuf::from("/tmp/xdg-data-test/applications"));
     }
 

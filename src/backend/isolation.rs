@@ -55,9 +55,11 @@ pub fn bwrap_available() -> bool {
     std::process::Command::new(bin)
         .args([
             "--unshare-user",
-            "--ro-bind", "/",
+            "--ro-bind",
             "/",
-            "--tmpfs", "/tmp",
+            "/",
+            "--tmpfs",
+            "/tmp",
             "true",
         ])
         .stdin(std::process::Stdio::null())
@@ -120,13 +122,10 @@ pub fn extra_paths(game_name: &str, raw: &str) -> Result<Vec<PathBuf>, String> {
         if p.is_empty() {
             continue;
         }
-        match validate_isolate_path(game_name, p)? {
-            Some(pb) => {
-                if !out.contains(&pb) {
-                    out.push(pb);
-                }
+        if let Some(pb) = validate_isolate_path(game_name, p)? {
+            if !out.contains(&pb) {
+                out.push(pb);
             }
-            None => {}
         }
     }
     Ok(out)
@@ -196,8 +195,7 @@ pub fn validate_isolate_path(game_name: &str, raw: &str) -> Result<Option<PathBu
     // Another game's sandbox home.
     let sandbox_root = home_canon.join(".local/share/CorkyTux/sandbox-home");
     let own_home = sandbox_home(game_name);
-    let own_canon =
-        std::fs::canonicalize(&own_home).unwrap_or_else(|_| own_home.clone());
+    let own_canon = std::fs::canonicalize(&own_home).unwrap_or_else(|_| own_home.clone());
     if within(&sandbox_root) && !(canon == own_canon || canon.starts_with(&own_canon)) {
         return Err("points at another game's sandbox (not allowed)".to_string());
     }
@@ -261,7 +259,11 @@ pub fn sandbox_argv(
     // GPU: DRI needs write access (a ro-bind of / would leave it read-only).
     let dri = Path::new("/dev/dri");
     if dri.is_dir() {
-        for s in ["--dev-bind", &dri.display().to_string(), &dri.display().to_string()] {
+        for s in [
+            "--dev-bind",
+            &dri.display().to_string(),
+            &dri.display().to_string(),
+        ] {
             argv.push(s.to_string());
         }
     }
@@ -350,7 +352,10 @@ pub fn sandbox_argv(
     for (k, v) in [
         ("HOME", shome.display().to_string()),
         ("XDG_CACHE_HOME", shome.join(".cache").display().to_string()),
-        ("XDG_CONFIG_HOME", shome.join(".config").display().to_string()),
+        (
+            "XDG_CONFIG_HOME",
+            shome.join(".config").display().to_string(),
+        ),
     ] {
         argv.push("--setenv".to_string());
         argv.push(k.to_string());
@@ -418,11 +423,17 @@ mod tests {
 
     #[test]
     fn decide_explicit_wins_over_global() {
-        assert_eq!(decide(Some("true"), false), (true, IsolationReason::PerGame));
+        assert_eq!(
+            decide(Some("true"), false),
+            (true, IsolationReason::PerGame)
+        );
         assert_eq!(decide(Some("false"), true), (false, IsolationReason::Off));
         assert_eq!(decide(None, true), (true, IsolationReason::GlobalDefault));
         assert_eq!(decide(None, false), (false, IsolationReason::Off));
-        assert_eq!(decide(Some(""), true), (true, IsolationReason::GlobalDefault));
+        assert_eq!(
+            decide(Some(""), true),
+            (true, IsolationReason::GlobalDefault)
+        );
     }
 
     #[test]
@@ -433,7 +444,9 @@ mod tests {
             vec![PathBuf::from("/tmp")]
         );
         assert!(extra_paths("game", "").unwrap().is_empty());
-        assert!(extra_paths("game", "/tmp/missing-deep/nested").unwrap().is_empty());
+        assert!(extra_paths("game", "/tmp/missing-deep/nested")
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -471,10 +484,7 @@ mod tests {
     #[test]
     fn validate_isolate_paths_deny_and_allow() {
         let _env = crate::test_env::lock();
-        let base = std::env::temp_dir().join(format!(
-            "corky_iso_val_{}",
-            std::process::id()
-        ));
+        let base = std::env::temp_dir().join(format!("corky_iso_val_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&base).unwrap();
         std::env::set_var("HOME", &base);
@@ -534,7 +544,10 @@ mod tests {
         let h = sandbox_home("Hollow Knight: Silksong!");
         assert!(h.ends_with("sandbox-home/Hollow_Knight__Silksong"));
         assert!(!h.to_string_lossy().contains(' '));
-        assert_eq!(sandbox_home("..."), sandbox_home("...").parent().unwrap().join("game"));
+        assert_eq!(
+            sandbox_home("..."),
+            sandbox_home("...").parent().unwrap().join("game")
+        );
     }
 
     #[test]
@@ -552,8 +565,12 @@ mod tests {
             ro_dirs: vec![PathBuf::from("/usr"), PathBuf::from("/bin")],
             chdir: Some(PathBuf::from("/tmp")),
         };
-        let argv = sandbox_argv(&[("WINEPREFIX".to_string(), "/tmp/pfx".to_string())], None, &spec)
-            .expect("bwrap present");
+        let argv = sandbox_argv(
+            &[("WINEPREFIX".to_string(), "/tmp/pfx".to_string())],
+            None,
+            &spec,
+        )
+        .expect("bwrap present");
         let joined = argv.join(" ");
         // HOME hidden with tmpfs and redefined to the sandbox.
         assert!(joined.contains(&format!("--tmpfs {}", home)), "{}", joined);
@@ -562,7 +579,11 @@ mod tests {
         assert!(joined.contains("--bind /tmp /tmp"), "{}", joined);
         assert!(joined.contains("--ro-bind /usr /usr"), "{}", joined);
         // Command envs travel along.
-        assert!(joined.contains("--setenv WINEPREFIX /tmp/pfx"), "{}", joined);
+        assert!(
+            joined.contains("--setenv WINEPREFIX /tmp/pfx"),
+            "{}",
+            joined
+        );
         // cwd.
         assert!(joined.contains("--chdir /tmp"), "{}", joined);
         // I share the network in v1 (no --unshare-net).

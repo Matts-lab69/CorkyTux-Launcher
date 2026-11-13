@@ -29,7 +29,11 @@ pub fn install(theme: &ThemeManager) {
     let border = theme.border();
     let text_main = theme.text_main();
     let text_sec = theme.text_sec();
-    let on_accent = if theme.is_dark() { "#FFFFFF" } else { theme.text_main() };
+    let on_accent = if theme.is_dark() {
+        "#FFFFFF"
+    } else {
+        theme.text_main()
+    };
     let css = format!(
         ".mcx-page {{ background-color: {bg}; }}\
         .mcx .mc-head {{ background-color: {well}; border: 1px solid {border}; border-radius: 16px; padding: 10px 12px; }}\

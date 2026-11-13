@@ -19,7 +19,11 @@ pub fn icon_search_paths(
         push(dir.join("corkytux/assets/icons"));
     }
     if let Some(parent) = exe.parent() {
-        for up in [parent.to_path_buf(), parent.join(".."), parent.join("../..")] {
+        for up in [
+            parent.to_path_buf(),
+            parent.join(".."),
+            parent.join("../.."),
+        ] {
             let candidate = up.join("assets/icons");
             if candidate.is_dir() {
                 push(candidate.canonicalize().unwrap_or(candidate));
@@ -49,14 +53,17 @@ pub fn data_roots(home: &std::path::Path) -> Vec<std::path::PathBuf> {
 /// Both the versioned game label and the stable AppImage application name.
 fn game_icon_stems(name: &str, executable: &str) -> Vec<String> {
     let mut stems = Vec::new();
-    let file_stem = std::path::Path::new(executable).file_stem()
-        .and_then(|s| s.to_str()).unwrap_or("");
+    let file_stem = std::path::Path::new(executable)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
     for raw in [name, file_stem] {
         let version = raw.char_indices().find_map(|(index, ch)| {
             let suffix = &raw[index + ch.len_utf8()..];
-            (ch == '-' && suffix.split('-').next().unwrap_or("").contains('.')
+            (ch == '-'
+                && suffix.split('-').next().unwrap_or("").contains('.')
                 && suffix.as_bytes().first().is_some_and(u8::is_ascii_digit))
-                .then_some(index)
+            .then_some(index)
         });
         for value in [raw, &raw[..version.unwrap_or(raw.len())]] {
             // Use the cache writer's exact normalization, including lowercase
@@ -84,7 +91,9 @@ fn read_desktop_metadata(path: &std::path::Path) -> Option<gio::DesktopAppInfo> 
     let bytes = super::icon_io::read_icon_bytes(path)?;
     let text = std::str::from_utf8(bytes.as_ref()).ok()?;
     let key_file = glib::KeyFile::new();
-    key_file.load_from_data(text, glib::KeyFileFlags::NONE).ok()?;
+    key_file
+        .load_from_data(text, glib::KeyFileFlags::NONE)
+        .ok()?;
     gio::DesktopAppInfo::from_keyfile(&key_file)
 }
 
@@ -97,29 +106,55 @@ pub fn game_icon_candidates(
     let stems = game_icon_stems(name, executable);
     let mut paths = Vec::new();
     for stem in &stems {
-        for suffix in ["-appimage.png", "-exe.png", "-sgdb.png", ".png", ".svg", ".ico", ".webp"] {
-            paths.push(home.join(".config/CorkyTux/icons").join(format!("{stem}{suffix}")));
+        for suffix in [
+            "-appimage.png",
+            "-exe.png",
+            "-sgdb.png",
+            ".png",
+            ".svg",
+            ".ico",
+            ".webp",
+        ] {
+            paths.push(
+                home.join(".config/CorkyTux/icons")
+                    .join(format!("{stem}{suffix}")),
+            );
         }
     }
     for root in data_dirs {
         for stem in &stems {
-            for desktop in [format!("{stem}.desktop"), format!("corkytux-{stem}.desktop")] {
-                let Some(app) = read_desktop_metadata(&root.join("applications").join(desktop)) else { continue };
+            for desktop in [
+                format!("{stem}.desktop"),
+                format!("corkytux-{stem}.desktop"),
+            ] {
+                let Some(app) = read_desktop_metadata(&root.join("applications").join(desktop))
+                else {
+                    continue;
+                };
                 if desktop_executable(&app).as_deref() != Some(std::path::Path::new(executable))
                     && app.string("X-CorkyTux-Game").as_deref() != Some(name)
                 {
                     continue;
                 }
-                let Some(icon) = app.string("Icon") else { continue };
+                let Some(icon) = app.string("Icon") else {
+                    continue;
+                };
                 let path = std::path::Path::new(icon.as_str());
                 if path.is_absolute() {
                     paths.push(path.to_path_buf());
                 } else if !icon.contains('/') && !icon.is_empty() {
                     for icon_root in data_dirs {
-                        for size in ["512x512", "256x256", "128x128", "64x64", "48x48", "32x32", "scalable"] {
+                        for size in [
+                            "512x512", "256x256", "128x128", "64x64", "48x48", "32x32", "scalable",
+                        ] {
                             for ext in ["png", "svg", "xpm"] {
-                                paths.push(icon_root.join("icons/hicolor").join(size)
-                                    .join("apps").join(format!("{icon}.{ext}")));
+                                paths.push(
+                                    icon_root
+                                        .join("icons/hicolor")
+                                        .join(size)
+                                        .join("apps")
+                                        .join(format!("{icon}.{ext}")),
+                                );
                             }
                         }
                     }
@@ -150,17 +185,55 @@ mod tests {
             }
         }
         let _restore = RestoreXdg(
-            ["XDG_DATA_HOME", "XDG_DATA_DIRS"].into_iter()
-                .map(|key| (key, std::env::var_os(key))).collect(),
+            ["XDG_DATA_HOME", "XDG_DATA_DIRS"]
+                .into_iter()
+                .map(|key| (key, std::env::var_os(key)))
+                .collect(),
         );
         let home = std::path::Path::new("/home/example");
         for (data_home, data_dirs, expected) in [
-            (None, None, vec!["/home/example/.local/share", "/usr/local/share", "/usr/share"]),
-            (Some(""), Some(""), vec!["/home/example/.local/share", "/usr/local/share", "/usr/share"]),
-            (Some("relative/home"), Some("relative/data:.:.."), vec!["/home/example/.local/share", "/usr/local/share", "/usr/share"]),
-            (Some("/custom/data"), Some(":"), vec!["/custom/data", "/usr/local/share", "/usr/share"]),
-            (Some("/custom/data"), Some("/opt/data::relative:/usr/share"), vec!["/custom/data", "/opt/data", "/usr/share"]),
-            (Some(""), Some("/first:/second"), vec!["/home/example/.local/share", "/first", "/second"]),
+            (
+                None,
+                None,
+                vec![
+                    "/home/example/.local/share",
+                    "/usr/local/share",
+                    "/usr/share",
+                ],
+            ),
+            (
+                Some(""),
+                Some(""),
+                vec![
+                    "/home/example/.local/share",
+                    "/usr/local/share",
+                    "/usr/share",
+                ],
+            ),
+            (
+                Some("relative/home"),
+                Some("relative/data:.:.."),
+                vec![
+                    "/home/example/.local/share",
+                    "/usr/local/share",
+                    "/usr/share",
+                ],
+            ),
+            (
+                Some("/custom/data"),
+                Some(":"),
+                vec!["/custom/data", "/usr/local/share", "/usr/share"],
+            ),
+            (
+                Some("/custom/data"),
+                Some("/opt/data::relative:/usr/share"),
+                vec!["/custom/data", "/opt/data", "/usr/share"],
+            ),
+            (
+                Some(""),
+                Some("/first:/second"),
+                vec!["/home/example/.local/share", "/first", "/second"],
+            ),
         ] {
             for (key, value) in [("XDG_DATA_HOME", data_home), ("XDG_DATA_DIRS", data_dirs)] {
                 match value {
@@ -169,8 +242,11 @@ mod tests {
                 }
             }
             let expected: Vec<std::path::PathBuf> = expected.into_iter().map(Into::into).collect();
-            assert_eq!(super::data_roots(home), expected,
-                       "invalid XDG roots must never cause a current-directory metadata search");
+            assert_eq!(
+                super::data_roots(home),
+                expected,
+                "invalid XDG roots must never cause a current-directory metadata search"
+            );
         }
     }
 
@@ -181,24 +257,32 @@ mod tests {
         if let Some(root) = std::env::var_os(CHILD_ROOT) {
             let root = std::path::PathBuf::from(root);
             let paths = game_icon_candidates(&root, &[root.join("data")], "Pipe Game", "/bin/true");
-            assert!(paths.iter().all(|path| path.starts_with(root.join(".config"))));
+            assert!(paths
+                .iter()
+                .all(|path| path.starts_with(root.join(".config"))));
             return;
         }
         use std::os::unix::ffi::OsStrExt;
         use std::time::{Duration, Instant};
-        let root = std::env::temp_dir().join(format!("desktop-fifo-regression-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("desktop-fifo-regression-{}", std::process::id()));
         let applications = root.join("data/applications");
         std::fs::create_dir_all(&applications).unwrap();
         let fifo = applications.join("pipe-game.desktop");
         let name = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
         // SAFETY: name is a live NUL-terminated pathname; mkfifo keeps no pointer.
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
-        std::os::unix::fs::symlink("pipe-game.desktop", applications.join("corkytux-pipe-game.desktop")).unwrap();
+        std::os::unix::fs::symlink(
+            "pipe-game.desktop",
+            applications.join("corkytux-pipe-game.desktop"),
+        )
+        .unwrap();
         let mut child = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", TEST, "--nocapture"])
             .env(CHILD_ROOT, &root)
             .stdout(std::process::Stdio::null())
-            .spawn().unwrap();
+            .spawn()
+            .unwrap();
         let deadline = Instant::now() + Duration::from_secs(3);
         let status = loop {
             if let Some(status) = child.try_wait().unwrap() {
@@ -212,8 +296,10 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         };
         std::fs::remove_dir_all(&root).unwrap();
-        assert!(status.is_some_and(|status| status.success()),
-                "desktop metadata lookup blocked on a FIFO with no writer or child failed");
+        assert!(
+            status.is_some_and(|status| status.success()),
+            "desktop metadata lookup blocked on a FIFO with no writer or child failed"
+        );
     }
 
     #[test]
@@ -225,14 +311,16 @@ mod tests {
         ] {
             let paths = game_icon_candidates(home, &[], name, "/apps/launcher.AppImage");
             let cached = home.join(".config/CorkyTux/icons").join(expected);
-            assert!(paths.contains(&cached), "missing writer-normalized alias: {cached:?}");
+            assert!(
+                paths.contains(&cached),
+                "missing writer-normalized alias: {cached:?}"
+            );
         }
     }
 
     #[test]
     fn gamepad_openchamber_uses_stable_cache_and_matching_desktop_icon() {
-        let root = std::env::temp_dir()
-            .join(format!("gamepad-icon-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("gamepad-icon-{}", std::process::id()));
         let home = root.join("home");
         let data = root.join("data");
         std::fs::create_dir_all(data.join("applications")).unwrap();
@@ -241,7 +329,8 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&executable_path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::set_permissions(&executable_path, std::fs::Permissions::from_mode(0o700))
+                .unwrap();
         }
         let executable = executable_path.to_str().unwrap();
         let name = "OpenChamber-2.5.2-linux-x86_64";
@@ -249,9 +338,13 @@ mod tests {
         std::fs::write(data.join("applications/openchamber.desktop"), format!(
             "[Desktop Entry]\nType=Application\nName=OpenChamber\nExec=\"{executable}\" %U\nIcon={}\n", icon.display()
         )).unwrap();
-        let desktop = gio::DesktopAppInfo::from_filename(data.join("applications/openchamber.desktop"))
-            .expect("desktop fixture needs an existing executable; it is never run");
-        assert_eq!(super::desktop_executable(&desktop).as_deref(), Some(executable_path.as_path()));
+        let desktop =
+            gio::DesktopAppInfo::from_filename(data.join("applications/openchamber.desktop"))
+                .expect("desktop fixture needs an existing executable; it is never run");
+        assert_eq!(
+            super::desktop_executable(&desktop).as_deref(),
+            Some(executable_path.as_path())
+        );
         let paths = game_icon_candidates(&home, &[data.clone()], name, executable);
         assert!(paths.contains(&home.join(".config/CorkyTux/icons/openchamber.png")));
         assert!(paths.contains(&icon));
@@ -278,7 +371,12 @@ mod tests {
         assert_eq!(paths[0], home.join(".local/share/corkytux/assets/icons"));
         assert!(paths.contains(&base.join("xdg1/corkytux/assets/icons")));
         assert!(paths.contains(&base.join("xdg2/corkytux/assets/icons")));
-        assert!(paths.contains(&src_assets), "missing {:?} in {:?}", src_assets, paths);
+        assert!(
+            paths.contains(&src_assets),
+            "missing {:?} in {:?}",
+            src_assets,
+            paths
+        );
         // No duplicates and no missing-relative entries.
         let mut unique = paths.clone();
         unique.sort();

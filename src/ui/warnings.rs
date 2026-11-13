@@ -87,7 +87,9 @@ impl WarningModal {
         header_row.set_margin_top(4);
         {
             let dlg = dialog.clone();
-            x_btn.connect_clicked(move |_| { dlg.close(); });
+            x_btn.connect_clicked(move |_| {
+                dlg.close();
+            });
         }
         inner.append(&header_row);
 
@@ -124,12 +126,18 @@ impl WarningModal {
         ok_btn.set_halign(gtk::Align::Center);
         ok_btn.set_width_request(100);
         let dlg = dialog.clone();
-        ok_btn.connect_clicked(move |_| { dlg.close(); });
+        ok_btn.connect_clicked(move |_| {
+            dlg.close();
+        });
         inner.append(&ok_btn);
 
         dialog.set_child(Some(&content));
 
-        Self { dialog, games_list, dot_classes: kind.dot_classes() }
+        Self {
+            dialog,
+            games_list,
+            dot_classes: kind.dot_classes(),
+        }
     }
 
     pub fn show_missing(&self, games: &[(String, String)]) {
@@ -198,7 +206,11 @@ pub enum InstallPathState {
 /// Steam entries may store the installdir *folder* as Executable, and a
 /// missing-folder Steam game is only Valid when the manifest + on-disk
 /// installdir still confirm the install (see `steam_install_confirmed`).
-pub fn classify_install_path(main_path: &str, exe: &str, steam_id: &str) -> Option<InstallPathState> {
+pub fn classify_install_path(
+    main_path: &str,
+    exe: &str,
+    steam_id: &str,
+) -> Option<InstallPathState> {
     let main = main_path.trim();
     if main.is_empty() {
         return None;
@@ -230,7 +242,8 @@ pub fn classify_install_path(main_path: &str, exe: &str, steam_id: &str) -> Opti
     // Last-resort Steam evidence: appmanifest "fully installed" + the
     // installdir folder must still exist on disk (PEAK fails both: its
     // state flag is set but common/PEAK is gone).
-    if !steam_id.trim().is_empty() && crate::backend::integration::steam_install_confirmed(steam_id) {
+    if !steam_id.trim().is_empty() && crate::backend::integration::steam_install_confirmed(steam_id)
+    {
         return Some(InstallPathState::Valid);
     }
     Some(InstallPathState::ExeMissing)
@@ -257,7 +270,12 @@ pub fn collect_inputs(config: &ConfigManager, names: &[String]) -> Vec<InstallPa
         }
         let exe = config.game_value(name, "Executable").unwrap_or_default();
         let steam_id = config.game_value(name, "SteamID").unwrap_or_default();
-        out.push(InstallPathInput { name: name.clone(), main_path, exe, steam_id });
+        out.push(InstallPathInput {
+            name: name.clone(),
+            main_path,
+            exe,
+            steam_id,
+        });
     }
     out
 }
@@ -281,9 +299,8 @@ pub fn invalid_install_paths(inputs: &[InstallPathInput]) -> Vec<(String, String
 /// (NSMB's `.sav` shares the truncated prefix with its `.nds`), images,
 /// docs, archives, launcher metadata.
 const AUX_EXTS: &[&str] = &[
-    "sav", "png", "jpg", "jpeg", "gif", "bmp", "webp", "txt", "log", "md",
-    "json", "ini", "pdf", "tmp", "bak", "db", "desktop", "ico", "zip", "7z",
-    "tar", "gz", "so", "dll",
+    "sav", "png", "jpg", "jpeg", "gif", "bmp", "webp", "txt", "log", "md", "json", "ini", "pdf",
+    "tmp", "bak", "db", "desktop", "ico", "zip", "7z", "tar", "gz", "so", "dll",
 ];
 
 /// Lowercased basename with version segments (`-1.23.1`, `-v2.0`) dropped so
@@ -296,7 +313,7 @@ fn version_strip(name: &str) -> String {
     for seg in lower.split('-') {
         let t = seg.trim_start_matches('v');
         let is_version = !t.is_empty()
-            && t.chars().next().map_or(false, |c| c.is_ascii_digit())
+            && t.chars().next().is_some_and(|c| c.is_ascii_digit())
             && t.chars().all(|c| c.is_ascii_digit() || c == '.');
         if !is_version {
             if !out.is_empty() {
@@ -442,10 +459,27 @@ const EXEC_EXTS: &[&str] = &[
 /// Kept specific on purpose: plain `crash` would also block games such as
 /// Crash Bandicoot.
 const EXE_BLOCKLIST: &[&str] = &[
-    "crashhandler", "crashpad", "crashreport", "crashsender", "crashreporter",
-    "unitycrashhandler", "unins", "uninstall", "vcredist", "vc_redist",
-    "redist", "dxsetup", "dxwebsetup", "directx", "dotnet", "dotnetfx",
-    "prereq", "oalinst", "webhelper", "notification_helper", "createdump",
+    "crashhandler",
+    "crashpad",
+    "crashreport",
+    "crashsender",
+    "crashreporter",
+    "unitycrashhandler",
+    "unins",
+    "uninstall",
+    "vcredist",
+    "vc_redist",
+    "redist",
+    "dxsetup",
+    "dxwebsetup",
+    "directx",
+    "dotnet",
+    "dotnetfx",
+    "prereq",
+    "oalinst",
+    "webhelper",
+    "notification_helper",
+    "createdump",
     "bssndrpt",
 ];
 
@@ -549,14 +583,16 @@ pub fn check_install_paths_async<F>(
     F: Fn(Vec<(String, String)>) + 'static,
 {
     let inputs = collect_inputs(config, &names);
-    let (tx, rx) = std::sync::mpsc::channel::<(
-        Vec<(String, String)>,
-        Vec<(InstallPathInput, String)>,
-    )>();
+    let (tx, rx) =
+        std::sync::mpsc::channel::<(Vec<(String, String)>, Vec<(InstallPathInput, String)>)>();
     let cfg = config.clone();
     std::thread::spawn(move || {
         let invalid = invalid_install_paths(&inputs);
-        let repairs = if apply_repairs { repair_candidates(&inputs) } else { Vec::new() };
+        let repairs = if apply_repairs {
+            repair_candidates(&inputs)
+        } else {
+            Vec::new()
+        };
         let _ = tx.send((invalid, repairs));
     });
     crate::backend::plugin_process::poll_once_local(rx, move |res| match res {
@@ -576,8 +612,7 @@ pub fn check_install_paths_async<F>(
                         classify_install_path(&input.main_path, &input.exe, &input.steam_id),
                         Some(InstallPathState::ExeMissing)
                     );
-                    let still_unique = unique_candidate(&input.main_path, &input.exe)
-                        .as_deref()
+                    let still_unique = unique_candidate(&input.main_path, &input.exe).as_deref()
                         == Some(new_exe.as_str())
                         && std::path::Path::new(new_exe).is_file();
                     if still_same && still_missing && still_unique {
@@ -627,7 +662,10 @@ pub fn collect_prefix_inputs(config: &ConfigManager, names: &[String]) -> Vec<Pr
         if prefix.trim().is_empty() {
             continue;
         }
-        out.push(PrefixInput { name: name.clone(), prefix });
+        out.push(PrefixInput {
+            name: name.clone(),
+            prefix,
+        });
     }
     out
 }
@@ -705,7 +743,10 @@ mod tests {
         std::fs::create_dir_all(&sub).unwrap();
         let via_dotdot = format!("{}/../game.exe", sub.display());
         assert!(exe.is_file());
-        assert!(!validate_exe_choice(&main.display().to_string(), &via_dotdot));
+        assert!(!validate_exe_choice(
+            &main.display().to_string(),
+            &via_dotdot
+        ));
         let _ = std::fs::remove_dir_all(&main);
     }
 

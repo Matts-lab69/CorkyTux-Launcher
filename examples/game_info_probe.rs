@@ -15,7 +15,10 @@ fn expand(s: &str) -> PathBuf {
 
 fn plugin_exe() -> PathBuf {
     let home = std::env::var("HOME").unwrap();
-    PathBuf::from(home).join(".local/share/CorkyTux/plugins").join(PLUGIN).join(PLUGIN)
+    PathBuf::from(home)
+        .join(".local/share/CorkyTux/plugins")
+        .join(PLUGIN)
+        .join(PLUGIN)
 }
 
 fn cache_inventory() -> Vec<(String, String, usize)> {
@@ -27,13 +30,29 @@ fn cache_inventory() -> Vec<(String, String, usize)> {
             if p.extension().and_then(|x| x.to_str()) != Some("json") {
                 continue;
             }
-            let Ok(txt) = std::fs::read_to_string(&p) else { continue };
-            let Ok(d) = serde_json::from_str::<serde_json::Value>(&txt) else { continue };
-            let app = d.get("app_name").and_then(|x| x.as_str()).unwrap_or("").to_string();
-            let title = d.get("app_title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let Ok(txt) = std::fs::read_to_string(&p) else {
+                continue;
+            };
+            let Ok(d) = serde_json::from_str::<serde_json::Value>(&txt) else {
+                continue;
+            };
+            let app = d
+                .get("app_name")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
+            let title = d
+                .get("app_title")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
             let m = d.get("metadata").cloned().unwrap_or_default();
             let desc = |k: &str| m.get(k).and_then(|x| x.as_str()).unwrap_or("").len();
-            out.push((app, title, desc("description") + desc("shortDescription") + desc("longDescription")));
+            out.push((
+                app,
+                title,
+                desc("description") + desc("shortDescription") + desc("longDescription"),
+            ));
         }
     }
     out.sort();
@@ -64,12 +83,19 @@ fn run_game_info(app_id: &str) -> Result<String, String> {
             if doc.get("type").and_then(|t| t.as_str()) == Some("error")
                 || doc.get("ok").and_then(|o| o.as_bool()) == Some(false)
             {
-                Err(doc.get("message").and_then(|m| m.as_str()).unwrap_or("err").to_string())
+                Err(doc
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("err")
+                    .to_string())
             } else {
                 Ok(doc.to_string())
             }
         }
-        None => Err(format!("stdout sin JSON: {}", body.trim().chars().take(80).collect::<String>())),
+        None => Err(format!(
+            "stdout sin JSON: {}",
+            body.trim().chars().take(80).collect::<String>()
+        )),
     }
 }
 
@@ -81,12 +107,25 @@ fn main() {
             Ok(doc) => {
                 let v: serde_json::Value = serde_json::from_str(&doc).unwrap_or_default();
                 let info = v.get("info").cloned().unwrap_or_default();
-                let t = info.get("title").and_then(|x| x.as_str()).unwrap_or(title).to_string();
-                let desc = info.get("description").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let t = info
+                    .get("title")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or(title)
+                    .to_string();
+                let desc = info
+                    .get("description")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let head = desc.chars().take(34).collect::<String>();
                 println!(
                     "{:<38} {:<30} {:<9} {:<15} {:<11} {}",
-                    app, t, cache_len, desc.len(), desc.is_empty(), head
+                    app,
+                    t,
+                    cache_len,
+                    desc.len(),
+                    desc.is_empty(),
+                    head
                 );
             }
             Err(e) => println!("{:<38} {:<30} {:<9} ERR: {}", app, title, cache_len, e),

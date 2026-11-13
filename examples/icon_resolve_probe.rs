@@ -19,7 +19,15 @@ fn main() {
     it.set_search_path(&refs);
 
     let mut icons: Vec<String> = Vec::new();
-    for ctx in ["actions", "categories", "status", "places", "mimetypes", "ui", "legacy"] {
+    for ctx in [
+        "actions",
+        "categories",
+        "status",
+        "places",
+        "mimetypes",
+        "ui",
+        "legacy",
+    ] {
         let dir = bundle.join("hicolor/symbolic").join(ctx);
         if let Ok(read) = std::fs::read_dir(&dir) {
             for e in read.flatten() {
@@ -35,7 +43,14 @@ fn main() {
     icons.dedup();
 
     for name in &icons {
-        let paintable = it.lookup_icon(name, &[], 16, 1, gtk::TextDirection::None, gtk::IconLookupFlags::empty());
+        let paintable = it.lookup_icon(
+            name,
+            &[],
+            16,
+            1,
+            gtk::TextDirection::None,
+            gtk::IconLookupFlags::empty(),
+        );
         let path = paintable
             .file()
             .and_then(|f| f.path())
@@ -44,15 +59,33 @@ fn main() {
         let resolved = std::fs::read(&path).unwrap_or_default();
 
         let mut bundle_bytes: Option<Vec<u8>> = None;
-        for ctx in ["actions", "categories", "status", "places", "mimetypes", "ui", "legacy"] {
-            let p = bundle.join("hicolor/symbolic").join(ctx).join(format!("{name}.svg"));
+        for ctx in [
+            "actions",
+            "categories",
+            "status",
+            "places",
+            "mimetypes",
+            "ui",
+            "legacy",
+        ] {
+            let p = bundle
+                .join("hicolor/symbolic")
+                .join(ctx)
+                .join(format!("{name}.svg"));
             if let Ok(b) = std::fs::read(&p) {
                 bundle_bytes = Some(b);
                 break;
             }
         }
-        let from_bundle = bundle_bytes.is_some() && bundle_bytes.as_deref() == Some(resolved.as_slice());
-        let owner = if from_bundle { "BUNDLE" } else if path.starts_with("/usr/share/") { "system" } else { "?" };
+        let from_bundle =
+            bundle_bytes.is_some() && bundle_bytes.as_deref() == Some(resolved.as_slice());
+        let owner = if from_bundle {
+            "BUNDLE"
+        } else if path.starts_with("/usr/share/") {
+            "system"
+        } else {
+            "?"
+        };
         println!("{name:40} -> {path}  [{owner}]");
     }
 }

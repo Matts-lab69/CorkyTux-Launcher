@@ -43,17 +43,34 @@ pub enum ImportMode {
 /// Why a candidate stays out of `plans`.
 #[derive(Clone, Debug)]
 pub enum Blocker {
-    GameRunning { label: String },
+    GameRunning {
+        label: String,
+    },
     /// Global, carries no label: if it fits nothing, I move nothing.
-    NotEnoughSpace { need_bytes: u64, free_bytes: u64 },
-    SharedPrefix { label: String, shared_with: Vec<String> },
-    SourceMissing { label: String, path: PathBuf },
+    NotEnoughSpace {
+        need_bytes: u64,
+        free_bytes: u64,
+    },
+    SharedPrefix {
+        label: String,
+        shared_with: Vec<String>,
+    },
+    SourceMissing {
+        label: String,
+        path: PathBuf,
+    },
     /// Original retired to `.corkytux-old`, but the session died before I
     /// placed the symlink. The original is intact at `path`.
-    OrphanedOriginal { label: String, path: PathBuf },
+    OrphanedOriginal {
+        label: String,
+        path: PathBuf,
+    },
     /// I could not tell whether the prefix is in use, so I move nothing.
     /// I block on purpose: a pending import beats lost data.
-    UsageUndeterminable { label: String, path: PathBuf },
+    UsageUndeterminable {
+        label: String,
+        path: PathBuf,
+    },
 }
 
 impl Blocker {
@@ -62,7 +79,10 @@ impl Blocker {
             Blocker::GameRunning { label } => {
                 format!("{} has a live wineserver on its prefix", label)
             }
-            Blocker::NotEnoughSpace { need_bytes, free_bytes } => format!(
+            Blocker::NotEnoughSpace {
+                need_bytes,
+                free_bytes,
+            } => format!(
                 "does not fit in Games: needs {} but only {} free",
                 human_bytes(*need_bytes),
                 human_bytes(*free_bytes)
@@ -74,7 +94,11 @@ impl Blocker {
                 format!("{} folder is missing ({})", label, path.display())
             }
             Blocker::OrphanedOriginal { label, path } => {
-                format!("{} has an unfinished original waiting at {}", label, path.display())
+                format!(
+                    "{} has an unfinished original waiting at {}",
+                    label,
+                    path.display()
+                )
             }
             Blocker::UsageUndeterminable { label, path } => format!(
                 "could not tell whether {} is in use ({}); close Wine games and retry",
@@ -279,7 +303,10 @@ pub fn unique_dest(games_dir: &Path, label: &str, tag: &str) -> PathBuf {
 /// Free sibling of `base` with a suffix: `base-prefix`, `base-prefix 2`...
 /// I always keep a game prefix next to the game folder.
 fn unique_sibling(base: &Path, suffix: &str) -> PathBuf {
-    let parent = base.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
+    let parent = base
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
     let stem = base
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
@@ -387,7 +414,9 @@ fn wineserver_pids() -> Option<Vec<u32>> {
             continue;
         }
         // El proceso puede desaparecer entre readdir y read.
-        let Ok(pid) = name.parse::<u32>() else { continue };
+        let Ok(pid) = name.parse::<u32>() else {
+            continue;
+        };
         let comm = std::fs::read(format!("/proc/{}/comm", pid)).unwrap_or_default();
         if String::from_utf8_lossy(&comm).contains("wineserver") {
             pids.push(pid);
@@ -454,7 +483,9 @@ pub fn prefix_usage(prefix: &Path) -> PrefixUsage {
 
 /// Staging temp root, one dir per process.
 pub fn stage_root(games_dir: &Path) -> PathBuf {
-    games_dir.join(STAGE_DIR).join(format!("pid-{}", std::process::id()))
+    games_dir
+        .join(STAGE_DIR)
+        .join(format!("pid-{}", std::process::id()))
 }
 
 /// Human-readable bytes for the UI.
@@ -558,21 +589,15 @@ pub fn preflight(cands: &[MoveCandidate], games_dir: &Path) -> Preflight {
         // D1: install_path inside prefix_path. I do not block: the data
         // travels with the prefix and I only change the configured path.
         let nested_rel = match (&c.prefix_path, &prefix_move) {
-            (Some(p), Some(pm)) if nested_in(&c.install_path, p) => {
-                norm(&c.install_path)
-                    .strip_prefix(&norm(&pm.src))
-                    .ok()
-                    .map(|r| r.display().to_string())
-            }
+            (Some(p), Some(pm)) if nested_in(&c.install_path, p) => norm(&c.install_path)
+                .strip_prefix(norm(&pm.src))
+                .ok()
+                .map(|r| r.display().to_string()),
             _ => None,
         };
 
-        let bytes = dir_size(&c.install_path).saturating_add(
-            prefix_move
-                .as_ref()
-                .map(|pm| pm.bytes)
-                .unwrap_or(0),
-        );
+        let bytes = dir_size(&c.install_path)
+            .saturating_add(prefix_move.as_ref().map(|pm| pm.bytes).unwrap_or(0));
 
         plans.push(MovePlan {
             candidate: c.clone(),
@@ -821,8 +846,8 @@ pub fn plan_for_mode(
             need_g = need_g.saturating_add(dir_size(&g.prefix_path));
         }
         for m in &members {
-            let inside = !g.prefix_path.as_os_str().is_empty()
-                && nested_in(&m.install_path, &g.prefix_path);
+            let inside =
+                !g.prefix_path.as_os_str().is_empty() && nested_in(&m.install_path, &g.prefix_path);
             if !inside && m.install_path.exists() {
                 need_g = need_g.saturating_add(dir_size(&m.install_path));
             }
@@ -864,7 +889,7 @@ pub fn plan_for_mode(
                     && nested_in(&m.install_path, &g.prefix_path);
                 let nested_rel = if inside {
                     norm(&m.install_path)
-                        .strip_prefix(&norm(&g.prefix_path))
+                        .strip_prefix(norm(&g.prefix_path))
                         .ok()
                         .map(|r| r.display().to_string())
                 } else {
@@ -907,7 +932,11 @@ pub fn find_orphaned_originals(cands: &[MoveCandidate]) -> Vec<(String, PathBuf)
         else {
             continue;
         };
-        let old = parent.join(format!(".{}.{}", sanitize(&name.to_string_lossy()), OLD_SUFFIX));
+        let old = parent.join(format!(
+            ".{}.{}",
+            sanitize(&name.to_string_lossy()),
+            OLD_SUFFIX
+        ));
         if old.exists() {
             out.push((c.label.clone(), old));
         }
@@ -937,9 +966,7 @@ fn execute_single(p: &MovePlan, games_dir: &Path) -> Vec<(String, MoveOutcome)> 
     // A plan with its own prefix moves it before the install: when the
     // install sits inside the prefix, the data travels with it.
     if let Some(pm) = &p.prefix_move {
-        let stage = stage_root(games_dir)
-            .join(sanitize(&label))
-            .join("prefix");
+        let stage = stage_root(games_dir).join(sanitize(&label)).join("prefix");
         if let Err(e) = move_dir(&pm.src, &pm.dest, &stage, None) {
             eprintln!("[import] {}: failed moving the prefix: {}", label, e);
             return vec![(label, MoveOutcome::Failed(e))];
@@ -959,7 +986,13 @@ fn execute_single(p: &MovePlan, games_dir: &Path) -> Vec<(String, MoveOutcome)> 
         &stage,
         verify.as_deref(),
     );
-    report(&label, &p.candidate.install_path, &p.dest_install, &res, verify.is_some())
+    report(
+        &label,
+        &p.candidate.install_path,
+        &p.dest_install,
+        &res,
+        verify.is_some(),
+    )
 }
 
 fn execute_group(g: &GroupPlan, games_dir: &Path) -> Vec<(String, MoveOutcome)> {
@@ -1154,7 +1187,12 @@ fn report(
 ) -> Vec<(String, MoveOutcome)> {
     match res {
         Ok(None) => {
-            eprintln!("[import] {}: {} -> {} (ok)", label, old.display(), new.display());
+            eprintln!(
+                "[import] {}: {} -> {} (ok)",
+                label,
+                old.display(),
+                new.display()
+            );
             if !exe_verified {
                 // Traceability note, not a failure: the executable falls
                 // outside install_path, so there is nothing to check inside

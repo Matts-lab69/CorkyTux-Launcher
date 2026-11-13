@@ -6,6 +6,8 @@ use crate::backend::proton::ProtonManager;
 use crate::backend::theme::ThemeManager;
 use crate::ui::helpers;
 
+type ActionButtons = std::rc::Rc<std::cell::RefCell<Vec<(String, gtk::Button, u8)>>>;
+
 #[derive(Clone)]
 pub struct DetailsPanel {
     pub revealer: gtk::Revealer,
@@ -40,7 +42,10 @@ pub struct DetailsPanel {
 }
 
 impl DetailsPanel {
-    pub fn new<F: Fn(String) -> Result<(), String> + 'static + Clone, G: Fn(String) + 'static + Clone>(
+    pub fn new<
+        F: Fn(String) -> Result<(), String> + 'static + Clone,
+        G: Fn(String) + 'static + Clone,
+    >(
         theme: &ThemeManager,
         proton: &ProtonManager,
         on_play: F,
@@ -144,7 +149,8 @@ impl DetailsPanel {
         let op = on_play.clone();
         let cg_play = current_game_rc.clone();
         let btn_parent = play_btn.clone();
-        let busy_flag: std::rc::Rc<std::cell::RefCell<bool>> = std::rc::Rc::new(std::cell::RefCell::new(false));
+        let busy_flag: std::rc::Rc<std::cell::RefCell<bool>> =
+            std::rc::Rc::new(std::cell::RefCell::new(false));
         let busy_c = busy_flag.clone();
         let btn_c = btn_parent.clone();
         play_btn.connect_clicked(move |_| {
@@ -252,7 +258,9 @@ impl DetailsPanel {
             content.append(&lbl);
             btn.set_child(Some(&content));
             let _ = i;
-            action_buttons.borrow_mut().push((label.to_string(), btn, *vis));
+            action_buttons
+                .borrow_mut()
+                .push((label.to_string(), btn, *vis));
         }
         Self::layout_actions(&actions_grid, &action_buttons);
 
@@ -298,14 +306,10 @@ impl DetailsPanel {
             (row, sw)
         };
 
-        let (menu_row, menu_switch) = make_switch_row(
-            "Add App menu",
-            "Add entry to the application menu",
-        );
-        let (desktop_row, desktop_switch) = make_switch_row(
-            "Add App desktop",
-            "Add shortcut to the desktop",
-        );
+        let (menu_row, menu_switch) =
+            make_switch_row("Add App menu", "Add entry to the application menu");
+        let (desktop_row, desktop_switch) =
+            make_switch_row("Add App desktop", "Add shortcut to the desktop");
         {
             let cg = current_game_rc.clone();
             let guard = shortcut_guard.clone();
@@ -362,7 +366,7 @@ impl DetailsPanel {
 
         // Collapse layout space when closed (QML overlay parity:
         // hidden details must not reserve its 380px)
-        let rev_notify = revealer.clone();
+        let _rev_notify = revealer.clone();
         revealer.connect_child_revealed_notify(move |r| {
             r.set_visible(r.is_child_revealed());
         });
@@ -404,35 +408,8 @@ impl DetailsPanel {
         panel
     }
 
-    pub fn show(&self) {
-        self.revealer.set_visible(true);
-        self.revealer.set_reveal_child(true);
-    }
-
     pub fn hide(&self) {
         self.revealer.set_reveal_child(false);
-    }
-
-    pub fn set_title(&self, name: &str) {
-        self.title_label.set_text(name);
-    }
-
-    pub fn set_banner(&self, path: Option<&str>) {
-        if let Some(p) = path {
-            if !p.is_empty() {
-                // Cover-crop to the frame: aspect-fit leaves gray bands.
-                if let Some(texture) = helpers::load_card_banner(&shellexpand_tilde(p), 380, 192) {
-                    self.banner_image.set_paintable(Some(&texture));
-                    return;
-                }
-                if let Some(texture) = helpers::load_texture(&shellexpand_tilde(p)) {
-                    self.banner_image.set_paintable(Some(&texture));
-                    return;
-                }
-            }
-        }
-        self.banner_image
-            .set_icon_name(Some("image-x-generic-symbolic"));
     }
 
     /// I take the theme live on every call on purpose: storing it in the
@@ -448,7 +425,8 @@ impl DetailsPanel {
         // at construction would reload a "play" icon on the next theme switch
         // while the label says "Stop".
         let name = if playing { "stop" } else { "play" };
-        self.play_label.set_text(if playing { "Stop" } else { "Play" });
+        self.play_label
+            .set_text(if playing { "Stop" } else { "Play" });
         if let Some(tex) = helpers::load_themed_icon_sized(name, is_dark, 16) {
             self.play_icon.set_paintable(Some(&tex));
         }
@@ -458,19 +436,8 @@ impl DetailsPanel {
         }
     }
 
-    pub fn set_time_played(&self, seconds: u64) {
-        self.time_label
-            .set_text(&format!("Time played: {}", helpers::format_playtime(seconds)));
-    }
-
-    pub fn set_favorited(&self, fav: bool) {
-        self.star_button.set_active(fav);
-    }
-
     pub fn set_install_info(&self, game_name: &str, cfg: &ConfigManager) {
-        let size = cfg
-            .game_value(game_name, "InstallSize")
-            .unwrap_or_default();
+        let size = cfg.game_value(game_name, "InstallSize").unwrap_or_default();
         let main_path = cfg.game_value(game_name, "MainPath").unwrap_or_default();
         let gen = {
             let mut g = self.size_gen.borrow_mut();
@@ -480,7 +447,11 @@ impl DetailsPanel {
         let expanded_main = shellexpand_tilde(&main_path);
         let main_exists = !main_path.is_empty() && std::path::Path::new(&expanded_main).exists();
         if !main_exists && !size.is_empty() {
-            crate::backend::config::ConfigManager::new().set_game_value(game_name, "InstallSize", "");
+            crate::backend::config::ConfigManager::new().set_game_value(
+                game_name,
+                "InstallSize",
+                "",
+            );
         }
         if size.is_empty() && main_exists {
             self.install_size_label.set_text("Size: …");
@@ -500,39 +471,53 @@ impl DetailsPanel {
                     // Branch A: I saw the folder when the panel opened but it
                     // vanished before I measured. I paint "--" like the other
                     // cases and keep the reason in the log.
-                    eprintln!("[size] {}: path vanished during measure (path={})", gname_t, mpath);
+                    eprintln!(
+                        "[size] {}: path vanished during measure (path={})",
+                        gname_t, mpath
+                    );
                     "Size: --".to_string()
                 };
                 let _ = tx.send(text);
             });
-            glib::timeout_add_local(std::time::Duration::from_millis(100), move || match rx.try_recv() {
-                Ok(text) => {
-                    if *gen_c.borrow() != gen {
-                        return glib::ControlFlow::Break;
-                    }
-                    if cur_c.borrow().as_deref() != Some(gname.as_str()) {
-                        return glib::ControlFlow::Break;
-                    }
-                    lbl.set_text(&text);
-                    if let Some(val) = text.strip_prefix("Size: ") {
-                        if val != "--" && val != "…" {
-                            crate::backend::config::ConfigManager::new()
-                                .set_game_value(&gname, "InstallSize", val);
+            glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+                match rx.try_recv() {
+                    Ok(text) => {
+                        if *gen_c.borrow() != gen {
+                            return glib::ControlFlow::Break;
                         }
+                        if cur_c.borrow().as_deref() != Some(gname.as_str()) {
+                            return glib::ControlFlow::Break;
+                        }
+                        lbl.set_text(&text);
+                        if let Some(val) = text.strip_prefix("Size: ") {
+                            if val != "--" && val != "…" {
+                                crate::backend::config::ConfigManager::new().set_game_value(
+                                    &gname,
+                                    "InstallSize",
+                                    val,
+                                );
+                            }
+                        }
+                        glib::ControlFlow::Break
                     }
-                    glib::ControlFlow::Break
+                    Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                    Err(_) => glib::ControlFlow::Break,
                 }
-                Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-                Err(_) => glib::ControlFlow::Break,
             });
         } else if size.is_empty() {
             // Branch B: I never measured (no cache) and the folder is gone.
-            eprintln!("[size] {}: path missing, nothing cached (path={})", game_name, main_path);
+            eprintln!(
+                "[size] {}: path missing, nothing cached (path={})",
+                game_name, main_path
+            );
             self.install_size_label.set_text("Size: --");
         } else if !main_exists {
             // Branch C: I had a cached measure but the folder is gone. I cleared
             // the cache above; the "--" text matches B but I log the reason here.
-            eprintln!("[size] {}: path gone, dropping stale cache (path={})", game_name, main_path);
+            eprintln!(
+                "[size] {}: path gone, dropping stale cache (path={})",
+                game_name, main_path
+            );
             self.install_size_label.set_text("Size: --");
         } else {
             self.install_size_label.set_text(&format!("Size: {}", size));
@@ -545,13 +530,10 @@ impl DetailsPanel {
         };
         self.install_path_label.set_text(&path_text);
 
-        let executor = cfg
-            .game_value(game_name, "Executor")
-            .unwrap_or_default();
-        let source = cfg
-            .game_value(game_name, "Source")
-            .unwrap_or_default();
-        let is_appimage = executor == "appimage-launcher" || source.eq_ignore_ascii_case("appimage");
+        let executor = cfg.game_value(game_name, "Executor").unwrap_or_default();
+        let source = cfg.game_value(game_name, "Source").unwrap_or_default();
+        let is_appimage =
+            executor == "appimage-launcher" || source.eq_ignore_ascii_case("appimage");
         let is_rpg = executor == "rpgmaker-runtime" || source.eq_ignore_ascii_case("rpgmaker");
         let prefix_text = if is_appimage {
             String::from("Application: AppImage")
@@ -587,9 +569,7 @@ impl DetailsPanel {
                 .game_value(game_name, "PrefixPath")
                 .filter(|v| !v.trim().is_empty())
                 .map(|v| v.trim().to_string())
-                .unwrap_or_else(|| {
-                    cfg.individual_prefix_path(game_name).display().to_string()
-                });
+                .unwrap_or_else(|| cfg.individual_prefix_path(game_name).display().to_string());
             let suffix = if std::path::Path::new(&prefix).is_dir() {
                 String::new()
             } else {
@@ -618,14 +598,13 @@ impl DetailsPanel {
         // stored exe: Steam-client launches and folder executables.
         let steam_id = cfg.game_value(game_name, "SteamID").unwrap_or_default();
         let exe = cfg.game_value(game_name, "Executable").unwrap_or_default();
-        let change_tip: Option<&str> =
-            if crate::ui::warnings::is_steam_launch(&steam_id) {
-                Some("Not available for Steam games")
-            } else if crate::ui::warnings::is_folder_exe(&main_path, &exe) {
-                Some("Not available: executable is a folder")
-            } else {
-                None
-            };
+        let change_tip: Option<&str> = if crate::ui::warnings::is_steam_launch(&steam_id) {
+            Some("Not available for Steam games")
+        } else if crate::ui::warnings::is_folder_exe(&main_path, &exe) {
+            Some("Not available: executable is a folder")
+        } else {
+            None
+        };
         for (label, btn, _) in self.action_buttons.borrow().iter() {
             if label == "Change exe" {
                 btn.set_sensitive(change_tip.is_none());
@@ -637,17 +616,14 @@ impl DetailsPanel {
 
     /// Re-attach only visible buttons left-to-right so hidden ones
     /// never leave holes or push the rest down.
-    fn layout_actions(
-        grid: &gtk::Grid,
-        buttons: &std::rc::Rc<std::cell::RefCell<Vec<(String, gtk::Button, u8)>>>,
-    ) {
+    fn layout_actions(grid: &gtk::Grid, buttons: &ActionButtons) {
         let mut pos = 0;
         for (_, btn, _) in buttons.borrow().iter() {
             if btn.parent() == Some(grid.clone().upcast::<gtk::Widget>()) {
                 grid.remove(btn);
             }
             if btn.is_visible() {
-                grid.attach(btn, (pos % 3) as i32, (pos / 3) as i32, 1, 1);
+                grid.attach(btn, pos % 3, pos / 3, 1, 1);
                 pos += 1;
             }
         }
@@ -660,7 +636,9 @@ impl DetailsPanel {
     }
 
     pub fn get_action_button(&self, name: &str) -> Option<gtk::Button> {
-        self.action_buttons.borrow().iter()
+        self.action_buttons
+            .borrow()
+            .iter()
             .find(|(n, _, _)| n == name)
             .map(|(_, btn, _)| btn.clone())
     }
@@ -673,11 +651,13 @@ impl DetailsPanel {
         // Load banner (tilde-aware: stored paths may use ~)
         let banner_path = cfg.game_value(name, "Banner").unwrap_or_default();
         if banner_path.is_empty() {
-            self.banner_image.set_icon_name(Some("image-x-generic-symbolic"));
+            self.banner_image
+                .set_icon_name(Some("image-x-generic-symbolic"));
         } else if let Some(texture) = helpers::load_texture(&shellexpand_tilde(&banner_path)) {
             self.banner_image.set_paintable(Some(&texture));
         } else {
-            self.banner_image.set_icon_name(Some("image-x-generic-symbolic"));
+            self.banner_image
+                .set_icon_name(Some("image-x-generic-symbolic"));
         }
 
         // Load game icon into the header (tilde-aware)
@@ -686,7 +666,8 @@ impl DetailsPanel {
         if let Some(texture) = helpers::load_game_icon(name, &executable, &icon_path) {
             self.icon_image.set_paintable(Some(&texture));
         } else {
-            self.icon_image.set_icon_name(Some("corkytux-application-x-executable-symbolic"));
+            self.icon_image
+                .set_icon_name(Some("corkytux-application-x-executable-symbolic"));
         }
 
         // Time played
@@ -694,8 +675,10 @@ impl DetailsPanel {
             .game_value(name, "TimeSpent")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
-        self.time_label
-            .set_text(&format!("Time played: {}", helpers::format_playtime(time_spent)));
+        self.time_label.set_text(&format!(
+            "Time played: {}",
+            helpers::format_playtime(time_spent)
+        ));
 
         // Favorite — block signal to avoid triggering callback
         if let Some(ref id) = *self.star_handler_id.borrow() {
@@ -744,11 +727,7 @@ impl DetailsPanel {
         } else {
             session
         };
-        let playing = playing_state(
-            name,
-            self.proton.is_game_running(),
-            &session_eff,
-        );
+        let playing = playing_state(name, self.proton.is_game_running(), &session_eff);
         self.set_playing(playing, self.theme.is_dark());
     }
 }
@@ -805,9 +784,15 @@ fn query_folder_size(path: &std::path::Path, depth: u32) -> u64 {
 }
 
 fn format_size(bytes: u64) -> String {
-    if bytes < 1024 { return format!("{} B", bytes); }
-    if bytes < 1024 * 1024 { return format!("{:.1} KB", bytes as f64 / 1024.0); }
-    if bytes < 1024 * 1024 * 1024 { return format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0)); }
+    if bytes < 1024 {
+        return format!("{} B", bytes);
+    }
+    if bytes < 1024 * 1024 {
+        return format!("{:.1} KB", bytes as f64 / 1024.0);
+    }
+    if bytes < 1024 * 1024 * 1024 {
+        return format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0));
+    }
     format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
 }
 

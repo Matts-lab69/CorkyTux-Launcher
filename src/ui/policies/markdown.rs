@@ -12,7 +12,8 @@ pub fn markdown_to_pango(input: &str) -> String {
     static BOLD: OnceLock<regex::Regex> = OnceLock::new();
     static ITALIC: OnceLock<regex::Regex> = OnceLock::new();
     let img = IMG.get_or_init(|| regex::Regex::new(r"!\[[^\]]*\]\([^)]*\)").unwrap());
-    let link = LINK.get_or_init(|| regex::Regex::new(r"\[([^\]]+)\]\((https?://[^)\s]+)\)").unwrap());
+    let link =
+        LINK.get_or_init(|| regex::Regex::new(r"\[([^\]]+)\]\((https?://[^)\s]+)\)").unwrap());
     let bold = BOLD.get_or_init(|| regex::Regex::new(r"\*\*([^*]+)\*\*").unwrap());
     let italic = ITALIC.get_or_init(|| regex::Regex::new(r"\*([^*]+)\*").unwrap());
     let mut out = String::new();
@@ -55,8 +56,10 @@ mod tests {
     #[test]
     fn markdown_subset_is_safe() {
         use super::markdown_to_pango;
-        assert_eq!(markdown_to_pango("<script>alert(1)</script>"),
-                   "&lt;script&gt;alert(1)&lt;/script&gt;");
+        assert_eq!(
+            markdown_to_pango("<script>alert(1)</script>"),
+            "&lt;script&gt;alert(1)&lt;/script&gt;"
+        );
         assert_eq!(markdown_to_pango("**hola**"), "<b>hola</b>");
         assert_eq!(markdown_to_pango("*cursiva*"), "<i>cursiva</i>");
         assert_eq!(markdown_to_pango("- uno\n- dos"), "• uno\n• dos");

@@ -79,10 +79,7 @@ pub fn is_dev_build_path(path: &Path) -> bool {
 /// `~/.config/autostart/com.corkytux.CorkyTux.desktop`.
 pub fn autostart_path() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok().filter(|h| !h.is_empty())?;
-    Some(
-        PathBuf::from(home)
-            .join(".config/autostart/com.corkytux.CorkyTux.desktop"),
-    )
+    Some(PathBuf::from(home).join(".config/autostart/com.corkytux.CorkyTux.desktop"))
 }
 
 /// Writes or removes the autostart entry. Best effort: errors only log.
@@ -98,10 +95,14 @@ pub fn apply_autostart(enabled: bool) -> Result<(), String> {
         }
     }
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {}", parent.display(), e))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create {}: {}", parent.display(), e))?;
     }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    if std::env::var("APPIMAGE").ok().filter(|p| !p.trim().is_empty()).is_none()
+    if std::env::var("APPIMAGE")
+        .ok()
+        .filter(|p| !p.trim().is_empty())
+        .is_none()
         && is_dev_build_path(&exe)
     {
         eprintln!(
@@ -251,7 +252,10 @@ pub fn spawn(shared: TrayShared) -> Option<ksni::blocking::Handle<CorkyTray>> {
         Ok(handle) => Some(handle),
         Err(e) => {
             watcher_alive.store(false, Ordering::Relaxed);
-            eprintln!("[tray] no StatusNotifierWatcher: {} (close to tray disabled)", e);
+            eprintln!(
+                "[tray] no StatusNotifierWatcher: {} (close to tray disabled)",
+                e
+            );
             None
         }
     }
@@ -264,8 +268,13 @@ mod tests {
     #[test]
     fn window_close_does_not_depend_on_legacy_background_preferences() {
         let source = include_str!("../main.rs");
-        let start = source.find("window.connect_close_request(move |win| {").unwrap();
-        let end = source[start..].find("let handle_c = tray_handle.clone();").unwrap() + start;
+        let start = source
+            .find("window.connect_close_request(move |win| {")
+            .unwrap();
+        let end = source[start..]
+            .find("let handle_c = tray_handle.clone();")
+            .unwrap()
+            + start;
         let close_handler = &source[start..end];
         assert!(
             !close_handler.contains("closeToTray"),
@@ -309,12 +318,18 @@ mod tests {
         ksni::Tray::activate(&mut tray, 0, 0);
         assert_eq!(rx.try_recv().unwrap(), TrayMsg::Toggle);
         let menu = ksni::Tray::menu(&tray);
-        let ksni::MenuItem::Standard(toggle) = &menu[0] else { panic!("missing show/hide item") };
+        let ksni::MenuItem::Standard(toggle) = &menu[0] else {
+            panic!("missing show/hide item")
+        };
         (toggle.activate)(&mut tray);
         assert_eq!(rx.try_recv().unwrap(), TrayMsg::Toggle);
-        let ksni::MenuItem::Standard(playing) = &menu[1] else { panic!("missing playing item") };
+        let ksni::MenuItem::Standard(playing) = &menu[1] else {
+            panic!("missing playing item")
+        };
         assert!(!playing.enabled);
-        let ksni::MenuItem::Standard(quit) = menu.last().unwrap() else { panic!("missing quit item") };
+        let ksni::MenuItem::Standard(quit) = menu.last().unwrap() else {
+            panic!("missing quit item")
+        };
         (quit.activate)(&mut tray);
         assert_eq!(rx.try_recv().unwrap(), TrayMsg::Quit);
     }
@@ -327,18 +342,38 @@ mod tests {
         assert!(icon.width > 0 && icon.width <= 64);
         assert!(icon.height > 0 && icon.height <= 64);
         assert_eq!(icon.data.len(), (icon.width * icon.height * 4) as usize);
-        assert!(icon.data.chunks_exact(4).any(|pixel| pixel[0] > 0 && pixel[1..].iter().any(|value| *value > 0 && *value < 255)));
+        assert!(
+            icon.data
+                .chunks_exact(4)
+                .any(|pixel| pixel[0] > 0
+                    && pixel[1..].iter().any(|value| *value > 0 && *value < 255))
+        );
     }
 
     #[test]
     fn should_hide_on_close_table() {
         assert_eq!(should_hide_on_close(false, true, None), CloseAction::Quit);
-        assert_eq!(should_hide_on_close(false, true, Some("tray")), CloseAction::Quit);
-        assert_eq!(should_hide_on_close(true, false, Some("tray")), CloseAction::Quit);
-        assert_eq!(should_hide_on_close(true, true, Some("quit")), CloseAction::Quit);
-        assert_eq!(should_hide_on_close(true, true, Some("tray")), CloseAction::Hide);
+        assert_eq!(
+            should_hide_on_close(false, true, Some("tray")),
+            CloseAction::Quit
+        );
+        assert_eq!(
+            should_hide_on_close(true, false, Some("tray")),
+            CloseAction::Quit
+        );
+        assert_eq!(
+            should_hide_on_close(true, true, Some("quit")),
+            CloseAction::Quit
+        );
+        assert_eq!(
+            should_hide_on_close(true, true, Some("tray")),
+            CloseAction::Hide
+        );
         assert_eq!(should_hide_on_close(true, true, None), CloseAction::Ask);
-        assert_eq!(should_hide_on_close(true, true, Some("other")), CloseAction::Ask);
+        assert_eq!(
+            should_hide_on_close(true, true, Some("other")),
+            CloseAction::Ask
+        );
     }
 
     #[test]
@@ -349,7 +384,10 @@ mod tests {
                 CloseAction::Quit,
                 "no host means no hide, ever"
             );
-            assert_eq!(should_hide_on_close(false, false, remembered), CloseAction::Quit);
+            assert_eq!(
+                should_hide_on_close(false, false, remembered),
+                CloseAction::Quit
+            );
         }
     }
 

@@ -29,9 +29,7 @@ impl ProcInfo {
         if self.exe.starts_with(&prefix) {
             return true;
         }
-        self.cmdline
-            .iter()
-            .any(|a| a.starts_with(&prefix))
+        self.cmdline.iter().any(|a| a.starts_with(&prefix))
     }
 }
 
@@ -80,7 +78,13 @@ impl ProcSource for RealProc {
                         .collect()
                 })
                 .unwrap_or_default();
-            out.push(ProcInfo { pid, ppid, starttime, exe, cmdline });
+            out.push(ProcInfo {
+                pid,
+                ppid,
+                starttime,
+                exe,
+                cmdline,
+            });
         }
         out
     }
@@ -163,9 +167,19 @@ mod tests {
         // setsid(100) -> wrapper(101) dies, mounted app(102) reparented to init.
         let procs = vec![
             p(1, 0, 0, "/sbin/init", &["/sbin/init"]),
-            p(102, 1, 500, "/tmp/.mount_OpenChp0Gux4/openchamber", &["/tmp/.mount_OpenChp0Gux4/openchamber"]),
+            p(
+                102,
+                1,
+                500,
+                "/tmp/.mount_OpenChp0Gux4/openchamber",
+                &["/tmp/.mount_OpenChp0Gux4/openchamber"],
+            ),
         ];
-        let t = SessionTree { root_pid: 100, root_starttime: 400, mount: "/tmp/.mount_OpenChp0Gux4".into() };
+        let t = SessionTree {
+            root_pid: 100,
+            root_starttime: 400,
+            mount: "/tmp/.mount_OpenChp0Gux4".into(),
+        };
         assert!(t.alive(&procs));
     }
 
@@ -173,24 +187,40 @@ mod tests {
     fn autoupdate_relaunch_keeps_session_via_new_mount() {
         // The old mount is gone; the new process is under the same launcher
         // tree because the launcher is the subreaper.
-        let procs = vec![
-            p(200, 1, 600, "/tmp/.mount_OpenChNewX/openchamber", &["/tmp/.mount_OpenChNewX/openchamber"]),
-        ];
-        let t = SessionTree { root_pid: 200, root_starttime: 600, mount: "/tmp/.mount_OpenChNewX".into() };
+        let procs = vec![p(
+            200,
+            1,
+            600,
+            "/tmp/.mount_OpenChNewX/openchamber",
+            &["/tmp/.mount_OpenChNewX/openchamber"],
+        )];
+        let t = SessionTree {
+            root_pid: 200,
+            root_starttime: 600,
+            mount: "/tmp/.mount_OpenChNewX".into(),
+        };
         assert!(t.alive(&procs));
     }
 
     #[test]
     fn all_dead_ends_session() {
         let procs = vec![p(1, 0, 0, "/sbin/init", &["/sbin/init"])];
-        let t = SessionTree { root_pid: 100, root_starttime: 400, mount: "/tmp/.mount_X".into() };
+        let t = SessionTree {
+            root_pid: 100,
+            root_starttime: 400,
+            mount: "/tmp/.mount_X".into(),
+        };
         assert!(!t.alive(&procs));
     }
 
     #[test]
     fn reused_pid_with_other_starttime_does_not_count() {
         let procs = vec![p(100, 1, 999, "/tmp/.mount_X/app", &["/tmp/.mount_X/app"])];
-        let t = SessionTree { root_pid: 100, root_starttime: 400, mount: String::new() };
+        let t = SessionTree {
+            root_pid: 100,
+            root_starttime: 400,
+            mount: String::new(),
+        };
         assert!(!t.alive(&procs));
     }
 }

@@ -21,9 +21,12 @@ pub enum GamepadMessage {
 }
 
 fn reset_navigation_for_topology_change(messages: &[GamepadMessage], state: &mut NavState) -> bool {
-    let changed = messages.iter().any(|message| matches!(
-        message, GamepadMessage::Connected(_) | GamepadMessage::Disconnected(_)
-    ));
+    let changed = messages.iter().any(|message| {
+        matches!(
+            message,
+            GamepadMessage::Connected(_) | GamepadMessage::Disconnected(_)
+        )
+    });
     if changed {
         state.reset();
     }
@@ -31,7 +34,9 @@ fn reset_navigation_for_topology_change(messages: &[GamepadMessage], state: &mut
 }
 
 fn pointer_has_moved(previous: Option<(f64, f64)>, x: f64, y: f64) -> bool {
-    previous.map(|(lx, ly)| (x - lx).abs() > 3.0 || (y - ly).abs() > 3.0).unwrap_or(true)
+    previous
+        .map(|(lx, ly)| (x - lx).abs() > 3.0 || (y - ly).abs() > 3.0)
+        .unwrap_or(true)
 }
 
 fn install_pointer_cancellation(
@@ -98,8 +103,14 @@ mod lifecycle_tests {
         let start = source.find("\npub fn start(").unwrap();
         let end = source[start..].find("\nfn apply_action(").unwrap() + start;
         let driver = &source[start..end];
-        assert!(driver.contains("app.connect_window_added("), "future secondary windows need pointer cancellation");
-        assert!(driver.contains("for existing in app.windows()"), "existing secondary windows need pointer cancellation");
+        assert!(
+            driver.contains("app.connect_window_added("),
+            "future secondary windows need pointer cancellation"
+        );
+        assert!(
+            driver.contains("for existing in app.windows()"),
+            "existing secondary windows need pointer cancellation"
+        );
         assert!(driver.contains("install_pointer_cancellation("));
     }
 
@@ -111,7 +122,8 @@ mod lifecycle_tests {
         assert!(reset_navigation_for_topology_change(&messages, &mut state));
         assert_eq!(gamepad_nav::repeat(&mut state, 1000), None);
         assert!(reset_navigation_for_topology_change(
-            &[GamepadMessage::Disconnected("Steam Virtual Gamepad".into())], &mut state
+            &[GamepadMessage::Disconnected("Steam Virtual Gamepad".into())],
+            &mut state
         ));
         assert_eq!(gamepad_nav::repeat(&mut state, 2000), None);
     }
@@ -119,12 +131,18 @@ mod lifecycle_tests {
     #[test]
     fn device_topology_changes_reset_navigation_before_focus_gating() {
         let source = include_str!("gamepad.rs");
-        let start = source.find("\n    glib::timeout_add_local(Duration::from_millis(16), move || {").unwrap();
+        let start = source
+            .find("\n    glib::timeout_add_local(Duration::from_millis(16), move || {")
+            .unwrap();
         let handler = &source[start..];
-        let reset = handler.find("reset_navigation_for_topology_change(")
+        let reset = handler
+            .find("reset_navigation_for_topology_change(")
             .expect("topology reset must run even while the launcher is inactive");
         let gating = handler.find("if !gamepad_nav::should_handle").unwrap();
-        assert!(reset < gating, "focus gating must not discard topology resets");
+        assert!(
+            reset < gating,
+            "focus gating must not discard topology resets"
+        );
     }
 }
 
@@ -355,7 +373,10 @@ pub fn start(
                     eprintln!("[gamepad] connected: {}", name);
                 }
                 GamepadMessage::Disconnected(name) => {
-                    toasts_c.add_toast(adw::Toast::new(&format!("Controller disconnected: {}", name)));
+                    toasts_c.add_toast(adw::Toast::new(&format!(
+                        "Controller disconnected: {}",
+                        name
+                    )));
                     eprintln!("[gamepad] disconnected: {}", name);
                 }
             }
@@ -463,7 +484,8 @@ fn move_focus(window: &gtk::Window, dir: Dir) {
                     )
                 })
                 .collect();
-            if let Some(found) = pick_nav_target(&current, current_rect, &candidates, &scoped, dir) {
+            if let Some(found) = pick_nav_target(&current, current_rect, &candidates, &scoped, dir)
+            {
                 index = Some(found);
                 break;
             }
@@ -493,11 +515,14 @@ fn pick_nav_target(
     dir: Dir,
 ) -> Option<usize> {
     if gamepad_controls::is_form_control(current) {
-        let fields: Vec<_> = candidates.iter().zip(eligibility)
+        let fields: Vec<_> = candidates
+            .iter()
+            .zip(eligibility)
             .map(|((widget, _), (rect, inside, visible))| {
                 let field = gamepad_controls::is_control(widget);
                 (*rect, *inside && field, *visible && field)
-            }).collect();
+            })
+            .collect();
         let selected = gamepad_nav::best_form_in_scope(current_rect, &fields, dir);
         if selected.is_some() || matches!(dir, Dir::Left | Dir::Right) {
             return selected;

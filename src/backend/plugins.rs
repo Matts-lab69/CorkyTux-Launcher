@@ -1,31 +1,27 @@
 use glib::subclass::prelude::*;
-use gtk::prelude::*;
-use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(PathBuf::from)
+    std::env::var("HOME")
+        .ok()
+        .filter(|h| !h.is_empty())
+        .map(PathBuf::from)
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub enum PluginType {
     Proton,
     Emulator,
     EmulatorManager,
+    #[default]
     Tool,
     Integration,
     AppImage,
     Store,
     Minecraft,
     RpgMaker,
-}
-
-impl Default for PluginType {
-    fn default() -> Self {
-        PluginType::Tool
-    }
 }
 
 impl PluginType {
@@ -99,7 +95,7 @@ pub struct PluginInfo {
 
 mod imp {
     use super::*;
-    use glib::subclass::prelude::*;
+
     use std::cell::RefCell;
     use std::path::PathBuf;
 
@@ -145,6 +141,8 @@ pub struct ScanBundle {
     pub missing: Vec<(String, String)>,
     pub optional: Vec<(String, String)>,
 }
+
+type DependencyScan = (Vec<(String, String)>, Vec<(String, String)>, String);
 
 impl PluginManager {
     pub fn new() -> Self {
@@ -249,15 +247,14 @@ impl PluginManager {
                         "Type" => info.plugin_type = PluginType::from_str(&value),
                         _ => {}
                     },
-                    "Settings" => match key {
-                        "Enabled" => info.enabled = value.eq_ignore_ascii_case("true"),
-                        _ => {}
-                    },
-                    "Capabilities" => {
-                        if !value.is_empty() {
-                            info.capabilities
-                                .extend(value.split(',').map(|s| s.trim().to_string()));
+                    "Settings" => {
+                        if key == "Enabled" {
+                            info.enabled = value.eq_ignore_ascii_case("true")
                         }
+                    }
+                    "Capabilities" if !value.is_empty() => {
+                        info.capabilities
+                            .extend(value.split(',').map(|s| s.trim().to_string()));
                     }
                     _ => {}
                 }
@@ -274,10 +271,21 @@ impl PluginManager {
     /// Sidebar buttons (Minecraft/Stores) and AddGame cards (AppImage/RPG
     /// Maker) are only shown when this returns true.
     pub fn is_available(&self, plugin_id: &str) -> bool {
-        if let Some(p) = self.imp().plugins.borrow().iter().find(|p| p.id == plugin_id) {
+        if let Some(p) = self
+            .imp()
+            .plugins
+            .borrow()
+            .iter()
+            .find(|p| p.id == plugin_id)
+        {
             return p.enabled;
         }
-        if self.plugins_dir().join(plugin_id).join("plugin.json").exists() {
+        if self
+            .plugins_dir()
+            .join(plugin_id)
+            .join("plugin.json")
+            .exists()
+        {
             return super::ConfigManager::new()
                 .launcher_value_in("Plugins", &format!("{}.enabled", plugin_id))
                 .map(|v| v != "0")
@@ -298,11 +306,13 @@ impl PluginManager {
 
     pub fn set_enabled(&self, plugin_id: &str, enabled: bool) {
         // I match the legacy layout: [Plugins] section, "1"/"0"
-        super::ConfigManager::log_launcher_write(super::ConfigManager::new().set_launcher_value_in(
-            "Plugins",
-            &format!("{}.enabled", plugin_id),
-            if enabled { "1" } else { "0" },
-        ));
+        super::ConfigManager::log_launcher_write(
+            super::ConfigManager::new().set_launcher_value_in(
+                "Plugins",
+                &format!("{}.enabled", plugin_id),
+                if enabled { "1" } else { "0" },
+            ),
+        );
         for plugin in self.imp().plugins.borrow_mut().iter_mut() {
             if plugin.id == plugin_id {
                 plugin.enabled = enabled;
@@ -335,10 +345,8 @@ impl PluginManager {
     pub fn remove_plugin(&self, plugin_id: &str) -> Result<(), String> {
         let dir = self.plugins_dir().join(plugin_id);
         Self::remove_plugin_steps(&dir, || {
-            super::ConfigManager::new().remove_launcher_value_in(
-                "Plugins",
-                &format!("{}.enabled", plugin_id),
-            )
+            super::ConfigManager::new()
+                .remove_launcher_value_in("Plugins", &format!("{}.enabled", plugin_id))
         })?;
         self.refresh();
         Ok(())
@@ -360,7 +368,7 @@ impl PluginManager {
     fn asset_arch_ok(name: &str) -> bool {
         let host = std::env::consts::ARCH;
         let mut saw_arch = false;
-        for token in name.split(|c| c == '-' || c == '.') {
+        for token in name.split(['-', '.']) {
             let arch = match token.to_ascii_lowercase().as_str() {
                 "x86_64" | "amd64" | "x64" => "x86_64",
                 "aarch64" | "arm64" => "aarch64",
@@ -394,8 +402,7 @@ impl PluginManager {
         if !resp.status().is_success() {
             return Err(format!("Registry HTTP error: {}", resp.status()));
         }
-        let json: serde_json::Value =
-            resp.json().map_err(|e| format!("Invalid JSON: {}", e))?;
+        let json: serde_json::Value = resp.json().map_err(|e| format!("Invalid JSON: {}", e))?;
         let mut out = Vec::new();
         for v in json.as_array().cloned().unwrap_or_default() {
             let tag = v
@@ -447,9 +454,17 @@ impl PluginManager {
             let body = v.get("body").and_then(|x| x.as_str()).unwrap_or_default();
             out.push(RegistryEntry {
                 tag,
-                name: v.get("name").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+                name: v
+                    .get("name")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
                 description: truncate_description(body, 200),
-                date: v.get("published_at").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+                date: v
+                    .get("published_at")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
                 url: asset_url,
                 asset_name,
             });
@@ -485,8 +500,8 @@ impl PluginManager {
                 }
             })
             .collect();
-        fs::create_dir_all(&dir).map_err(|e| format!("Cannot create dir: {}", e))?;
-        let before: Vec<String> = fs::read_dir(&dir)
+        fs::create_dir_all(dir).map_err(|e| format!("Cannot create dir: {}", e))?;
+        let before: Vec<String> = fs::read_dir(dir)
             .map(|entries| {
                 entries
                     .flatten()
@@ -542,9 +557,9 @@ impl PluginManager {
                     };
                     if name == asset_name {
                         if hex.to_lowercase() != api_digest {
-                            return Err(format!(
-                                "checksums.txt disagrees with the release digest"
-                            ));
+                            return Err(
+                                "checksums.txt disagrees with the release digest".to_string()
+                            );
                         }
                         break;
                     }
@@ -553,23 +568,23 @@ impl PluginManager {
         }
 
         // Download the tarball with host-checked redirects.
-        let mut resp = super::self_update::get_guarded(
-            &client,
-            url,
-            None,
-            super::self_update::ASSET_HOSTS,
-            5,
-        )
-        .map_err(|e| format!("Download failed: {}", e))?;
+        let mut resp =
+            super::self_update::get_guarded(&client, url, None, super::self_update::ASSET_HOSTS, 5)
+                .map_err(|e| format!("Download failed: {}", e))?;
         if !resp.status().is_success() {
             return Err(format!("Download HTTP error: {}", resp.status()));
         }
         let total = resp.content_length().unwrap_or(0);
         let (downloaded, start) = Self::receive_plugin_archive(
-            &mut resp, &dest, dir, total, &api_digest, &mut on_progress,
+            &mut resp,
+            &dest,
+            dir,
+            total,
+            &api_digest,
+            &mut on_progress,
         )?;
 
-        let after: Vec<String> = fs::read_dir(&dir)
+        let after: Vec<String> = fs::read_dir(dir)
             .map(|entries| {
                 entries
                     .flatten()
@@ -608,8 +623,8 @@ impl PluginManager {
         let start = std::time::Instant::now();
         loop {
             let mut buf = vec![0u8; 256 * 1024];
-            let n = std::io::Read::read(reader, &mut buf)
-                .map_err(|e| format!("Read failed: {}", e))?;
+            let n =
+                std::io::Read::read(reader, &mut buf).map_err(|e| format!("Read failed: {}", e))?;
             if n == 0 {
                 break;
             }
@@ -694,7 +709,10 @@ impl PluginManager {
                     .unwrap_or("")
                     .trim()
                     .to_string();
-                let digest = digest.strip_prefix("sha256:").unwrap_or(&digest).to_lowercase();
+                let digest = digest
+                    .strip_prefix("sha256:")
+                    .unwrap_or(&digest)
+                    .to_lowercase();
                 if digest.is_empty() {
                     return Err("Release asset has no published digest".into());
                 }
@@ -794,11 +812,13 @@ impl PluginManager {
     // associated fns (fresh state, plain-data results) for background use.
 
     fn dep_exe_in(dir: &Path) -> PathBuf {
-        dir.join("dependency-installer").join("dependency-installer")
+        dir.join("dependency-installer")
+            .join("dependency-installer")
     }
 
     fn dll_exe_in(dir: &Path) -> PathBuf {
-        dir.join("dll-overrides-automator").join("dll-overrides-automator")
+        dir.join("dll-overrides-automator")
+            .join("dll-overrides-automator")
     }
 
     /// I run a plugin and return its final JSON document. `limit_secs` is my
@@ -854,7 +874,7 @@ impl PluginManager {
         game_dir: &str,
         prefix: &str,
         proton: &str,
-    ) -> Result<(Vec<(String, String)>, Vec<(String, String)>, String), String> {
+    ) -> Result<DependencyScan, String> {
         let exe = Self::dep_exe_in(dir);
         if !exe.exists() {
             return Err("Dependency Installer plugin not installed".into());
@@ -868,13 +888,21 @@ impl PluginManager {
             cmd.arg("--proton").arg(proton);
         }
         let v = Self::run_json(&mut cmd, 120)?;
-        if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) != true {
-            let e = v.get("error").and_then(|x| x.as_str()).unwrap_or("scan failed");
+        if !v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) {
+            let e = v
+                .get("error")
+                .and_then(|x| x.as_str())
+                .unwrap_or("scan failed");
             return Err(e.to_string());
         }
         let mut missing = Vec::new();
         let mut optional = Vec::new();
-        for d in v.get("deps").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+        for d in v
+            .get("deps")
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default()
+        {
             let status = d.get("status").and_then(|x| x.as_str()).unwrap_or("");
             if status == "installed" {
                 continue;
@@ -891,16 +919,15 @@ impl PluginManager {
                 missing.push((id.to_string(), desc.to_string()));
             }
         }
-        let msg = v.get("message").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let msg = v
+            .get("message")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
         Ok((missing, optional, msg))
     }
 
-    pub fn scan_bundle_in(
-        dir: &Path,
-        game_dir: &str,
-        prefix: &str,
-        proton: &str,
-    ) -> ScanBundle {
+    pub fn scan_bundle_in(dir: &Path, game_dir: &str, prefix: &str, proton: &str) -> ScanBundle {
         let (overrides, missing, optional) = std::thread::scope(|s| {
             let a = s.spawn(|| Self::dll_scan_in(dir, game_dir).unwrap_or_default());
             let b = s.spawn(|| {
@@ -912,7 +939,11 @@ impl PluginManager {
             let (m, o) = b.join().unwrap_or_default();
             (j, m, o)
         });
-        ScanBundle { overrides, missing, optional }
+        ScanBundle {
+            overrides,
+            missing,
+            optional,
+        }
     }
 
     /// Keep the tail of a long message: real errors come last.
@@ -960,9 +991,12 @@ impl PluginManager {
             return Err("Nothing to install".into());
         }
 
-        let has_dotnet = dep_ids
-            .iter()
-            .any(|d| matches!(d.as_str(), "dotnet48" | "dotnet472" | "dotnet40" | "dotnet20" | "dotnet35sp1"));
+        let has_dotnet = dep_ids.iter().any(|d| {
+            matches!(
+                d.as_str(),
+                "dotnet48" | "dotnet472" | "dotnet40" | "dotnet20" | "dotnet35sp1"
+            )
+        });
         let timeout_secs = if has_dotnet { 1800 } else { 300 };
 
         let mut cmd = Command::new(&exe);
@@ -975,7 +1009,7 @@ impl PluginManager {
         }
         let v = Self::run_json(&mut cmd, timeout_secs)?;
 
-        if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) != true {
+        if !v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) {
             if let Some(e) = v.get("error").and_then(|x| x.as_str()) {
                 return Err(e.to_string());
             }
@@ -1026,7 +1060,10 @@ impl PluginManager {
             return Err(Self::tail_msg(&msg, 2000));
         }
 
-        Ok(v.get("message").and_then(|x| x.as_str()).unwrap_or("Installed").to_string())
+        Ok(v.get("message")
+            .and_then(|x| x.as_str())
+            .unwrap_or("Installed")
+            .to_string())
     }
 
     /// `dll-overrides-automator scan <gamedir>` → WINEDLLOVERRIDES string
@@ -1039,11 +1076,17 @@ impl PluginManager {
         let mut cmd = Command::new(&exe);
         cmd.arg("scan").arg(game_dir);
         let v = Self::run_json(&mut cmd, 120)?;
-        if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) != true {
-            let e = v.get("error").and_then(|x| x.as_str()).unwrap_or("scan failed");
+        if !v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) {
+            let e = v
+                .get("error")
+                .and_then(|x| x.as_str())
+                .unwrap_or("scan failed");
             return Err(e.to_string());
         }
-        Ok(v.get("overrides").and_then(|x| x.as_str()).unwrap_or("").to_string())
+        Ok(v.get("overrides")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string())
     }
 
     // --- Emulator Manager integration (I match the legacy layout) ---
@@ -1059,7 +1102,11 @@ impl PluginManager {
     pub fn emulator_manager_installed(&self) -> bool {
         let exe = self.emulator_manager_exe();
         exe.exists()
-            && self.plugins_dir().join("emulator-manager").join("plugin.json").exists()
+            && self
+                .plugins_dir()
+                .join("emulator-manager")
+                .join("plugin.json")
+                .exists()
     }
 
     pub fn list_emulators(&self) -> Vec<EmuInfo> {
@@ -1107,25 +1154,45 @@ impl PluginManager {
                 return Vec::new();
             }
         };
-        if v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) != true {
+        if !v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) {
             eprintln!(
                 "[emu] corky-list reported ok=false: {}",
-                v.get("error").and_then(|e| e.as_str()).unwrap_or("no detail")
+                v.get("error")
+                    .and_then(|e| e.as_str())
+                    .unwrap_or("no detail")
             );
             return Vec::new();
         }
         let plugins_dir = dir.display().to_string();
         let mut out = Vec::new();
-        for e in v.get("emulators").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
-            let path = e.get("path").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+        for e in v
+            .get("emulators")
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default()
+        {
+            let path = e
+                .get("path")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string();
             // Backend >=2.10 returns an explicit "source" field (linked/appimage/system/none).
             // For older backends, infer from the "linked" flag + path heuristic.
-            let raw_source = e.get("source").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let raw_source = e
+                .get("source")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
             let source = if raw_source.is_empty() {
                 if e.get("linked").and_then(|x| x.as_bool()).unwrap_or(false)
-                    || (!path.is_empty() && !path.starts_with(&plugins_dir)) {
+                    || (!path.is_empty() && !path.starts_with(&plugins_dir))
+                {
                     "linked"
-                } else if e.get("installed").and_then(|x| x.as_bool()).unwrap_or(false) {
+                } else if e
+                    .get("installed")
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or(false)
+                {
                     "appimage"
                 } else {
                     "none"
@@ -1134,24 +1201,43 @@ impl PluginManager {
                 &raw_source
             };
             let installed = source != "none"
-                || e.get("installed").and_then(|x| x.as_bool()).unwrap_or(false);
+                || e.get("installed")
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or(false);
             let native = source == "linked";
             let mut defs = Vec::new();
-            for s in e.get("settings").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+            for s in e
+                .get("settings")
+                .and_then(|x| x.as_array())
+                .cloned()
+                .unwrap_or_default()
+            {
                 let id = s.get("id").and_then(|x| x.as_str()).unwrap_or_default();
                 if id.is_empty() {
                     continue;
                 }
                 defs.push(EmuSettingDef {
                     id: id.to_string(),
-                    stype: s.get("type").and_then(|x| x.as_str()).unwrap_or("bool").to_string(),
+                    stype: s
+                        .get("type")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("bool")
+                        .to_string(),
                     default_bool: s.get("default").and_then(|x| x.as_bool()).unwrap_or(false),
                 });
             }
             out.push(EmuInfo {
-                name: e.get("name").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+                name: e
+                    .get("name")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
                 path,
-                description: e.get("description").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+                description: e
+                    .get("description")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
                 installed,
                 native,
                 source: source.to_string(),
@@ -1190,9 +1276,17 @@ impl PluginManager {
         }
         let v: serde_json::Value = serde_json::from_str(&output.stdout).unwrap_or_default();
         let ok = v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
-        let msg = v.get("message").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let msg = v
+            .get("message")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
         if ok {
-            Ok(if msg.is_empty() { name.to_string() } else { msg })
+            Ok(if msg.is_empty() {
+                name.to_string()
+            } else {
+                msg
+            })
         } else {
             Err(if msg.is_empty() {
                 format!("Install failed for {}", name)
@@ -1232,9 +1326,17 @@ impl PluginManager {
         }
         let v: serde_json::Value = serde_json::from_str(&output.stdout).unwrap_or_default();
         let ok = v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
-        let msg = v.get("message").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let msg = v
+            .get("message")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
         if ok {
-            Ok(if msg.is_empty() { name.to_string() } else { msg })
+            Ok(if msg.is_empty() {
+                name.to_string()
+            } else {
+                msg
+            })
         } else {
             Err(if msg.is_empty() {
                 format!("Link failed for {}", name)
@@ -1309,9 +1411,17 @@ impl PluginManager {
         // when a row went stale.
         let v: serde_json::Value = serde_json::from_str(&output.stdout).unwrap_or_default();
         let ok = v.get("ok").and_then(|x| x.as_bool()).unwrap_or(false);
-        let msg = v.get("message").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let msg = v
+            .get("message")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
         if ok {
-            Ok(if msg.is_empty() { name.to_string() } else { msg })
+            Ok(if msg.is_empty() {
+                name.to_string()
+            } else {
+                msg
+            })
         } else {
             Err(if msg.is_empty() {
                 format!("Unlink failed for {}", name)
@@ -1336,7 +1446,12 @@ impl PluginManager {
     }
 
     pub fn get_plugin(&self, id: &str) -> Option<PluginInfo> {
-        self.imp().plugins.borrow().iter().find(|p| p.id == id).cloned()
+        self.imp()
+            .plugins
+            .borrow()
+            .iter()
+            .find(|p| p.id == id)
+            .cloned()
     }
 
     /// Resolve a runnable emulator binary for an executor id or name:
@@ -1401,9 +1516,7 @@ impl PluginManager {
             .map(|e| (e.name.clone(), e.name.clone()))
             .collect();
         for p in self.imp().plugins.borrow().iter() {
-            if p.plugin_type == PluginType::Emulator
-                && !out.iter().any(|(id, _)| id == &p.id)
-            {
+            if p.plugin_type == PluginType::Emulator && !out.iter().any(|(id, _)| id == &p.id) {
                 out.push((p.id.clone(), p.name.clone()));
             }
         }
@@ -1411,7 +1524,12 @@ impl PluginManager {
         out
     }
 
-    pub fn build_emulator_command(&self, emulator_id: &str, rom: &str, args: &[String]) -> Option<Command> {
+    pub fn build_emulator_command(
+        &self,
+        emulator_id: &str,
+        rom: &str,
+        args: &[String],
+    ) -> Option<Command> {
         let path = self.emulator_path(emulator_id)?;
         let mut cmd = Command::new(path);
         cmd.arg(rom);
@@ -1436,7 +1554,6 @@ fn which(name: &str) -> Option<PathBuf> {
     super::ext_bin::find_in_path(name)
 }
 
-
 /// Cut a description to at most `max` characters, breaking at the last
 /// space before the limit and appending an ellipsis when truncated.
 fn truncate_description(body: &str, max: usize) -> String {
@@ -1445,7 +1562,13 @@ fn truncate_description(body: &str, max: usize) -> String {
     }
     let mut cut = max;
     // walk back to a word boundary
-    while cut > 0 && !body.chars().nth(cut).map(|c| c.is_whitespace()).unwrap_or(true) {
+    while cut > 0
+        && !body
+            .chars()
+            .nth(cut)
+            .map(|c| c.is_whitespace())
+            .unwrap_or(true)
+    {
         cut -= 1;
     }
     if cut == 0 {
@@ -1479,16 +1602,21 @@ mod tests {
 
     fn integrity_directory(label: &str) -> std::path::PathBuf {
         let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        let dir = std::env::temp_dir().join(format!("corky-plugin-{label}-{}-{nonce}", std::process::id()));
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "corky-plugin-{label}-{}-{nonce}",
+            std::process::id()
+        ));
         std::fs::create_dir(&dir).unwrap();
         dir
     }
 
     #[test]
     fn plugin_http_download_rejects_bad_checksum_before_extraction() {
-        use std::io::{Read, Write};
         use sha2::Digest;
+        use std::io::{Read, Write};
         for valid_digest in [false, true] {
             let body = integrity_archive("fixture/payload");
             let digest = if valid_digest {
@@ -1504,16 +1632,32 @@ mod tests {
                 let mut request = [0u8; 4096];
                 let received = connection.read(&mut request).unwrap();
                 assert!(received > 0, "empty HTTP request");
-                write!(connection, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
+                write!(
+                    connection,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                )
+                .unwrap();
                 connection.write_all(&body).unwrap();
             });
             let client = reqwest::blocking::Client::builder()
-                .no_proxy().timeout(std::time::Duration::from_secs(10)).build().unwrap();
-            let mut response = client.get(format!("http://{address}/fixture.tar.gz")).send().unwrap();
+                .no_proxy()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .unwrap();
+            let mut response = client
+                .get(format!("http://{address}/fixture.tar.gz"))
+                .send()
+                .unwrap();
             let dir = integrity_directory("checksum");
             let dest = dir.join("download.tar.gz");
             let result = super::PluginManager::receive_plugin_archive(
-                &mut response, &dest, &dir, length as u64, &digest, |_, _| {},
+                &mut response,
+                &dest,
+                &dir,
+                length as u64,
+                &digest,
+                |_, _| {},
             );
             server.join().unwrap();
             if valid_digest {
@@ -1521,7 +1665,10 @@ mod tests {
                 assert!(dir.join("fixture/payload").is_file());
             } else {
                 assert!(result.err().unwrap().contains("Checksum mismatch"));
-                assert!(!dir.join("fixture").exists(), "unverified archive extracted");
+                assert!(
+                    !dir.join("fixture").exists(),
+                    "unverified archive extracted"
+                );
             }
             assert!(!dest.exists(), "download archive not cleaned up");
             std::fs::remove_dir_all(dir).unwrap();
@@ -1536,15 +1683,18 @@ mod tests {
             std::fs::write(&dest, integrity_archive(path)).unwrap();
             let extracted = dir.join("extract");
             std::fs::create_dir(&extracted).unwrap();
-            assert!(super::PluginManager::extract_plugin_safe(&dest, &extracted).is_err(), "unsafe path accepted");
+            assert!(
+                super::PluginManager::extract_plugin_safe(&dest, &extracted).is_err(),
+                "unsafe path accepted"
+            );
             assert_eq!(std::fs::read_dir(&extracted).unwrap().count(), 0);
             assert!(!dir.join("escaped").exists());
             std::fs::remove_dir_all(dir).unwrap();
         }
     }
 
-    use super::PluginManager;
     use super::truncate_description;
+    use super::PluginManager;
 
     #[test]
     fn remove_plugin_dir_ok_missing_and_denied() {
