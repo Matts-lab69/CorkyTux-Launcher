@@ -7,6 +7,34 @@ use zip::write::SimpleFileOptions;
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn bepinex_il2cpp_without_published_checksum_never_downloads() {
+    let root = mono_game();
+    change_to_il2cpp(&root);
+    let requested = std::cell::Cell::new(false);
+    let target = Target {
+        runtime: Runtime::Il2Cpp,
+        arch: Arch::X64,
+    };
+    let result = enable_with_fetch(
+        &root.0,
+        std::path::Path::new("Game.exe"),
+        "",
+        Authorization {
+            target,
+            allow_unverified: true,
+        },
+        |_| {
+            requested.set(true);
+            Err("unexpected download".into())
+        },
+    );
+    assert!(result.is_err());
+    assert!(!requested.get());
+    assert!(!root.0.join(MANIFEST).exists());
+    assert!(!root.0.join("winhttp.dll").exists());
+}
+
+#[test]
 fn bepinex_visible_and_activation_override_keys_agree() {
     let mut game =
         std::collections::HashMap::from([("overrides".to_string(), "dxgi=b".to_string())]);
