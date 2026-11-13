@@ -180,6 +180,17 @@ fn save_entry(state: &AppState, game: &str, key: &str, entry: &gtk::Entry) {
     let k = key.to_string();
     let state_c = state.clone();
     entry.connect_changed(move |e| {
+        if k == crate::backend::dll_overrides::KEY {
+            if let Err(message) = crate::backend::dll_overrides::validate(e.text().as_ref()) {
+                e.add_css_class("error");
+                e.set_tooltip_text(Some(&message));
+                return;
+            }
+            e.remove_css_class("error");
+            e.set_tooltip_text(Some(
+                "Semicolon-separated WINEDLLOVERRIDES, for example winhttp=n,b.",
+            ));
+        }
         state_c.config.set_game_value(&held, &k, e.text().as_ref());
         // Prefix path edits update the header warning button/counter live.
         if k == "PrefixPath" {
@@ -388,7 +399,11 @@ fn build_run_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWin
     let (opts_frame, opts_inner) = make_frame("Launch options");
     let overrides_entry: Rc<RefCell<Option<gtk::Entry>>> = Rc::new(RefCell::new(None));
     for (label, key, placeholder) in [
-        ("DLL overrides (WINEDLLOVERRIDES)", "Overrides", "d3d11=n,b"),
+        (
+            "Custom DLL overrides",
+            crate::backend::dll_overrides::KEY,
+            "winhttp=n,b",
+        ),
         (
             "Environment variables",
             "Environment",
@@ -410,11 +425,15 @@ fn build_run_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWin
         lbl.add_css_class("time-label");
         opts_inner.append(&lbl);
         let entry = gtk::Entry::new();
+        entry.set_widget_name(key);
         entry.set_text(&state.config.game_value(game_name, key).unwrap_or_default());
         entry.set_hexpand(true);
         entry.set_placeholder_text(Some(placeholder));
         opts_inner.append(&entry);
-        if key == "Overrides" {
+        if key == crate::backend::dll_overrides::KEY {
+            entry.set_tooltip_text(Some(
+                "Semicolon-separated WINEDLLOVERRIDES, for example winhttp=n,b.",
+            ));
             *overrides_entry.borrow_mut() = Some(entry.clone());
         }
         save_entry(state, game_name, key, &entry);
@@ -448,6 +467,13 @@ fn build_run_tab(state: &AppState, game_name: &str, parent: &adw::ApplicationWin
         save_switch(state, game_name, key, &sw);
     }
 
+    crate::ui::bepinex_settings::append(
+        &opts_inner,
+        state,
+        game_name,
+        parent,
+        overrides_entry.clone(),
+    );
     cols.append(&opts_frame);
 
     // ---- Dependencies & DLL overrides card ----

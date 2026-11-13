@@ -1545,7 +1545,6 @@ impl ProtonManager {
         };
         let steam_id = game.get("steamid").cloned().unwrap_or_default();
         let use_umu = game.get("useumu").map(|v| v == "true").unwrap_or(false);
-        let overrides = game.get("overrides").cloned().unwrap_or_default();
         let use_shared_prefix = game
             .get("usesharedprefix")
             .map(|v| v == "true")
@@ -1693,12 +1692,13 @@ impl ProtonManager {
                 &real_prefix,
                 (&environment, &args_before, &args_after, &launch_args),
             ) {
+                super::dll_overrides::apply(&mut leg_cmd, &game)?;
                 if mango_hud {
                     leg_cmd.env("MANGOHUD", "1");
                 }
                 *self.imp().session_prefix.borrow_mut() = real_prefix.display().to_string();
                 *self.imp().session_proton_dir.borrow_mut() = proton_path.display().to_string();
-                let wrapped_cmd = if game_mode {
+                let mut wrapped_cmd = if game_mode {
                     let mut gm = Command::new("gamemoderun");
                     gm.arg(leg_cmd.get_program());
                     for arg in leg_cmd.get_args() {
@@ -1713,6 +1713,7 @@ impl ProtonManager {
                 } else {
                     leg_cmd
                 };
+                super::bepinex::configure_launch(&mut wrapped_cmd, &game)?;
                 // Bottles-style sandbox: prefix + game read-write; Proton,
                 // legendary, tools and their config read-only / read-write
                 // depending on the case.
@@ -1822,9 +1823,6 @@ impl ProtonManager {
             }
         } else {
             final_cmd = Command::new(&proton_bin);
-            if !overrides.is_empty() {
-                final_cmd.env("WINEDLLOVERRIDES", &overrides);
-            }
             // err+all: wine errors stay visible for the Debug log
             // (plain -all hid every err: line the legend mentions).
             final_cmd.env("WINEDEBUG", "err+all");
@@ -1966,8 +1964,10 @@ impl ProtonManager {
             }
         }
 
+        super::dll_overrides::apply(&mut final_cmd, &game)?;
+
         // Wrapper GameMode (gamemoderun antepuesto al programa completo)
-        let wrapped_cmd = if game_mode {
+        let mut wrapped_cmd = if game_mode {
             let mut gm = Command::new("gamemoderun");
             gm.arg(final_cmd.get_program());
             for arg in final_cmd.get_args() {
@@ -1983,6 +1983,7 @@ impl ProtonManager {
             final_cmd
         };
 
+        super::bepinex::configure_launch(&mut wrapped_cmd, &game)?;
         let runner_name = if use_umu { "umu" } else { "proton" };
         if steam_debug_enabled() {
             log_steam_readiness("before-game-spawn", &home_dir().unwrap_or_default());

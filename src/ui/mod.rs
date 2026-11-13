@@ -1,3 +1,4 @@
+mod bepinex_settings;
 pub mod helpers;
 
 pub type RefreshCallback = std::rc::Rc<std::cell::RefCell<Option<std::rc::Rc<dyn Fn()>>>>;

@@ -1,5 +1,43 @@
 # CorkyTux: Settings > Emulators visual system
 
+## Per-game BepInEx controls
+
+- Launch options uses the existing GTK Switch and status-label styles, default
+  off. Detection and downloads run outside the GTK thread; controls are disabled
+  during an operation. IL2CPP installation stays disabled with an explanatory
+  notice until an official checksum is available. No new focus or navigation
+  mechanism is introduced.
+- Windows Unity Mono/IL2CPP detection and PE architecture select pinned official
+  GitHub packages: Mono 5.4.23.6 with published SHA256. IL2CPP 6.0.0-pre.2 has
+  no official sum and is not downloaded. Downloads stay on allowlisted HTTPS
+  GitHub/CDN hosts.
+- Limits: 128 MiB download, 256 MiB expanded, 64 MiB per file, 2048 entries.
+  ZIP traversal, absolute paths, symlinks, special files and case collisions are
+  rejected. Directory descriptors with no-follow operations confine all writes
+  to the selected game; existing files are not replaced and payloads never run.
+- A root-bound ownership manifest records file SHA256 values and created
+  directories. Updates use exclusive temporary files and atomic replacement.
+  Removal checks the manifest and hashes; modified files and all user plugin,
+  patcher and configuration directories remain. Existing unmanaged installs
+  retain their files. Interrupted installations can be removed with the switch.
+- Manifest override strings must be valid single-line Wine syntax and match the
+  recorded activation transformation. Download consent is bound to the detected
+  runtime and architecture, checked before download and again before writes.
+  Removal captures directory entries atomically before hash verification;
+  concurrent replacements at the original name are not removed or overwritten.
+  A changed capture that cannot be restored is retained under a reported
+  `.corkytux-bepinex.remove-*` name for inspection.
+- Activation preserves other DLL overrides and supports both legacy `Overrides`
+  and canonical `custom_dll_overrides` settings. Disabling restores the previous
+  string only if it was not edited. Steam-owned launches need their own launch
+  option; the launcher never edits Steam configuration. Actual game compatibility,
+  visual placement and physical controller interaction are not covered by unit
+  tests.
+
+Sources: [official Proton/Wine guide](https://docs.bepinex.dev/articles/advanced/proton_wine.html),
+[Mono release](https://github.com/BepInEx/BepInEx/releases/tag/v5.4.23.6),
+[IL2CPP prerelease](https://github.com/BepInEx/BepInEx/releases/tag/v6.0.0-pre.2).
+
 ## Document status
 
 - Status: **row visual update implemented**: the name no longer carries status suffixes; `Linked` keeps a compact pill and a red `Unlink` button; `System` keeps the badge next to the name, shows a static red `Found in system` notice and keeps the `Set as linked` button as the only clickable action. The `Working…` flow, the stable slot and the action mapping stay intact except for the addition of `Unlink`, which I explicitly asked for so the link is not irreversible.

@@ -51,6 +51,37 @@ Unified library, filters, search, recently played cards, favorites, playtime, pe
 ### Proton/Wine
 Per-game Proton version and prefix, umu, EAC/BattlEye, EOS, Wine virtual desktop, environment variables, arguments, DLL overrides, Steam/Lutris/Heroic scans.
 
+**Custom DLL overrides:** edit the per-game field under Launch options using
+`WINEDLLOVERRIDES` syntax, for example `winhttp=n,b;version=b`. Separate DLL
+groups with semicolons; use `n`/`native`, `b`/`builtin`, or an empty load order
+to disable a DLL. Invalid edits are marked and are not saved. Clear the field
+to remove its overrides. The setting uses `custom_dll_overrides`; existing
+`Overrides` values migrate once without removing the old value or other keys.
+The explicit field takes precedence over the same variable in Environment
+for direct Proton, umu and Legendary launches. Steam-managed launches continue
+to use Steam's own launch options. No presets or DLL files are installed.
+
+### Mods (BepInEx)
+
+The per-game Launch options switch is off by default. It detects Windows Unity
+Mono/IL2CPP and x86/x64 from the executable and game data. Native Linux and
+unidentified layouts are not changed. Mono uses BepInEx 5.4.23.6 with published
+SHA256 verification. IL2CPP installation is disabled until an official checksum
+is available; existing managed installations can still be removed.
+
+Existing files are never overwritten. A private `.corkytux-bepinex.json`
+ownership manifest records installed files and their hashes. Turning the switch
+off removes only unchanged owned files; user mods, plugins, patchers and config
+directories remain. Modified files and edited overrides are preserved with a
+notice. Existing unmanaged BepInEx files can be activated but are never removed.
+
+Activation adds `winhttp=n,b` without replacing other DLL overrides; conflicting
+explicit winhttp values must be edited first. Direct Proton, umu and Legendary
+launches receive the variable. Steam-managed games additionally need
+`WINEDLLOVERRIDES="winhttp=n,b" %command%` in Steam's own launch options; the
+launcher does not modify Steam configuration. Compatibility with individual
+games is not guaranteed. No downloaded payload is executed during installation.
+
 ---
 ## Plugins
 
