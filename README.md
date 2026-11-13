@@ -54,11 +54,10 @@ Per-game Proton version and prefix, umu, EAC/BattlEye, EOS, Wine virtual desktop
 ### Mods (BepInEx)
 
 The per-game Launch options switch is off by default. It detects Windows Unity
-Mono/IL2CPP and x86/x64 from the executable and game data, then installs the
-matching official Windows package. Native Linux and unidentified layouts are
-not changed. Mono uses BepInEx 5.4.23.6 with published SHA256 verification;
-IL2CPP uses 6.0.0-pre.2, an experimental prerelease without a published checksum,
-and requires confirmation before an official HTTPS-only download.
+Mono/IL2CPP and x86/x64 from the executable and game data. Native Linux and
+unidentified layouts are not changed. Mono uses BepInEx 5.4.23.6 with published
+SHA256 verification. IL2CPP installation is disabled until an official checksum
+is available; existing managed installations can still be removed.
 
 Existing files are never overwritten. A private `.corkytux-bepinex.json`
 ownership manifest records installed files and their hashes. Turning the switch

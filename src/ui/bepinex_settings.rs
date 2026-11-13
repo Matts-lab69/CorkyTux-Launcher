@@ -19,6 +19,7 @@ struct Binding {
     status: gtk::Label,
     busy: Rc<Cell<bool>>,
     enabled: Rc<Cell<bool>>,
+    installation_available: Rc<Cell<bool>>,
     entry: Rc<RefCell<Option<gtk::Entry>>>,
 }
 
@@ -31,7 +32,8 @@ impl Binding {
     fn restore_controls(&self, active: bool) {
         self.switch.set_active(active);
         self.enabled.set(active);
-        self.switch.set_sensitive(true);
+        self.switch
+            .set_sensitive(active || self.installation_available.get());
         if let Some(entry) = self.entry.borrow().as_ref() {
             entry.set_sensitive(true);
         }
@@ -148,7 +150,7 @@ pub fn append(
     container: &gtk::Box,
     state: &AppState,
     game: &str,
-    parent: &adw::ApplicationWindow,
+    _parent: &adw::ApplicationWindow,
     entry: Rc<RefCell<Option<gtk::Entry>>>,
 ) {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -201,59 +203,24 @@ pub fn append(
         status,
         busy: Rc::new(Cell::new(true)),
         enabled: Rc::new(Cell::new(false)),
+        installation_available: Rc::new(Cell::new(false)),
         entry,
     };
     let target = Rc::new(Cell::new(None::<bepinex::Target>));
     let b = binding.clone();
     let t = target.clone();
-    let parent = parent.clone();
     switch.connect_active_notify(move |switch| {
         if b.busy.get() {
             return;
         }
         let enable = switch.is_active();
-        if enable
-            && t.get()
-                .is_some_and(|target| target.runtime == bepinex::Runtime::Il2Cpp)
-        {
-            b.busy.set(true);
-            switch.set_sensitive(false);
-            let dialog = adw::AlertDialog::new(
-                Some("Experimental IL2CPP support"),
-                Some(
-                    &t.get()
-                        .map(|target| target.description())
-                        .unwrap_or_default(),
-                ),
-            );
-            dialog.add_responses(&[("cancel", "Cancel"), ("enable", "Enable")]);
-            dialog.set_default_response(Some("cancel"));
-            dialog.set_close_response("cancel");
-            let b = b.clone();
-            let confirmed_target = t.get();
-            dialog.connect_response(None, move |_, response| {
-                if response == "enable" {
-                    b.start(
-                        true,
-                        confirmed_target.map(|target| bepinex::Authorization {
-                            target,
-                            allow_unverified: true,
-                        }),
-                    );
-                } else {
-                    b.restore_controls(false);
-                }
-            });
-            dialog.present(Some(&parent));
-        } else {
-            b.start(
-                enable,
-                t.get().map(|target| bepinex::Authorization {
-                    target,
-                    allow_unverified: false,
-                }),
-            );
-        }
+        b.start(
+            enable,
+            t.get().map(|target| bepinex::Authorization {
+                target,
+                allow_unverified: false,
+            }),
+        );
     });
     let (tx, rx) = std::sync::mpsc::channel();
     let path = binding.path.clone();
@@ -264,6 +231,9 @@ pub fn append(
     glib::idle_add_local(move || match rx.try_recv() {
         Ok(Ok(inspection)) => {
             target.set(Some(inspection.target));
+            binding
+                .installation_available
+                .set(inspection.target.installation_available());
             let prefix = if inspection.external {
                 "Existing unmanaged BepInEx detected; its files will be preserved. "
             } else {

@@ -4,11 +4,13 @@
 
 - Launch options uses the existing GTK Switch and status-label styles, default
   off. Detection and downloads run outside the GTK thread; controls are disabled
-  during an operation. IL2CPP requires a cancellable prerelease/no-checksum
-  confirmation. No new focus or navigation mechanism is introduced.
+  during an operation. IL2CPP installation stays disabled with an explanatory
+  notice until an official checksum is available. No new focus or navigation
+  mechanism is introduced.
 - Windows Unity Mono/IL2CPP detection and PE architecture select pinned official
-  GitHub packages: Mono 5.4.23.6 with published SHA256, IL2CPP 6.0.0-pre.2 without
-  an official sum. Downloads stay on allowlisted HTTPS GitHub/CDN hosts.
+  GitHub packages: Mono 5.4.23.6 with published SHA256. IL2CPP 6.0.0-pre.2 has
+  no official sum and is not downloaded. Downloads stay on allowlisted HTTPS
+  GitHub/CDN hosts.
 - Limits: 128 MiB download, 256 MiB expanded, 64 MiB per file, 2048 entries.
   ZIP traversal, absolute paths, symlinks, special files and case collisions are
   rejected. Directory descriptors with no-follow operations confine all writes

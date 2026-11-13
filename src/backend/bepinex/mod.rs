@@ -28,12 +28,19 @@ pub struct Target {
 }
 
 impl Target {
+    pub fn installation_available(self) -> bool {
+        package::select(self).checksum.is_some()
+    }
+
     pub fn description(self) -> String {
         let package = package::select(self);
         if package.checksum.is_some() {
             format!("{}: published SHA256 verification required.", package.name)
         } else {
-            format!("{}: experimental IL2CPP prerelease; no published SHA256. Official HTTPS download only. Compatibility is not guaranteed.", package.name)
+            format!(
+                "{}: installation disabled until an official SHA256 is available.",
+                package.name
+            )
         }
     }
 }
@@ -358,6 +365,11 @@ fn enable_with_fetch(
     fetch: impl FnOnce(&package::Package) -> Result<Vec<u8>, String>,
 ) -> Result<Change, String> {
     let target = detect(game_dir, executable)?;
+    if !target.installation_available() {
+        return Err(
+            "BepInEx installation is disabled until an official SHA256 is available".into(),
+        );
+    }
     authorize(target, authorization)?;
     let root = fs::Root::open(game_dir)?;
     root.lock()?;
