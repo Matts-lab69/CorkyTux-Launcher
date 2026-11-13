@@ -140,7 +140,7 @@ impl GameEntry {
             main_path: get("MainPath"),
             prefix_path: get("PrefixPath"),
             proton: get("Proton"),
-            overrides: get("Overrides"),
+            overrides: get(super::dll_overrides::KEY),
             steam_id: get("SteamID"),
             banner: get("Banner"),
             icon: get("Icon"),
@@ -179,7 +179,7 @@ impl GameEntry {
             ("MainPath".into(), self.main_path.clone()),
             ("PrefixPath".into(), self.prefix_path.clone()),
             ("Proton".into(), self.proton.clone()),
-            ("Overrides".into(), self.overrides.clone()),
+            (super::dll_overrides::KEY.into(), self.overrides.clone()),
             ("SteamID".into(), self.steam_id.clone()),
             ("Banner".into(), self.banner.clone()),
             ("Icon".into(), self.icon.clone()),
@@ -395,11 +395,11 @@ impl GameModel {
     }
 
     pub fn set_overrides(&self, name: &str, overrides: &str) {
-        if overrides.is_empty() {
+        if super::dll_overrides::validate(overrides).is_err() {
             return;
         }
         let config = super::ConfigManager::new();
-        config.set_game_value(name, "Overrides", overrides);
+        config.set_game_value(name, super::dll_overrides::KEY, overrides);
         let mut games = self.imp().games.borrow_mut();
         if let Some(g) = games.iter_mut().find(|g| g.name == name) {
             g.overrides = overrides.to_string();

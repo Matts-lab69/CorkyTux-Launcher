@@ -175,6 +175,7 @@ mod imp {
         pub config_dir: RefCell<PathBuf>,
         pub data_dir: RefCell<PathBuf>,
         pub games_ini: RefCell<IniFile>,
+        pub games_migration_pending: std::cell::Cell<bool>,
         pub launcher_ini: RefCell<IniFile>,
         pub last_games_content: RefCell<Option<String>>,
         pub last_launcher_content: RefCell<Option<String>>,
@@ -235,14 +236,16 @@ impl ConfigManager {
         thread_local! {
             static SHARED: RefCell<Option<ConfigManager>> = const { RefCell::new(None) };
         }
-        SHARED.with(|slot| {
+        let manager = SHARED.with(|slot| {
             let mut slot = slot.borrow_mut();
             if slot.is_none() {
                 let fresh: ConfigManager = glib::Object::new();
                 *slot = Some(fresh);
             }
             slot.as_ref().unwrap().clone()
-        })
+        });
+        manager.persist_games_migration();
+        manager
     }
 
     /// Test-only constructor pointing at an explicit config dir. Bypasses
@@ -257,6 +260,7 @@ impl ConfigManager {
         *obj.imp().data_dir.borrow_mut() = dir.to_path_buf();
         obj.load_games_ini();
         obj.load_launcher_ini();
+        obj.persist_games_migration();
         obj
     }
 
@@ -306,7 +310,17 @@ impl ConfigManager {
     fn load_games_ini(&self) {
         let path = self.games_ini_path();
         let content = fs::read_to_string(&path).unwrap_or_default();
-        *self.imp().games_ini.borrow_mut() = IniFile::parse(&content);
+        let mut ini = IniFile::parse(&content);
+        let migrated = super::dll_overrides::migrate(&mut ini);
+        *self.imp().games_ini.borrow_mut() = ini;
+        self.imp().games_migration_pending.set(migrated);
+    }
+
+    fn persist_games_migration(&self) {
+        if self.imp().games_migration_pending.replace(false) {
+            self.imp().last_games_content.borrow_mut().take();
+            self.save_games_ini();
+        }
     }
 
     fn load_launcher_ini(&self) {
@@ -915,6 +929,7 @@ impl ConfigManager {
     /// immediately, so a reload only picks up external edits.
     pub fn reload_games_ini(&self) {
         self.load_games_ini();
+        self.persist_games_migration();
     }
 
     /// Every registered game with its explicit PrefixPath. Read-only.

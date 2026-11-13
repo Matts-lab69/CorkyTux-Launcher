@@ -1742,7 +1742,7 @@ pub(crate) fn run_plugin_scans(
             if !overrides.trim().is_empty() {
                 let cur = state_c
                     .config
-                    .game_value(&game_c, "Overrides")
+                    .game_value(&game_c, backend::dll_overrides::KEY)
                     .unwrap_or_default();
                 if cur.trim().is_empty() {
                     state_c.game_model.set_overrides(&game_c, overrides.trim());
@@ -2079,7 +2079,7 @@ pub(crate) fn run_plugin_scans_batch(
                 if !overrides.trim().is_empty() {
                     let cur = state_c
                         .config
-                        .game_value(name, "Overrides")
+                        .game_value(name, backend::dll_overrides::KEY)
                         .unwrap_or_default();
                     if cur.trim().is_empty() {
                         state_c.game_model.set_overrides(name, overrides.trim());
